@@ -42,6 +42,7 @@ type Purchase = {
   stock_status: string
   purchase_type: string
   created_at: string
+  asset_description: string   // ← add this line
 }
 
 type Expense = {
@@ -134,12 +135,12 @@ export default function ReportsClient({
   const ytdNet  = ytdGross - ytdExpenses
 
   const revenueGrowth = lmtdRevenue > 0
-    ? (((mtdRevenue - lmtdRevenue) / lmtdRevenue) * 100).toFixed(1)
-    : '0'
+    ? Number((((mtdRevenue - lmtdRevenue) / lmtdRevenue) * 100).toFixed(1))
+    : 0
 
   const ytdGrowth = lytdRevenue > 0
-    ? (((ytdRevenue - lytdRevenue) / lytdRevenue) * 100).toFixed(1)
-    : '0'
+    ? Number((((ytdRevenue - lytdRevenue) / lytdRevenue) * 100).toFixed(1))
+    : 0
 
   // ── Monthly trend (last 12 months) ──
   const monthlyTrend = useMemo(() => {
@@ -395,7 +396,7 @@ export default function ReportsClient({
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(v: number) => `₹${v.toLocaleString('en-IN')}`} />
+                  <Tooltip formatter={(value: any) => `₹${Number(value).toLocaleString('en-IN')}`} />
                   <Legend />
                   <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[4,4,0,0]} />
                   <Bar dataKey="profit" name="Gross Profit" fill="#16a34a" radius={[4,4,0,0]} />
@@ -452,7 +453,7 @@ export default function ReportsClient({
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Revenue</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Gross Profit</th>
                     <th className="text-left px-4 py-3 font-medium text-gray-600">Avg Margin</th>
-                  </tr>
+                   </tr>
                 </thead>
                 <tbody>
                   {brandData.map((b, i) => (
@@ -537,7 +538,7 @@ export default function ReportsClient({
                         <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v: number) => fmt(v)} />
+                    <Tooltip formatter={(value: any) => fmt(Number(value))} />
                   </PieChart>
                 </ResponsiveContainer>
               </CardContent>
