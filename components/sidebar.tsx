@@ -1,5 +1,6 @@
 'use client'
 
+import { FileText } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -27,6 +28,7 @@ const navItems = [
   { href: '/dashboard/customers', label: 'Customers',    icon: Users },
   { href: '/dashboard/vendors',   label: 'Vendors',      icon: Building2 },
   { href: '/dashboard/reports',   label: 'Reports',      icon: BarChart3 },
+  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText }
 ]
 
 // SidebarContent moved outside of Sidebar
