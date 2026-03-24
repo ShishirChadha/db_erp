@@ -13,10 +13,12 @@ import {
   LogOut,
   Laptop,
   Menu,
-  X
+  X,
+  Building2
 } from 'lucide-react'
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
+
 
 const navItems = [
   { href: '/dashboard',           label: 'Dashboard',    icon: LayoutDashboard },
@@ -24,6 +26,7 @@ const navItems = [
   { href: '/dashboard/sales',     label: 'Sales',        icon: TrendingUp },
   { href: '/dashboard/expenses',  label: 'Expenses',     icon: Receipt },
   { href: '/dashboard/customers', label: 'Customers',    icon: Users },
+  { href: '/dashboard/vendors',   label: 'Vendors',      icon: Building2 },
   { href: '/dashboard/reports',   label: 'Reports',      icon: BarChart3 },
 ]
 
