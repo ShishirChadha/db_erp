@@ -19,7 +19,6 @@ import {
 import { useState } from 'react'
 import { cn } from '@/lib/utils'
 
-
 const navItems = [
   { href: '/dashboard',           label: 'Dashboard',    icon: LayoutDashboard },
   { href: '/dashboard/purchases', label: 'Purchase IN',  icon: ShoppingCart },
@@ -30,21 +29,14 @@ const navItems = [
   { href: '/dashboard/reports',   label: 'Reports',      icon: BarChart3 },
 ]
 
-export default function Sidebar() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const supabase = createClient()
-  const [mobileOpen, setMobileOpen] = useState(false)
-
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
-
-  const SidebarContent = () => (
+// SidebarContent moved outside of Sidebar
+function SidebarContent({ pathname, onLogout, onMobileClose }: {
+  pathname: string
+  onLogout: () => void
+  onMobileClose: () => void
+}) {
+  return (
     <div className="flex flex-col h-full">
-
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-200">
         <div className="bg-blue-600 p-2 rounded-xl">
@@ -64,7 +56,7 @@ export default function Sidebar() {
             <Link
               key={item.href}
               href={item.href}
-              onClick={() => setMobileOpen(false)}
+              onClick={onMobileClose}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
                 isActive
@@ -82,22 +74,36 @@ export default function Sidebar() {
       {/* Logout */}
       <div className="px-3 py-4 border-t border-gray-200">
         <button
-          onClick={handleLogout}
+          onClick={onLogout}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all w-full"
         >
           <LogOut className="h-4 w-4" />
           Sign out
         </button>
       </div>
-
     </div>
   )
+}
+
+export default function Sidebar() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+  const [mobileOpen, setMobileOpen] = useState(false)
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }
+
+  const closeMobile = () => setMobileOpen(false)
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-gray-200 flex-col flex-shrink-0">
-        <SidebarContent />
+        <SidebarContent pathname={pathname} onLogout={handleLogout} onMobileClose={closeMobile} />
       </aside>
 
       {/* Mobile top bar */}
@@ -118,12 +124,12 @@ export default function Sidebar() {
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={() => setMobileOpen(false)}>
+        <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={closeMobile}>
           <aside
             className="absolute left-0 top-0 bottom-0 w-64 bg-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <SidebarContent />
+            <SidebarContent pathname={pathname} onLogout={handleLogout} onMobileClose={closeMobile} />
           </aside>
         </div>
       )}
