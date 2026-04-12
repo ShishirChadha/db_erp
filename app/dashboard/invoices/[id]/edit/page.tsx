@@ -100,16 +100,17 @@ export default function EditInvoicePage() {
   if (loading) return <div className="p-6">Loading...</div>;
   if (!invoice) return <div className="p-6">Invoice not found</div>;
 
-  const formData = {
-    ...invoice,
-    invoice_date: new Date(invoice.invoice_date),
-    items: items.map((item) => ({
-      ...item,
-      item_type: item.item_type,
-      asset_id: item.asset_id,
-      accessory_id: item.accessory_id,
-    })),
-  };
+ const formData = {
+  ...invoice,
+  invoice_date: new Date(invoice.invoice_date),
+  subject: invoice.subject || "",   // 👈 ADD THIS LINE
+  items: items.map((item) => ({
+    ...item,
+    item_type: item.item_type,
+    asset_id: item.asset_id,
+    accessory_id: item.accessory_id,
+  })),
+};
 
   return (
     <div className="container mx-auto py-6 space-y-6">

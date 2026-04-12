@@ -29,7 +29,7 @@ export const invoiceSchema = z.object({
   customer_phone: z.string().optional(),
   customer_email: z.string().email().optional(),
   shipping_address: z.string().optional(),
-  subject: z.string().optional(),   // <-- now optional
+  subject: z.string().optional(),   // ✅ changed from z.string() to optional
   notes: z.string().optional(),
   bank_details: z.string().optional(),
   terms_conditions: z.string().optional(),
