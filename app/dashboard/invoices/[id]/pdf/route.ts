@@ -5,11 +5,11 @@ import { format } from "date-fns";
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params;  // 👈 await here
     const supabase = await createClient();
-    const { id } = params;
 
     const { data: invoice, error: invoiceError } = await supabase
       .from("invoices")
