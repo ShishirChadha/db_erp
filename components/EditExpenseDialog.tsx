@@ -49,7 +49,7 @@ export default function EditExpenseDialog({
     setFormData(expense);
   }, [expense]);
 
-  const handleChange = (field: keyof Expense, value: string | number) => {
+const handleChange = (field: keyof Expense, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 

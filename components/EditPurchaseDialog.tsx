@@ -58,7 +58,7 @@ export default function EditPurchaseDialog({
     setFormData(purchase);
   }, [purchase]);
 
-  const handleChange = (field: keyof Purchase, value: string | number) => {
+  const handleChange = (field: keyof Purchase, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 

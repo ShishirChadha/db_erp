@@ -55,7 +55,7 @@ export default function EditSaleDialog({
     setFormData(sale);
   }, [sale]);
 
-  const handleChange = (field: keyof Sale, value: string | number) => {
+ const handleChange = (field: keyof Sale, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
