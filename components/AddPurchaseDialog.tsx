@@ -41,9 +41,9 @@ export default function AddPurchaseDialog({ onAdd }: { onAdd: () => void }) {
   });
   const supabase = createClient();
 
-  const handleChange = (field: string, value: string | number) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
+  const handleChange = (field: string, value: string | number | null) => {
+  setFormData((prev) => ({ ...prev, [field]: value }));
+};
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
