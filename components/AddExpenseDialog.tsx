@@ -35,7 +35,7 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
   });
   const supabase = createClient();
 
-  const handleChange = (field: string, value: string | number) => {
+  const handleChange = (field: string, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
