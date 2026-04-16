@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { ApifyClient } from 'apify-client';
 
+// Define the expected shape of the GST API response
+interface GSTResponseItem {
+  status?: string;
+  taxpayerDetails?: {
+    tradeName?: string;
+    legalName?: string;
+    status?: string;
+    gstin?: string;
+  };
+  address?: {
+    fullAddress?: string;
+  };
+  results?: GSTResponseItem[];
+}
+
 export async function GET(request: NextRequest) {
   const gst = request.nextUrl.searchParams.get('gst');
   if (!gst) {
@@ -19,14 +34,10 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Initialize the Apify client with your token
     const client = new ApifyClient({ token });
 
-    // Prepare the input for the actor
-    const input = { GSTIN: gst };
-
-    // Run the actor (use the correct actor ID: 'mikolabs/gst') and wait for it to finish
-    const run = await client.actor('mikolabs/gst').call(input);
+    // Run the actor and wait for it to finish
+    const run = await client.actor('mikolabs/gst').call({ GSTIN: gst });
     console.log(`Actor run completed with ID: ${run.id}`);
 
     // Fetch the results from the run's default dataset
@@ -38,9 +49,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'No data found for this GST number' }, { status: 404 });
     }
 
-    // Extract the taxpayer details from the first item
-    const firstItem = items[0];
-    // Some APIs return the data in a 'results' array, others directly
+    // Type assertion to tell TypeScript the shape of the items
+    const firstItem = items[0] as GSTResponseItem;
     const data = firstItem?.results?.[0] || firstItem;
 
     if (data?.status === 'success' && data?.taxpayerDetails) {

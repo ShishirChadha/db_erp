@@ -547,7 +547,7 @@ export default function VendorsClient({ initialData }: { initialData: Vendor[] }
       {/* Delete Dialog (reuse DeleteRecordDialog) */}
       <DeleteRecordDialog
         title="Delete Vendor"
-        identifier={vendorToDelete?.company_name}
+        identifier={vendorToDelete?.company_name || ""}
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleSoftDelete}

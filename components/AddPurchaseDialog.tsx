@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
+
 import {
   Dialog,
   DialogContent,
@@ -23,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 
-// ---------- Helper to get the next asset number suggestion (without consuming) ----------
+// ---------- Helper: suggest next asset number (without consuming) ----------
 async function suggestAssetNumber(prefix: string = "DBAS"): Promise<string> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -42,12 +43,119 @@ async function suggestAssetNumber(prefix: string = "DBAS"): Promise<string> {
   return `${prefix}${nextNum.toString().padStart(4, "0")}`;
 }
 
-// ---------- Inline Add Vendor Component (unchanged) ----------
+// ---------- Inline Add Vendor Component ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
-  // ... (keep exactly as in your working version)
-  // To save space, I'll omit it here, but you must keep your existing AddVendorInline code.
-  // It is identical to what you already have.
-  return null; // Placeholder – replace with your actual component
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [formData, setFormData] = useState({
+    company_name: "",
+    spoc_name: "",
+    owner_name: "",
+    phone: "",
+    email: "",
+    address_line1: "",
+    address_line2: "",
+    city: "",
+    state: "",
+    pincode: "",
+    has_gst: false,
+    gst_number: "",
+    gst_company_name: "",
+  });
+  const supabase = createClient();
+
+  const handleChange = (field: string, value: any) => {
+    setFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.company_name) {
+      alert("Company name is required");
+      return;
+    }
+    setLoading(true);
+    const payload = {
+      company_name: formData.company_name,
+      spoc_name: formData.spoc_name,
+      owner_name: formData.owner_name,
+      phone: formData.phone,
+      email: formData.email,
+      address_line1: formData.address_line1,
+      address_line2: formData.address_line2,
+      city: formData.city,
+      state: formData.state,
+      pincode: formData.pincode,
+      has_gst: formData.has_gst,
+      gst_number: formData.gst_number,
+      gst_company_name: formData.gst_company_name,
+    };
+    const { data, error } = await supabase.from("vendors").insert([payload]).select().single();
+    setLoading(false);
+    if (error) {
+      alert("Failed to add vendor: " + error.message);
+    } else {
+      onVendorAdded(data.id, data.company_name);
+      setOpen(false);
+      setFormData({
+        company_name: "",
+        spoc_name: "",
+        owner_name: "",
+        phone: "",
+        email: "",
+        address_line1: "",
+        address_line2: "",
+        city: "",
+        state: "",
+        pincode: "",
+        has_gst: false,
+        gst_number: "",
+        gst_company_name: "",
+      });
+    }
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button variant="outline" size="sm" className="mt-2 w-full">
+          <Plus className="mr-2 h-3 w-3" /> Add New Vendor
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add New Vendor</DialogTitle>
+          <DialogDescription className="sr-only">Fill in all vendor details</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div><Label>Company Name *</Label><Input required value={formData.company_name} onChange={(e) => handleChange("company_name", e.target.value)} /></div>
+          <div><Label>SPOC Name</Label><Input value={formData.spoc_name} onChange={(e) => handleChange("spoc_name", e.target.value)} /></div>
+          <div><Label>Owner Name</Label><Input value={formData.owner_name} onChange={(e) => handleChange("owner_name", e.target.value)} /></div>
+          <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>
+          <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
+          <div><Label>Address Line 1</Label><Input value={formData.address_line1} onChange={(e) => handleChange("address_line1", e.target.value)} /></div>
+          <div><Label>Address Line 2</Label><Input value={formData.address_line2} onChange={(e) => handleChange("address_line2", e.target.value)} /></div>
+          <div><Label>City</Label><Input value={formData.city} onChange={(e) => handleChange("city", e.target.value)} /></div>
+          <div><Label>State</Label><Input value={formData.state} onChange={(e) => handleChange("state", e.target.value)} /></div>
+          <div><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} /></div>
+          <div className="flex items-center space-x-2">
+            <input type="checkbox" id="has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
+            <Label htmlFor="has_gst">Has GST</Label>
+          </div>
+          {formData.has_gst && (
+            <>
+              <div><Label>GST Number</Label><Input value={formData.gst_number} onChange={(e) => handleChange("gst_number", e.target.value.toUpperCase())} /></div>
+              <div><Label>GST Company Name</Label><Input value={formData.gst_company_name} onChange={(e) => handleChange("gst_company_name", e.target.value)} /></div>
+            </>
+          )}
+          <div className="flex justify-end space-x-2">
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save Vendor"}</Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 // ---------- Main AddPurchaseDialog (controllable) ----------
@@ -106,6 +214,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     purchase_type: "GST",
     purchased_invoice_number: "",
     eway_bill_no: "",
+    public_photo_url: "",   // ✅ new field
   });
 
   const fetchVendors = async () => {
@@ -119,7 +228,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     setLoadingVendors(false);
   };
 
-  // Load suggestion and pre‑fill when dialog opens
+  // Reset and pre‑fill when dialog opens
   useEffect(() => {
     if (open) {
       fetchVendors();
@@ -161,14 +270,15 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           purchase_type: initialData.purchase_type || "GST",
           purchased_invoice_number: initialData.purchased_invoice_number || "",
           eway_bill_no: initialData.eway_bill_no || "",
+          public_photo_url: initialData.public_photo_url || "",   // ✅ copy public photo URL
         });
         setQuantity(1);
         setSerialNumbersList("");
         setSkuGenerated(false);
-        // Also get a suggestion for asset number
+        // Get asset number suggestion
         suggestAssetNumber().then(num => setSuggestedAssetNumber(num));
       } else {
-        // Normal add: reset everything and get suggestion
+        // Normal add: reset everything
         setFormData({
           entry_date: today,
           purchase_date: "",
@@ -205,6 +315,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           purchase_type: "GST",
           purchased_invoice_number: "",
           eway_bill_no: "",
+          public_photo_url: "",   // ✅ empty
         });
         setQuantity(1);
         setSerialNumbersList("");
@@ -214,12 +325,11 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     }
   }, [open, initialData, today]);
 
-  // When the suggestion arrives, pre‑fill the asset_number field (if still empty)
+  // When suggestion arrives, pre‑fill asset_number field (if still empty)
   useEffect(() => {
     if (suggestedAssetNumber && !formData.asset_number && !initialData) {
       setFormData(prev => ({ ...prev, asset_number: suggestedAssetNumber }));
     } else if (suggestedAssetNumber && initialData && !formData.asset_number) {
-      // For duplicate, we also want to suggest a new number
       setFormData(prev => ({ ...prev, asset_number: suggestedAssetNumber }));
     }
   }, [suggestedAssetNumber, formData.asset_number, initialData]);
@@ -268,13 +378,12 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     e.preventDefault();
     setLoading(true);
 
-    // If the user kept the suggested asset number, we need to ensure it's still available
+    // Determine final asset number
     let finalAssetNumber = formData.asset_number?.trim();
     if (!finalAssetNumber) {
-      // Fallback – generate a new suggestion
       finalAssetNumber = await suggestAssetNumber();
     } else {
-      // Check if the user's number already exists
+      // Check if user's number already exists
       const { data: existing } = await supabase
         .from("purchases")
         .select("id")
@@ -321,6 +430,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       purchase_type: formData.purchase_type === "GST" ? "GST" : "Cash",
       purchased_invoice_number: formData.purchased_invoice_number,
       eway_bill_no: formData.eway_bill_no,
+      public_photo_url: formData.public_photo_url,   // ✅ include new field
     };
 
     let serials: string[] = [];
@@ -334,13 +444,11 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       serials = [formData.serial_number || ""];
     }
 
-    // For multi‑record insert, we need unique asset numbers for each record
-    // If quantity > 1, we generate sequential numbers starting from finalAssetNumber
+    // Generate asset numbers sequentially for each record
     const recordsToInsert = [];
     let currentAssetNumber = finalAssetNumber;
     for (let i = 0; i < serials.length; i++) {
       if (i > 0) {
-        // Increment the numeric part for subsequent records
         const match = currentAssetNumber.match(/(\D+)(\d+)$/);
         if (match) {
           const prefix = match[1];
@@ -348,7 +456,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           const nextNum = num + 1;
           currentAssetNumber = `${prefix}${nextNum.toString().padStart(4, "0")}`;
         } else {
-          // fallback – just call suggestAssetNumber again
           currentAssetNumber = await suggestAssetNumber();
         }
       }
@@ -359,7 +466,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       });
     }
 
-    // Final check for duplicates across all generated numbers
+    // Final duplicate check across all generated numbers
     const assetNumbersToCheck = recordsToInsert.map(r => r.asset_number);
     const { data: duplicates } = await supabase
       .from("purchases")
@@ -447,7 +554,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
             </div>
           )}
 
-          {/* Serial numbers textarea for multi‑entry (asset numbers auto‑generated sequentially) */}
+          {/* Serial numbers textarea for multi‑entry */}
           {showSerialTextarea && (
             <div>
               <Label>Serial Numbers (optional, one per line)</Label>
@@ -551,7 +658,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
             </div>
           )}
 
-          {/* Asset Description, Pricing */}
+          {/* Asset Description, Pricing, Public Photo URL */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="md:col-span-2">
               <Label>Asset Description</Label>
@@ -611,6 +718,17 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
                 value={formData.selling_price ?? ""}
                 onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))}
               />
+            </div>
+            <div className="md:col-span-2">
+              <Label>Public Photo URL (optional)</Label>
+              <Input
+                value={formData.public_photo_url}
+                onChange={(e) => handleChange("public_photo_url", e.target.value)}
+                placeholder="https://yourwebsite.com/images/product.jpg"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Permanent link to product photo (for WhatsApp/email sharing)
+              </p>
             </div>
           </div>
 
