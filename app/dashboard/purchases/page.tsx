@@ -12,7 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { CalendarIcon, Columns, Plus, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -33,21 +39,75 @@ import BulkAddDialog from "@/components/BulkAddDialog";
 import EditPurchaseDialog from "@/components/EditPurchaseDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 
-type SortField = "purchase_date" | "vendor_name" | "asset_number" | "total_price" | "stock_status";
+type SortField = "purchase_date" | "vendor_name" | "asset_number" | "total_price" | "stock_status" | "status_purchase";
 type SortOrder = "asc" | "desc";
+
+const allColumns = [
+  { key: "purchase_date", label: "Purchase Date" },
+  { key: "entry_date", label: "Entry Date" },
+  { key: "asset_number", label: "Asset No" },
+  { key: "vendor_name", label: "Vendor" },
+  { key: "type", label: "Type" },
+  { key: "brand", label: "Brand" },
+  { key: "model", label: "Model" },
+  { key: "sku", label: "SKU" },
+  { key: "cpu", label: "CPU" },
+  { key: "ram", label: "RAM" },
+  { key: "ssd", label: "SSD/HDD" },
+  { key: "screen_size", label: "Screen Size (in)" },
+  { key: "monitor_size", label: "Monitor Size (in)" },
+  { key: "has_keyboard", label: "Keyboard" },
+  { key: "has_mouse", label: "Mouse" },
+  { key: "charger", label: "Charger" },
+  { key: "serial_number", label: "Serial No" },
+  { key: "asset_description", label: "Description" },
+  { key: "base_price", label: "Base Price" },
+  { key: "gst", label: "GST %" },
+  { key: "total_price", label: "Total Price" },
+  { key: "selling_price", label: "Selling Price" },
+  { key: "purchase_type", label: "Purchase Type" },
+  { key: "purchased_invoice_number", label: "Purchased Invoice No" },
+  { key: "eway_bill_no", label: "Eway Bill No" },
+  { key: "expense", label: "Expense" },
+  { key: "expense_amount", label: "Expense Amt" },
+  { key: "expense_description", label: "Expense Desc" },
+  { key: "status_purchase", label: "Status" },
+  { key: "status_other", label: "Other Status" },
+  { key: "purchased_by_type", label: "Purchased By" },
+  { key: "purchased_by_other", label: "Other Purchased By" },
+  { key: "remarks", label: "Remarks" },
+  { key: "is_deleted", label: "Deleted" },
+];
+
+const defaultVisibleColumns = [
+  "purchase_date",
+  "asset_number",
+  "vendor_name",
+  "type",
+  "brand",
+  "model",
+  "total_price",
+  "status_purchase",
+];
 
 export default function PurchasesPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const [editingPurchase, setEditingPurchase] = useState<any | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [purchaseToDelete, setPurchaseToDelete] = useState<any>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(""); // 👈 GLOBAL SEARCH
+  const [searchTerm, setSearchTerm] = useState("");
   const supabase = createClient();
 
-  // Filter & sort state
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
+  const [duplicateData, setDuplicateData] = useState<any>(null);
+
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [vendorFilter, setVendorFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
@@ -55,69 +115,64 @@ export default function PurchasesPage() {
   const [sortField, setSortField] = useState<SortField>("purchase_date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
+  const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultVisibleColumns);
+
   const fetchPurchases = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from("purchases").select("*");
-
-    // Show only deleted or active
-    if (showDeleted) {
-      query = query.eq("is_deleted", true);
-    } else {
-      query = query.eq("is_deleted", false);
+    let countQuery = supabase.from("purchases").select("*", { count: "exact", head: true });
+    if (showDeleted) countQuery = countQuery.eq("is_deleted", true);
+    else countQuery = countQuery.eq("is_deleted", false);
+    if (searchTerm) {
+      countQuery = countQuery.or(
+        `asset_number.ilike.%${searchTerm}%,` +
+        `vendor_name.ilike.%${searchTerm}%,` +
+        `sku.ilike.%${searchTerm}%,` +
+        `brand.ilike.%${searchTerm}%,` +
+        `model.ilike.%${searchTerm}%,` +
+        `serial_number.ilike.%${searchTerm}%`
+      );
     }
+    if (statusFilter && statusFilter !== "all") countQuery = countQuery.eq("status_purchase", statusFilter);
+    if (vendorFilter) countQuery = countQuery.ilike("vendor_name", `%${vendorFilter}%`);
+    if (dateFrom) countQuery = countQuery.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
+    if (dateTo) countQuery = countQuery.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
+    const { count, error: countError } = await countQuery;
+    if (countError) console.error(countError);
+    else setTotalCount(count || 0);
 
-    // 🔍 GLOBAL SEARCH across multiple columns
+    let query = supabase.from("purchases").select("*");
+    if (showDeleted) query = query.eq("is_deleted", true);
+    else query = query.eq("is_deleted", false);
     if (searchTerm) {
       query = query.or(
         `asset_number.ilike.%${searchTerm}%,` +
         `vendor_name.ilike.%${searchTerm}%,` +
         `sku.ilike.%${searchTerm}%,` +
-        `type.ilike.%${searchTerm}%,` +
-        `asset_description.ilike.%${searchTerm}%,` +
-        `serial_number.ilike.%${searchTerm}%,` +
-        `purchased_by.ilike.%${searchTerm}%,` +
-        `stock_status.ilike.%${searchTerm}%`
+        `brand.ilike.%${searchTerm}%,` +
+        `model.ilike.%${searchTerm}%,` +
+        `serial_number.ilike.%${searchTerm}%`
       );
     }
-
-    // Status filter (stock_status)
-    if (statusFilter && statusFilter !== "all") {
-      query = query.eq("stock_status", statusFilter);
-    }
-
-    // Vendor filter (specific column)
-    if (vendorFilter) {
-      query = query.ilike("vendor_name", `%${vendorFilter}%`);
-    }
-
-    // Date range
-    if (dateFrom) {
-      query = query.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
-    }
-    if (dateTo) {
-      query = query.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
-    }
-
-    // Sorting
+    if (statusFilter && statusFilter !== "all") query = query.eq("status_purchase", statusFilter);
+    if (vendorFilter) query = query.ilike("vendor_name", `%${vendorFilter}%`);
+    if (dateFrom) query = query.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
+    if (dateTo) query = query.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
     query = query.order(sortField, { ascending: sortOrder === "asc" });
-
+    query = query.range((page - 1) * pageSize, page * pageSize - 1);
     const { data, error } = await query;
     if (error) console.error(error);
     else setPurchases(data || []);
     setLoading(false);
-  }, [showDeleted, searchTerm, statusFilter, vendorFilter, dateFrom, dateTo, sortField, sortOrder, supabase]);
+  }, [showDeleted, searchTerm, statusFilter, vendorFilter, dateFrom, dateTo, sortField, sortOrder, page, pageSize, supabase]);
 
   useEffect(() => {
     fetchPurchases();
   }, [fetchPurchases]);
 
   const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    } else {
-      setSortField(field);
-      setSortOrder("asc");
-    }
+    if (sortField === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
+    else setSortField(field), setSortOrder("asc");
+    setPage(1);
   };
 
   const handleEditClick = (purchase: any) => {
@@ -129,11 +184,7 @@ export default function PurchasesPage() {
     if (!purchaseToDelete) return;
     const { error } = await supabase
       .from("purchases")
-      .update({
-        is_deleted: true,
-        deleted_remarks: remarks,
-        deleted_at: new Date().toISOString(),
-      })
+      .update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() })
       .eq("id", purchaseToDelete.id);
     if (error) console.error(error);
     else fetchPurchases();
@@ -141,11 +192,54 @@ export default function PurchasesPage() {
   };
 
   const handleRestore = async (purchase: any) => {
-    await supabase
+    const { error } = await supabase
       .from("purchases")
       .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
       .eq("id", purchase.id);
-    fetchPurchases();
+    if (error) console.error(error);
+    else fetchPurchases();
+  };
+
+  const totalPages = Math.ceil(totalCount / pageSize);
+
+  const renderCell = (p: any, colKey: string) => {
+    switch (colKey) {
+      case "purchase_date": return p.purchase_date?.slice(0, 10);
+      case "entry_date": return p.entry_date?.slice(0, 10);
+      case "asset_number": return p.asset_number;
+      case "vendor_name": return p.vendor_name;
+      case "type": return p.type;
+      case "brand": return p.brand || "-";
+      case "model": return p.model || "-";
+      case "sku": return p.sku || "-";
+      case "cpu": return p.cpu || "-";
+      case "ram": return p.ram || "-";
+      case "ssd": return p.ssd || "-";
+      case "screen_size": return p.screen_size || "-";
+      case "monitor_size": return p.monitor_size || "-";
+      case "has_keyboard": return p.has_keyboard ? "Yes" : "No";
+      case "has_mouse": return p.has_mouse ? "Yes" : "No";
+      case "charger": return p.charger ? "Yes" : "No";
+      case "serial_number": return p.serial_number || "-";
+      case "asset_description": return p.asset_description || "-";
+      case "base_price": return p.base_price ? `₹${p.base_price.toFixed(2)}` : "-";
+      case "gst": return p.gst ? `${p.gst}%` : "-";
+      case "total_price": return p.total_price ? `₹${p.total_price.toFixed(2)}` : "-";
+      case "selling_price": return p.selling_price ? `₹${p.selling_price.toFixed(2)}` : "-";
+      case "purchase_type": return p.purchase_type || "-";
+      case "purchased_invoice_number": return p.purchased_invoice_number || "-";
+      case "eway_bill_no": return p.eway_bill_no || "-";
+      case "expense": return p.expense ? "Yes" : "No";
+      case "expense_amount": return p.expense_amount ? `₹${p.expense_amount.toFixed(2)}` : "-";
+      case "expense_description": return p.expense_description || "-";
+      case "status_purchase": return p.status_purchase === "Other" ? p.status_other : p.status_purchase;
+      case "status_other": return p.status_other || "-";
+      case "purchased_by_type": return p.purchased_by_type === "Other" ? p.purchased_by_other : p.purchased_by_type;
+      case "purchased_by_other": return p.purchased_by_other || "-";
+      case "remarks": return p.remarks || "-";
+      case "is_deleted": return p.is_deleted ? "Yes" : "No";
+      default: return "-";
+    }
   };
 
   return (
@@ -153,7 +247,9 @@ export default function PurchasesPage() {
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Purchases</h1>
         <div className="space-x-2">
-          <AddPurchaseDialog onAdd={fetchPurchases} />
+          <Button onClick={() => setAddDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" /> Add Purchase
+          </Button>
           <BulkAddDialog
             tableName="purchases"
             onAdd={fetchPurchases}
@@ -163,60 +259,55 @@ export default function PurchasesPage() {
               asset_number: row.asset_number,
               sku: row.sku,
               type: row.type,
+              brand: row.brand,
+              model: row.model,
+              cpu: row.cpu,
+              ram: row.ram,
+              ssd: row.ssd,
+              charger: row.charger === "true" || row.charger === true,
               asset_description: row.asset_description,
               serial_number: row.serial_number,
               base_price: row.base_price ? parseFloat(row.base_price) : null,
               gst: row.gst ? parseFloat(row.gst) : null,
               total_price: row.total_price ? parseFloat(row.total_price) : null,
-              stock_status: row.stock_status,
-              purchased_by: row.purchased_by,
-              purchase_type: row.purchase_type,
+              selling_price: row.selling_price ? parseFloat(row.selling_price) : null,
+              expense: row.expense === "true" || row.expense === true,
+              expense_amount: row.expense_amount ? parseFloat(row.expense_amount) : null,
+              expense_description: row.expense_description,
+              status_purchase: row.status_purchase,
+              status_other: row.status_other,
+              purchased_by_type: row.purchased_by_type,
+              purchased_by_other: row.purchased_by_other,
+              remarks: row.remarks,
               is_deleted: false,
             })}
           />
         </div>
       </div>
 
-      {/* Filters Bar - includes GLOBAL SEARCH box */}
+      {/* Filters Bar */}
       <div className="flex flex-wrap gap-4 items-end">
-        {/* 🔍 GLOBAL SEARCH BOX */}
         <div className="w-64">
-          <Label>Global Search</Label>
-          <Input
-            placeholder="Any keyword (asset, vendor, serial...)"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+          <Label>Search</Label>
+          <Input placeholder="Asset, vendor, serial, brand..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
-
         <div className="w-48">
           <Label>Status</Label>
           <Select value={statusFilter} onValueChange={setStatusFilter}>
             <SelectTrigger><SelectValue placeholder="All statuses" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="In Stock">In Stock</SelectItem>
               <SelectItem value="Ready for Sale">Ready for Sale</SelectItem>
-              <SelectItem value="Sold">Sold</SelectItem>
-              <SelectItem value="Available">Available</SelectItem>
-              <SelectItem value="Rent">Rent</SelectItem>
+              <SelectItem value="QC Pending">QC Pending</SelectItem>
               <SelectItem value="Faulty">Faulty</SelectItem>
-              <SelectItem value="Curitics">Curitics</SelectItem>
-              <SelectItem value="Rental">Rental</SelectItem>
-              <SelectItem value="DB">DB</SelectItem>
+              <SelectItem value="Other">Other</SelectItem>
             </SelectContent>
           </Select>
         </div>
-
         <div className="w-64">
           <Label>Vendor (contains)</Label>
-          <Input
-            placeholder="Specific vendor name"
-            value={vendorFilter}
-            onChange={(e) => setVendorFilter(e.target.value)}
-          />
+          <Input placeholder="Vendor name" value={vendorFilter} onChange={(e) => setVendorFilter(e.target.value)} />
         </div>
-
         <div>
           <Label>From Date</Label>
           <Popover>
@@ -226,7 +317,6 @@ export default function PurchasesPage() {
             <PopoverContent><Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} /></PopoverContent>
           </Popover>
         </div>
-
         <div>
           <Label>To Date</Label>
           <Popover>
@@ -236,21 +326,40 @@ export default function PurchasesPage() {
             <PopoverContent><Calendar mode="single" selected={dateTo} onSelect={setDateTo} /></PopoverContent>
           </Popover>
         </div>
-
         <div className="flex items-center space-x-2">
           <input type="checkbox" id="showDeleted" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
-
         <Button variant="secondary" onClick={() => {
           setSearchTerm("");
           setStatusFilter("all");
           setVendorFilter("");
           setDateFrom(undefined);
           setDateTo(undefined);
+          setPage(1);
         }}>
           Clear Filters
         </Button>
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm"><Columns className="mr-2 h-4 w-4" /> Columns</Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56 max-h-96 overflow-y-auto">
+            {allColumns.map((col) => (
+              <DropdownMenuCheckboxItem
+                key={col.key}
+                checked={visibleColumns.includes(col.key)}
+                onCheckedChange={(checked) => {
+                  if (checked) setVisibleColumns([...visibleColumns, col.key]);
+                  else setVisibleColumns(visibleColumns.filter((k) => k !== col.key));
+                }}
+              >
+                {col.label}
+              </DropdownMenuCheckboxItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Table */}
@@ -258,66 +367,45 @@ export default function PurchasesPage() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("purchase_date")}>
-                Date {sortField === "purchase_date" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("asset_number")}>
-                Asset No {sortField === "asset_number" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("vendor_name")}>
-                Vendor {sortField === "vendor_name" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead>SKU</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Serial No</TableHead>
-              <TableHead className="cursor-pointer text-right" onClick={() => handleSort("total_price")}>
-                Total Price {sortField === "total_price" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("stock_status")}>
-                Status {sortField === "stock_status" && (sortOrder === "asc" ? "↑" : "↓")}
-              </TableHead>
-              <TableHead>Purchased By</TableHead>
-              <TableHead>Type</TableHead>
-              <TableHead>Deleted Remarks</TableHead>
+              {allColumns.filter(col => visibleColumns.includes(col.key)).map((col) => (
+                <TableHead key={col.key} className="cursor-pointer" onClick={() => {
+                  if (col.key === "purchase_date") handleSort("purchase_date");
+                  else if (col.key === "vendor_name") handleSort("vendor_name");
+                  else if (col.key === "asset_number") handleSort("asset_number");
+                  else if (col.key === "total_price") handleSort("total_price");
+                  else if (col.key === "status_purchase") handleSort("status_purchase");
+                }}>
+                  {col.label}
+                  {(col.key === "purchase_date" || col.key === "vendor_name" || col.key === "asset_number" || col.key === "total_price" || col.key === "status_purchase") && (
+                    sortField === col.key && (sortOrder === "asc" ? " ↑" : " ↓")
+                  )}
+                </TableHead>
+              ))}
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {loading ? (
-              <TableRow>
-                <TableCell colSpan={13} className="text-center">Loading…</TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={visibleColumns.length + 1} className="text-center">Loading…</TableCell></TableRow>
             ) : purchases.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={13} className="text-center">No purchases found.</TableCell>
-              </TableRow>
+              <TableRow><TableCell colSpan={visibleColumns.length + 1} className="text-center">No purchases found.</TableCell></TableRow>
             ) : (
               purchases.map((p) => (
-                <TableRow key={p.id}>
-                  <TableCell>{p.purchase_date?.slice(0,10)}</TableCell>
-                  <TableCell>{p.asset_number}</TableCell>
-                  <TableCell>{p.vendor_name}</TableCell>
-                  <TableCell>{p.sku}</TableCell>
-                  <TableCell>{p.type}</TableCell>
-                  <TableCell className="max-w-xs truncate">{p.asset_description}</TableCell>
-                  <TableCell>{p.serial_number}</TableCell>
-                  <TableCell className="text-right">₹{p.total_price?.toFixed(2)}</TableCell>
-                  <TableCell>{p.stock_status}</TableCell>
-                  <TableCell>{p.purchased_by}</TableCell>
-                  <TableCell>{p.purchase_type}</TableCell>
-                  <TableCell>{p.deleted_remarks}</TableCell>
+                <TableRow key={p.id} className={p.is_deleted ? "opacity-50" : ""}>
+                  {allColumns.filter(col => visibleColumns.includes(col.key)).map((col) => (
+                    <TableCell key={col.key}>{renderCell(p, col.key)}</TableCell>
+                  ))}
                   <TableCell className="text-right space-x-2">
-                    {p.is_deleted ? (
-                      <>
-                        <Button variant="outline" size="sm" onClick={() => handleEditClick(p)}>Edit</Button>
-                        <Button variant="default" size="sm" onClick={() => handleRestore(p)}>Restore</Button>
-                      </>
-                    ) : (
+                    {!p.is_deleted ? (
                       <>
                         <Button variant="outline" size="sm" onClick={() => handleEditClick(p)}>Edit</Button>
                         <Button variant="destructive" size="sm" onClick={() => { setPurchaseToDelete(p); setDeleteDialogOpen(true); }}>Delete</Button>
+                        <Button variant="ghost" size="sm" onClick={() => { setDuplicateData(p); setDuplicateDialogOpen(true); }}>
+                          <Copy className="h-4 w-4" />
+                        </Button>
                       </>
+                    ) : (
+                      <Button variant="default" size="sm" onClick={() => handleRestore(p)}>Restore</Button>
                     )}
                   </TableCell>
                 </TableRow>
@@ -327,6 +415,31 @@ export default function PurchasesPage() {
         </Table>
       </div>
 
+      {/* Pagination */}
+      {totalCount > 0 && (
+        <div className="flex justify-between items-center">
+          <div className="text-sm text-muted-foreground">
+            Showing {(page - 1) * pageSize + 1} to {Math.min(page * pageSize, totalCount)} of {totalCount} entries
+          </div>
+          <div className="space-x-2">
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>Previous</Button>
+            <Button variant="outline" size="sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>Next</Button>
+          </div>
+        </div>
+      )}
+
+      {/* Dialogs */}
+      <AddPurchaseDialog
+        onAdd={fetchPurchases}
+        open={addDialogOpen}
+        onOpenChange={setAddDialogOpen}
+      />
+      <AddPurchaseDialog
+        onAdd={fetchPurchases}
+        open={duplicateDialogOpen}
+        onOpenChange={setDuplicateDialogOpen}
+        initialData={duplicateData}
+      />
       {editingPurchase && (
         <EditPurchaseDialog
           purchase={editingPurchase}
@@ -335,7 +448,6 @@ export default function PurchasesPage() {
           onUpdate={fetchPurchases}
         />
       )}
-
       {purchaseToDelete && (
         <DeleteRecordDialog
           title="Delete Purchase"
