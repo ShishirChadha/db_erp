@@ -58,6 +58,8 @@ const allColumns = [
   { key: "type", label: "Type" },
   { key: "brand", label: "Brand" },
   { key: "model", label: "Model" },
+  { key: "make_year", label: "Make Year" },
+  { key: "generation", label: "Generation" },
   { key: "sku", label: "SKU" },
   { key: "cpu", label: "CPU" },
   { key: "ram", label: "RAM" },
@@ -71,8 +73,10 @@ const allColumns = [
   { key: "asset_description", label: "Description" },
   { key: "base_price", label: "Base Price" },
   { key: "gst", label: "GST %" },
+  { key: "gst_amount", label: "GST Amount" },
   { key: "total_price", label: "Total Price" },
   { key: "selling_price", label: "Selling Price" },
+  { key: "vendor_invoice_total", label: "Vendor Invoice Total" },
   { key: "purchase_type", label: "Purchase Type" },
   { key: "purchased_invoice_number", label: "Purchased Invoice No" },
   { key: "eway_bill_no", label: "Eway Bill No" },
@@ -110,7 +114,7 @@ export default function PurchasesPage() {
   const [purchaseToDelete, setPurchaseToDelete] = useState<any>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
-  const [viewItem, setViewItem] = useState<any>(null); // for view dialog
+  const [viewItem, setViewItem] = useState<any>(null);
   const supabase = createClient();
 
   const [addDialogOpen, setAddDialogOpen] = useState(false);
@@ -220,6 +224,8 @@ export default function PurchasesPage() {
       case "type": return p.type;
       case "brand": return p.brand || "-";
       case "model": return p.model || "-";
+      case "make_year": return p.make_year || "-";
+      case "generation": return p.generation || "-";
       case "sku": return p.sku || "-";
       case "cpu": return p.cpu || "-";
       case "ram": return p.ram || "-";
@@ -233,8 +239,10 @@ export default function PurchasesPage() {
       case "asset_description": return p.asset_description || "-";
       case "base_price": return p.base_price ? `₹${p.base_price.toFixed(2)}` : "-";
       case "gst": return p.gst ? `${p.gst}%` : "-";
+      case "gst_amount": return p.gst_amount ? `₹${p.gst_amount.toFixed(2)}` : "-";
       case "total_price": return p.total_price ? `₹${p.total_price.toFixed(2)}` : "-";
       case "selling_price": return p.selling_price ? `₹${p.selling_price.toFixed(2)}` : "-";
+      case "vendor_invoice_total": return p.vendor_invoice_total ? `₹${p.vendor_invoice_total.toFixed(2)}` : "-";
       case "purchase_type": return p.purchase_type || "-";
       case "purchased_invoice_number": return p.purchased_invoice_number || "-";
       case "eway_bill_no": return p.eway_bill_no || "-";
@@ -294,7 +302,7 @@ export default function PurchasesPage() {
         </div>
       </div>
 
-      {/* Filters Bar */}
+      {/* Filters Bar (unchanged) */}
       <div className="flex flex-wrap gap-4 items-end">
         <div className="w-64">
           <Label>Search</Label>
@@ -371,7 +379,7 @@ export default function PurchasesPage() {
         </DropdownMenu>
       </div>
 
-      {/* Table */}
+      {/* Table (unchanged) */}
       <div className="rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
@@ -427,7 +435,7 @@ export default function PurchasesPage() {
         </Table>
       </div>
 
-      {/* Pagination */}
+      {/* Pagination (unchanged) */}
       {totalCount > 0 && (
         <div className="flex justify-between items-center">
           <div className="text-sm text-muted-foreground">
@@ -440,7 +448,7 @@ export default function PurchasesPage() {
         </div>
       )}
 
-      {/* Dialogs */}
+      {/* Dialogs (unchanged) */}
       <AddPurchaseDialog
         onAdd={fetchPurchases}
         open={addDialogOpen}
@@ -470,11 +478,11 @@ export default function PurchasesPage() {
         />
       )}
 
-      {/* View Dialog */}
+      {/* Updated View Dialog */}
       <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
         <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Purchase Details: {viewItem?.asset_number}</DialogTitle>
+            <DialogTitle>Purchase Details: {viewItem?.asset_number || "Draft"}</DialogTitle>
           </DialogHeader>
           {viewItem && (
             <div className="space-y-4">
@@ -482,40 +490,48 @@ export default function PurchasesPage() {
                 <div><Label>Entry Date</Label><p className="text-sm">{viewItem.entry_date?.slice(0,10)}</p></div>
                 <div><Label>Purchase Date</Label><p className="text-sm">{viewItem.purchase_date?.slice(0,10)}</p></div>
                 <div><Label>Vendor</Label><p className="text-sm">{viewItem.vendor_name}</p></div>
-                <div><Label>Asset Number</Label><p className="text-sm">{viewItem.asset_number}</p></div>
+                <div><Label>Asset Number</Label><p className="text-sm">{viewItem.asset_number || "—"}</p></div>
                 <div><Label>Type</Label><p className="text-sm">{viewItem.type}</p></div>
-                <div><Label>Brand / Model</Label><p className="text-sm">{viewItem.brand} {viewItem.model}</p></div>
-                <div><Label>SKU</Label><p className="text-sm">{viewItem.sku}</p></div>
-                <div><Label>CPU / RAM / SSD</Label><p className="text-sm">{viewItem.cpu} / {viewItem.ram} / {viewItem.ssd}</p></div>
-                <div><Label>Screen Size (Laptop/Monitor)</Label><p className="text-sm">{viewItem.screen_size || '-'}</p></div>
-                <div><Label>Monitor Size (Desktop)</Label><p className="text-sm">{viewItem.monitor_size || '-'}</p></div>
-                <div><Label>Keyboard / Mouse (Desktop)</Label><p className="text-sm">{viewItem.has_keyboard ? 'Yes' : 'No'} / {viewItem.has_mouse ? 'Yes' : 'No'}</p></div>
-                <div><Label>Charger</Label><p className="text-sm">{viewItem.charger ? 'Yes' : 'No'}</p></div>
-                <div><Label>Serial Number</Label><p className="text-sm">{viewItem.serial_number || '-'}</p></div>
-                <div><Label>Asset Description</Label><p className="text-sm">{viewItem.asset_description || '-'}</p></div>
-                <div><Label>Base Price</Label><p className="text-sm">₹{viewItem.base_price?.toFixed(2)}</p></div>
-                <div><Label>GST %</Label><p className="text-sm">{viewItem.gst ?? '-'}%</p></div>
-                <div><Label>Total Price</Label><p className="text-sm">₹{viewItem.total_price?.toFixed(2)}</p></div>
-                <div><Label>Selling Price</Label><p className="text-sm">₹{viewItem.selling_price?.toFixed(2)}</p></div>
-                <div><Label>Purchase Type</Label><p className="text-sm">{viewItem.purchase_type}</p></div>
-                <div><Label>Purchased Invoice No</Label><p className="text-sm">{viewItem.purchased_invoice_number || '-'}</p></div>
-                <div><Label>Eway Bill No</Label><p className="text-sm">{viewItem.eway_bill_no || '-'}</p></div>
-                <div><Label>Expense</Label><p className="text-sm">{viewItem.expense ? `Yes (₹${viewItem.expense_amount?.toFixed(2)} - ${viewItem.expense_description})` : 'No'}</p></div>
+                <div><Label>Brand</Label><p className="text-sm">{viewItem.brand || "—"}</p></div>
+                <div><Label>Model</Label><p className="text-sm">{viewItem.model || "—"}</p></div>
+                <div><Label>Make Year</Label><p className="text-sm">{viewItem.make_year || "—"}</p></div>
+                <div><Label>SKU</Label><p className="text-sm">{viewItem.sku || "—"}</p></div>
+                <div><Label>CPU</Label><p className="text-sm">{viewItem.cpu || "—"}</p></div>
+                <div><Label>Generation</Label><p className="text-sm">{viewItem.generation || "—"}</p></div>
+                <div><Label>RAM (GB)</Label><p className="text-sm">{viewItem.ram || "—"}</p></div>
+                <div><Label>SSD / HDD (GB)</Label><p className="text-sm">{viewItem.ssd || "—"}</p></div>
+                <div><Label>Screen Size (in)</Label><p className="text-sm">{viewItem.screen_size || "—"}</p></div>
+                <div><Label>Monitor Size (in)</Label><p className="text-sm">{viewItem.monitor_size || "—"}</p></div>
+                <div><Label>Keyboard</Label><p className="text-sm">{viewItem.has_keyboard ? "Yes" : "No"}</p></div>
+                <div><Label>Mouse</Label><p className="text-sm">{viewItem.has_mouse ? "Yes" : "No"}</p></div>
+                <div><Label>Charger</Label><p className="text-sm">{viewItem.charger ? "Yes" : "No"}</p></div>
+                <div><Label>Serial Number</Label><p className="text-sm">{viewItem.serial_number || "—"}</p></div>
+                <div className="col-span-2"><Label>Asset Description</Label><p className="text-sm">{viewItem.asset_description || "—"}</p></div>
+                <div><Label>Base Price</Label><p className="text-sm">₹{viewItem.base_price?.toFixed(2) || "0"}</p></div>
+                <div><Label>GST %</Label><p className="text-sm">{viewItem.gst ?? "0"}%</p></div>
+                <div><Label>GST Amount</Label><p className="text-sm">₹{viewItem.gst_amount?.toFixed(2) || "0"}</p></div>
+                <div><Label>Total Price</Label><p className="text-sm">₹{viewItem.total_price?.toFixed(2) || "0"}</p></div>
+                <div><Label>Selling Price</Label><p className="text-sm">₹{viewItem.selling_price?.toFixed(2) || "0"}</p></div>
+                <div><Label>Vendor Invoice Total</Label><p className="text-sm">₹{viewItem.vendor_invoice_total?.toFixed(2) || "0"}</p></div>
+                <div><Label>Purchase Type</Label><p className="text-sm">{viewItem.purchase_type || "—"}</p></div>
+                <div><Label>Purchased Invoice No</Label><p className="text-sm">{viewItem.purchased_invoice_number || "—"}</p></div>
+                <div><Label>Eway Bill No</Label><p className="text-sm">{viewItem.eway_bill_no || "—"}</p></div>
+                <div><Label>Expense</Label><p className="text-sm">{viewItem.expense ? `Yes (₹${viewItem.expense_amount?.toFixed(2)} - ${viewItem.expense_description})` : "No"}</p></div>
                 <div><Label>Status</Label><p className="text-sm">{viewItem.status_purchase === "Other" ? viewItem.status_other : viewItem.status_purchase}</p></div>
                 <div><Label>Purchased By</Label><p className="text-sm">{viewItem.purchased_by_type === "Other" ? viewItem.purchased_by_other : viewItem.purchased_by_type}</p></div>
-                <div className="col-span-2"><Label>Remarks</Label><p className="text-sm whitespace-pre-wrap">{viewItem.remarks || '-'}</p></div>
+                <div className="col-span-2"><Label>Remarks</Label><p className="text-sm whitespace-pre-wrap">{viewItem.remarks || "—"}</p></div>
                 <div className="col-span-2"><Label>Public Photo URL</Label>
                   {viewItem.public_photo_url ? (
                     <div className="flex gap-2 items-center">
                       <a href={viewItem.public_photo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-sm break-all">{viewItem.public_photo_url}</a>
-                      <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(viewItem.public_photo_url); alert('Copied!'); }}>Copy</Button>
+                      <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(viewItem.public_photo_url); alert("Copied!"); }}>Copy</Button>
                     </div>
                   ) : <p className="text-sm text-gray-400">None</p>}
                 </div>
               </div>
               <div className="border-t pt-4">
                 <h4 className="text-sm font-medium mb-3">Attached Files (Invoices, E-Way Bills, Receipts)</h4>
-                <FileUpload purchaseId={viewItem.id} assetNumber={viewItem.asset_number} />
+                <FileUpload purchaseId={viewItem.id} assetNumber={viewItem.asset_number || ""} />
               </div>
             </div>
           )}

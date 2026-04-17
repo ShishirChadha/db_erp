@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
-
 import {
   Dialog,
   DialogContent,
@@ -22,10 +21,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus } from "lucide-react";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { CalendarIcon, Plus } from "lucide-react";
+import { format } from "date-fns";
 
-// ---------- Helper: suggest next asset number (without consuming) ----------
-async function suggestAssetNumber(prefix: string = "DBAS"): Promise<string> {
+// ---------- Helper: generate next asset number (without leading zeros) ----------
+async function getNextAssetNumber(prefix: string = "DBAS"): Promise<string> {
   const supabase = createClient();
   const { data, error } = await supabase
     .from("purchases")
@@ -40,10 +46,11 @@ async function suggestAssetNumber(prefix: string = "DBAS"): Promise<string> {
     if (match) maxNum = parseInt(match[0], 10);
   }
   const nextNum = maxNum + 1;
-  return `${prefix}${nextNum.toString().padStart(4, "0")}`;
+  return `${prefix}${nextNum}`;
 }
 
-// ---------- Inline Add Vendor Component ----------
+
+// ---------- Inline Add Vendor Component (full) ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -158,7 +165,7 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
   );
 }
 
-// ---------- Main AddPurchaseDialog (controllable) ----------
+// ---------- Main AddPurchaseDialog ----------
 interface AddPurchaseDialogProps {
   onAdd: () => void;
   open: boolean;
@@ -171,37 +178,67 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   const [skuGenerated, setSkuGenerated] = useState(false);
   const [vendors, setVendors] = useState<{ id: string; company_name: string }[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
-  const [suggestedAssetNumber, setSuggestedAssetNumber] = useState("");
   const today = new Date().toISOString().split("T")[0];
   const supabase = createClient();
+// After saving a purchase, update vendor_invoice_total for all purchases with same vendor & invoice
+const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
+  if (!invoiceNumber) return; // only if invoice number exists
+  // Get sum of total_price for all non‑deleted purchases with same vendor and invoice
+  const { data, error } = await supabase
+    .from("purchases")
+    .select("total_price")
+    .eq("vendor_id", vendorId)
+    .eq("purchased_invoice_number", invoiceNumber)
+    .eq("is_deleted", false);
+  if (error) return;
+  const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
+  // Update all matching records with the new sum
+  await supabase
+    .from("purchases")
+    .update({ vendor_invoice_total: totalSum })
+    .eq("vendor_id", vendorId)
+    .eq("purchased_invoice_number", invoiceNumber)
+    .eq("is_deleted", false);
+};
 
   const [quantity, setQuantity] = useState(1);
   const [serialNumbersList, setSerialNumbersList] = useState("");
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
+
+  const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
 
   const [formData, setFormData] = useState({
+    
     entry_date: today,
     purchase_date: "",
     vendor_id: "",
     vendor_name: "",
-    asset_number: "",
     type: "Laptop",
     brand: "",
+    brand_other: "",
     model: "",
-    cpu: "",
-    ram: "",
-    ssd: "",
-    charger: false,
-    screen_size: "",
-    monitor_size: "",
-    has_keyboard: false,
-    has_mouse: false,
+    make_year: null as number | null,
     sku: "",
     asset_description: "",
     serial_number: "",
+    cpu: "",
+    generation: null as number | null,
+    ram: null as number | null,
+    ssd: null as number | null,
+    screen_size: null as number | null,
+    charger: false,
+    monitor_size: null as number | null,
+    has_keyboard: false,
+    has_mouse: false,
     base_price: null as number | null,
     gst: null as number | null,
+    gst_amount: null as number | null,
     total_price: null as number | null,
     selling_price: null as number | null,
+    vendor_invoice_total: null as number | null,
+    purchase_type: "GST",
+    purchased_invoice_number: "",
+    eway_bill_no: "",
     expense: false,
     expense_amount: null as number | null,
     expense_description: "",
@@ -211,12 +248,10 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     purchased_by_type: "Digitalbluez",
     purchased_by_other: "",
     remarks: "",
-    purchase_type: "GST",
-    purchased_invoice_number: "",
-    eway_bill_no: "",
-    public_photo_url: "",   // ✅ new field
+    public_photo_url: "",
+    asset_number: "",
   });
-
+const isUpdating = useRef(false);
   const fetchVendors = async () => {
     setLoadingVendors(true);
     const { data, error } = await supabase
@@ -228,144 +263,130 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     setLoadingVendors(false);
   };
 
-  // Reset and pre‑fill when dialog opens
+  const loadInitialData = async () => {
+    const nextAsset = await getNextAssetNumber();
+    setFormData(prev => ({ ...prev, asset_number: nextAsset }));
+    if (initialData) {
+      setFormData(prev => ({
+        ...prev,
+        ...initialData,
+        serial_number: "",
+        asset_number: nextAsset,
+      }));
+      setQuantity(1);
+      setSerialNumbersList("");
+      setSkuGenerated(false);
+    } else {
+      setFormData({
+        entry_date: today,
+        purchase_date: "",
+        vendor_id: "",
+        vendor_name: "",
+        type: "Laptop",
+        brand: "",
+        brand_other: "",
+        model: "",
+        make_year: null,
+        sku: "",
+        asset_description: "",
+        serial_number: "",
+        cpu: "",
+        generation: null,
+        ram: null,
+        ssd: null,
+        screen_size: null,
+        charger: false,
+        monitor_size: null,
+        has_keyboard: false,
+        has_mouse: false,
+        base_price: null,
+        gst: null,
+        gst_amount: null,
+        total_price: null,
+        selling_price: null,
+        vendor_invoice_total: null,
+        purchase_type: "GST",
+        purchased_invoice_number: "",
+        eway_bill_no: "",
+        expense: false,
+        expense_amount: null,
+        expense_description: "",
+        stock_status: "In Stock",
+        status_purchase: "QC Pending",
+        status_other: "",
+        purchased_by_type: "Digitalbluez",
+        purchased_by_other: "",
+        remarks: "",
+        public_photo_url: "",
+        asset_number: nextAsset,
+      });
+      setQuantity(1);
+      setSerialNumbersList("");
+      setSkuGenerated(false);
+    }
+  };
+
   useEffect(() => {
     if (open) {
       fetchVendors();
-      if (initialData) {
-        // Duplicate mode: pre‑fill all fields except asset_number and serial_number
-        setFormData({
-          entry_date: initialData.entry_date || today,
-          purchase_date: initialData.purchase_date || "",
-          vendor_id: initialData.vendor_id || "",
-          vendor_name: initialData.vendor_name || "",
-          asset_number: "",
-          type: initialData.type || "Laptop",
-          brand: initialData.brand || "",
-          model: initialData.model || "",
-          cpu: initialData.cpu || "",
-          ram: initialData.ram || "",
-          ssd: initialData.ssd || "",
-          charger: initialData.charger || false,
-          screen_size: initialData.screen_size || "",
-          monitor_size: initialData.monitor_size || "",
-          has_keyboard: initialData.has_keyboard || false,
-          has_mouse: initialData.has_mouse || false,
-          sku: initialData.sku || "",
-          asset_description: initialData.asset_description || "",
-          serial_number: "",
-          base_price: initialData.base_price || null,
-          gst: initialData.gst || null,
-          total_price: initialData.total_price || null,
-          selling_price: initialData.selling_price || null,
-          expense: initialData.expense || false,
-          expense_amount: initialData.expense_amount || null,
-          expense_description: initialData.expense_description || "",
-          stock_status: initialData.stock_status || "In Stock",
-          status_purchase: initialData.status_purchase || "QC Pending",
-          status_other: initialData.status_other || "",
-          purchased_by_type: initialData.purchased_by_type || "Digitalbluez",
-          purchased_by_other: initialData.purchased_by_other || "",
-          remarks: initialData.remarks || "",
-          purchase_type: initialData.purchase_type || "GST",
-          purchased_invoice_number: initialData.purchased_invoice_number || "",
-          eway_bill_no: initialData.eway_bill_no || "",
-          public_photo_url: initialData.public_photo_url || "",   // ✅ copy public photo URL
-        });
-        setQuantity(1);
-        setSerialNumbersList("");
-        setSkuGenerated(false);
-        // Get asset number suggestion
-        suggestAssetNumber().then(num => setSuggestedAssetNumber(num));
-      } else {
-        // Normal add: reset everything
-        setFormData({
-          entry_date: today,
-          purchase_date: "",
-          vendor_id: "",
-          vendor_name: "",
-          asset_number: "",
-          type: "Laptop",
-          brand: "",
-          model: "",
-          cpu: "",
-          ram: "",
-          ssd: "",
-          charger: false,
-          screen_size: "",
-          monitor_size: "",
-          has_keyboard: false,
-          has_mouse: false,
-          sku: "",
-          asset_description: "",
-          serial_number: "",
-          base_price: null,
-          gst: null,
-          total_price: null,
-          selling_price: null,
-          expense: false,
-          expense_amount: null,
-          expense_description: "",
-          stock_status: "In Stock",
-          status_purchase: "QC Pending",
-          status_other: "",
-          purchased_by_type: "Digitalbluez",
-          purchased_by_other: "",
-          remarks: "",
-          purchase_type: "GST",
-          purchased_invoice_number: "",
-          eway_bill_no: "",
-          public_photo_url: "",   // ✅ empty
-        });
-        setQuantity(1);
-        setSerialNumbersList("");
-        setSkuGenerated(false);
-        suggestAssetNumber().then(num => setSuggestedAssetNumber(num));
-      }
+      loadInitialData();
     }
   }, [open, initialData, today]);
 
-  // When suggestion arrives, pre‑fill asset_number field (if still empty)
-  useEffect(() => {
-    if (suggestedAssetNumber && !formData.asset_number && !initialData) {
-      setFormData(prev => ({ ...prev, asset_number: suggestedAssetNumber }));
-    } else if (suggestedAssetNumber && initialData && !formData.asset_number) {
-      setFormData(prev => ({ ...prev, asset_number: suggestedAssetNumber }));
-    }
-  }, [suggestedAssetNumber, formData.asset_number, initialData]);
-
-  // Auto-generate SKU
+  // Auto‑generate SKU
   useEffect(() => {
     if (formData.brand && formData.model && !skuGenerated) {
-      const brandPrefix = formData.brand.substring(0, 3).toUpperCase();
-      const modelCode = formData.model.replace(/\s/g, "").substring(0, 5).toUpperCase();
-      setFormData((prev) => ({ ...prev, sku: `${brandPrefix}-${modelCode}` }));
+      const brandPart = formData.brand.substring(0, 3).toUpperCase();
+      const modelPart = formData.model.replace(/\s/g, "").substring(0, 5).toUpperCase();
+      setFormData((prev) => ({ ...prev, sku: `${brandPart}-${modelPart}` }));
       setSkuGenerated(true);
     }
   }, [formData.brand, formData.model, skuGenerated]);
 
-  // Auto-calculate total price
-  useEffect(() => {
-    if (formData.base_price !== null) {
-      if (formData.purchase_type === "GST" && formData.gst !== null && formData.gst > 0) {
-        const total = formData.base_price + (formData.base_price * formData.gst) / 100;
-        setFormData((prev) => ({ ...prev, total_price: total }));
-      } else {
-        setFormData((prev) => ({ ...prev, total_price: formData.base_price }));
-      }
+  // Bi‑directional price calculation with rounding to integer rupees
+// When Base Price or GST changes, update Total Price (and GST Amount)
+useEffect(() => {
+  if (isUpdating.current) return;
+  const base = formData.base_price;
+  const gstRate = formData.gst;
+  if (formData.purchase_type === "GST" && base !== null && base !== undefined) {
+    const gstAmount = Math.round((base * (gstRate || 0)) / 100);
+    const newTotal = base + gstAmount;
+    if (formData.total_price !== newTotal || formData.gst_amount !== gstAmount) {
+      isUpdating.current = true;
+      setFormData(prev => ({ ...prev, gst_amount: gstAmount, total_price: newTotal }));
+      setTimeout(() => { isUpdating.current = false; }, 0);
     }
-  }, [formData.base_price, formData.gst, formData.purchase_type]);
+  }
+}, [formData.base_price, formData.gst, formData.purchase_type]);
+
+// When Total Price changes, update Base Price (and GST Amount)
+useEffect(() => {
+  if (isUpdating.current) return;
+  const total = formData.total_price;
+  const gstRate = formData.gst;
+  if (formData.purchase_type === "GST" && total !== null && total !== undefined && gstRate !== null && gstRate !== undefined && gstRate !== 0) {
+    const basePrice = Math.round(total / (1 + gstRate / 100));
+    const gstAmount = total - basePrice;
+    if (formData.base_price !== basePrice || formData.gst_amount !== gstAmount) {
+      isUpdating.current = true;
+      setFormData(prev => ({ ...prev, base_price: basePrice, gst_amount: gstAmount }));
+      setTimeout(() => { isUpdating.current = false; }, 0);
+    }
+  }
+}, [formData.total_price, formData.gst, formData.purchase_type]);
 
   const handleChange = (field: string, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
-    if (field === "brand" || field === "model") setSkuGenerated(false);
     if (field === "vendor_id") {
       const selected = vendors.find((v) => v.id === value);
       if (selected) setFormData((prev) => ({ ...prev, vendor_name: selected.company_name }));
     }
     if (field === "purchase_type" && value !== "GST") {
-      setFormData((prev) => ({ ...prev, gst: null }));
+      setFormData((prev) => ({ ...prev, gst: null, gst_amount: null }));
     }
+    if (field === "brand" && value !== "Other") setFormData((prev) => ({ ...prev, brand_other: "" }));
+    if (field === "brand" || field === "model") setSkuGenerated(false);
   };
 
   const handleVendorAdded = (vendorId: string, vendorName: string) => {
@@ -374,118 +395,117 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     fetchVendors();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const insertPurchase = async (status: 'draft' | 'submitted') => {
     setLoading(true);
+    try {
+      if (!formData.purchase_date) throw new Error("Purchase date is required.");
+      if (!formData.vendor_id) throw new Error("Please select a vendor.");
+      if (!formData.type) throw new Error("Type is required.");
 
-    // Determine final asset number
-    let finalAssetNumber = formData.asset_number?.trim();
-    if (!finalAssetNumber) {
-      finalAssetNumber = await suggestAssetNumber();
-    } else {
-      // Check if user's number already exists
-      const { data: existing } = await supabase
-        .from("purchases")
-        .select("id")
-        .eq("asset_number", finalAssetNumber)
-        .maybeSingle();
-      if (existing) {
-        alert(`Asset number "${finalAssetNumber}" already exists. Please choose a different one.`);
-        setLoading(false);
-        return;
-      }
-    }
-
-    const baseRecord = {
-      entry_date: formData.entry_date,
-      purchase_date: formData.purchase_date,
-      vendor_id: formData.vendor_id,
-      vendor_name: formData.vendor_name,
-      type: formData.type,
-      brand: formData.brand,
-      model: formData.model,
-      cpu: formData.cpu,
-      ram: formData.ram,
-      ssd: formData.ssd,
-      charger: formData.charger,
-      screen_size: formData.screen_size,
-      monitor_size: formData.monitor_size,
-      has_keyboard: formData.has_keyboard,
-      has_mouse: formData.has_mouse,
-      sku: formData.sku,
-      asset_description: formData.asset_description,
-      base_price: formData.base_price,
-      gst: formData.gst,
-      total_price: formData.total_price,
-      selling_price: formData.selling_price,
-      expense: formData.expense,
-      expense_amount: formData.expense_amount,
-      expense_description: formData.expense_description,
-      stock_status: formData.stock_status,
-      status_purchase: formData.status_purchase,
-      status_other: formData.status_other,
-      purchased_by_type: formData.purchased_by_type,
-      purchased_by_other: formData.purchased_by_other,
-      remarks: formData.remarks,
-      purchase_type: formData.purchase_type === "GST" ? "GST" : "Cash",
-      purchased_invoice_number: formData.purchased_invoice_number,
-      eway_bill_no: formData.eway_bill_no,
-      public_photo_url: formData.public_photo_url,   // ✅ include new field
-    };
-
-    let serials: string[] = [];
-    if (quantity > 1) {
-      const enteredSerials = serialNumbersList.split(/\r?\n/).map((s) => s.trim()).filter((s) => s.length > 0);
-      serials = Array(quantity).fill("");
-      for (let i = 0; i < Math.min(enteredSerials.length, quantity); i++) {
-        serials[i] = enteredSerials[i];
-      }
-    } else {
-      serials = [formData.serial_number || ""];
-    }
-
-    // Generate asset numbers sequentially for each record
-    const recordsToInsert = [];
-    let currentAssetNumber = finalAssetNumber;
-    for (let i = 0; i < serials.length; i++) {
-      if (i > 0) {
-        const match = currentAssetNumber.match(/(\D+)(\d+)$/);
-        if (match) {
-          const prefix = match[1];
-          const num = parseInt(match[2], 10);
-          const nextNum = num + 1;
-          currentAssetNumber = `${prefix}${nextNum.toString().padStart(4, "0")}`;
+      let finalAssetNumber = null;
+      if (status === 'submitted') {
+        finalAssetNumber = formData.asset_number?.trim();
+        if (!finalAssetNumber) {
+          finalAssetNumber = await getNextAssetNumber();
         } else {
-          currentAssetNumber = await suggestAssetNumber();
+          const { data: existing } = await supabase
+            .from("purchases")
+            .select("id")
+            .eq("asset_number", finalAssetNumber)
+            .maybeSingle();
+          if (existing) throw new Error(`Asset number "${finalAssetNumber}" already exists. Please change it.`);
         }
       }
-      recordsToInsert.push({
-        ...baseRecord,
-        asset_number: currentAssetNumber,
-        serial_number: serials[i],
-      });
-    }
 
-    // Final duplicate check across all generated numbers
-    const assetNumbersToCheck = recordsToInsert.map(r => r.asset_number);
-    const { data: duplicates } = await supabase
-      .from("purchases")
-      .select("asset_number")
-      .in("asset_number", assetNumbersToCheck);
-    if (duplicates && duplicates.length > 0) {
-      alert(`Asset numbers already exist: ${duplicates.map(d => d.asset_number).join(", ")}. Please try again.`);
-      setLoading(false);
-      return;
-    }
+      const baseRecord = {
+        entry_date: formData.entry_date,
+        purchase_date: formData.purchase_date,
+        vendor_id: formData.vendor_id,
+        vendor_name: formData.vendor_name,
+        type: formData.type,
+        brand: formData.brand === "Other" ? (formData.brand_other || "Other") : formData.brand,
+        brand_other: formData.brand === "Other" ? formData.brand_other : null,
+        model: formData.model,
+        make_year: formData.make_year,
+        sku: formData.sku,
+        asset_description: formData.asset_description,
+        cpu: formData.cpu,
+        generation: formData.generation,
+        ram: formData.ram,
+        ssd: formData.ssd,
+        screen_size: formData.screen_size,
+        charger: formData.charger,
+        monitor_size: formData.monitor_size,
+        has_keyboard: formData.has_keyboard,
+        has_mouse: formData.has_mouse,
+        base_price: formData.base_price,
+        gst: formData.gst,
+        gst_amount: formData.gst_amount,
+        total_price: formData.total_price,
+        selling_price: formData.selling_price,
+        vendor_invoice_total: formData.vendor_invoice_total,
+        purchase_type: formData.purchase_type === "GST" ? "GST" : "Cash",
+        purchased_invoice_number: formData.purchased_invoice_number,
+        eway_bill_no: formData.eway_bill_no,
+        expense: formData.expense,
+        expense_amount: formData.expense_amount,
+        expense_description: formData.expense_description,
+        stock_status: formData.stock_status,
+        status_purchase: formData.status_purchase,
+        status_other: formData.status_purchase === "Other" ? formData.status_other : null,
+        purchased_by_type: formData.purchased_by_type,
+        purchased_by_other: formData.purchased_by_type === "Other" ? formData.purchased_by_other : null,
+        remarks: formData.remarks,
+        public_photo_url: formData.public_photo_url,
+        status: status,
+        submitted_at: status === 'submitted' ? new Date().toISOString() : null,
+        is_deleted: false,
+        asset_number: finalAssetNumber,
+      };
 
-    const { error } = await supabase.from("purchases").insert(recordsToInsert);
-    setLoading(false);
-    if (error) {
-      console.error("Insert error:", error);
-      alert(`Failed to add purchases: ${error.message}`);
-    } else {
+      let serials: string[] = [];
+      if (quantity > 1) {
+        const entered = serialNumbersList.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
+        serials = Array(quantity).fill("");
+        for (let i = 0; i < Math.min(entered.length, quantity); i++) serials[i] = entered[i];
+      } else {
+        serials = [formData.serial_number || ""];
+      }
+
+      const records = [];
+      let currentAsset = finalAssetNumber;
+      for (let i = 0; i < serials.length; i++) {
+        if (i > 0 && currentAsset && status === 'submitted') {
+          const match = currentAsset.match(/(\D+)(\d+)$/);
+          if (match) {
+            const prefix = match[1];
+            const num = parseInt(match[2], 10);
+            const nextNum = num + 1;
+            currentAsset = `${prefix}${nextNum}`;
+          } else {
+            currentAsset = await getNextAssetNumber();
+          }
+        }
+        records.push({ ...baseRecord, asset_number: currentAsset, serial_number: serials[i] });
+      }
+
+      if (status === 'submitted') {
+        const assetNumbers = records.map(r => r.asset_number).filter(Boolean);
+        if (assetNumbers.length) {
+          const { data: dup } = await supabase.from("purchases").select("asset_number").in("asset_number", assetNumbers);
+          if (dup && dup.length > 0) throw new Error(`Asset numbers already exist: ${dup.map(d => d.asset_number).join(", ")}`);
+        }
+      }
+
+      const { error } = await supabase.from("purchases").insert(records);
+      if (error) throw error;
+      await updateVendorInvoiceTotal(formData.vendor_id, formData.purchased_invoice_number);
       onOpenChange(false);
       onAdd();
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -496,14 +516,14 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full max-w-[90vw] md:max-w-4xl lg:max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initialData ? "Duplicate Purchase" : "Add New Purchase"}</DialogTitle>
           <DialogDescription className="sr-only">
             {initialData ? "Create a new purchase based on existing data" : "Fill in purchase details"}
           </DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-6">
           {/* Entry Date & Purchase Date */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
@@ -512,14 +532,33 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
             </div>
             <div>
               <Label>Purchase Date *</Label>
-              <Input type="date" required value={formData.purchase_date} onChange={(e) => handleChange("purchase_date", e.target.value)} />
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen} modal>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start" type="button">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {formData.purchase_date ? format(new Date(formData.purchase_date), "dd/MM/yyyy") : "Select date"}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={formData.purchase_date ? new Date(formData.purchase_date) : undefined}
+                    onSelect={(date) => {
+                      if (date) {
+                        handleChange("purchase_date", format(date, "yyyy-MM-dd"));
+                        setDatePickerOpen(false);
+                      }
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
           </div>
 
           {/* Vendor & Quantity */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="min-w-0">
-              <Label>Vendor</Label>
+              <Label>Vendor *</Label>
               <Select value={formData.vendor_id} onValueChange={(val) => handleChange("vendor_id", val)}>
                 <SelectTrigger className="w-full truncate">
                   <SelectValue placeholder={loadingVendors ? "Loading vendors..." : "Select vendor"} />
@@ -540,22 +579,26 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
             </div>
           </div>
 
-          {/* Asset Number & Serial Number (single entry) */}
-          {!showSerialTextarea && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label>Asset Number *</Label>
-                <Input required placeholder="e.g., DBAS0001" value={formData.asset_number} onChange={(e) => handleChange("asset_number", e.target.value)} />
-              </div>
-              <div>
-                <Label>Serial Number</Label>
-                <Input value={formData.serial_number} onChange={(e) => handleChange("serial_number", e.target.value)} />
-              </div>
-            </div>
-          )}
+          {/* Asset Number (visible, pre‑filled, editable) */}
+          <div>
+            <Label>Asset Number {quantity > 1 && "(starting number)"}</Label>
+            <Input
+              value={formData.asset_number}
+              onChange={(e) => handleChange("asset_number", e.target.value)}
+              placeholder="e.g., DBAS582"
+            />
+            {quantity > 1 && (
+              <p className="text-xs text-muted-foreground mt-1">Subsequent numbers will be auto‑incremented.</p>
+            )}
+          </div>
 
-          {/* Serial numbers textarea for multi‑entry */}
-          {showSerialTextarea && (
+          {/* Serial Numbers */}
+          {!showSerialTextarea ? (
+            <div>
+              <Label>Serial Number</Label>
+              <Input value={formData.serial_number} onChange={(e) => handleChange("serial_number", e.target.value)} />
+            </div>
+          ) : (
             <div>
               <Label>Serial Numbers (optional, one per line)</Label>
               <Textarea
@@ -567,20 +610,15 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
               <p className="text-xs text-gray-500 mt-1">
                 You entered {serialNumbersList.split(/\r?\n/).filter((s) => s.trim()).length} of {quantity} serial numbers. Remaining will be empty.
               </p>
-              <p className="text-xs text-muted-foreground mt-1">
-                Asset numbers will be generated sequentially starting from the number you enter above.
-              </p>
             </div>
           )}
 
-          {/* Type, Brand, Model, SKU */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {/* Type, Brand, Model, Make Year */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div>
-              <Label>Type</Label>
+              <Label>Type *</Label>
               <Select value={formData.type} onValueChange={(val) => handleChange("type", val)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="Laptop">Laptop</SelectItem>
                   <SelectItem value="Desktop">Desktop</SelectItem>
@@ -592,229 +630,114 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
             </div>
             <div>
               <Label>Brand</Label>
-              <Input placeholder="e.g., Dell, HP" value={formData.brand} onChange={(e) => handleChange("brand", e.target.value)} />
+              <Select value={formData.brand || ""} onValueChange={(val) => handleChange("brand", val)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {BRAND_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
+            {formData.brand === "Other" && (
+              <div>
+                <Label>Other Brand</Label>
+                <Input value={formData.brand_other || ""} onChange={(e) => handleChange("brand_other", e.target.value)} />
+              </div>
+            )}
             <div>
               <Label>Model</Label>
-              <Input placeholder="e.g., Latitude 7440" value={formData.model} onChange={(e) => handleChange("model", e.target.value)} />
+              <Input value={formData.model} onChange={(e) => handleChange("model", e.target.value)} />
             </div>
             <div>
-              <Label>SKU (Auto)</Label>
-              <Input value={formData.sku} disabled className="bg-gray-100" />
+              <Label>Make Year</Label>
+              <Input type="number" step="1" value={formData.make_year ?? ""} onChange={(e) => handleChange("make_year", e.target.value === "" ? null : parseInt(e.target.value))} />
             </div>
           </div>
 
           {/* Hardware Specifications */}
-          {(formData.type === "Laptop" || formData.type === "Desktop" || formData.type === "Tiny") && (
-            <div className="border rounded-lg p-4 space-y-4">
-              <h3 className="font-semibold">Hardware Specifications</h3>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div>
-                  <Label>CPU</Label>
-                  <Input placeholder="e.g., Intel i5 8th Gen" value={formData.cpu} onChange={(e) => handleChange("cpu", e.target.value)} />
-                </div>
-                <div>
-                  <Label>RAM</Label>
-                  <Input placeholder="e.g., 8GB DDR4" value={formData.ram} onChange={(e) => handleChange("ram", e.target.value)} />
-                </div>
-                <div>
-                  <Label>SSD / HDD</Label>
-                  <Input placeholder="e.g., 256GB SSD" value={formData.ssd} onChange={(e) => handleChange("ssd", e.target.value)} />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="charger" checked={formData.charger} onChange={(e) => handleChange("charger", e.target.checked)} />
-                  <Label htmlFor="charger">Charger Included?</Label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Screen Size for Laptop / Monitor */}
-          {isLaptopOrMonitor && (
-            <div>
-              <Label>Screen Size (inches)</Label>
-              <Input placeholder="e.g., 15.6, 14.0, 27" value={formData.screen_size} onChange={(e) => handleChange("screen_size", e.target.value)} />
-            </div>
-          )}
-
-          {/* Desktop-specific fields */}
-          {isDesktop && (
-            <div className="border rounded-lg p-4 space-y-4">
-              <h3 className="font-semibold">Desktop Accessories</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <Label>Monitor Size (inches)</Label>
-                  <Input placeholder="e.g., 24, 27" value={formData.monitor_size} onChange={(e) => handleChange("monitor_size", e.target.value)} />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="has_keyboard" checked={formData.has_keyboard} onChange={(e) => handleChange("has_keyboard", e.target.checked)} />
-                  <Label htmlFor="has_keyboard">Keyboard Included?</Label>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <input type="checkbox" id="has_mouse" checked={formData.has_mouse} onChange={(e) => handleChange("has_mouse", e.target.checked)} />
-                  <Label htmlFor="has_mouse">Mouse Included?</Label>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Asset Description, Pricing, Public Photo URL */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="md:col-span-2">
-              <Label>Asset Description</Label>
-              <Input value={formData.asset_description} onChange={(e) => handleChange("asset_description", e.target.value)} />
-            </div>
-            <div>
-              <Label>Base Price</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={formData.base_price ?? ""}
-                onChange={(e) => handleChange("base_price", e.target.value === "" ? null : parseFloat(e.target.value))}
-              />
-            </div>
-            <div>
-              <Label>Purchase Type</Label>
-              <Select value={formData.purchase_type} onValueChange={(val) => handleChange("purchase_type", val)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="GST">GST</SelectItem>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {isGST && (
-              <>
-                <div>
-                  <Label>GST (%)</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.gst ?? ""}
-                    onChange={(e) => handleChange("gst", e.target.value === "" ? null : parseFloat(e.target.value))}
-                  />
-                </div>
-                <div>
-                  <Label>Purchased Invoice Number</Label>
-                  <Input value={formData.purchased_invoice_number} onChange={(e) => handleChange("purchased_invoice_number", e.target.value)} />
-                </div>
-                <div>
-                  <Label>Eway Bill No.</Label>
-                  <Input value={formData.eway_bill_no} onChange={(e) => handleChange("eway_bill_no", e.target.value)} />
-                </div>
-              </>
-            )}
-            <div>
-              <Label>Total Price (Auto)</Label>
-              <Input type="number" step="0.01" value={formData.total_price ?? ""} disabled className="bg-gray-100" />
-            </div>
-            <div>
-              <Label>Selling Price</Label>
-              <Input
-                type="number"
-                step="0.01"
-                value={formData.selling_price ?? ""}
-                onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))}
-              />
-            </div>
-            <div className="md:col-span-2">
-              <Label>Public Photo URL (optional)</Label>
-              <Input
-                value={formData.public_photo_url}
-                onChange={(e) => handleChange("public_photo_url", e.target.value)}
-                placeholder="https://yourwebsite.com/images/product.jpg"
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                Permanent link to product photo (for WhatsApp/email sharing)
-              </p>
+          <div className="border rounded-lg p-4 space-y-4">
+            <h3 className="font-semibold">Hardware Specifications</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div><Label>CPU</Label><Input value={formData.cpu} onChange={(e) => handleChange("cpu", e.target.value)} /></div>
+              <div><Label>Generation</Label><Input type="number" step="1" value={formData.generation ?? ""} onChange={(e) => handleChange("generation", e.target.value === "" ? null : parseInt(e.target.value))} /></div>
+              <div><Label>RAM (GB)</Label><Input type="number" step="1" value={formData.ram ?? ""} onChange={(e) => handleChange("ram", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+              <div><Label>SSD / HDD (GB)</Label><Input type="number" step="1" value={formData.ssd ?? ""} onChange={(e) => handleChange("ssd", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+              {isLaptopOrMonitor && <div><Label>Screen Size (inches)</Label><Input type="number" step="0.1" value={formData.screen_size ?? ""} onChange={(e) => handleChange("screen_size", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>}
+              {isDesktop && (
+                <>
+                  <div><Label>Monitor Size (inches)</Label><Input type="number" step="0.1" value={formData.monitor_size ?? ""} onChange={(e) => handleChange("monitor_size", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+                  <div className="flex items-center space-x-2"><input type="checkbox" id="has_keyboard" checked={formData.has_keyboard} onChange={(e) => handleChange("has_keyboard", e.target.checked)} /><Label htmlFor="has_keyboard">Keyboard Included?</Label></div>
+                  <div className="flex items-center space-x-2"><input type="checkbox" id="has_mouse" checked={formData.has_mouse} onChange={(e) => handleChange("has_mouse", e.target.checked)} /><Label htmlFor="has_mouse">Mouse Included?</Label></div>
+                </>
+              )}
+              <div className="flex items-center space-x-2"><input type="checkbox" id="charger" checked={formData.charger} onChange={(e) => handleChange("charger", e.target.checked)} /><Label htmlFor="charger">Charger Included?</Label></div>
+              <div className="md:col-span-2 lg:col-span-3"><Label>Asset Description</Label><Input value={formData.asset_description} onChange={(e) => handleChange("asset_description", e.target.value)} /></div>
             </div>
           </div>
 
+          {/* SKU (auto) */}
+          <div><Label>SKU (Auto)</Label><Input value={formData.sku} disabled className="bg-gray-100" /></div>
+
+          {/* Pricing Section */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div><Label>Base Price</Label><Input type="number" step="0.01" value={formData.base_price ?? ""} onChange={(e) => handleChange("base_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+            <div><Label>Purchase Type</Label><Select value={formData.purchase_type} onValueChange={(val) => handleChange("purchase_type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="GST">GST</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent></Select></div>
+            {isGST && (
+              <>
+                <div><Label>GST (%)</Label><Input type="number" step="0.01" value={formData.gst ?? ""} onChange={(e) => handleChange("gst", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+                <div><Label>Purchased Invoice Number</Label><Input value={formData.purchased_invoice_number} onChange={(e) => handleChange("purchased_invoice_number", e.target.value)} /></div>
+                <div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div>
+              </>
+            )}
+            <div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-gray-100" /></div>
+            <div><Label>Total Price (Auto)</Label><Input type="number" step="0.01" value={formData.total_price ?? ""} onChange={(e) => handleChange("total_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+            <div><Label>Selling Price</Label><Input type="number" step="0.01" value={formData.selling_price ?? ""} onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+            <div><Label>Vendor Invoice Total</Label><Input
+  type="number"
+  step="0.01"
+  value={formData.vendor_invoice_total ?? ""}
+  disabled
+  className="bg-gray-100"
+/></div>
+          </div>
+
+          {quantity > 1 && formData.total_price && (
+            <div className="text-right text-sm text-gray-600">Total for {quantity} units: ₹{(formData.total_price * quantity).toFixed(2)}</div>
+          )}
+
+          <div><Label>Public Photo URL (optional)</Label><Input value={formData.public_photo_url} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://yourwebsite.com/images/product.jpg" /><p className="text-xs text-gray-500 mt-1">Permanent link to product photo (for WhatsApp/email sharing)</p></div>
+
           {/* Expense Section */}
           <div className="border rounded-lg p-4 space-y-4">
-            <div className="flex items-center space-x-2">
-              <input type="checkbox" id="expense" checked={formData.expense} onChange={(e) => handleChange("expense", e.target.checked)} />
-              <Label htmlFor="expense">Any extra expense incurred?</Label>
-            </div>
+            <div className="flex items-center space-x-2"><input type="checkbox" id="expense" checked={formData.expense} onChange={(e) => handleChange("expense", e.target.checked)} /><Label htmlFor="expense">Any extra expense incurred?</Label></div>
             {formData.expense && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label>Expense Amount</Label>
-                  <Input
-                    type="number"
-                    step="0.01"
-                    value={formData.expense_amount ?? ""}
-                    onChange={(e) => handleChange("expense_amount", e.target.value === "" ? null : parseFloat(e.target.value))}
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <Label>Expense Description</Label>
-                  <Input value={formData.expense_description} onChange={(e) => handleChange("expense_description", e.target.value)} />
-                </div>
+                <div><Label>Expense Amount</Label><Input type="number" step="0.01" value={formData.expense_amount ?? ""} onChange={(e) => handleChange("expense_amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+                <div className="md:col-span-2"><Label>Expense Description</Label><Input value={formData.expense_description} onChange={(e) => handleChange("expense_description", e.target.value)} /></div>
               </div>
             )}
           </div>
 
           {/* Status, Purchased By, Remarks */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Status</Label>
-              <Select value={formData.status_purchase} onValueChange={(val) => handleChange("status_purchase", val)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Ready for Sale">Ready for Sale</SelectItem>
-                  <SelectItem value="QC Pending">QC Pending</SelectItem>
-                  <SelectItem value="Faulty">Faulty</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {formData.status_purchase === "Other" && (
-              <div>
-                <Label>Other Status</Label>
-                <Input value={formData.status_other} onChange={(e) => handleChange("status_other", e.target.value)} placeholder="Specify" />
-              </div>
-            )}
-            <div>
-              <Label>Purchased By</Label>
-              <Select value={formData.purchased_by_type} onValueChange={(val) => handleChange("purchased_by_type", val)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Digitalbluez">Digitalbluez</SelectItem>
-                  <SelectItem value="Techtenth">Techtenth</SelectItem>
-                  <SelectItem value="Cash">Cash</SelectItem>
-                  <SelectItem value="Other">Other</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {formData.purchased_by_type === "Other" && (
-              <div>
-                <Label>Other Purchased By</Label>
-                <Input value={formData.purchased_by_other} onChange={(e) => handleChange("purchased_by_other", e.target.value)} placeholder="Specify" />
-              </div>
-            )}
+            <div><Label>Status</Label><Select value={formData.status_purchase} onValueChange={(val) => handleChange("status_purchase", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Ready for Sale">Ready for Sale</SelectItem><SelectItem value="QC Pending">QC Pending</SelectItem><SelectItem value="Faulty">Faulty</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select></div>
+            {formData.status_purchase === "Other" && <div><Label>Other Status</Label><Input value={formData.status_other} onChange={(e) => handleChange("status_other", e.target.value)} placeholder="Specify" /></div>}
+            <div><Label>Purchased By</Label><Select value={formData.purchased_by_type} onValueChange={(val) => handleChange("purchased_by_type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Digitalbluez">Digitalbluez</SelectItem><SelectItem value="Techtenth">Techtenth</SelectItem><SelectItem value="Cash">Cash</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select></div>
+            {formData.purchased_by_type === "Other" && <div><Label>Other Purchased By</Label><Input value={formData.purchased_by_other} onChange={(e) => handleChange("purchased_by_other", e.target.value)} placeholder="Specify" /></div>}
           </div>
 
-          <div>
-            <Label>Remarks</Label>
-            <textarea className="w-full border rounded-md p-2" rows={2} value={formData.remarks} onChange={(e) => handleChange("remarks", e.target.value)} placeholder="Any additional notes..." />
-          </div>
+          <div><Label>Remarks</Label><textarea className="w-full border rounded-md p-2" rows={2} value={formData.remarks} onChange={(e) => handleChange("remarks", e.target.value)} placeholder="Any additional notes..." /></div>
 
+          {/* Action Buttons */}
           <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
+            <Button type="button" variant="secondary" disabled={loading} onClick={() => insertPurchase('draft')}>
+              {loading ? "Saving..." : "Save Draft"}
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Adding..." : initialData ? "Duplicate Purchase" : "Add Purchase"}
+            <Button type="button" variant="default" disabled={loading} onClick={() => insertPurchase('submitted')}>
+              {loading ? "Submitting..." : "Submit"}
             </Button>
           </div>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
