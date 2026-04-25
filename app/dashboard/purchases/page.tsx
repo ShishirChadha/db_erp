@@ -47,7 +47,7 @@ import EditPurchaseDialog from "@/components/EditPurchaseDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import FileUpload from "@/components/FileUpload";
 
-type SortField = "purchase_date" | "vendor_name" | "asset_number" | "total_price" | "stock_status" | "status_purchase";
+type SortField = "purchase_date" | "entry_date" | "vendor_name" | "asset_number" | "total_price" | "stock_status" | "status_purchase";
 type SortOrder = "asc" | "desc";
 
 const allColumns = [
@@ -116,7 +116,23 @@ export default function PurchasesPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [viewItem, setViewItem] = useState<any>(null);
   const supabase = createClient();
-
+const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
+  if (!invoiceNumber || !vendorId) return;
+  const { data, error } = await supabase
+    .from("purchases")
+    .select("total_price")
+    .eq("vendor_id", vendorId)
+    .eq("purchased_invoice_number", invoiceNumber)
+    .eq("is_deleted", false);
+  if (error) return;
+  const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
+  await supabase
+    .from("purchases")
+    .update({ vendor_invoice_total: totalSum })
+    .eq("vendor_id", vendorId)
+    .eq("purchased_invoice_number", invoiceNumber)
+    .eq("is_deleted", false);
+};
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [duplicateDialogOpen, setDuplicateDialogOpen] = useState(false);
   const [duplicateData, setDuplicateData] = useState<any>(null);
@@ -125,8 +141,9 @@ export default function PurchasesPage() {
   const [vendorFilter, setVendorFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
-  const [sortField, setSortField] = useState<SortField>("purchase_date");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+  const [sortField, setSortField] = useState<SortField>("asset_number");
+const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultVisibleColumns);
 
@@ -171,6 +188,10 @@ export default function PurchasesPage() {
     if (dateFrom) query = query.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
     if (dateTo) query = query.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
     query = query.order(sortField, { ascending: sortOrder === "asc" });
+// If sorting by entry_date, add a secondary sort by created_at (or asset_number) to break ties
+if (sortField === "entry_date") {
+  query = query.order("created_at", { ascending: false });
+}
     query = query.range((page - 1) * pageSize, page * pageSize - 1);
     const { data, error } = await query;
     if (error) console.error(error);
@@ -193,25 +214,36 @@ export default function PurchasesPage() {
     setDialogOpen(true);
   };
 
-  const handleSoftDelete = async (remarks: string) => {
-    if (!purchaseToDelete) return;
-    const { error } = await supabase
-      .from("purchases")
-      .update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() })
-      .eq("id", purchaseToDelete.id);
-    if (error) console.error(error);
-    else fetchPurchases();
-    setPurchaseToDelete(null);
-  };
+const handleSoftDelete = async (remarks: string) => {
+  if (!purchaseToDelete) return;
+  const { error } = await supabase
+    .from("purchases")
+    .update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() })
+    .eq("id", purchaseToDelete.id);
+  if (error) console.error(error);
+  else {
+    // Recalculate vendor invoice total for the affected vendor/invoice
+    if (purchaseToDelete.purchased_invoice_number) {
+      await updateVendorInvoiceTotal(purchaseToDelete.vendor_id, purchaseToDelete.purchased_invoice_number);
+    }
+    fetchPurchases();
+  }
+  setPurchaseToDelete(null);
+};
 
-  const handleRestore = async (purchase: any) => {
-    const { error } = await supabase
-      .from("purchases")
-      .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
-      .eq("id", purchase.id);
-    if (error) console.error(error);
-    else fetchPurchases();
-  };
+const handleRestore = async (purchase: any) => {
+  const { error } = await supabase
+    .from("purchases")
+    .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
+    .eq("id", purchase.id);
+  if (error) console.error(error);
+  else {
+    if (purchase.purchased_invoice_number) {
+      await updateVendorInvoiceTotal(purchase.vendor_id, purchase.purchased_invoice_number);
+    }
+    fetchPurchases();
+  }
+};
 
   const totalPages = Math.ceil(totalCount / pageSize);
 
@@ -385,17 +417,18 @@ export default function PurchasesPage() {
           <TableHeader>
             <TableRow>
               {allColumns.filter(col => visibleColumns.includes(col.key)).map((col) => (
-                <TableHead key={col.key} className="cursor-pointer" onClick={() => {
-                  if (col.key === "purchase_date") handleSort("purchase_date");
-                  else if (col.key === "vendor_name") handleSort("vendor_name");
-                  else if (col.key === "asset_number") handleSort("asset_number");
-                  else if (col.key === "total_price") handleSort("total_price");
-                  else if (col.key === "status_purchase") handleSort("status_purchase");
-                }}>
+          <TableHead key={col.key} className="cursor-pointer" onClick={() => {
+  if (col.key === "purchase_date") handleSort("purchase_date");
+  else if (col.key === "entry_date") handleSort("entry_date");
+  else if (col.key === "vendor_name") handleSort("vendor_name");
+  else if (col.key === "asset_number") handleSort("asset_number");
+  else if (col.key === "total_price") handleSort("total_price");
+  else if (col.key === "status_purchase") handleSort("status_purchase");
+}}>
                   {col.label}
-                  {(col.key === "purchase_date" || col.key === "vendor_name" || col.key === "asset_number" || col.key === "total_price" || col.key === "status_purchase") && (
-                    sortField === col.key && (sortOrder === "asc" ? " ↑" : " ↓")
-                  )}
+               {(col.key === "purchase_date" || col.key === "entry_date" || col.key === "vendor_name" || col.key === "asset_number" || col.key === "total_price" || col.key === "status_purchase") && (
+  sortField === col.key && (sortOrder === "asc" ? " ↑" : " ↓")
+)}
                 </TableHead>
               ))}
               <TableHead className="text-right">Actions</TableHead>

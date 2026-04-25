@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { ModelSelect } from "@/components/ModelSelect";
 import { createClient } from "@/lib/supabase/client";
 import FileUpload from "@/components/FileUpload";
 import {
@@ -31,9 +32,46 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 
-// ---------- Helper: generate next asset number (no leading zeros) ----------
-async function getNextAssetNumber(prefix: string = "DBAS"): Promise<string> {
+// ---------- Helper: get asset prefix based on purchased_by ----------
+function getAssetPrefix(purchasedBy: string, purchasedByOther?: string): string {
+  switch (purchasedBy) {
+    case "Digitalbluez": return "DBAS";
+    case "Techtenth": return "TTAS";
+    case "Cash": return "CSAS";
+    case "Other": return purchasedByOther ? purchasedByOther.toUpperCase().substring(0, 4) : "OTHR";
+    default: return "DBAS";
+  }
+}
+
+// ---------- Helper: generate next asset number (non‑consuming) ----------
+async function getNextAssetNumber(prefix: string): Promise<string> {
   const supabase = createClient();
+  
+  // Special handling for TechTenth (with year and hyphen)
+  if (prefix === "TTAS") {
+  const currentYear = new Date().getFullYear() % 100; // 26 for 2026
+  // Fetch all TTAS numbers (any year) to find the maximum numeric suffix
+  const { data, error } = await supabase
+    .from("purchases")
+    .select("asset_number")
+    .ilike("asset_number", "TTAS%")
+    .limit(1000); // adjust limit if needed
+  if (error) throw error;
+  let maxSeq = 0;
+  if (data && data.length > 0) {
+    for (const item of data) {
+      const match = item.asset_number.match(/-(\d+)$/);
+      if (match) {
+        const seq = parseInt(match[1], 10);
+        if (seq > maxSeq) maxSeq = seq;
+      }
+    }
+  }
+  const nextSeq = maxSeq + 1;
+  return `TTAS${currentYear}-${nextSeq}`;
+}
+  
+  // For other prefixes (DBAS, CSAS, OTHR) – simple increment without year
   const { data, error } = await supabase
     .from("purchases")
     .select("asset_number")
@@ -50,9 +88,7 @@ async function getNextAssetNumber(prefix: string = "DBAS"): Promise<string> {
   return `${prefix}${nextNum}`;
 }
 
-
-
-// ---------- Inline Add Vendor Component (full) ----------
+// ---------- Inline Add Vendor Component ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -70,6 +106,7 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
     has_gst: false,
     gst_number: "",
     gst_company_name: "",
+    model_id: null as string | null,
   });
   const supabase = createClient();
 
@@ -233,25 +270,24 @@ export default function EditPurchaseDialog({
   const [loadingVendors, setLoadingVendors] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const supabase = createClient();
+
   const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
-  if (!invoiceNumber) return; // only if invoice number exists
-  // Get sum of total_price for all non‑deleted purchases with same vendor and invoice
-  const { data, error } = await supabase
-    .from("purchases")
-    .select("total_price")
-    .eq("vendor_id", vendorId)
-    .eq("purchased_invoice_number", invoiceNumber)
-    .eq("is_deleted", false);
-  if (error) return;
-  const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
-  // Update all matching records with the new sum
-  await supabase
-    .from("purchases")
-    .update({ vendor_invoice_total: totalSum })
-    .eq("vendor_id", vendorId)
-    .eq("purchased_invoice_number", invoiceNumber)
-    .eq("is_deleted", false);
-};
+    if (!invoiceNumber) return;
+    const { data, error } = await supabase
+      .from("purchases")
+      .select("total_price")
+      .eq("vendor_id", vendorId)
+      .eq("purchased_invoice_number", invoiceNumber)
+      .eq("is_deleted", false);
+    if (error) return;
+    const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
+    await supabase
+      .from("purchases")
+      .update({ vendor_invoice_total: totalSum })
+      .eq("vendor_id", vendorId)
+      .eq("purchased_invoice_number", invoiceNumber)
+      .eq("is_deleted", false);
+  };
 
   const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
 
@@ -269,51 +305,63 @@ export default function EditPurchaseDialog({
   useEffect(() => {
     if (open) fetchVendors();
   }, [open]);
+
+  useEffect(() => {
+    setFormData({
+      ...purchase,
+      asset_number: purchase.asset_number ? String(purchase.asset_number) : "",
+    });
+    if (!purchase.asset_number && purchase.status === "draft") {
+      const prefix = getAssetPrefix(purchase.purchased_by_type, purchase.purchased_by_other);
+      getNextAssetNumber(prefix).then(num => {
+        setFormData(prev => ({ ...prev, asset_number: num }));
+      });
+    }
+  }, [purchase]);
+  // When purchased_by_type changes for a draft, update the suggested asset number
 useEffect(() => {
-  setFormData({
-    ...purchase,
-    asset_number: purchase.asset_number ? String(purchase.asset_number) : "",
-  });
-  // NEVER generate a new number if the purchase already has an asset number
-  if (!purchase.asset_number && purchase.status === "draft") {
-    getNextAssetNumber().then(num => {
+  if (open && purchase.status === "draft") {
+    const prefix = getAssetPrefix(
+      formData.purchased_by_type || purchase.purchased_by_type,
+      formData.purchased_by_other || purchase.purchased_by_other
+    );
+    getNextAssetNumber(prefix).then(num => {
       setFormData(prev => ({ ...prev, asset_number: num }));
     });
   }
-}, [purchase]);
+}, [formData.purchased_by_type, formData.purchased_by_other, open, purchase.status]);
 
-  // Bi‑directional price calculation (same as in Add)
-  // When Base Price or GST changes, update Total Price (and GST Amount)
-useEffect(() => {
-  if (isUpdating.current) return;
-  const base = formData.base_price;
-  const gstRate = formData.gst;
-  if (formData.purchase_type === "GST" && base !== null && base !== undefined) {
-    const gstAmount = Math.round((base * (gstRate || 0)) / 100);
-    const newTotal = base + gstAmount;
-    if (formData.total_price !== newTotal || formData.gst_amount !== gstAmount) {
-      isUpdating.current = true;
-      setFormData(prev => ({ ...prev, gst_amount: gstAmount, total_price: newTotal }));
-      setTimeout(() => { isUpdating.current = false; }, 0);
+  // Bi‑directional price calculation
+  useEffect(() => {
+    if (isUpdating.current) return;
+    const base = formData.base_price;
+    const gstRate = formData.gst;
+    if (formData.purchase_type === "GST" && base !== null && base !== undefined) {
+      const gstAmount = Math.round((base * (gstRate || 0)) / 100);
+      const newTotal = base + gstAmount;
+      if (formData.total_price !== newTotal || formData.gst_amount !== gstAmount) {
+        isUpdating.current = true;
+        setFormData(prev => ({ ...prev, gst_amount: gstAmount, total_price: newTotal }));
+        setTimeout(() => { isUpdating.current = false; }, 0);
+      }
     }
-  }
-}, [formData.base_price, formData.gst, formData.purchase_type]);
+  }, [formData.base_price, formData.gst, formData.purchase_type]);
 
-// When Total Price changes, update Base Price (and GST Amount)
-useEffect(() => {
-  if (isUpdating.current) return;
-  const total = formData.total_price;
-  const gstRate = formData.gst;
-  if (formData.purchase_type === "GST" && total !== null && total !== undefined && gstRate !== null && gstRate !== undefined && gstRate !== 0) {
-    const basePrice = Math.round(total / (1 + gstRate / 100));
-    const gstAmount = total - basePrice;
-    if (formData.base_price !== basePrice || formData.gst_amount !== gstAmount) {
-      isUpdating.current = true;
-      setFormData(prev => ({ ...prev, base_price: basePrice, gst_amount: gstAmount }));
-      setTimeout(() => { isUpdating.current = false; }, 0);
+  useEffect(() => {
+    if (isUpdating.current) return;
+    const total = formData.total_price;
+    const gstRate = formData.gst;
+    if (formData.purchase_type === "GST" && total !== null && total !== undefined && gstRate !== null && gstRate !== undefined && gstRate !== 0) {
+      const basePrice = Math.round(total / (1 + gstRate / 100));
+      const gstAmount = total - basePrice;
+      if (formData.base_price !== basePrice || formData.gst_amount !== gstAmount) {
+        isUpdating.current = true;
+        setFormData(prev => ({ ...prev, base_price: basePrice, gst_amount: gstAmount }));
+        setTimeout(() => { isUpdating.current = false; }, 0);
+      }
     }
-  }
-}, [formData.total_price, formData.gst, formData.purchase_type]);
+  }, [formData.total_price, formData.gst, formData.purchase_type]);
+
   const handleChange = (field: keyof Purchase, value: any) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
     if (field === "vendor_id") {
@@ -338,16 +386,31 @@ useEffect(() => {
       if (!formData.purchase_date) throw new Error("Purchase date is required.");
       if (!formData.vendor_id) throw new Error("Please select a vendor.");
       if (!formData.type) throw new Error("Type is required.");
-
 let finalAssetNumber = null;
 if (targetStatus === 'draft') {
   finalAssetNumber = null;
 } else if (targetStatus === 'submitted') {
-  // If the purchase already has an asset number (in the database), keep it exactly as is
-  if (purchase.asset_number && purchase.asset_number.toString().trim() !== "") {
-    finalAssetNumber = purchase.asset_number.toString().trim();
+  // Get the new value from the form (user may have edited it)
+  const newAssetNumber = formData.asset_number?.toString().trim() || "";
+  const originalAssetNumber = purchase.asset_number?.toString().trim() || "";
+
+  if (newAssetNumber && newAssetNumber !== originalAssetNumber) {
+    // User changed the asset number – validate uniqueness
+    const { data: existing } = await supabase
+      .from("purchases")
+      .select("id")
+      .eq("asset_number", newAssetNumber)
+      .neq("id", purchase.id)
+      .maybeSingle();
+    if (existing) throw new Error(`Asset number "${newAssetNumber}" already exists. Please choose another.`);
+    finalAssetNumber = newAssetNumber;
+  } else if (newAssetNumber) {
+    // Keep the original (unchanged)
+    finalAssetNumber = originalAssetNumber;
   } else {
-    finalAssetNumber = await getNextAssetNumber();
+    // If empty, generate a new one
+    const prefix = getAssetPrefix(formData.purchased_by_type || purchase.purchased_by_type, formData.purchased_by_other || purchase.purchased_by_other);
+    finalAssetNumber = await getNextAssetNumber(prefix);
   }
 }
 
@@ -363,10 +426,10 @@ if (targetStatus === 'draft') {
         .update(payload)
         .eq("id", purchase.id);
       if (error) throw error;
-    await updateVendorInvoiceTotal(
-  formData.vendor_id || "",
-  formData.purchased_invoice_number || ""
-);
+      await updateVendorInvoiceTotal(
+        formData.vendor_id || purchase.vendor_id || "",
+        formData.purchased_invoice_number || purchase.purchased_invoice_number || ""
+      );
       onOpenChange(false);
       onUpdate();
     } catch (err: any) {
@@ -440,11 +503,11 @@ if (targetStatus === 'draft') {
             </div>
             <div>
               <Label>Asset Number {isDraft && "(will be generated on submit)"}</Label>
-            <Input
-  value={formData.asset_number || ""}
-  onChange={(e) => handleChange("asset_number", e.target.value)}
-  placeholder="e.g., DBAS582"
-/>
+              <Input
+                value={formData.asset_number || ""}
+                onChange={(e) => handleChange("asset_number", e.target.value)}
+                placeholder="e.g., DBAS582"
+              />
             </div>
           </div>
 
@@ -478,10 +541,15 @@ if (targetStatus === 'draft') {
                 <Input value={formData.brand_other || ""} onChange={(e) => handleChange("brand_other", e.target.value)} />
               </div>
             )}
-            <div>
-              <Label>Model</Label>
-              <Input value={formData.model || ""} onChange={(e) => handleChange("model", e.target.value)} />
-            </div>
+          <div>
+  <Label>Model</Label>
+  <ModelSelect
+    value={formData.model_id}
+    onChange={(id, name) => {
+      setFormData(prev => ({ ...prev, model_id: id, model: name }));
+    }}
+  />
+</div>
             <div>
               <Label>Make Year</Label>
               <Input type="number" step="1" value={formData.make_year ?? ""} onChange={(e) => handleChange("make_year", e.target.value === "" ? null : parseInt(e.target.value))} />
@@ -517,10 +585,11 @@ if (targetStatus === 'draft') {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div><Label>Base Price</Label><Input type="number" step="0.01" value={formData.base_price ?? ""} onChange={(e) => handleChange("base_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Purchase Type</Label><Select value={formData.purchase_type || "GST"} onValueChange={(val) => handleChange("purchase_type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="GST">GST</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent></Select></div>
+           <div><Label>Purchased Invoice Number</Label><Input value={formData.purchased_invoice_number || ""} onChange={(e) => handleChange("purchased_invoice_number", e.target.value)} /></div>
             {isGST && (
               <>
                 <div><Label>GST (%)</Label><Input type="number" step="0.01" value={formData.gst ?? ""} onChange={(e) => handleChange("gst", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-                <div><Label>Purchased Invoice Number</Label><Input value={formData.purchased_invoice_number || ""} onChange={(e) => handleChange("purchased_invoice_number", e.target.value)} /></div>
+                
                 <div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no || ""} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div>
               </>
             )}
@@ -528,12 +597,12 @@ if (targetStatus === 'draft') {
             <div><Label>Total Price (Auto)</Label><Input type="number" step="0.01" value={formData.total_price ?? ""} onChange={(e) => handleChange("total_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Selling Price</Label><Input type="number" step="0.01" value={formData.selling_price ?? ""} onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Vendor Invoice Total</Label><Input
-  type="number"
-  step="0.01"
-  value={formData.vendor_invoice_total ?? ""}
-  disabled
-  className="bg-gray-100"
-/></div>
+              type="number"
+              step="0.01"
+              value={formData.vendor_invoice_total ?? ""}
+              disabled
+              className="bg-gray-100"
+            /></div>
           </div>
 
           <div><Label>Public Photo URL</Label><Input value={formData.public_photo_url || ""} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://yourwebsite.com/images/product.jpg" /></div>
