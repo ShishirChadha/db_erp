@@ -141,21 +141,22 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
     } else {
       onVendorAdded(data.id, data.company_name);
       setOpen(false);
-      setFormData({
-        company_name: "",
-        spoc_name: "",
-        owner_name: "",
-        phone: "",
-        email: "",
-        address_line1: "",
-        address_line2: "",
-        city: "",
-        state: "",
-        pincode: "",
-        has_gst: false,
-        gst_number: "",
-        gst_company_name: "",
-      });
+setFormData({
+  company_name: "",
+  spoc_name: "",
+  owner_name: "",
+  phone: "",
+  email: "",
+  address_line1: "",
+  address_line2: "",
+  city: "",
+  state: "",
+  pincode: "",
+  has_gst: false,
+  gst_number: "",
+  gst_company_name: "",
+  model_id: null,   // ✅ add this line
+});
     }
   };
 
@@ -264,6 +265,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     brand: "",
     brand_other: "",
     model: "",
+    model_id: null as string | null, 
     make_year: null as number | null,
     sku: "",
     asset_description: "",
@@ -297,6 +299,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     remarks: "",
     public_photo_url: "",
     asset_number: "",
+
   });
 
   const isInitialized = useRef(false);
@@ -328,6 +331,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         asset_number: nextAsset,
         purchased_by_type: initialData.purchased_by_type || "Digitalbluez",
         purchased_by_other: initialData.purchased_by_other || "",
+        model_id: initialData.model_id || null,
       }));
       setQuantity(1);
       setSerialNumbersList("");
@@ -376,6 +380,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         remarks: "",
         public_photo_url: "",
         asset_number: nextAsset,
+       
       });
       setQuantity(1);
       setSerialNumbersList("");

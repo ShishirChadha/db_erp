@@ -157,6 +157,7 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
         has_gst: false,
         gst_number: "",
         gst_company_name: "",
+        model_id: null,   // ✅ add this line
       });
     }
   };
@@ -216,6 +217,7 @@ interface Purchase {
   brand: string;
   brand_other?: string;
   model: string;
+  model_id: string | null;   // ✅ add this line
   make_year: number | null;
   cpu: string;
   generation: number | null;
@@ -544,7 +546,7 @@ if (targetStatus === 'draft') {
           <div>
   <Label>Model</Label>
   <ModelSelect
-    value={formData.model_id}
+   value={formData.model_id ?? null}
     onChange={(id, name) => {
       setFormData(prev => ({ ...prev, model_id: id, model: name }));
     }}
