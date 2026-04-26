@@ -1,8 +1,4 @@
 "use client";
-
-import { useState, useEffect, useRef } from "react";
-import { ModelSelect } from "@/components/ModelSelect";
-import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
@@ -10,7 +6,11 @@ import {
   DialogTitle,
   DialogDescription,
   DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import { useState, useEffect, useRef } from "react";
+import { ModelSelect } from "@/components/ModelSelect";
+import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,53 +30,11 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
+import SkuBaseFormModal from "./SkuBaseFormModal";
+import SkuVariantFormModal from "./SkuVariantFormModal";
 
-// ---------- Helper: generate next asset number (without leading zeros) ----------
-async function getNextAssetNumber(prefix: string): Promise<string> {
-  const supabase = createClient();
-  
-  // Special handling for TechTenth (with year and hyphen)
-if (prefix === "TTAS") {
-  const currentYear = new Date().getFullYear() % 100; // 26 for 2026
-  // Fetch all TTAS numbers (any year) to find the maximum numeric suffix
-  const { data, error } = await supabase
-    .from("purchases")
-    .select("asset_number")
-    .ilike("asset_number", "TTAS%")
-    .limit(1000); // adjust limit if needed
-  if (error) throw error;
-  let maxSeq = 0;
-  if (data && data.length > 0) {
-    for (const item of data) {
-      const match = item.asset_number.match(/-(\d+)$/);
-      if (match) {
-        const seq = parseInt(match[1], 10);
-        if (seq > maxSeq) maxSeq = seq;
-      }
-    }
-  }
-  const nextSeq = maxSeq + 1;
-  return `TTAS${currentYear}-${nextSeq}`;
-}
-  
-  // For other prefixes (DBAS, CSAS, OTHR) – simple increment without year
-  const { data, error } = await supabase
-    .from("purchases")
-    .select("asset_number")
-    .ilike("asset_number", `${prefix}%`)
-    .order("asset_number", { ascending: false })
-    .limit(1);
-  if (error) throw error;
-  let maxNum = 0;
-  if (data && data.length > 0) {
-    const match = data[0].asset_number.match(/\d+$/);
-    if (match) maxNum = parseInt(match[0], 10);
-  }
-  const nextNum = maxNum + 1;
-  return `${prefix}${nextNum}`;
-}
-
-const getAssetPrefix = (purchasedBy: string, purchasedByOther?: string): string => {
+// ---------- Helper: get asset prefix ----------
+function getAssetPrefix(purchasedBy: string, purchasedByOther?: string): string {
   switch (purchasedBy) {
     case "Digitalbluez": return "DBAS";
     case "Techtenth": return "TTAS";
@@ -84,113 +42,90 @@ const getAssetPrefix = (purchasedBy: string, purchasedByOther?: string): string 
     case "Other": return purchasedByOther ? purchasedByOther.toUpperCase().substring(0, 4) : "OTHR";
     default: return "DBAS";
   }
-};
+}
 
-// ---------- Inline Add Vendor Component (full) ----------
+async function getNextAssetNumber(prefix: string): Promise<string> {
+  const supabase = createClient();
+  if (prefix === "TTAS") {
+    const currentYear = new Date().getFullYear() % 100;
+    const { data } = await supabase
+      .from("purchases")
+      .select("asset_number")
+      .ilike("asset_number", "TTAS%")
+      .limit(1000);
+    let maxSeq = 0;
+    if (data) {
+      for (const item of data) {
+        const match = item.asset_number.match(/-(\d+)$/);
+        if (match) maxSeq = Math.max(maxSeq, parseInt(match[1], 10));
+      }
+    }
+    return `TTAS${currentYear}-${maxSeq + 1}`;
+  }
+  const { data } = await supabase
+    .from("purchases")
+    .select("asset_number")
+    .ilike("asset_number", `${prefix}%`)
+    .order("asset_number", { ascending: false })
+    .limit(1);
+  let maxNum = 0;
+  if (data && data.length) {
+    const match = data[0].asset_number.match(/\d+$/);
+    if (match) maxNum = parseInt(match[0], 10);
+  }
+  return `${prefix}${maxNum + 1}`;
+}
+
+// ---------- Inline Add Vendor (unchanged) ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
-    company_name: "",
-    spoc_name: "",
-    owner_name: "",
-    phone: "",
-    email: "",
-    address_line1: "",
-    address_line2: "",
-    city: "",
-    state: "",
-    pincode: "",
-    has_gst: false,
-    gst_number: "",
-    gst_company_name: "",
-    model_id: null as string | null,
+    company_name: "", spoc_name: "", owner_name: "", phone: "", email: "",
+    address_line1: "", address_line2: "", city: "", state: "", pincode: "",
+    has_gst: false, gst_number: "", gst_company_name: "", model_id: null as string | null,
   });
   const supabase = createClient();
 
-  const handleChange = (field: string, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
+  const handleChange = (field: string, value: any) => setFormData(prev => ({ ...prev, [field]: value }));
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.company_name) {
-      alert("Company name is required");
-      return;
-    }
+    if (!formData.company_name) return alert("Company name is required");
     setLoading(true);
-    const payload = {
-      company_name: formData.company_name,
-      spoc_name: formData.spoc_name,
-      owner_name: formData.owner_name,
-      phone: formData.phone,
-      email: formData.email,
-      address_line1: formData.address_line1,
-      address_line2: formData.address_line2,
-      city: formData.city,
-      state: formData.state,
-      pincode: formData.pincode,
-      has_gst: formData.has_gst,
-      gst_number: formData.gst_number,
-      gst_company_name: formData.gst_company_name,
-    };
+    const payload = { ...formData };
     const { data, error } = await supabase.from("vendors").insert([payload]).select().single();
     setLoading(false);
-    if (error) {
-      alert("Failed to add vendor: " + error.message);
-    } else {
+    if (error) alert("Failed to add vendor: " + error.message);
+    else {
       onVendorAdded(data.id, data.company_name);
       setOpen(false);
-setFormData({
-  company_name: "",
-  spoc_name: "",
-  owner_name: "",
-  phone: "",
-  email: "",
-  address_line1: "",
-  address_line2: "",
-  city: "",
-  state: "",
-  pincode: "",
-  has_gst: false,
-  gst_number: "",
-  gst_company_name: "",
-  model_id: null,   // ✅ add this line
-});
+      setFormData({ company_name: "", spoc_name: "", owner_name: "", phone: "", email: "", address_line1: "", address_line2: "", city: "", state: "", pincode: "", has_gst: false, gst_number: "", gst_company_name: "", model_id: null });
     }
   };
-
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm" className="mt-2 w-full">
-          <Plus className="mr-2 h-3 w-3" /> Add New Vendor
-        </Button>
-      </DialogTrigger>
+      <DialogTrigger asChild><Button variant="outline" size="sm" className="mt-2 w-full"><Plus className="mr-2 h-3 w-3" /> Add New Vendor</Button></DialogTrigger>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add New Vendor</DialogTitle>
-          <DialogDescription className="sr-only">Fill in all vendor details</DialogDescription>
-        </DialogHeader>
+        <DialogHeader><DialogTitle>Add New Vendor</DialogTitle><DialogDescription className="sr-only">Fill in all vendor details</DialogDescription></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-3">
-          <div><Label>Company Name *</Label><Input required value={formData.company_name} onChange={(e) => handleChange("company_name", e.target.value)} /></div>
-          <div><Label>SPOC Name</Label><Input value={formData.spoc_name} onChange={(e) => handleChange("spoc_name", e.target.value)} /></div>
-          <div><Label>Owner Name</Label><Input value={formData.owner_name} onChange={(e) => handleChange("owner_name", e.target.value)} /></div>
-          <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>
-          <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
-          <div><Label>Address Line 1</Label><Input value={formData.address_line1} onChange={(e) => handleChange("address_line1", e.target.value)} /></div>
-          <div><Label>Address Line 2</Label><Input value={formData.address_line2} onChange={(e) => handleChange("address_line2", e.target.value)} /></div>
-          <div><Label>City</Label><Input value={formData.city} onChange={(e) => handleChange("city", e.target.value)} /></div>
-          <div><Label>State</Label><Input value={formData.state} onChange={(e) => handleChange("state", e.target.value)} /></div>
-          <div><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} /></div>
+          <div><Label>Company Name *</Label><Input required value={formData.company_name} onChange={e => handleChange("company_name", e.target.value)} /></div>
+          <div><Label>SPOC Name</Label><Input value={formData.spoc_name} onChange={e => handleChange("spoc_name", e.target.value)} /></div>
+          <div><Label>Owner Name</Label><Input value={formData.owner_name} onChange={e => handleChange("owner_name", e.target.value)} /></div>
+          <div><Label>Phone</Label><Input value={formData.phone} onChange={e => handleChange("phone", e.target.value)} /></div>
+          <div><Label>Email</Label><Input type="email" value={formData.email} onChange={e => handleChange("email", e.target.value)} /></div>
+          <div><Label>Address Line 1</Label><Input value={formData.address_line1} onChange={e => handleChange("address_line1", e.target.value)} /></div>
+          <div><Label>Address Line 2</Label><Input value={formData.address_line2} onChange={e => handleChange("address_line2", e.target.value)} /></div>
+          <div><Label>City</Label><Input value={formData.city} onChange={e => handleChange("city", e.target.value)} /></div>
+          <div><Label>State</Label><Input value={formData.state} onChange={e => handleChange("state", e.target.value)} /></div>
+          <div><Label>Pincode</Label><Input value={formData.pincode} onChange={e => handleChange("pincode", e.target.value)} /></div>
           <div className="flex items-center space-x-2">
-            <input type="checkbox" id="has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
+            <input type="checkbox" id="has_gst" checked={formData.has_gst} onChange={e => handleChange("has_gst", e.target.checked)} />
             <Label htmlFor="has_gst">Has GST</Label>
           </div>
           {formData.has_gst && (
             <>
-              <div><Label>GST Number</Label><Input value={formData.gst_number} onChange={(e) => handleChange("gst_number", e.target.value.toUpperCase())} /></div>
-              <div><Label>GST Company Name</Label><Input value={formData.gst_company_name} onChange={(e) => handleChange("gst_company_name", e.target.value)} /></div>
+              <div><Label>GST Number</Label><Input value={formData.gst_number} onChange={e => handleChange("gst_number", e.target.value.toUpperCase())} /></div>
+              <div><Label>GST Company Name</Label><Input value={formData.gst_company_name} onChange={e => handleChange("gst_company_name", e.target.value)} /></div>
             </>
           )}
           <div className="flex justify-end space-x-2">
@@ -213,51 +148,26 @@ interface AddPurchaseDialogProps {
 
 export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialData }: AddPurchaseDialogProps) {
   const [loading, setLoading] = useState(false);
-  const [skuGenerated, setSkuGenerated] = useState(false);
   const [vendors, setVendors] = useState<{ id: string; company_name: string }[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
-  const today = new Date().toISOString().split("T")[0];
-  const supabase = createClient();
-
-  const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
-    console.log("updateVendorInvoiceTotal called with:", { vendorId, invoiceNumber });
-    if (!invoiceNumber || !vendorId) {
-      console.log("Missing vendorId or invoiceNumber – skipping update");
-      return;
-    }
-    const { data, error } = await supabase
-      .from("purchases")
-      .select("total_price")
-      .eq("vendor_id", vendorId)
-      .eq("purchased_invoice_number", invoiceNumber)
-      .eq("is_deleted", false);
-    if (error) {
-      console.error("Error fetching sum:", error);
-      return;
-    }
-    const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
-    console.log("Total sum for vendor/invoice:", totalSum);
-    const { error: updateError } = await supabase
-      .from("purchases")
-      .update({ vendor_invoice_total: totalSum })
-      .eq("vendor_id", vendorId)
-      .eq("purchased_invoice_number", invoiceNumber)
-      .eq("is_deleted", false);
-    if (updateError) {
-      console.error("Error updating vendor_invoice_total:", updateError);
-    } else {
-      console.log("Successfully updated vendor_invoice_total for all matching records");
-    }
-  };
-
   const [quantity, setQuantity] = useState(1);
   const [serialNumbersList, setSerialNumbersList] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const supabase = createClient();
+
+  // SKU state
+  const [skuBases, setSkuBases] = useState<any[]>([]);
+  const [selectedBaseId, setSelectedBaseId] = useState("");
+  const [selectedVariantId, setSelectedVariantId] = useState("");
+  const [variants, setVariants] = useState<any[]>([]);
+  const [showBaseModal, setShowBaseModal] = useState(false);
+  const [showVariantModal, setShowVariantModal] = useState(false);
+  const [skuGenerated, setSkuGenerated] = useState(false);
 
   const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
 
   const [formData, setFormData] = useState({
-    entry_date: today,
+    entry_date: new Date().toISOString().split("T")[0],
     purchase_date: "",
     vendor_id: "",
     vendor_name: "",
@@ -265,7 +175,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     brand: "",
     brand_other: "",
     model: "",
-    model_id: null as string | null, 
+    model_id: null as string | null,
     make_year: null as number | null,
     sku: "",
     asset_description: "",
@@ -299,7 +209,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     remarks: "",
     public_photo_url: "",
     asset_number: "",
-
   });
 
   const isInitialized = useRef(false);
@@ -307,81 +216,27 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
   const fetchVendors = async () => {
     setLoadingVendors(true);
-    const { data, error } = await supabase
-      .from("vendors")
-      .select("id, company_name")
-      .eq("is_deleted", false)
-      .order("company_name");
+    const { data, error } = await supabase.from("vendors").select("id, company_name").eq("is_deleted", false).order("company_name");
     if (!error && data) setVendors(data);
     setLoadingVendors(false);
   };
 
-  const loadInitialData = async () => {
-    const originalPurchasedBy = initialData?.purchased_by_type || formData.purchased_by_type;
-    const originalPurchasedByOther = initialData?.purchased_by_other || formData.purchased_by_other;
-    const prefix = getAssetPrefix(originalPurchasedBy, originalPurchasedByOther);
-    const nextAsset = await getNextAssetNumber(prefix);
-    setFormData(prev => ({ ...prev, asset_number: nextAsset }));
+  const fetchSkuBases = async () => {
+    const res = await fetch("/api/skus");
+    const data = await res.json();
+    if (res.ok) setSkuBases(data);
+  };
 
+  const loadInitialData = async () => {
+    const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
+    const nextAsset = await getNextAssetNumber(prefix);
     if (initialData) {
-      setFormData(prev => ({
-        ...prev,
-        ...initialData,
-        serial_number: "",
-        asset_number: nextAsset,
-        purchased_by_type: initialData.purchased_by_type || "Digitalbluez",
-        purchased_by_other: initialData.purchased_by_other || "",
-        model_id: initialData.model_id || null,
-      }));
+      setFormData(prev => ({ ...prev, ...initialData, serial_number: "", asset_number: nextAsset, purchased_by_type: initialData.purchased_by_type || "Digitalbluez", purchased_by_other: initialData.purchased_by_other || "", model_id: initialData.model_id || null }));
       setQuantity(1);
       setSerialNumbersList("");
       setSkuGenerated(false);
     } else {
-      setFormData({
-        entry_date: today,
-        model_id: null,
-        purchase_date: "",
-        vendor_id: "",
-        vendor_name: "",
-        type: "Laptop",
-        brand: "",
-        brand_other: "",
-        model: "",
-        make_year: null,
-        sku: "",
-        asset_description: "",
-        serial_number: "",
-        cpu: "",
-        generation: null,
-        ram: null,
-        ssd: null,
-        screen_size: null,
-        charger: false,
-        monitor_size: null,
-        has_keyboard: false,
-        has_mouse: false,
-        base_price: null,
-        gst: null,
-        gst_amount: null,
-        total_price: null,
-        selling_price: null,
-        vendor_invoice_total: null,
-        purchase_type: "GST",
-        purchased_invoice_number: "",
-        eway_bill_no: "",
-        expense: false,
-        expense_amount: null,
-        expense_description: "",
-        stock_status: "In Stock",
-        status_purchase: "QC Pending",
-        status_other: "",
-        purchased_by_type: "Digitalbluez",
-        purchased_by_other: "",
-        remarks: "",
-        public_photo_url: "",
-        asset_number: nextAsset,
-       
-      });
+      setFormData(prev => ({ ...prev, asset_number: nextAsset, entry_date: new Date().toISOString().split("T")[0] }));
       setQuantity(1);
       setSerialNumbersList("");
       setSkuGenerated(false);
@@ -392,21 +247,77 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   useEffect(() => {
     if (open) {
       fetchVendors();
+      fetchSkuBases();
       loadInitialData();
     }
-  }, [open, initialData, today]);
+  }, [open, initialData]);
 
-  // Auto‑generate SKU
+  // Auto‑generate SKU from selected variant
   useEffect(() => {
-    if (formData.brand && formData.model && !skuGenerated) {
-      const brandPart = formData.brand.substring(0, 3).toUpperCase();
-      const modelPart = formData.model.replace(/\s/g, "").substring(0, 5).toUpperCase();
-      setFormData((prev) => ({ ...prev, sku: `${brandPart}-${modelPart}` }));
-      setSkuGenerated(true);
+    if (selectedBaseId && selectedVariantId) {
+      const base = skuBases.find(b => b.id === selectedBaseId);
+      const variant = variants.find(v => v.id === selectedVariantId);
+      if (base && variant) {
+        const fullSku = `${base.sku_base}-${variant.variant_code}`;
+        setFormData(prev => ({ ...prev, sku: fullSku }));
+        setSkuGenerated(true);
+      }
+    } else if (!selectedVariantId) {
+      setFormData(prev => ({ ...prev, sku: "" }));
     }
-  }, [formData.brand, formData.model, skuGenerated]);
+  }, [selectedBaseId, selectedVariantId, skuBases, variants]);
 
-  // Bi‑directional price calculation
+  // Auto‑fill purchase fields when variant changes
+  const handleVariantChange = (variantId: string) => {
+    setSelectedVariantId(variantId);
+    const variant = variants.find(v => v.id === variantId);
+    const base = skuBases.find(b => b.id === selectedBaseId);
+    if (variant && base) {
+      setFormData(prev => ({
+        ...prev,
+        brand: base.brand || "",
+        model: variant.variant_name || "",
+        cpu: variant.cpu || "",
+        ram: variant.ram_gb || null,
+        ssd: variant.ssd_gb || null,
+        screen_size: variant.screen_size || null,
+        charger: variant.charger ?? false,
+        has_keyboard: variant.has_keyboard ?? false,
+        has_mouse: variant.has_mouse ?? false,
+        make_year: variant.make_year || null,
+        generation: variant.generation || null,
+        base_price: variant.unit_cost || null,
+        selling_price: variant.selling_price || null,
+      }));
+    }
+  };
+
+  const handleBaseChange = (baseId: string) => {
+    setSelectedBaseId(baseId);
+    const base = skuBases.find(b => b.id === baseId);
+    setVariants(base?.sku_variants || []);
+    setSelectedVariantId("");
+    setFormData(prev => ({ ...prev, brand: base?.brand || "", type: base?.category || prev.type }));
+  };
+
+  const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
+    if (!invoiceNumber || !vendorId) return;
+    const { data } = await supabase
+      .from("purchases")
+      .select("total_price")
+      .eq("vendor_id", vendorId)
+      .eq("purchased_invoice_number", invoiceNumber)
+      .eq("is_deleted", false);
+    const totalSum = data?.reduce((sum, row) => sum + (row.total_price || 0), 0) || 0;
+    await supabase
+      .from("purchases")
+      .update({ vendor_invoice_total: totalSum })
+      .eq("vendor_id", vendorId)
+      .eq("purchased_invoice_number", invoiceNumber)
+      .eq("is_deleted", false);
+  };
+
+  // Price calculations (unchanged)
   useEffect(() => {
     if (isUpdating.current) return;
     const base = formData.base_price;
@@ -438,30 +349,25 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   }, [formData.total_price, formData.gst, formData.purchase_type]);
 
   const handleChange = (field: string, value: any) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+    setFormData(prev => ({ ...prev, [field]: value }));
     if (field === "vendor_id") {
-      const selected = vendors.find((v) => v.id === value);
-      if (selected) setFormData((prev) => ({ ...prev, vendor_name: selected.company_name }));
+      const selected = vendors.find(v => v.id === value);
+      if (selected) setFormData(prev => ({ ...prev, vendor_name: selected.company_name }));
     }
-    if (field === "purchase_type" && value !== "GST") {
-      setFormData((prev) => ({ ...prev, gst: null, gst_amount: null }));
-    }
-    if (field === "brand" && value !== "Other") setFormData((prev) => ({ ...prev, brand_other: "" }));
-    if (field === "brand" || field === "model") setSkuGenerated(false);
+    if (field === "purchase_type" && value !== "GST") setFormData(prev => ({ ...prev, gst: null, gst_amount: null }));
+    if (field === "brand" && value !== "Other") setFormData(prev => ({ ...prev, brand_other: "" }));
     if ((field === "purchased_by_type" || field === "purchased_by_other") && isInitialized.current) {
       const prefix = getAssetPrefix(
         field === "purchased_by_type" ? value : formData.purchased_by_type,
         field === "purchased_by_other" ? value : formData.purchased_by_other
       );
-      getNextAssetNumber(prefix).then(num => {
-        setFormData(prev => ({ ...prev, asset_number: num }));
-      });
+      getNextAssetNumber(prefix).then(num => setFormData(prev => ({ ...prev, asset_number: num })));
     }
   };
 
   const handleVendorAdded = (vendorId: string, vendorName: string) => {
-    setVendors((prev) => [...prev, { id: vendorId, company_name: vendorName }]);
-    setFormData((prev) => ({ ...prev, vendor_id: vendorId, vendor_name: vendorName }));
+    setVendors(prev => [...prev, { id: vendorId, company_name: vendorName }]);
+    setFormData(prev => ({ ...prev, vendor_id: vendorId, vendor_name: vendorName }));
     fetchVendors();
   };
 
@@ -479,12 +385,8 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
           finalAssetNumber = await getNextAssetNumber(prefix);
         } else {
-          const { data: existing } = await supabase
-            .from("purchases")
-            .select("id")
-            .eq("asset_number", finalAssetNumber)
-            .maybeSingle();
-          if (existing) throw new Error(`Asset number "${finalAssetNumber}" already exists. Please change it.`);
+          const { data: existing } = await supabase.from("purchases").select("id").eq("asset_number", finalAssetNumber).maybeSingle();
+          if (existing) throw new Error(`Asset number "${finalAssetNumber}" already exists.`);
         }
       }
 
@@ -533,15 +435,14 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         submitted_at: status === 'submitted' ? new Date().toISOString() : null,
         is_deleted: false,
         asset_number: finalAssetNumber,
+        sku_variant_id: selectedVariantId || null,
       };
 
       let serials: string[] = [];
       if (quantity > 1) {
         const entered = serialNumbersList.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
         serials = Array(quantity).fill("");
-        for (let i = 0; i < Math.min(entered.length, quantity); i++) {
-          serials[i] = entered[i];
-        }
+        for (let i = 0; i < Math.min(entered.length, quantity); i++) serials[i] = entered[i];
       } else {
         serials = [formData.serial_number || ""];
       }
@@ -550,46 +451,26 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       let currentAsset = finalAssetNumber;
       for (let i = 0; i < serials.length; i++) {
         if (i > 0 && currentAsset && status === 'submitted') {
-          const hyphenMatch = currentAsset.match(/^(.+?)-(\d+)$/);
-          if (hyphenMatch) {
-            const prefix = hyphenMatch[1];
-            const num = parseInt(hyphenMatch[2], 10);
-            const nextNum = num + 1;
-            currentAsset = `${prefix}-${nextNum}`;
+          const match = currentAsset.match(/^(.+?)(\d+)$/);
+          if (match) {
+            const prefix = match[1];
+            const num = parseInt(match[2], 10);
+            currentAsset = `${prefix}${num + 1}`;
           } else {
-            const suffixMatch = currentAsset.match(/(\D+)(\d+)$/);
-            if (suffixMatch) {
-              const prefix = suffixMatch[1];
-              const num = parseInt(suffixMatch[2], 10);
-              const nextNum = num + 1;
-              currentAsset = `${prefix}${nextNum}`;
-            } else {
-              const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
-              currentAsset = await getNextAssetNumber(prefix);
-            }
+            const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
+            currentAsset = await getNextAssetNumber(prefix);
           }
         }
         records.push({ ...baseRecord, asset_number: currentAsset, serial_number: serials[i] });
       }
 
-      if (status === 'submitted') {
-        const assetNumbers = records.map(r => r.asset_number).filter(Boolean);
-        if (assetNumbers.length) {
-          const { data: dup } = await supabase.from("purchases").select("asset_number").in("asset_number", assetNumbers);
-          if (dup && dup.length > 0) throw new Error(`Asset numbers already exist: ${dup.map(d => d.asset_number).join(", ")}`);
-        }
-      }
-
       const { error } = await supabase.from("purchases").insert(records);
       if (error) throw error;
-      await new Promise(resolve => setTimeout(resolve, 100));
-      if (formData.purchased_invoice_number) {
-        await updateVendorInvoiceTotal(formData.vendor_id, formData.purchased_invoice_number);
-      }
+      if (formData.purchased_invoice_number) await updateVendorInvoiceTotal(formData.vendor_id, formData.purchased_invoice_number);
       onOpenChange(false);
       onAdd();
     } catch (err: any) {
-      console.error("Insert error:", err);
+      console.error(err);
       alert(err.message);
     } finally {
       setLoading(false);
@@ -606,20 +487,15 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       <DialogContent className="w-full max-w-[90vw] md:max-w-4xl lg:max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{initialData ? "Duplicate Purchase" : "Add New Purchase"}</DialogTitle>
-          <DialogDescription className="sr-only">
-            {initialData ? "Create a new purchase based on existing data" : "Fill in purchase details"}
-          </DialogDescription>
+          <DialogDescription className="sr-only">Fill in purchase details</DialogDescription>
         </DialogHeader>
         <div className="space-y-6">
-          {/* Entry Date & Purchase Date */}
+          {/* Entry & Purchase Date */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label>Entry Date</Label>
-              <Input type="date" value={formData.entry_date} disabled className="bg-gray-100" />
-            </div>
+            <div><Label>Entry Date</Label><Input type="date" value={formData.entry_date} disabled className="bg-gray-100" /></div>
             <div>
               <Label>Purchase Date *</Label>
-              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen} modal>
+              <Popover open={datePickerOpen} onOpenChange={setDatePickerOpen}>
                 <PopoverTrigger asChild>
                   <Button variant="outline" className="w-full justify-start" type="button">
                     <CalendarIcon className="mr-2 h-4 w-4" />
@@ -627,16 +503,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={formData.purchase_date ? new Date(formData.purchase_date) : undefined}
-                    onSelect={(date) => {
-                      if (date) {
-                        handleChange("purchase_date", format(date, "yyyy-MM-dd"));
-                        setDatePickerOpen(false);
-                      }
-                    }}
-                  />
+                  <Calendar mode="single" selected={formData.purchase_date ? new Date(formData.purchase_date) : undefined} onSelect={(date) => { if (date) { handleChange("purchase_date", format(date, "yyyy-MM-dd")); setDatePickerOpen(false); } }} />
                 </PopoverContent>
               </Popover>
             </div>
@@ -644,88 +511,31 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
           {/* Vendor & Quantity */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="min-w-0">
-              <Label>Vendor *</Label>
-              <Select value={formData.vendor_id} onValueChange={(val) => handleChange("vendor_id", val)}>
-                <SelectTrigger className="w-full truncate">
-                  <SelectValue placeholder={loadingVendors ? "Loading vendors..." : "Select vendor"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {vendors.map((v) => (
-                    <SelectItem key={v.id} value={v.id} className="truncate">
-                      {v.company_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <AddVendorInline onVendorAdded={handleVendorAdded} />
-            </div>
-            <div>
-              <Label>Quantity</Label>
-              <Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} />
-            </div>
+            <div><Label>Vendor *</Label><Select value={formData.vendor_id} onValueChange={(val) => handleChange("vendor_id", val)}><SelectTrigger><SelectValue placeholder={loadingVendors ? "Loading vendors..." : "Select vendor"} /></SelectTrigger><SelectContent>{vendors.map(v => <SelectItem key={v.id} value={v.id}>{v.company_name}</SelectItem>)}</SelectContent></Select><AddVendorInline onVendorAdded={handleVendorAdded} /></div>
+            <div><Label>Quantity</Label><Input type="number" min="1" value={quantity} onChange={(e) => setQuantity(parseInt(e.target.value) || 1)} /></div>
           </div>
 
           {/* Purchased By */}
-          <div>
-            <Label>Purchased By</Label>
-            <Select value={formData.purchased_by_type} onValueChange={(val) => handleChange("purchased_by_type", val)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="Digitalbluez">Digitalbluez</SelectItem>
-                <SelectItem value="Techtenth">Techtenth</SelectItem>
-                <SelectItem value="Cash">Cash</SelectItem>
-                <SelectItem value="Other">Other</SelectItem>
-              </SelectContent>
-            </Select>
-            {formData.purchased_by_type === "Other" && (
-              <div className="mt-2">
-                <Label>Other Purchased By</Label>
-                <Input value={formData.purchased_by_other} onChange={(e) => handleChange("purchased_by_other", e.target.value)} placeholder="Specify" />
-              </div>
-            )}
-          </div>
+          <div><Label>Purchased By</Label><Select value={formData.purchased_by_type} onValueChange={(val) => handleChange("purchased_by_type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Digitalbluez">Digitalbluez</SelectItem><SelectItem value="Techtenth">Techtenth</SelectItem><SelectItem value="Cash">Cash</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select>{formData.purchased_by_type === "Other" && <div className="mt-2"><Label>Other Purchased By</Label><Input value={formData.purchased_by_other} onChange={(e) => handleChange("purchased_by_other", e.target.value)} placeholder="Specify" /></div>}</div>
 
           {/* Asset Number */}
-          <div>
-            <Label>Asset Number {quantity > 1 && "(starting number)"}</Label>
-            <Input
-              value={formData.asset_number}
-              onChange={(e) => handleChange("asset_number", e.target.value)}
-              placeholder="e.g., DBAS582"
-            />
-            {quantity > 1 && (
-              <p className="text-xs text-muted-foreground mt-1">Subsequent numbers will be auto‑incremented.</p>
-            )}
-          </div>
+          <div><Label>Asset Number {quantity > 1 && "(starting number)"}</Label><Input value={formData.asset_number} onChange={(e) => handleChange("asset_number", e.target.value)} placeholder="e.g., DBAS582" /></div>
 
           {/* Serial Numbers */}
-          {!showSerialTextarea ? (
-            <div>
-              <Label>Serial Number</Label>
-              <Input value={formData.serial_number} onChange={(e) => handleChange("serial_number", e.target.value)} />
-            </div>
-          ) : (
-            <div>
-              <Label>Serial Numbers (optional, one per line)</Label>
-              <Textarea
-                rows={Math.min(quantity, 10)}
-                placeholder="Enter one serial number per line (optional)&#10;e.g.,&#10;SN001&#10;SN002&#10;SN003"
-                value={serialNumbersList}
-                onChange={(e) => setSerialNumbersList(e.target.value)}
-              />
-              <p className="text-xs text-gray-500 mt-1">
-                You entered {serialNumbersList.split(/\r?\n/).filter((s) => s.trim()).length} of {quantity} serial numbers. Remaining will be empty.
-              </p>
-            </div>
-          )}
+          {!showSerialTextarea ? <div><Label>Serial Number</Label><Input value={formData.serial_number} onChange={(e) => handleChange("serial_number", e.target.value)} /></div> : <div><Label>Serial Numbers (optional, one per line)</Label><Textarea rows={Math.min(quantity, 10)} placeholder="Enter one serial number per line" value={serialNumbersList} onChange={(e) => setSerialNumbersList(e.target.value)} /><p className="text-xs text-gray-500 mt-1">You entered {serialNumbersList.split(/\r?\n/).filter(s => s.trim()).length} of {quantity} serial numbers.</p></div>}
+
+          {/* SKU Selection */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>SKU Base</Label><div className="flex gap-2"><Select value={selectedBaseId} onValueChange={handleBaseChange}><SelectTrigger className="flex-1"><SelectValue placeholder="Select base SKU" /></SelectTrigger><SelectContent>{skuBases.map(base => <SelectItem key={base.id} value={base.id}>{base.sku_base} - {base.product_name}</SelectItem>)}</SelectContent></Select><Button type="button" variant="outline" size="sm" onClick={() => setShowBaseModal(true)}>+ Base</Button></div></div>
+            <div><Label>Variant</Label><div className="flex gap-2"><Select value={selectedVariantId} onValueChange={handleVariantChange} disabled={!selectedBaseId}><SelectTrigger className="flex-1"><SelectValue placeholder="Select variant" /></SelectTrigger><SelectContent>{variants.map(v => <SelectItem key={v.id} value={v.id}>{v.variant_code} - {v.variant_name || `${v.ram_gb}GB/${v.ssd_gb}GB`}</SelectItem>)}</SelectContent></Select><Button type="button" variant="outline" size="sm" onClick={() => setShowVariantModal(true)} disabled={!selectedBaseId}>+ Variant</Button></div></div>
+          </div>
 
           {/* Type, Brand, Model, Make Year */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div><Label>Type *</Label><Select value={formData.type} onValueChange={(val) => handleChange("type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Laptop">Laptop</SelectItem><SelectItem value="Desktop">Desktop</SelectItem><SelectItem value="Monitor">Monitor</SelectItem><SelectItem value="Tablet">Tablet</SelectItem><SelectItem value="Tiny">Tiny</SelectItem></SelectContent></Select></div>
             <div><Label>Brand</Label><Select value={formData.brand || ""} onValueChange={(val) => handleChange("brand", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{BRAND_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></div>
             {formData.brand === "Other" && <div><Label>Other Brand</Label><Input value={formData.brand_other || ""} onChange={(e) => handleChange("brand_other", e.target.value)} /></div>}
-            <div><Label>Model</Label><ModelSelect value={formData.model_id} onChange={(id, name) => { setFormData(prev => ({ ...prev, model_id: id, model: name })); }} /></div>
+            <div><Label>Model</Label><ModelSelect value={formData.model_id} onChange={(id, name) => setFormData(prev => ({ ...prev, model_id: id, model: name }))} /></div>
             <div><Label>Make Year</Label><Input type="number" step="1" value={formData.make_year ?? ""} onChange={(e) => handleChange("make_year", e.target.value === "" ? null : parseInt(e.target.value))} /></div>
           </div>
 
@@ -751,62 +561,48 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           </div>
 
           {/* SKU (auto) */}
-          <div><Label>SKU (Auto)</Label><Input value={formData.sku} disabled className="bg-gray-100" /></div>
+          <div><Label>SKU Code (Auto)</Label><Input value={formData.sku} disabled className="bg-gray-100" /></div>
 
           {/* Pricing Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <div><Label>Base Price</Label><Input type="number" step="0.01" value={formData.base_price ?? ""} onChange={(e) => handleChange("base_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Purchase Type</Label><Select value={formData.purchase_type} onValueChange={(val) => handleChange("purchase_type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="GST">GST</SelectItem><SelectItem value="Cash">Cash</SelectItem></SelectContent></Select></div>
             <div><Label>Purchased Invoice Number</Label><Input value={formData.purchased_invoice_number} onChange={(e) => handleChange("purchased_invoice_number", e.target.value)} /></div>
-            {isGST && (
-              <>
-                <div><Label>GST (%)</Label><Input type="number" step="0.01" value={formData.gst ?? ""} onChange={(e) => handleChange("gst", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-                <div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div>
-              </>
-            )}
+            {isGST && (<><div><Label>GST (%)</Label><Input type="number" step="0.01" value={formData.gst ?? ""} onChange={(e) => handleChange("gst", e.target.value === "" ? null : parseFloat(e.target.value))} /></div><div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div></>)}
             <div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-gray-100" /></div>
             <div><Label>Total Price (Auto)</Label><Input type="number" step="0.01" value={formData.total_price ?? ""} onChange={(e) => handleChange("total_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Selling Price</Label><Input type="number" step="0.01" value={formData.selling_price ?? ""} onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Vendor Invoice Total</Label><Input type="number" step="0.01" value={formData.vendor_invoice_total ?? ""} disabled className="bg-gray-100" /></div>
           </div>
 
-          {quantity > 1 && formData.total_price && (
-            <div className="text-right text-sm text-gray-600">Total for {quantity} units: ₹{(formData.total_price * quantity).toFixed(2)}</div>
-          )}
+          {quantity > 1 && formData.total_price && <div className="text-right text-sm text-gray-600">Total for {quantity} units: ₹{(formData.total_price * quantity).toFixed(2)}</div>}
 
-          <div><Label>Public Photo URL (optional)</Label><Input value={formData.public_photo_url} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://yourwebsite.com/images/product.jpg" /><p className="text-xs text-gray-500 mt-1">Permanent link to product photo (for WhatsApp/email sharing)</p></div>
+          <div><Label>Public Photo URL (optional)</Label><Input value={formData.public_photo_url} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://..." /></div>
 
           {/* Expense Section */}
           <div className="border rounded-lg p-4 space-y-4">
             <div className="flex items-center space-x-2"><input type="checkbox" id="expense" checked={formData.expense} onChange={(e) => handleChange("expense", e.target.checked)} /><Label htmlFor="expense">Any extra expense incurred?</Label></div>
-            {formData.expense && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div><Label>Expense Amount</Label><Input type="number" step="0.01" value={formData.expense_amount ?? ""} onChange={(e) => handleChange("expense_amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-                <div className="md:col-span-2"><Label>Expense Description</Label><Input value={formData.expense_description} onChange={(e) => handleChange("expense_description", e.target.value)} /></div>
-              </div>
-            )}
+            {formData.expense && (<div className="grid grid-cols-1 md:grid-cols-2 gap-4"><div><Label>Expense Amount</Label><Input type="number" step="0.01" value={formData.expense_amount ?? ""} onChange={(e) => handleChange("expense_amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div><div className="md:col-span-2"><Label>Expense Description</Label><Input value={formData.expense_description} onChange={(e) => handleChange("expense_description", e.target.value)} /></div></div>)}
           </div>
 
           {/* Status & Remarks */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div><Label>Status</Label><Select value={formData.status_purchase} onValueChange={(val) => handleChange("status_purchase", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Ready for Sale">Ready for Sale</SelectItem><SelectItem value="QC Pending">QC Pending</SelectItem><SelectItem value="Faulty">Faulty</SelectItem><SelectItem value="Other">Other</SelectItem></SelectContent></Select></div>
-            {formData.status_purchase === "Other" && <div><Label>Other Status</Label><Input value={formData.status_other} onChange={(e) => handleChange("status_other", e.target.value)} placeholder="Specify" /></div>}
+            {formData.status_purchase === "Other" && <div><Label>Other Status</Label><Input value={formData.status_other} onChange={(e) => handleChange("status_other", e.target.value)} /></div>}
           </div>
+          <div><Label>Remarks</Label><textarea className="w-full border rounded-md p-2" rows={2} value={formData.remarks} onChange={(e) => handleChange("remarks", e.target.value)}></textarea></div>
 
-          <div><Label>Remarks</Label><textarea className="w-full border rounded-md p-2" rows={2} value={formData.remarks} onChange={(e) => handleChange("remarks", e.target.value)} placeholder="Any additional notes..." /></div>
-
-          {/* Action Buttons */}
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" variant="secondary" disabled={loading} onClick={() => insertPurchase('draft')}>
-              {loading ? "Saving..." : "Save Draft"}
-            </Button>
-            <Button type="button" variant="default" disabled={loading} onClick={() => insertPurchase('submitted')}>
-              {loading ? "Submitting..." : "Submit"}
-            </Button>
+            <Button type="button" variant="secondary" disabled={loading} onClick={() => insertPurchase('draft')}>{loading ? "Saving..." : "Save Draft"}</Button>
+            <Button type="button" variant="default" disabled={loading} onClick={() => insertPurchase('submitted')}>{loading ? "Submitting..." : "Submit"}</Button>
           </div>
         </div>
       </DialogContent>
+
+      {/* SKU Modals */}
+      <SkuBaseFormModal open={showBaseModal} onOpenChange={setShowBaseModal} onCreated={fetchSkuBases} />
+      <SkuVariantFormModal open={showVariantModal} onOpenChange={setShowVariantModal} skuBaseId={selectedBaseId} onCreated={fetchSkuBases} />
     </Dialog>
   );
 }

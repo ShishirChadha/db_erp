@@ -1,9 +1,12 @@
-'use client'
+'use client';
 
-import { FileText } from 'lucide-react'
-import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { FileText } from 'lucide-react';
+import { CalendarDays } from 'lucide-react';
+import { Package } from 'lucide-react';
+import { Tag } from 'lucide-react';          // for SKU Master
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -15,28 +18,36 @@ import {
   Laptop,
   Menu,
   X,
-  Building2
-} from 'lucide-react'
-import { useState } from 'react'
-import { cn } from '@/lib/utils'
+  Building2,
+} from 'lucide-react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
+import { cn } from '@/lib/utils';
 
 const navItems = [
-  { href: '/dashboard',           label: 'Dashboard',    icon: LayoutDashboard },
-  { href: '/dashboard/purchases', label: 'Purchase IN',  icon: ShoppingCart },
-  { href: '/dashboard/sales',     label: 'Sales',        icon: TrendingUp },
-  { href: '/dashboard/expenses',  label: 'Expenses',     icon: Receipt },
-  { href: '/dashboard/customers', label: 'Customers',    icon: Users },
-  { href: '/dashboard/vendors',   label: 'Vendors',      icon: Building2 },
-  { href: '/dashboard/reports',   label: 'Reports',      icon: BarChart3 },
-  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText }
-]
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/dashboard/purchases', label: 'Purchase IN', icon: ShoppingCart },
+  { href: '/dashboard/purchase-orders', label: 'Purchase Orders', icon: Package },
+  { href: '/dashboard/sales', label: 'Sales', icon: TrendingUp },
+  { href: '/dashboard/expenses', label: 'Expenses', icon: Receipt },
+  { href: '/dashboard/customers', label: 'Customers', icon: Users },
+  { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
+  { href: '/dashboard/skus', label: 'SKU Master', icon: Tag },
+  { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
+  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText },
+  { href: '/dashboard/activities', label: 'Activity Hub', icon: CalendarDays },
+];
 
-// SidebarContent moved outside of Sidebar
-function SidebarContent({ pathname, onLogout, onMobileClose }: {
-  pathname: string
-  onLogout: () => void
-  onMobileClose: () => void
+function SidebarContent({
+  pathname,
+  onLogout,
+  onMobileClose,
+}: {
+  pathname: string;
+  onLogout: () => void;
+  onMobileClose: () => void;
 }) {
+  if (!pathname) return null;
+
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
@@ -53,7 +64,7 @@ function SidebarContent({ pathname, onLogout, onMobileClose }: {
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-1">
         {navItems.map((item) => {
-          const isActive = pathname === item.href
+          const isActive = pathname === item.href;
           return (
             <Link
               key={item.href}
@@ -69,7 +80,7 @@ function SidebarContent({ pathname, onLogout, onMobileClose }: {
               <item.icon className="h-4 w-4 flex-shrink-0" />
               {item.label}
             </Link>
-          )
+          );
         })}
       </nav>
 
@@ -84,28 +95,53 @@ function SidebarContent({ pathname, onLogout, onMobileClose }: {
         </button>
       </div>
     </div>
-  )
+  );
 }
 
 export default function Sidebar() {
-  const pathname = usePathname()
-  const router = useRouter()
-  const supabase = createClient()
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [clientPathname, setClientPathname] = useState('');
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
-  }
+  useEffect(() => {
+    if (pathname) setClientPathname(pathname);
+  }, [pathname]);
 
-  const closeMobile = () => setMobileOpen(false)
+  const handleLogout = useCallback(async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+    router.refresh();
+  }, [supabase, router]);
+
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+  const toggleMobile = useCallback(() => setMobileOpen((prev) => !prev), []);
+
+  useEffect(() => {
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && mobileOpen) closeMobile();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [mobileOpen, closeMobile]);
+
+  const sidebarContent = useMemo(
+    () => (
+      <SidebarContent
+        pathname={clientPathname}
+        onLogout={handleLogout}
+        onMobileClose={closeMobile}
+      />
+    ),
+    [clientPathname, handleLogout, closeMobile]
+  );
 
   return (
     <>
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-56 bg-white border-r border-gray-200 flex-col flex-shrink-0">
-        <SidebarContent pathname={pathname} onLogout={handleLogout} onMobileClose={closeMobile} />
+        {sidebarContent}
       </aside>
 
       {/* Mobile top bar */}
@@ -116,11 +152,12 @@ export default function Sidebar() {
           </div>
           <span className="font-semibold text-gray-900 text-sm">DigitalBluez ERP</span>
         </div>
-        <button onClick={() => setMobileOpen(!mobileOpen)}>
-          {mobileOpen
-            ? <X className="h-5 w-5 text-gray-600" />
-            : <Menu className="h-5 w-5 text-gray-600" />
-          }
+        <button onClick={toggleMobile}>
+          {mobileOpen ? (
+            <X className="h-5 w-5 text-gray-600" />
+          ) : (
+            <Menu className="h-5 w-5 text-gray-600" />
+          )}
         </button>
       </div>
 
@@ -131,10 +168,14 @@ export default function Sidebar() {
             className="absolute left-0 top-0 bottom-0 w-64 bg-white"
             onClick={(e) => e.stopPropagation()}
           >
-            <SidebarContent pathname={pathname} onLogout={handleLogout} onMobileClose={closeMobile} />
+            <SidebarContent
+              pathname={clientPathname}
+              onLogout={handleLogout}
+              onMobileClose={closeMobile}
+            />
           </aside>
         </div>
       )}
     </>
-  )
+  );
 }
