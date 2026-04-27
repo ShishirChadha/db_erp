@@ -25,13 +25,11 @@ import { cn } from '@/lib/utils';
 
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/purchase-orders', label: 'Purchase Orders', icon: Package },  // use Package icon for clarity
   { href: '/dashboard/purchases', label: 'Purchase IN', icon: ShoppingCart },
   { href: '/dashboard/sales', label: 'Sales', icon: TrendingUp },
   { href: '/dashboard/expenses', label: 'Expenses', icon: Receipt },
   { href: '/dashboard/customers', label: 'Customers', icon: Users },
   { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
-  { href: '/dashboard/skus', label: 'SKU Master', icon: Tag },
   { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
   { href: '/dashboard/invoices', label: 'Invoices', icon: FileText },
   { href: '/dashboard/activities', label: 'Activity Hub', icon: CalendarDays },
