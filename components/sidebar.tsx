@@ -1,6 +1,6 @@
 'use client';
 
-import { FileText } from 'lucide-react';
+import { BarcodeIcon, FileText } from 'lucide-react';
 import { CalendarDays } from 'lucide-react';
 import { Package } from 'lucide-react';
 import { Tag } from 'lucide-react';          // for SKU Master
@@ -26,6 +26,8 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/dashboard/purchases', label: 'Purchase IN', icon: ShoppingCart },
+  {href: '/dashboard/sku-master', label: 'SKU MAster', icon: BarcodeIcon},
+  {href: '/dashboard/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart},
   { href: '/dashboard/sales', label: 'Sales', icon: TrendingUp },
   { href: '/dashboard/expenses', label: 'Expenses', icon: Receipt },
   { href: '/dashboard/customers', label: 'Customers', icon: Users },
