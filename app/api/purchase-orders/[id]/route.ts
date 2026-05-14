@@ -2,59 +2,124 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
 
-export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { data: po, error } = await supabaseAdmin
+  // Fetch PO header
+  const { data: po, error: poErr } = await supabaseAdmin
     .from('purchase_orders')
-    .select('*, items:purchase_order_items(*)')
-    .eq('id', params.id)
+    .select('*')
+    .eq('id', id)
     .single()
-  if (error || !po) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  return NextResponse.json(po)
+
+  if (poErr || !po) {
+    return NextResponse.json({ error: 'Purchase Order not found' }, { status: 404 })
+  }
+
+  // Fetch line items with SKU details
+  const { data: items } = await supabaseAdmin
+    .from('purchase_order_items')
+    .select('*, sku:sku_master ( full_sku_code, sku_description, brand, model_name, specifications, hsn_code )')
+    .eq('po_id', id)
+    .order('line_item_number', { ascending: true })
+
+  // Fetch all asset mappings for this PO to get the current asset numbers
+  const { data: allAssets } = await supabaseAdmin
+    .from('purchase_order_asset_mapping')
+    .select('po_item_id, asset_number, serial_number, status')
+    .eq('po_id', id)
+
+  // Group assets by po_item_id
+  const assetsByItem: Record<string, any[]> = {}
+  allAssets?.forEach(asset => {
+    if (!assetsByItem[asset.po_item_id]) assetsByItem[asset.po_item_id] = []
+    assetsByItem[asset.po_item_id].push(asset)
+  })
+
+  // Enrich items with SKU data and live asset numbers
+  const enrichedItems = (items || []).map(item => {
+    const liveAssets = assetsByItem[item.id] || []
+    return {
+      ...item,
+      sku_code: item.sku?.full_sku_code || item.base_sku_code,
+      sku_description: item.sku?.sku_description || '',
+      sku_brand: item.sku?.brand || '',
+      sku_model: item.sku?.model_name || '',
+      sku_specs: item.sku?.specifications || {},
+      hsn_code: item.sku?.hsn_code || item.hsn_code || '',
+      asset_numbers_reserved: liveAssets.map(a => a.asset_number),  // live list
+      serial_numbers: liveAssets.filter(a => a.serial_number).map(a => a.serial_number), // updated serials
+    }
+  })
+
+  return NextResponse.json({
+    ...po,
+    items: enrichedItems,
+  })
 }
 
-export async function PUT(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+// ---------- PUT (update – only draft) ----------
+export async function PUT(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
+  const body = await req.json()
 
-  // Only draft POs can be edited
+  // Only allow editing draft POs
   const { data: po } = await supabaseAdmin
     .from('purchase_orders')
     .select('po_status')
-    .eq('id', params.id)
+    .eq('id', id)
     .single()
-  if (!po || po.po_status !== 'draft') return NextResponse.json({ error: 'Only draft POs can be edited' }, { status: 400 })
 
-  const body = await req.json()
-  const { items, ...headerFields } = body
+  if (!po || po.po_status !== 'draft') {
+    return NextResponse.json({ error: 'Only draft POs can be edited' }, { status: 400 })
+  }
+
+  const { items, po_status, ...headerFields } = body
+
+  // If po_status is 'cancelled', allow cancellation even if not draft (but from draft/submitted)
+  if (po_status === 'cancelled') {
+    if (!['draft', 'submitted'].includes(po.po_status)) {
+      return NextResponse.json({ error: 'Only draft or submitted POs can be cancelled' }, { status: 400 })
+    }
+    await supabaseAdmin
+      .from('purchase_orders')
+      .update({ po_status: 'cancelled' })
+      .eq('id', id)
+    return NextResponse.json({ success: true })
+  }
 
   // Update allowed header fields
-  const updatable = [
-    'vendor_id','vendor_name','po_date','purchase_type','purchased_by_type',
-    'purchased_by_other','expected_delivery_date','delivery_location','remarks',
-    'terms_and_conditions','expense_amount','expense_description'
+  const allowedHeaderFields = [
+    'vendor_id',
+    'vendor_name',
+    'po_date',
+    'purchase_type',
+    'purchased_by_type',
+    'purchased_by_other',
+    'expected_delivery_date',
+    'delivery_location',
+    'remarks',
+    'terms_and_conditions',
+    'expense_amount',
+    'expense_description',
   ]
   const headerUpdate: any = {}
-  for (const key of updatable) {
+  for (const key of allowedHeaderFields) {
     if (headerFields[key] !== undefined) headerUpdate[key] = headerFields[key]
   }
   if (Object.keys(headerUpdate).length > 0) {
-    await supabaseAdmin.from('purchase_orders').update(headerUpdate).eq('id', params.id)
+    await supabaseAdmin.from('purchase_orders').update(headerUpdate).eq('id', id)
   }
 
   // Replace line items if provided
   if (items && Array.isArray(items)) {
-    await supabaseAdmin.from('purchase_order_items').delete().eq('po_id', params.id)
+    await supabaseAdmin.from('purchase_order_items').delete().eq('po_id', id)
 
     const lineItems = []
     for (let i = 0; i < items.length; i++) {
@@ -73,7 +138,7 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
       const lineTotal = unitTotal + gstAmount
 
       lineItems.push({
-        po_id: params.id,
+        po_id: id,
         line_item_number: i + 1,
         sku_id: item.sku_id,
         base_sku_code: sku.base_sku_code,
@@ -86,20 +151,28 @@ export async function PUT(req: NextRequest, { params }: { params: { id: string }
         line_total: lineTotal,
         asset_prefix: '',
         asset_numbers_reserved: [],
-        notes: item.notes || ''
+        notes: item.notes || '',
       })
     }
     await supabaseAdmin.from('purchase_order_items').insert(lineItems)
-    await recalcPOTotals(params.id)
+    await recalcPOTotals(id)
   }
 
   return NextResponse.json({ success: true })
 }
 
-export async function DELETE(req: NextRequest, { params }: { params: { id: string } }) {
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+// ---------- DELETE (soft delete) ----------
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params
 
-  await supabaseAdmin.from('purchase_orders').update({ is_deleted: true }).eq('id', params.id)
+  // Soft delete
+  await supabaseAdmin
+    .from('purchase_orders')
+    .update({ is_deleted: true })
+    .eq('id', id)
+
   return NextResponse.json({ success: true })
 }

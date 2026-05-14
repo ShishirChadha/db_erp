@@ -9,17 +9,22 @@ async function getUser(req: NextRequest) {
   return error ? null : user
 }
 
-export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
+export async function POST(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id: poId } = await params
+
   const user = await getUser(req)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { items } = body   // { po_item_id, assets: [{ asset_number, serial_number }] }
+  const { items } = body
 
   const { data: po } = await supabaseAdmin
     .from('purchase_orders')
     .select('po_status, po_number')
-    .eq('id', params.id)
+    .eq('id', poId)
     .single()
 
   if (!po || !['submitted', 'partially_received'].includes(po.po_status)) {
@@ -47,7 +52,7 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       return NextResponse.json({ error: `Receiving ${nowReceiving} would exceed ordered ${orderedQty}` }, { status: 400 })
     }
 
-    // Update asset mapping: serial + status
+    // Update asset mapping
     for (const asset of assets) {
       await supabaseAdmin
         .from('purchase_order_asset_mapping')
@@ -60,7 +65,6 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
         .eq('po_item_id', po_item_id)
     }
 
-    // Append new serials to item
     const newSerials = [...(poItem.serial_numbers || []), ...assets.map((a: any) => a.serial_number)]
     await supabaseAdmin
       .from('purchase_order_items')
@@ -80,14 +84,14 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
       .update({ quantity_in_stock: newQty })
       .eq('id', poItem.sku_id)
 
-    // Stock movement
+    // Stock movement (with user ID)
     await supabaseAdmin.from('stock_movements').insert({
       sku_id: poItem.sku_id,
       movement_type: 'receipt',
       quantity_change: nowReceiving,
       quantity_before: oldQty,
       quantity_after: newQty,
-      po_id: params.id,
+      po_id: poId,
       po_item_id,
       notes: `Goods receipt for PO ${po.po_number}`,
       created_by: user.id
@@ -97,7 +101,13 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   const newStatus = allFullyReceived ? 'received' : 'partially_received'
-  await supabaseAdmin.from('purchase_orders').update({ po_status: newStatus }).eq('id', params.id)
+  await supabaseAdmin
+    .from('purchase_orders')
+    .update({
+      po_status: newStatus,
+      updated_by: user.id
+    })
+    .eq('id', poId)
 
   return NextResponse.json({ success: true, new_status: newStatus })
 }

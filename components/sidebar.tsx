@@ -1,12 +1,9 @@
-'use client';
+'use client'
 
-import { BarcodeIcon, FileText } from 'lucide-react';
-import { CalendarDays } from 'lucide-react';
-import { Package } from 'lucide-react';
-import { Tag } from 'lucide-react';          // for SKU Master
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { createClient } from '@/lib/supabase/client';
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import Link from 'next/link'
+import { usePathname, useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 import {
   LayoutDashboard,
   ShoppingCart,
@@ -19,34 +16,120 @@ import {
   Menu,
   X,
   Building2,
-} from 'lucide-react';
-import { useState, useEffect, useMemo, useCallback } from 'react';
-import { cn } from '@/lib/utils';
+  Barcode,
+  FileText,
+  Settings,
+  Sparkles,
+  CalendarDays,
+  ChevronDown,
+} from 'lucide-react'
+import { cn } from '@/lib/utils'
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/dashboard/purchases', label: 'Purchase IN', icon: ShoppingCart },
-  {href: '/dashboard/sku-master', label: 'SKU MAster', icon: BarcodeIcon},
-  {href: '/dashboard/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart},
-  { href: '/dashboard/sales', label: 'Sales', icon: TrendingUp },
-  { href: '/dashboard/expenses', label: 'Expenses', icon: Receipt },
-  { href: '/dashboard/customers', label: 'Customers', icon: Users },
-  { href: '/dashboard/vendors', label: 'Vendors', icon: Building2 },
-  { href: '/dashboard/reports', label: 'Reports', icon: BarChart3 },
-  { href: '/dashboard/invoices', label: 'Invoices', icon: FileText },
-  { href: '/dashboard/activities', label: 'Activity Hub', icon: CalendarDays },
-];
+// ---------- Menu structure with categories ----------
+const menuGroups = [
+  {
+    label: 'Dashboard',
+    icon: LayoutDashboard,
+    href: '/dashboard',
+  },
+  {
+    label: 'Purchases',
+    icon: ShoppingCart,
+    children: [
+      { href: '/dashboard/purchase-orders', label: 'Purchase Orders' },
+      { href: '/dashboard/purchase-invoices', label: 'Purchase Invoices' },
+      { href: '/dashboard/purchases', label: 'OLD Purchase IN' },
+    ],
+  },
+  {
+    label: 'Inventory',
+    icon: Barcode,
+    children: [
+      { href: '/dashboard/sku-master', label: 'SKU Master' },
+      { href: '/dashboard/stock', label: 'Stock / Assets' },
+    ],
+  },
+  {
+    label: 'Sales',
+    icon: TrendingUp,
+    href: '/dashboard/sales',
+  },
+  {
+    label: 'Invoices',
+    icon: FileText,
+    href: '/dashboard/invoices',
+  },
+  {
+    label: 'Expenses',
+    icon: Receipt,
+    href: '/dashboard/expenses',
+  },
+  {
+    label: 'Customers',
+    icon: Users,
+    href: '/dashboard/customers',
+  },
+  {
+    label: 'Vendors',
+    icon: Building2,
+    href: '/dashboard/vendors',
+  },
+  {
+    label: 'Reports',
+    icon: BarChart3,
+    href: '/dashboard/reports',
+  },
+  {
+    label: 'Activity Hub',
+    icon: CalendarDays,
+    href: '/dashboard/activities',
+  },
+  {
+    label: 'Settings',
+    icon: Settings,
+    href: '/dashboard/settings',
+  },
+]
 
+// ---------- Sidebar Content (with collapsible groups) ----------
 function SidebarContent({
   pathname,
   onLogout,
   onMobileClose,
 }: {
-  pathname: string;
-  onLogout: () => void;
-  onMobileClose: () => void;
+  pathname: string
+  onLogout: () => void
+  onMobileClose: () => void
 }) {
-  if (!pathname) return null;
+  // State for each group (key = label) whether it's open
+  const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
+    // Initialize: open the group if it contains the current path
+    const initial: Record<string, boolean> = {}
+    menuGroups.forEach(group => {
+      if (group.children) {
+        initial[group.label] = group.children.some(child => pathname.startsWith(child.href))
+      }
+    })
+    return initial
+  })
+
+  // Update open state when pathname changes
+  useEffect(() => {
+    setOpenGroups(prev => {
+      const next = { ...prev }
+      menuGroups.forEach(group => {
+        if (group.children) {
+          const isActive = group.children.some(child => pathname.startsWith(child.href))
+          if (isActive) next[group.label] = true
+        }
+      })
+      return next
+    })
+  }, [pathname])
+
+  const toggleGroup = (label: string) => {
+    setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }))
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -62,13 +145,65 @@ function SidebarContent({
       </div>
 
       {/* Nav items */}
-      <nav className="flex-1 px-3 py-4 space-y-1">
-        {navItems.map((item) => {
-          const isActive = pathname === item.href;
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {menuGroups.map(group => {
+          // If it has children, render a collapsible group
+          if (group.children) {
+            const isOpen = openGroups[group.label] ?? false
+            const isActive = group.children.some(child => pathname === child.href)
+
+            return (
+              <div key={group.label}>
+                <button
+                  onClick={() => toggleGroup(group.label)}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full',
+                    isActive
+                      ? 'bg-blue-600 text-white'
+                      : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                  )}
+                >
+                  {group.icon && <group.icon className="h-4 w-4 flex-shrink-0" />}
+                  <span className="flex-1 text-left">{group.label}</span>
+                  <ChevronDown
+                    className={cn(
+                      'h-4 w-4 flex-shrink-0 transition-transform',
+                      isOpen && 'rotate-180'
+                    )}
+                  />
+                </button>
+                {isOpen && (
+                  <div className="ml-6 mt-1 space-y-1">
+                    {group.children.map(child => {
+                      const childActive = pathname === child.href
+                      return (
+                        <Link
+                          key={child.href}
+                          href={child.href}
+                          onClick={onMobileClose}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all',
+                            childActive
+                              ? 'bg-blue-100 text-blue-700 font-medium'
+                              : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'
+                          )}
+                        >
+                          {child.label}
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          }
+
+          // Otherwise, a simple link
+          const isActive = pathname === group.href
           return (
             <Link
-              key={item.href}
-              href={item.href}
+              key={group.href || group.label}
+              href={group.href!}
               onClick={onMobileClose}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
@@ -77,10 +212,10 @@ function SidebarContent({
                   : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               )}
             >
-              <item.icon className="h-4 w-4 flex-shrink-0" />
-              {item.label}
+              {group.icon && <group.icon className="h-4 w-4 flex-shrink-0" />}
+              {group.label}
             </Link>
-          );
+          )
         })}
       </nav>
 
@@ -95,36 +230,37 @@ function SidebarContent({
         </button>
       </div>
     </div>
-  );
+  )
 }
 
+// ---------- Main Sidebar Component (unchanged wrapper) ----------
 export default function Sidebar() {
-  const pathname = usePathname();
-  const router = useRouter();
-  const supabase = createClient();
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [clientPathname, setClientPathname] = useState('');
+  const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [clientPathname, setClientPathname] = useState('')
 
   useEffect(() => {
-    if (pathname) setClientPathname(pathname);
-  }, [pathname]);
+    if (pathname) setClientPathname(pathname)
+  }, [pathname])
 
   const handleLogout = useCallback(async () => {
-    await supabase.auth.signOut();
-    router.push('/login');
-    router.refresh();
-  }, [supabase, router]);
+    await supabase.auth.signOut()
+    router.push('/login')
+    router.refresh()
+  }, [supabase, router])
 
-  const closeMobile = useCallback(() => setMobileOpen(false), []);
-  const toggleMobile = useCallback(() => setMobileOpen((prev) => !prev), []);
+  const closeMobile = useCallback(() => setMobileOpen(false), [])
+  const toggleMobile = useCallback(() => setMobileOpen(prev => !prev), [])
 
   useEffect(() => {
     const handleEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape' && mobileOpen) closeMobile();
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => document.removeEventListener('keydown', handleEscape);
-  }, [mobileOpen, closeMobile]);
+      if (event.key === 'Escape' && mobileOpen) closeMobile()
+    }
+    document.addEventListener('keydown', handleEscape)
+    return () => document.removeEventListener('keydown', handleEscape)
+  }, [mobileOpen, closeMobile])
 
   const sidebarContent = useMemo(
     () => (
@@ -135,7 +271,7 @@ export default function Sidebar() {
       />
     ),
     [clientPathname, handleLogout, closeMobile]
-  );
+  )
 
   return (
     <>
@@ -166,7 +302,7 @@ export default function Sidebar() {
         <div className="md:hidden fixed inset-0 z-30 bg-black/40" onClick={closeMobile}>
           <aside
             className="absolute left-0 top-0 bottom-0 w-64 bg-white"
-            onClick={(e) => e.stopPropagation()}
+            onClick={e => e.stopPropagation()}
           >
             <SidebarContent
               pathname={clientPathname}
@@ -177,5 +313,5 @@ export default function Sidebar() {
         </div>
       )}
     </>
-  );
+  )
 }

@@ -4,6 +4,19 @@ import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { Edit, Trash2, Copy, X, ArrowUp, ArrowDown } from 'lucide-react';
 
+// ---------- Type definitions ----------
+interface Activity {
+  id: string;
+  title: string;
+  description?: string | null;
+  tags: string[];
+  status: 'pending' | 'in_progress' | 'done';
+  due_date?: string | null;
+  reminder_at?: string | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 function getTagColor(tag: string): string {
   let hash = 0;
   for (let i = 0; i < tag.length; i++) {
@@ -14,7 +27,18 @@ function getTagColor(tag: string): string {
   return `hsl(${hue}, 70%, 85%)`;
 }
 
-function SimpleModal({ isOpen, onClose, title, children }) {
+// ---------- Simple Modal (unchanged) ----------
+function SimpleModal({
+  isOpen,
+  onClose,
+  title,
+  children,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}) {
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
@@ -31,15 +55,23 @@ function SimpleModal({ isOpen, onClose, title, children }) {
   );
 }
 
-// ----------------------------------------------
-// Add Activity Modal (with tag suggestions)
-// ----------------------------------------------
-function AddActivityModal({ isOpen, onClose, onUpdate, existingTags }) {
+// ---------- Add Activity Modal ----------
+function AddActivityModal({
+  isOpen,
+  onClose,
+  onUpdate,
+  existingTags,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: () => void;
+  existingTags: string[];
+}) {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    tags: [],
-    status: 'pending',
+    tags: [] as string[],
+    status: 'pending' as 'pending' | 'in_progress' | 'done',
     due_date: '',
     reminder_at: '',
   });
@@ -53,7 +85,7 @@ function AddActivityModal({ isOpen, onClose, onUpdate, existingTags }) {
     }
   };
 
-  const removeTag = (tag) => {
+  const removeTag = (tag: string) => {
     setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   };
 
@@ -110,7 +142,7 @@ function AddActivityModal({ isOpen, onClose, onUpdate, existingTags }) {
         </div>
         <div>
           <label className="block text-sm font-medium">Status</label>
-          <select className="w-full border rounded p-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+          <select className="w-full border rounded p-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as any })}>
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
@@ -133,15 +165,25 @@ function AddActivityModal({ isOpen, onClose, onUpdate, existingTags }) {
   );
 }
 
-// ----------------------------------------------
-// Edit Activity Modal (with tag suggestions)
-// ----------------------------------------------
-function EditActivityModal({ activity, isOpen, onClose, onUpdate, existingTags }) {
+// ---------- Edit Activity Modal ----------
+function EditActivityModal({
+  activity,
+  isOpen,
+  onClose,
+  onUpdate,
+  existingTags,
+}: {
+  activity: Activity | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onUpdate: () => void;
+  existingTags: string[];
+}) {
   const [form, setForm] = useState({
     title: '',
     description: '',
-    tags: [],
-    status: 'pending',
+    tags: [] as string[],
+    status: 'pending' as 'pending' | 'in_progress' | 'done',
     due_date: '',
     reminder_at: '',
   });
@@ -168,12 +210,12 @@ function EditActivityModal({ activity, isOpen, onClose, onUpdate, existingTags }
     }
   };
 
-  const removeTag = (tag) => {
+  const removeTag = (tag: string) => {
     setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   };
 
   const handleSubmit = async () => {
-    if (!form.title) return alert('Title is required');
+    if (!form.title || !activity) return alert('Title is required');
     const res = await fetch(`/api/activities/${activity.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -224,7 +266,7 @@ function EditActivityModal({ activity, isOpen, onClose, onUpdate, existingTags }
         </div>
         <div>
           <label className="block text-sm font-medium">Status</label>
-          <select className="w-full border rounded p-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}>
+          <select className="w-full border rounded p-2" value={form.status} onChange={e => setForm({ ...form, status: e.target.value as any })}>
             <option value="pending">Pending</option>
             <option value="in_progress">In Progress</option>
             <option value="done">Done</option>
@@ -247,10 +289,16 @@ function EditActivityModal({ activity, isOpen, onClose, onUpdate, existingTags }
   );
 }
 
-// --------------------------------------------------
-// Delete Confirm Modal (unchanged)
-// --------------------------------------------------
-function DeleteConfirmModal({ isOpen, onClose, onConfirm }) {
+// ---------- Delete Confirm Modal ----------
+function DeleteConfirmModal({
+  isOpen,
+  onClose,
+  onConfirm,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Delete Activity">
       <p>Are you sure you want to delete this activity?</p>
@@ -262,10 +310,16 @@ function DeleteConfirmModal({ isOpen, onClose, onConfirm }) {
   );
 }
 
-// --------------------------------------------------
-// Detail Modal (unchanged)
-// --------------------------------------------------
-function DetailModal({ activity, isOpen, onClose }) {
+// ---------- Detail Modal ----------
+function DetailModal({
+  activity,
+  isOpen,
+  onClose,
+}: {
+  activity: Activity | null;
+  isOpen: boolean;
+  onClose: () => void;
+}) {
   if (!activity) return null;
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Activity Details">
@@ -282,24 +336,22 @@ function DetailModal({ activity, isOpen, onClose }) {
   );
 }
 
-// --------------------------------------------------
-// Main ActivityList Component
-// --------------------------------------------------
-export default function ActivityList({ onUpdate }) {
-  const [activities, setActivities] = useState([]);
+// ---------- Main ActivityList Component ----------
+export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedStatuses, setSelectedStatuses] = useState(['pending', 'in_progress', 'done']);
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending', 'in_progress', 'done']);
   const [tagFilter, setTagFilter] = useState('');
   const [search, setSearch] = useState('');
-  const [selectedActivity, setSelectedActivity] = useState(null);
-  const [editingActivity, setEditingActivity] = useState(null);
-  const [deleteId, setDeleteId] = useState(null);
+  const [selectedActivity, setSelectedActivity] = useState<Activity | null>(null);
+  const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [sortBy, setSortBy] = useState('entry_date');
-  const [sortOrder, setSortOrder] = useState('desc');
-  const [existingTags, setExistingTags] = useState([]);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+  const [existingTags, setExistingTags] = useState<string[]>([]);
 
-  // Fetch existing tags for suggestions
+  // Fetch existing tags
   useEffect(() => {
     const fetchTags = async () => {
       const res = await fetch('/api/tags');
@@ -311,7 +363,7 @@ export default function ActivityList({ onUpdate }) {
     fetchTags();
   }, []);
 
-  // Fetch activities with sorting & filters
+  // Fetch activities
   useEffect(() => {
     const fetchActivities = async () => {
       setLoading(true);
@@ -331,13 +383,13 @@ export default function ActivityList({ onUpdate }) {
     fetchActivities();
   }, [selectedStatuses, tagFilter, search, sortBy, sortOrder]);
 
-  const toggleStatus = (status) => {
+  const toggleStatus = (status: string) => {
     setSelectedStatuses(prev =>
       prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
     );
   };
 
-  const handleSort = (column) => {
+  const handleSort = (column: string) => {
     if (sortBy === column) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
     } else {
@@ -347,12 +399,13 @@ export default function ActivityList({ onUpdate }) {
   };
 
   const handleDelete = async () => {
+    if (!deleteId) return;
     await fetch(`/api/activities/${deleteId}`, { method: 'DELETE' });
     onUpdate();
     setDeleteId(null);
   };
 
-  const handleDuplicate = async (act) => {
+  const handleDuplicate = async (act: Activity) => {
     const { id, ...rest } = act;
     await fetch('/api/activities', {
       method: 'POST',
@@ -362,7 +415,7 @@ export default function ActivityList({ onUpdate }) {
     onUpdate();
   };
 
-  const SortIcon = ({ column }) => {
+  const SortIcon = ({ column }: { column: string }) => {
     if (sortBy !== column) return null;
     return sortOrder === 'asc' ? <ArrowUp className="h-3 w-3 ml-1 inline" /> : <ArrowDown className="h-3 w-3 ml-1 inline" />;
   };
@@ -384,7 +437,7 @@ export default function ActivityList({ onUpdate }) {
           <div>
             <label className="block text-sm font-medium mb-1">Status</label>
             <div className="flex gap-2">
-              {['pending', 'in_progress', 'done'].map(status => (
+              {(['pending', 'in_progress', 'done'] as const).map(status => (
                 <label key={status} className="flex items-center gap-1">
                   <input type="checkbox" checked={selectedStatuses.includes(status)} onChange={() => toggleStatus(status)} className="rounded" />
                   <span className="capitalize">{status.replace('_', ' ')}</span>
@@ -424,7 +477,7 @@ export default function ActivityList({ onUpdate }) {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
-            {activities.map((act) => (
+            {activities.map(act => (
               <tr key={act.id} className={act.status === 'done' ? 'opacity-50' : ''}>
                 <td className="px-6 py-4">
                   <button onClick={() => setSelectedActivity(act)} className="text-blue-600 hover:underline text-left">
@@ -433,7 +486,7 @@ export default function ActivityList({ onUpdate }) {
                 </td>
                 <td className="px-6 py-4">
                   <div className="flex flex-wrap gap-1">
-                    {act.tags?.map((tag) => (
+                    {act.tags?.map(tag => (
                       <span key={tag} style={{ backgroundColor: getTagColor(tag) }} className="px-2 py-1 rounded text-xs">{tag}</span>
                     ))}
                   </div>

@@ -18,13 +18,14 @@ interface SKU {
   selling_price_default: number | null
   quantity_in_stock: number
   reorder_level: number
+  hsn_code?: string | null
 }
 
 interface CategoryTemplate {
   category: string
   display_name: string
   field_schema: any
-  sku_code_format?: string   // <-- added
+  sku_code_format?: string
 }
 
 export default function SkuMasterPage() {
@@ -100,6 +101,7 @@ export default function SkuMasterPage() {
           <tr>
             <th className="border p-2">SKU Code</th>
             <th className="border p-2">Description</th>
+            <th className="border p-2">HSN</th>
             <th className="border p-2">Category</th>
             <th className="border p-2">Stock</th>
             <th className="border p-2">Actions</th>
@@ -110,8 +112,11 @@ export default function SkuMasterPage() {
             <tr key={sku.id}>
               <td className="border p-2">{sku.full_sku_code}</td>
               <td className="border p-2">{sku.sku_description}</td>
+              <td className="border p-2">{sku.brand || '—'}</td>
+              <td className="border p-2">{sku.model_name || '—'}</td>
+              <td className="border p-2">{sku.hsn_code || '—'}</td>
               <td className="border p-2">{sku.category}</td>
-              <td className="border p-2">{sku.quantity_in_stock}</td>
+              <td className="border p-2">{sku.quantity_in_stock ?? '0'}</td>
               <td className="border p-2 space-x-2">
                 <button onClick={() => handleEdit(sku)} className="text-blue-600 underline">Edit</button>
                 <button onClick={() => handleDelete(sku)} className="text-red-600 underline">Delete</button>
@@ -149,11 +154,13 @@ function SkuFormModal({
     existingSku?.category ??
     (templates.some(t => t.category === 'LAP') ? 'LAP' : templates[0]?.category) ??
     ''
+
   const [category, setCategory] = useState(defaultCategory)
   const [specs, setSpecs] = useState<any>(existingSku?.specifications || {})
   const [skuCode, setSkuCode] = useState(existingSku?.full_sku_code || '')
   const [description, setDescription] = useState(existingSku?.sku_description || '')
   const [descManuallyEdited, setDescManuallyEdited] = useState(false)
+  const [hsnCode, setHsnCode] = useState(existingSku?.hsn_code || '')   // ← HSN state
 
   const selectedTemplate = templates.find(t => t.category === category)
 
@@ -179,7 +186,7 @@ function SkuFormModal({
       let rawValue = specs[fieldName]
 
       if (rawValue === undefined || rawValue === null || rawValue === '') {
-        return '' // abort if any placeholder value missing
+        return ''
       }
 
       const sanitized = String(rawValue)
@@ -239,6 +246,7 @@ function SkuFormModal({
       model_name: specs.model || '',
       sku_description: description,
       specifications: specs,
+      hsn_code: hsnCode,
     }
     if (!existingSku) {
       payload.manual_sku_code = skuCode || generatedSku
@@ -340,6 +348,18 @@ function SkuFormModal({
               onChange={(e) => handleDescriptionChange(e.target.value)}
               className="border p-2 w-full rounded"
               placeholder={generatedDescription || 'Auto‑generated from specs'}
+            />
+          </div>
+
+          {/* HSN Code */}
+          <div className="mb-3">
+            <label className="block text-sm font-medium">HSN Code</label>
+            <input
+              type="text"
+              value={hsnCode}
+              onChange={(e) => setHsnCode(e.target.value)}
+              className="border p-2 w-full rounded"
+              placeholder="e.g., 84713010"
             />
           </div>
 

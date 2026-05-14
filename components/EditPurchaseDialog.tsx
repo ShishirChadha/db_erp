@@ -546,11 +546,10 @@ placeholder="e.g., DBAS582"
 <div>
 <Label>Model</Label>
 <ModelSelect
-    value={formData.model_id}
-   value={formData.model_id ?? null}
-onChange={(id, name) => {
-setFormData(prev => ({ ...prev, model_id: id, model: name }));
-}}
+    value={formData.model_id ?? null}
+    onChange={(id, name) => {
+        setFormData(prev => ({ ...prev, model_id: id, model: name }));
+    }}
 />
 </div>
 <div>

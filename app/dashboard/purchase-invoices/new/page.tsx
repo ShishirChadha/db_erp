@@ -1,0 +1,283 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { apiFetch } from '@/lib/api-client'
+
+interface PO {
+  id: string
+  po_number: string
+  vendor_name: string
+  grand_total: number
+  gst_total: number
+  total_amount: number
+}
+
+export default function NewPurchaseInvoicePage() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const preselectedPoId = searchParams.get('po_id') || ''
+
+  const [poId, setPoId] = useState(preselectedPoId)
+  const [pos, setPos] = useState<PO[]>([])
+  const [loadingPOs, setLoadingPOs] = useState(true)
+  const [invoiceNumber, setInvoiceNumber] = useState('')
+  const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
+  const [totalAmount, setTotalAmount] = useState('')
+  const [gstTotal, setGstTotal] = useState('')
+  const [grandTotal, setGrandTotal] = useState('')
+  const [paymentStatus, setPaymentStatus] = useState('pending')
+  const [notes, setNotes] = useState('')
+  const [attachment, setAttachment] = useState<File | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch POs that can be invoiced (any active PO – you can adjust filters later)
+  const fetchPOs = useCallback(async () => {
+    try {
+      setLoadingPOs(true)
+      // Fetch all non-draft POs (exclude draft & cancelled)
+      const res = await apiFetch('/api/purchase-orders?status=submitted,partially_received,received,invoiced')
+      if (!res.ok) throw new Error('Failed to load POs')
+      const data = await res.json()
+      setPos(Array.isArray(data) ? data : [])
+    } catch (err: any) {
+      console.error(err)
+      setError(err.message)
+    } finally {
+      setLoadingPOs(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    fetchPOs()
+  }, [fetchPOs])
+
+  // If a preselected PO is not in the list (e.g., it's already invoiced), fetch it directly
+  useEffect(() => {
+    if (preselectedPoId && !pos.find(p => p.id === preselectedPoId)) {
+      apiFetch(`/api/purchase-orders/${preselectedPoId}`)
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          if (data) setPos(prev => [data, ...prev])
+        })
+    }
+  }, [preselectedPoId, pos])
+
+  // Auto‑fill totals when a PO is selected
+  useEffect(() => {
+    if (!poId) return
+    const selected = pos.find(p => p.id === poId)
+    if (selected) {
+      setTotalAmount(selected.total_amount?.toString() || '')
+      setGstTotal(selected.gst_total?.toString() || '')
+      setGrandTotal(selected.grand_total?.toString() || '')
+    }
+  }, [poId, pos])
+
+  // Upload file helper
+  const handleUpload = async () => {
+  if (!attachment) return null
+  setUploading(true)
+
+  // Read file as base64
+  const toBase64 = (file: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.readAsDataURL(file)
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          // strip the data:...;base64, prefix
+          const base64 = reader.result.split(',')[1]
+          resolve(base64)
+        }
+      }
+      reader.onerror = reject
+    })
+
+  try {
+    const base64data = await toBase64(attachment)
+
+    const res = await apiFetch('/api/upload', {
+      method: 'POST',
+      body: JSON.stringify({
+        file: base64data,
+        filename: attachment.name,
+      }),
+    })
+
+    setUploading(false)
+    if (!res.ok) {
+      alert('Upload failed')
+      return null
+    }
+    const { url } = await res.json()
+    return url
+  } catch (err) {
+    setUploading(false)
+    alert('Upload failed')
+    return null
+  }
+}
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const attachmentUrl = await handleUpload()
+
+    const res = await apiFetch('/api/purchase-invoices', {
+      method: 'POST',
+      body: JSON.stringify({
+        po_id: poId,
+        invoice_number: invoiceNumber,
+        invoice_date: invoiceDate,
+        total_amount: Number(totalAmount),
+        gst_total: Number(gstTotal),
+        grand_total: Number(grandTotal),
+        payment_status: paymentStatus,
+        notes,
+        attachment_urls: attachmentUrl ? [attachmentUrl] : [],
+      }),
+    })
+
+    if (res.ok) {
+      const data = await res.json()
+      router.push(`/dashboard/purchase-invoices/${data.id}`)
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || 'Failed to create invoice')
+    }
+  }
+
+  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
+
+  return (
+    <div className="p-4 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">New Purchase Invoice</h1>
+      <form onSubmit={handleSubmit}>
+        {/* PO Selection */}
+        <div className="mb-3">
+          <label className="block font-medium">Purchase Order</label>
+          {loadingPOs ? (
+            <p className="text-sm text-gray-500">Loading POs...</p>
+          ) : (
+            <select
+              value={poId}
+              onChange={(e) => setPoId(e.target.value)}
+              className="border p-2 w-full rounded"
+              required
+            >
+              <option value="">Select a PO...</option>
+              {pos.map(po => (
+                <option key={po.id} value={po.id}>
+                  {po.po_number} — {po.vendor_name}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* Invoice details */}
+        <div className="mb-3">
+          <label className="block font-medium">Invoice Number</label>
+          <input
+            type="text"
+            value={invoiceNumber}
+            onChange={(e) => setInvoiceNumber(e.target.value)}
+            className="border p-2 w-full rounded"
+            required
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="block font-medium">Invoice Date</label>
+          <input
+            type="date"
+            value={invoiceDate}
+            onChange={(e) => setInvoiceDate(e.target.value)}
+            className="border p-2 w-full rounded"
+            required
+          />
+        </div>
+
+        {/* Totals (auto‑filled from PO, but editable) */}
+        <div className="grid grid-cols-3 gap-4 mb-3">
+          <div>
+            <label className="block font-medium">Total Amount</label>
+            <input
+              type="number"
+              value={totalAmount}
+              onChange={(e) => setTotalAmount(e.target.value)}
+              className="border p-2 w-full rounded"
+              required
+            />
+          </div>
+          <div>
+            <label className="block font-medium">GST Total</label>
+            <input
+              type="number"
+              value={gstTotal}
+              onChange={(e) => setGstTotal(e.target.value)}
+              className="border p-2 w-full rounded"
+              required
+            />
+          </div>
+          <div>
+            <label className="block font-medium">Grand Total</label>
+            <input
+              type="number"
+              value={grandTotal}
+              onChange={(e) => setGrandTotal(e.target.value)}
+              className="border p-2 w-full rounded"
+              required
+            />
+          </div>
+        </div>
+
+        {/* Payment status */}
+        <div className="mb-3">
+          <label className="block font-medium">Payment Status</label>
+          <select
+            value={paymentStatus}
+            onChange={(e) => setPaymentStatus(e.target.value)}
+            className="border p-2 w-full rounded"
+          >
+            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+          </select>
+        </div>
+
+        <div className="mb-3">
+          <label className="block font-medium">Notes</label>
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="border p-2 w-full rounded"
+          />
+        </div>
+
+        <div className="mb-3">
+          <label className="block font-medium">Attachment (PDF/Image)</label>
+          <input
+            type="file"
+            onChange={(e) => setAttachment(e.target.files?.[0] || null)}
+            className="border p-2 w-full rounded"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2 mt-4">
+          <button type="button" onClick={() => router.back()} className="px-4 py-2 border rounded">
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={uploading}
+            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+          >
+            {uploading ? 'Uploading...' : 'Create Invoice'}
+          </button>
+        </div>
+      </form>
+    </div>
+  )
+}

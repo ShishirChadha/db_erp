@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabaseAdmin
     .from('sku_master')
-    .select('id, full_sku_code, sku_description, category')
+    .select('*')
     .eq('status', 'active')
     .order('full_sku_code')
 
@@ -80,20 +80,21 @@ const baseSkuCode = await generateBaseSkuCode(category, normalizedSpecs)
   const { data: newSku, error: insertErr } = await supabaseAdmin
     .from('sku_master')
     .insert({
-      base_sku_code: baseSkuCode,
-      variant_number: variantNumber,
-      full_sku_code: fullSkuCode,
-      category,
-      item_type: item_type || category,
-      brand: brand || '',
-      model_name: model_name || '',
-      specifications: normalizedSpecs,
-      sku_description: body.sku_description || `${brand} ${model_name}`,
-      base_cost: base_cost || null,
-      selling_price_default: selling_price_default || null,
-      reorder_level,
-      quantity_in_stock: 0,
-    })
+    base_sku_code: baseSkuCode,
+    variant_number: variantNumber,
+    full_sku_code: fullSkuCode,
+    category,
+    item_type: item_type || category,
+    brand: brand || '',
+    model_name: model_name || '',
+    specifications: normalizedSpecs,
+    sku_description: body.sku_description || `${brand} ${model_name}`,
+    base_cost: base_cost || null,
+    selling_price_default: selling_price_default || null,
+    reorder_level,
+    quantity_in_stock: 0,
+    hsn_code: body.hsn_code || null,   // ← add this
+  })
     .select()
     .single()
 

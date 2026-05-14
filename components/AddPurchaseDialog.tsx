@@ -156,6 +156,7 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
         has_gst: false,
         gst_number: "",
         gst_company_name: "",
+         model_id: null, 
       });
 setFormData({
   company_name: "",
@@ -396,6 +397,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         remarks: "",
         public_photo_url: "",
         asset_number: nextAsset,
+        
        
       });
       setQuantity(1);

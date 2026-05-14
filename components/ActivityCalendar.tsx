@@ -6,7 +6,7 @@ import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
 
-export default function ActivityCalendar({ onUpdate }) {
+export default function ActivityCalendar({ onUpdate }: { onUpdate: () => void }) {
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
@@ -14,7 +14,7 @@ export default function ActivityCalendar({ onUpdate }) {
       const res = await fetch('/api/activities');
       const data = await res.json();
       if (res.ok) {
-        const formatted = data.map(act => ({
+        const formatted = data.map((act: any) => ({
           id: act.id,
           title: act.title,
           start: act.due_date,
@@ -26,7 +26,7 @@ export default function ActivityCalendar({ onUpdate }) {
     fetchEvents();
   }, []);
 
-  const handleDateSelect = async (info) => {
+ const handleDateSelect = async (info: any) => {
     const title = prompt('Enter activity title:');
     if (!title) return;
     await fetch('/api/activities', {
@@ -37,7 +37,7 @@ export default function ActivityCalendar({ onUpdate }) {
     onUpdate();
   };
 
-  const handleEventDrop = async (info) => {
+  const handleEventDrop = async (info: any) => {
     await fetch(`/api/activities/${info.event.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },

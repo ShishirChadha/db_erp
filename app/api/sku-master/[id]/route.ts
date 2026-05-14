@@ -38,6 +38,7 @@ export async function PUT(
     'reorder_level',
     'notes',
     'full_sku_code',
+    'hsn_code',  
   ]
   const updatable: any = {}
   for (const key of allowedKeys) {

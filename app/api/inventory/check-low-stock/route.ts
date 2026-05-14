@@ -3,9 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 
 export async function POST(req: NextRequest) {
-  // Optionally authenticate; we’ll skip for cron jobs, but can add token check.
   try {
-    // Get all active SKUs
     const { data: skus } = await supabaseAdmin
       .from('sku_master')
       .select('id, full_sku_code, quantity_in_stock, reorder_level')
@@ -17,7 +15,6 @@ export async function POST(req: NextRequest) {
     let created = 0
 
     for (const sku of lowStockSkus) {
-      // Find rules with auto-generate enabled
       const { data: rules } = await supabaseAdmin
         .from('reorder_rules')
         .select('*')
@@ -29,7 +26,7 @@ export async function POST(req: NextRequest) {
       if (!rules?.length) continue
       const rule = rules[0]
 
-      // Avoid duplicate auto-drafts for same SKU
+      // Avoid duplicate open auto-drafts for same SKU
       const { data: existing } = await supabaseAdmin
         .from('purchase_orders')
         .select('id')
@@ -51,17 +48,21 @@ export async function POST(req: NextRequest) {
           vendor_name: vendorName,
           po_status: 'draft',
           purchase_type: 'GST',
-          purchased_by_type: 'Digitalbluez',   // default, can be extended
+          purchased_by_type: 'Digitalbluez',
           remarks: `AUTO-GENERATED: SKU ${sku.full_sku_code} low stock (${sku.quantity_in_stock} units, reorder at ${sku.reorder_level})`
         })
         .select()
         .single()
 
+      // Fetch SKU details
       const { data: skuData } = await supabaseAdmin
         .from('sku_master')
         .select('base_sku_code, variant_number, base_cost')
         .eq('id', sku.id)
         .single()
+
+      // Type guard: ensure skuData exists
+      if (!skuData) continue
 
       await supabaseAdmin.from('purchase_order_items').insert({
         po_id: newPo.id,
