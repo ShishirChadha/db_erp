@@ -112,8 +112,6 @@ export default function SkuMasterPage() {
             <tr key={sku.id}>
               <td className="border p-2">{sku.full_sku_code}</td>
               <td className="border p-2">{sku.sku_description}</td>
-              <td className="border p-2">{sku.brand || '—'}</td>
-              <td className="border p-2">{sku.model_name || '—'}</td>
               <td className="border p-2">{sku.hsn_code || '—'}</td>
               <td className="border p-2">{sku.category}</td>
               <td className="border p-2">{sku.quantity_in_stock ?? '0'}</td>
