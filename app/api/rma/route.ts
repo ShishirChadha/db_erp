@@ -37,13 +37,16 @@ export async function POST(req: NextRequest) {
   const user = { id: sessionUser.id }
 
   const body = await req.json()
-  const { asset_id, direction, reason, vendor_id, notes } = body
+  const { asset_id, direction, reason, vendor_id, notes, event_date } = body
 
   if (!asset_id || !direction || !reason) {
     return NextResponse.json({ error: 'asset_id, direction, and reason are required' }, { status: 400 })
   }
   if (!['to_vendor', 'from_customer'].includes(direction)) {
     return NextResponse.json({ error: 'direction must be to_vendor or from_customer' }, { status: 400 })
+  }
+  if (event_date && !/^\d{4}-\d{2}-\d{2}$/.test(event_date)) {
+    return NextResponse.json({ error: 'event_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
   // Vendor returns are owner-only -- they involve vendor_id, which employees never see.
   if (direction === 'to_vendor' && !isOwner(sessionUser)) {
@@ -73,6 +76,10 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  // Backdate support: an employee logging a return that actually happened earlier can
+  // supply event_date; defaults to "now" (matches opened_at's DB default) if omitted.
+  const openedAt = event_date ? `${event_date}T12:00:00.000Z` : undefined
+
   const { data: event, error: insertErr } = await supabaseAdmin
     .from('asset_rma_events')
     .insert({
@@ -82,6 +89,7 @@ export async function POST(req: NextRequest) {
       vendor_id: direction === 'to_vendor' ? vendor_id || null : null,
       notes: notes || null,
       created_by: user.id,
+      ...(openedAt ? { opened_at: openedAt } : {}),
     })
     .select()
     .single()

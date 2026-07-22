@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     customer_id, is_own_stock, asset_id, customer_device_description, customer_device_serial,
-    job_type, replacement_asset_id, problem_description, amount_charged, payment_account,
+    job_type, replacement_asset_id, problem_description, amount_charged, payment_account, job_date,
   } = body
 
   if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
@@ -46,6 +46,15 @@ export async function POST(req: NextRequest) {
   if (!is_own_stock && !customer_device_description) {
     return NextResponse.json({ error: 'Device description is required for a customer-owned device.' }, { status: 400 })
   }
+  if (job_date && !/^\d{4}-\d{2}-\d{2}$/.test(job_date)) {
+    return NextResponse.json({ error: 'job_date must be in YYYY-MM-DD format.' }, { status: 400 })
+  }
+
+  // Backdate support: an employee logging a job that actually happened earlier can
+  // supply job_date; defaults to today. The replacement unit's sold_at (if any) uses
+  // the same date so it's consistent with the job it's tied to.
+  const resolvedJobDate: string = job_date || new Date().toISOString().slice(0, 10)
+  const jobDateIso = `${resolvedJobDate}T12:00:00.000Z`
 
   // A replacement swap is final immediately, same as a sale (Part 6/7's "employee entry
   // is real the moment it happens" principle) -- the unit goes straight to 'sold', not a
@@ -68,7 +77,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: locked, error: lockErr } = await supabaseAdmin
       .from('asset_ledger')
-      .update({ status: 'sold', sold_at: new Date().toISOString() })
+      .update({ status: 'sold', sold_at: jobDateIso })
       .eq('id', replacement_asset_id)
       .in('status', SELLABLE_STATUSES)
       .select('id')
@@ -102,6 +111,7 @@ export async function POST(req: NextRequest) {
       amount_charged: amount_charged ?? null,
       payment_account: payment_account || null,
       entered_by: sessionUser.id,
+      job_date: resolvedJobDate,
     })
     .select('id, job_number')
     .single()

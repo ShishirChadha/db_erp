@@ -4,6 +4,11 @@ import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { SELLABLE_STATUSES } from '@/lib/sales-entry'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 // ---------- GET: owner's queue of sales still needing a GST invoice ----------
 // Inventory-wise these sales are already final (see POST below) -- this is a
 // bookkeeping reminder, not a gate.
@@ -35,7 +40,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     asset_ledger_id, accessory_id, accessory_quantity, customer_id, sale_base_price,
-    gst_percentage, sale_type, bundled_accessories,
+    gst_percentage, sale_type, bundled_accessories, sale_date,
     payment_status, amount_paid, payment_account, sold_by,
   } = body
 
@@ -44,6 +49,18 @@ export async function POST(req: NextRequest) {
   if (!asset_ledger_id && !accessory_id) {
     return NextResponse.json({ error: 'Either asset_ledger_id or accessory_id is required.' }, { status: 400 })
   }
+  if (sale_date && !/^\d{4}-\d{2}-\d{2}$/.test(sale_date)) {
+    return NextResponse.json({ error: 'sale_date must be in YYYY-MM-DD format.' }, { status: 400 })
+  }
+
+  // Backdate support: an employee logging a sale that actually happened earlier can
+  // supply sale_date; defaults to today. sold_at (asset_ledger) and sale_month/sale_year
+  // (used by Reports' year/month filters) are derived from the same value so a backdated
+  // sale shows up correctly everywhere rather than only in the sales table itself.
+  const resolvedSaleDate: string = sale_date || new Date().toISOString().slice(0, 10)
+  const saleDateObj = new Date(`${resolvedSaleDate}T12:00:00.000Z`)
+  const saleMonth = MONTHS[saleDateObj.getUTCMonth()]
+  const saleYear = saleDateObj.getUTCFullYear()
 
   const gstPct = gst_percentage ?? 18
   const gstAmount = Math.round(sale_base_price * gstPct) / 100
@@ -64,7 +81,9 @@ export async function POST(req: NextRequest) {
   const resolvedSoldBy = sold_by || sessionUser.email || null
 
   const baseSaleRecord = {
-    sale_date: new Date().toISOString().slice(0, 10),
+    sale_date: resolvedSaleDate,
+    sale_month: saleMonth,
+    sale_year: saleYear,
     customer_id,
     customer_name: customer?.customer_name || null,
     sale_base_price,
@@ -132,13 +151,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `This unit is '${asset.status}' and cannot be sold right now.` }, { status: 400 })
   }
 
-  const nowIso = new Date().toISOString()
-
   // Atomic lock straight to 'sold' -- if this affects 0 rows, someone else already sold
   // it between our read and write above, so we bail out instead of double-selling.
+  // sold_at uses the same (possibly backdated) sale date as the sales row itself.
   const { data: sold, error: soldErr } = await supabaseAdmin
     .from('asset_ledger')
-    .update({ status: 'sold', sold_at: nowIso })
+    .update({ status: 'sold', sold_at: saleDateObj.toISOString() })
     .eq('id', asset_ledger_id)
     .in('status', SELLABLE_STATUSES)
     .select('id')

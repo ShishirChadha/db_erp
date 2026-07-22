@@ -32,6 +32,10 @@ function unitLabel(u: StockUnit) {
   return u.asset_number || (u.serial_number ? `SN: ${u.serial_number}` : 'no tag yet')
 }
 
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function SellPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -73,6 +77,7 @@ function SellPageInner() {
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'partial' | 'pending'>('paid')
   const [amountPaid, setAmountPaid] = useState<number>(0)
   const [paymentAccount, setPaymentAccount] = useState('Digitalbluez')
+  const [saleDate, setSaleDate] = useState(today())
 
   const { values: staffNames } = useCustomOptions('staff_names')
   const [soldBy, setSoldBy] = useState('')
@@ -162,6 +167,7 @@ function SellPageInner() {
     setCustomerId(null); setCustomerData(null)
     setSalePrice(0); setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
     setPaymentStatus('paid'); setAmountPaid(0); setPaymentAccount('Digitalbluez'); setSoldBy('')
+    setSaleDate(today())
   }
 
   const addBundledAccessory = (a: Accessory) => {
@@ -184,6 +190,7 @@ function SellPageInner() {
         sale_base_price: baseGstPrice,
         gst_percentage: saleType === 'GST' ? gstPercent : 0,
         sale_type: saleType,
+        sale_date: saleDate,
         payment_status: paymentStatus,
         amount_paid: paymentStatus === 'partial' ? amountPaid : undefined,
         payment_account: paymentAccount,
@@ -450,6 +457,17 @@ function SellPageInner() {
         )}
 
         <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block font-medium text-sm mb-1">Sale Date</label>
+            <input
+              type="date"
+              value={saleDate}
+              max={today()}
+              onChange={(e) => setSaleDate(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+            <p className="text-xs text-gray-400 mt-1">Backdate if this sale actually happened earlier.</p>
+          </div>
           <div>
             <label className="block font-medium text-sm mb-1">Payment</label>
             <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as any)} className="border p-2 w-full rounded">

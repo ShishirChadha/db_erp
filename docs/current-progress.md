@@ -1,9 +1,8 @@
 # Current Progress
 
-Last updated: 2026-07-22 (later same session: added a pre-GST/post-GST toggle to
-the Sell form, and a per-employee page-access permission system with a
-self-service Settings → Users & Access panel, replacing the previous
-manual/Supabase-admin-only way of creating employee logins).
+Last updated: 2026-07-22 (later same session: added backdating support to Stock
+Intake and Sell, on top of the pre-GST/post-GST toggle and per-employee
+page-access permission system added earlier in the day).
 
 Prior update same day: committed the previously-uncommitted
 employee-facing operational system; ran a dead-table audit; cleaned up leaked test
@@ -77,8 +76,15 @@ support for selling a physically-upgraded unit with cost tracking).
 - **Settings page redesigned** into a simple category layout (left category list, right content pane) — Asset Numbering / Dropdown Options / Users & Access — replacing the old single long-scroll page.
 - Verified end-to-end via a disposable script (real HTTP calls against the running dev server, real Supabase auth users signed in as both a test owner and a test employee, cleaned up and re-verified after): user creation, bogus page-key filtering, page-access enforcement (both an allowed and a blocked route), and deactivation all behave correctly.
 
+**Backdating support for Stock Intake and Sell**
+- Both `received_at` (`asset_ledger`, via Stock Intake's new "Date Received" field) and `sale_date`/`sold_at` (via Sell's new "Sale Date" field) were previously hardcoded to "now" in `lib/stock-intake.ts` and `app/api/sales-entry/route.ts` respectively — no way to log a transaction that actually happened earlier. Both now accept an optional date (max = today, defaults to today if left alone); backdated values use noon UTC to avoid a midnight-UTC day shift across timezones.
+- **Bug fixed in the same pass**: `POST /api/sales-entry` never populated `sales.sale_month`/`sale_year` at all (always `NULL`) — `app/dashboard/reports/reports-client.tsx` filters strictly by these raw columns, so every sale made through the new Sell flow was already invisible in Reports' year/month filters, backdating or not. Now derived from `sale_date` (same `MONTHS` array/derivation the legacy `app/dashboard/sales/sales-client.tsx` already used) and stored alongside it.
+- Verified end-to-end via a disposable script: backdated Stock Intake → backdated Sell of that same unit, confirming `received_at`, `sale_date`, `sale_month`, `sale_year`, and `sold_at` all land correctly; cleaned up and re-verified after.
+- **"Date Purchased" added then revoked same session**: a separate `asset_ledger.purchase_date` column/field was briefly added, then removed at the owner's request after confirming "Date Received" alone already covers the need (the owner's initial confusion was from checking production, which didn't yet have this session's changes). Column dropped via migration (backed up first); "Date Received" moved to the top of the Stock Intake form as the single, prominent date field.
+- **Date field added to Service (Repair/Replacement/Return)** (`app/dashboard/entry/service/page.tsx`): a single "Date" (Repair/Replacement) / "Return Date" field, backdatable, max=today. New `repair_jobs.job_date` column (date, nullable) for Repair/Replacement — also used to backdate the replacement unit's `asset_ledger.sold_at` when the job type is `replacement`. Return reuses the existing `asset_rma_events.opened_at` column (previously always DB-default "now"), now overridable via a new `event_date` field on `POST /api/rma`. Verified end-to-end via a disposable script covering all three subtypes (Repair, Replacement, Return), confirming `job_date`, `sold_at`, and `opened_at` all land correctly; cleaned up and re-verified after.
+
 ## Currently being worked on
-Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully. The GST-toggle and user-permissions work above is type-checked and verified but **not yet committed**.
+Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully. The GST-toggle, user-permissions, and backdating work above is type-checked and verified but **not yet committed**.
 
 ## Remaining / not yet started
 - **Issue E's deeper structural fix** (deferred, flagged during the asset-numbering pass): make PO submission fully atomic via one Postgres RPC (reserve + insert + update, all in one transaction) so the counter can never again drift ahead of the ledger from a mid-submit failure. The `manualOverride` free-text asset-number path in the legacy `purchases` routes also still bypasses the numbering system entirely — a known risk, not yet addressed.

@@ -22,6 +22,7 @@ export interface StockIntakeInput {
   condition_notes?: string
   public_photo_url?: string
   purchased_by_type?: string
+  received_date?: string
 }
 
 // A unit is live stock the moment it's entered -- it starts life in 'qc_pending', same
@@ -49,7 +50,10 @@ export function buildIntakeLedgerRow(input: StockIntakeInput, opts: {
     gst_percentage: null,
     po_id: null,
     po_item_id: null,
-    received_at: new Date().toISOString(),
+    // A backdated entry (unit actually received earlier but logged late) supplies
+    // received_date (YYYY-MM-DD); noon UTC keeps the date stable across timezones
+    // rather than risking a midnight-UTC day shift. No date supplied -> exact "now".
+    received_at: input.received_date ? `${input.received_date}T12:00:00.000Z` : new Date().toISOString(),
   }
 }
 

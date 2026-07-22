@@ -11,6 +11,10 @@ const TYPE_OPTIONS = ['Laptop', 'Desktop', 'Monitor', 'Tablet', 'Tiny']
 const BRAND_OPTIONS = ['Apple', 'Dell', 'HP', 'Lenovo', 'Windows', 'Asus', 'Acer', 'Other']
 const BUYER_OPTIONS = ['Digitalbluez', 'Techtenth', 'Cash', 'Other']
 
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 function StockIntakePage() {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
@@ -29,6 +33,7 @@ function StockIntakePage() {
   const [serialNumber, setSerialNumber] = useState('')
   const [purchasedByType, setPurchasedByType] = useState('Digitalbluez')
   const [conditionNotes, setConditionNotes] = useState('')
+  const [receivedDate, setReceivedDate] = useState(today())
 
   const { values: cpuOptions } = useCustomOptions('cpu')
   const { values: generationOptions } = useCustomOptions('generation')
@@ -42,6 +47,7 @@ function StockIntakePage() {
     setType('Laptop'); setBrand(''); setBrandOther(''); setModel('')
     setCpu(''); setGeneration(''); setRam(''); setSsd(''); setScreenSize('')
     setSerialNumber(''); setPurchasedByType('Digitalbluez'); setConditionNotes('')
+    setReceivedDate(today())
   }
 
   const handleSubmit = async () => {
@@ -65,6 +71,7 @@ function StockIntakePage() {
           serial_number: serialNumber,
           purchased_by_type: purchasedByType,
           condition_notes: conditionNotes,
+          received_date: receivedDate,
         }),
       })
       if (!res.ok) {
@@ -102,6 +109,18 @@ function StockIntakePage() {
       {error && <div className="text-red-600 mb-4">{error}</div>}
 
       <div className="space-y-4 bg-white p-4 rounded shadow">
+        <div>
+          <label className="block font-medium text-sm mb-1">Date Received</label>
+          <input
+            type="date"
+            value={receivedDate}
+            max={today()}
+            onChange={(e) => setReceivedDate(e.target.value)}
+            className="border p-2 w-full rounded"
+          />
+          <p className="text-xs text-gray-400 mt-1">Backdate this if the unit was actually received earlier.</p>
+        </div>
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Type *</label>

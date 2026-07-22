@@ -24,6 +24,10 @@ function unitLabel(u: StockUnit) {
   return u.asset_number || (u.serial_number ? `SN: ${u.serial_number}` : 'no tag yet')
 }
 
+function today() {
+  return new Date().toISOString().slice(0, 10)
+}
+
 // Restricted to source=employee_intake -- the interim system's Service flow only
 // operates on stock that came through the new Stock Intake / Sell system, kept
 // separate from the main ERP's historical/legacy stock.
@@ -113,6 +117,7 @@ function ServicePageInner() {
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
 
+  const [serviceDate, setServiceDate] = useState(today())
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [isOwnStock, setIsOwnStock] = useState(!!prefillSubtype)
   const [ownUnit, setOwnUnit] = useState<StockUnit | null>(null)
@@ -150,6 +155,7 @@ function ServicePageInner() {
     setDeviceDescription(''); setDeviceSerial(''); setProblem(''); setAmountCharged('')
     setPaymentAccount('Digitalbluez')
     setReplacementUnit(null); setReturnUnit(null); setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
+    setServiceDate(today())
   }
 
   const handleSubmitRepairOrReplacement = async () => {
@@ -174,6 +180,7 @@ function ServicePageInner() {
           problem_description: problem,
           amount_charged: amountCharged === '' ? null : amountCharged,
           payment_account: paymentAccount,
+          job_date: serviceDate,
         }),
       })
       if (!res.ok) {
@@ -204,6 +211,7 @@ function ServicePageInner() {
           direction: 'from_customer',
           reason: returnReason,
           notes: returnNotes,
+          event_date: serviceDate,
         }),
       })
       if (!res.ok) {
@@ -250,6 +258,18 @@ function ServicePageInner() {
 
       {subType !== 'return' ? (
         <div className="space-y-4 bg-white p-4 rounded shadow">
+          <div>
+            <label className="block font-medium text-sm mb-1">Date</label>
+            <input
+              type="date"
+              value={serviceDate}
+              max={today()}
+              onChange={(e) => setServiceDate(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+            <p className="text-xs text-gray-400 mt-1">Backdate this if the job actually happened earlier.</p>
+          </div>
+
           <div>
             <label className="block font-medium text-sm mb-1">Customer *</label>
             <div className="flex gap-2 items-start">
@@ -332,6 +352,18 @@ function ServicePageInner() {
         </div>
       ) : (
         <div className="space-y-4 bg-white p-4 rounded shadow">
+          <div>
+            <label className="block font-medium text-sm mb-1">Return Date</label>
+            <input
+              type="date"
+              value={serviceDate}
+              max={today()}
+              onChange={(e) => setServiceDate(e.target.value)}
+              className="border p-2 w-full rounded"
+            />
+            <p className="text-xs text-gray-400 mt-1">Backdate this if the return actually happened earlier.</p>
+          </div>
+
           <div>
             <label className="block font-medium text-sm mb-1">Unit Being Returned *</label>
             <UnitPicker
