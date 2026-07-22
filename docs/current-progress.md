@@ -59,10 +59,9 @@ support for selling a physically-upgraded unit with cost tracking).
 - **Selling a physically-upgraded unit**: the Sell form (`app/dashboard/entry/sell/page.tsx`) now has a "Wrong or upgraded spec? Change SKU" link once a unit is selected, open to both roles, using the same Fix-SKU picker (with its own "+ Create new SKU" escape hatch for a spec that's never existed before). If the owner is the one doing it, an optional "Additional cost for this upgrade" field is also shown (never shown to employees) — recorded via a new `asset_cost_adjustments` table (append-only ledger, same idiom as `stock_movements`/`asset_qc_checks`) and a new owner-only `GET`/`POST /api/asset-ledger/[id]/cost-adjustments` route. The asset detail page (`/dashboard/stock/[id]`) has a matching owner-only "Cost Adjustments" panel (original cost, running total, add-anytime form) — not only reachable from the sale moment, matching the project's "owner's paperwork is deferred" pattern.
 
 ## Currently being worked on
-Nothing mid-flight. The bug-fix/upgrade-tracking pass above was completed, type-checked, and production-build-verified. **~21 files are currently uncommitted** (git status shows modified + new files from this session) — nothing has been committed since the large `d94136d` commit earlier in this session.
+Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully.
 
 ## Remaining / not yet started
-- **Dead-table cleanup migration**: drafted (drop `assets`, `sku_base`, `sku_variants`, `sku_inventory`, `purchase_line_items`, `purchase_order_asset_mapping`, plus `v_inventory_status` and two orphaned functions) but **never applied** — the `apply_migration` call was blocked by the session's permission classifier and needs the user to run it directly or explicitly approve it. **Correction to re-check before running it**: `purchase_order_asset_mapping` was re-confirmed via `get_advisors` to be a live `SECURITY DEFINER` **view** (not a stale duplicate table as first assessed from `information_schema.tables` alone) — the original audit's `DROP TABLE ... CASCADE` statement for it would fail outright (wrong statement type) and needs re-verifying/rewriting as `DROP VIEW` before this migration is retried.
 - **Issue E's deeper structural fix** (deferred, flagged during the asset-numbering pass): make PO submission fully atomic via one Postgres RPC (reserve + insert + update, all in one transaction) so the counter can never again drift ahead of the ledger from a mid-submit failure. The `manualOverride` free-text asset-number path in the legacy `purchases` routes also still bypasses the numbering system entirely — a known risk, not yet addressed.
 - **Part 4 (bulk historical purchase import + invoice-number constraint fix)**: not started. Requires the user to supply bank statements + WhatsApp invoice images before any import script can be built.
 - Warranty tracking: schema exists (`asset_ledger.warranty_type`, `warranty_start_date`, `warranty_duration_months`, `warranty_expiry_date`) but no UI/workflow reads or writes them yet.
@@ -71,14 +70,12 @@ Nothing mid-flight. The bug-fix/upgrade-tracking pass above was completed, type-
 ## Known issues
 - `sales.pmt` legacy column is dead but not dropped (harmless).
 - `invoices.invoice_number` has two redundant unique constraints — not yet fixed (blocks any future bulk-backfill of purchase invoices where one real invoice covers multiple migrated POs).
-- Dead-table cleanup migration not applied yet (see above) — the six dead objects are confirmed zero-referenced by app code, just blocked on execution.
 - Atomic PO-submit RPC and the legacy `manualOverride` numbering bypass are known, accepted risks (see "Remaining" above).
 
 ## Exact next recommended steps
-1. Either run the dead-table cleanup migration directly (re-verifying the `purchase_order_asset_mapping` view vs. table distinction first) or explicitly approve it so it can be re-attempted.
-2. Commit the ~21 currently-uncommitted files from this session (or ask for a review pass first).
-3. Decide whether the atomic PO-submit RPC (Issue E's deferred structural fix) is worth scheduling, especially if numbering drift recurs.
-4. Otherwise, the highest-value remaining gap is probably still the bulk historical purchase import (Part 4), pending the user's bank/invoice records.
+1. Verify asset numbering is correct (user raised a concern about DBAS26-699–705 being generated; prior DB had DBAS682; legacy renumbering should have converted it to DBAS26-111).
+2. Decide whether the atomic PO-submit RPC (Issue E's deferred structural fix) is worth scheduling, especially if numbering drift recurs.
+3. The highest-value remaining gap is the bulk historical purchase import (Part 4), pending the user's bank/invoice records.
 
 ## Pending decisions
 - Whether/when to "connect the strings" between Live Stock (employee_intake) and the main ERP Stock (legacy/PO) — explicitly deferred by the user until their manual reconciliation of old data is done.
