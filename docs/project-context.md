@@ -55,6 +55,20 @@ Payment tracking is independent of invoicing: `sales.payment_status` (`pending`/
 
 The **Sales Ledger** (`/dashboard/sales`, owner-only) is the transactional/financial view of every sale (payment state, invoice status, editable). This is distinct from the **Sold Stock** tab on Live Stock/Stock (inventory/warranty view — "which unit, sold when, to whom").
 
+### Reassigning a unit's SKU, and tracking upgrade cost (`asset_cost_adjustments`)
+A physical unit can be upgraded after intake (more RAM added, a bigger SSD swapped
+in) before resale, so its real spec no longer matches the SKU it was originally
+logged under. `components/FixSkuDialog.tsx` (used both by Stock view's owner-only
+"Fix SKU" and Sell's "Change SKU", open to both roles) lets the seller search for
+an existing SKU or create a new one (`SkuFormModal`), then reassigns the asset (or
+its whole PO line item, if shared) via `PATCH /api/asset-ledger/[id]/reassign-sku`
+— which also writes the compensating `stock_movements` rows so both the old and
+new SKU's `quantity_in_stock` stay correct. If the owner is present, an optional
+cost field records what the upgrade cost into `asset_cost_adjustments` (append-only,
+same idiom as `stock_movements`/`asset_qc_checks` — supports multiple upgrades over
+a unit's life with an audit trail), surfaced via an owner-only panel on the asset
+detail page (`/dashboard/stock/[id]`) alongside the original `cost_price`.
+
 ### Accessories (`accessories`, `accessory_movements`)
 Simple catalog + movement ledger (mirrors the `stock_movements` pattern: `movement_type` in/out/adjustment/return_in, trigger-maintained `quantity` on the parent row, hard-errors on oversell rather than clamping). Anyone can flag a new accessory type at point of sale (lands `review_status='pending_review'`, zero cost); only the owner activates it with real cost/supplier data (`/dashboard/accessories`).
 
@@ -70,10 +84,18 @@ Customer/vendor returns use the older, separately-built `asset_rma_events` table
 | See cost price / vendor / margin anywhere | ❌ (redacted) | ✅ |
 | Attach units to a PO, generate sales invoices | ❌ | ✅ |
 | Edit payment fields on sales/repair jobs | ❌ | ✅ |
-| Edit SKU master, manage vendors, manage dropdown-option lists | ❌ | ✅ |
+| Edit SKU master specs, manage vendors, manage dropdown-option lists | ❌ | ✅ |
+| Reassign a unit's SKU ("Fix SKU" / Sell's "Change SKU") | ✅ | ✅ |
+| Record/view an asset's upgrade cost adjustments | ❌ | ✅ |
 | View Sales Ledger, Stock (Main ERP), RMA (vendor returns) | ❌ (page-gated) | ✅ |
 | Flag a new accessory type / add a new customer (lightweight fields) | ✅ | ✅ |
 | Activate a pending accessory, edit its cost | ❌ | ✅ |
+
+Note the split above: **reassigning** which SKU an asset points to is open to both
+roles (it never reads or writes cost/vendor data), while **editing** a SKU's own
+master-data specs remains owner-only. This is why "Fix SKU" (Stock view) and Sell's
+"Change SKU" both call the same `PATCH /api/asset-ledger/[id]/reassign-sku` without
+an owner check, even though `PUT /api/sku-master/[id]` (editing specs) still is.
 
 ## Important technical decisions already made
 See `docs/decisions.md` for the full list with rationale. Headline ones:

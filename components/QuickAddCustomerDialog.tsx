@@ -34,10 +34,12 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
     address: "",
     phone: "",
     email: "",
+    has_gst: false,
+    gst_number: "",
   });
   const supabase = createClient();
 
-  const handleChange = (field: string, value: string) => {
+  const handleChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -52,7 +54,7 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
     } else {
       setOpen(false);
       onAdd(data);
-      setFormData({ customer_name: "", type: "Individual", address: "", phone: "", email: "" });
+      setFormData({ customer_name: "", type: "Individual", address: "", phone: "", email: "", has_gst: false, gst_number: "" });
     }
   };
 
@@ -80,6 +82,15 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
           <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>
           <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
           <div><Label>Address</Label><Input value={formData.address} onChange={(e) => handleChange("address", e.target.value)} /></div>
+          {formData.type === "Business" && (
+            <>
+              <div className="flex items-center space-x-2">
+                <input type="checkbox" id="qa_has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
+                <Label htmlFor="qa_has_gst">Has GST</Label>
+              </div>
+              <div><Label>GST Number</Label><Input value={formData.gst_number} onChange={(e) => handleChange("gst_number", e.target.value)} /></div>
+            </>
+          )}
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
             <Button type="submit" disabled={loading}>{loading ? "Adding..." : "Add Customer"}</Button>

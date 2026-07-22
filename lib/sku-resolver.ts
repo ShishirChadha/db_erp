@@ -10,7 +10,7 @@ import { generateBaseSkuCode } from './sku-code-generator'
 // matching native JSON.stringify semantics -- otherwise a freshly-built object (which
 // still has those keys in memory) never matches the same object read back from the DB
 // (where JSON serialization already dropped them on insert).
-function canonicalJson(value: any): string {
+export function canonicalJson(value: any): string {
   if (Array.isArray(value)) {
     return `[${value.map(canonicalJson).join(',')}]`
   }

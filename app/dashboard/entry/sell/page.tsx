@@ -7,6 +7,7 @@ import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
+import { FixSkuDialog } from '@/components/FixSkuDialog'
 
 interface StockUnit {
   id: string
@@ -48,6 +49,7 @@ function SellPageInner() {
   const [selectedUnit, setSelectedUnit] = useState<StockUnit | null>(null)
   const [loadingUnits, setLoadingUnits] = useState(false)
   const [bundled, setBundled] = useState<{ accessory_id: string; accessory_name: string; quantity: number }[]>([])
+  const [showChangeSku, setShowChangeSku] = useState(false)
 
   // Accessory mode
   const [selectedAccessory, setSelectedAccessory] = useState<Accessory | null>(null)
@@ -82,15 +84,19 @@ function SellPageInner() {
     })
   }, [mode])
 
+  const fetchUnitById = async (id: string) => {
+    const res = await apiFetch(`/api/stock?id=${id}`)
+    const data = await res.json()
+    if (Array.isArray(data) && data[0]) {
+      setSelectedUnit(data[0])
+    }
+  }
+
   // Prefill from Current/Live Stock's "Sell" link.
   useEffect(() => {
     if (!prefillAssetId) return
-    apiFetch(`/api/stock?id=${prefillAssetId}`).then(res => res.json()).then((data) => {
-      if (Array.isArray(data) && data[0]) {
-        setMode('unit')
-        setSelectedUnit(data[0])
-      }
-    })
+    setMode('unit')
+    fetchUnitById(prefillAssetId)
   }, [prefillAssetId])
 
   // Prefill from Accessories page's "Sell" link.
@@ -232,6 +238,9 @@ function SellPageInner() {
                 <div>
                   <div className="font-medium">{unitLabel(selectedUnit)}</div>
                   <div className="text-xs text-gray-600">{selectedUnit.sku_code} — {selectedUnit.description}</div>
+                  <button type="button" onClick={() => setShowChangeSku(true)} className="text-blue-600 underline text-xs mt-1">
+                    Wrong or upgraded spec? Change SKU
+                  </button>
                 </div>
                 <button onClick={() => setSelectedUnit(null)} className="text-red-500 text-sm">✕ Change</button>
               </div>
@@ -447,6 +456,14 @@ function SellPageInner() {
           </button>
         </div>
       </div>
+
+      {showChangeSku && selectedUnit && (
+        <FixSkuDialog
+          assetId={selectedUnit.id}
+          onClose={() => setShowChangeSku(false)}
+          onReassigned={() => fetchUnitById(selectedUnit.id)}
+        />
+      )}
     </div>
   )
 }

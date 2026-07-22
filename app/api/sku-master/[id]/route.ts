@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { normalizeSpecifications } from '@/lib/sku-normalizer'
+import { canonicalJson } from '@/lib/sku-resolver'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { redactForRole } from '@/lib/auth/redact'
 
@@ -59,12 +60,37 @@ export async function PUT(
     // Get the SKU's category to know which normalization rules to apply
     const { data: sku } = await supabaseAdmin
       .from('sku_master')
-      .select('category')
+      .select('category, base_sku_code')
       .eq('id', id)
       .single()
 
     if (sku) {
       updatable.specifications = await normalizeSpecifications(sku.category, updatable.specifications)
+
+      // Guard against silently creating a duplicate: if another existing SKU
+      // (same base code, different id) already has these exact normalized specs,
+      // reject the edit rather than saving a second row with identical specs.
+      // Correcting a mistaken SKU to match one that already exists should be done
+      // by reassigning the affected assets to that existing SKU (Stock view's
+      // "Fix SKU" action), not by editing this row's specs in place.
+      const { data: candidates } = await supabaseAdmin
+        .from('sku_master')
+        .select('id, full_sku_code, specifications')
+        .eq('base_sku_code', sku.base_sku_code)
+        .neq('id', id)
+
+      const newSpecsNorm = canonicalJson(updatable.specifications)
+      const duplicate = (candidates || []).find(
+        (c) => canonicalJson(c.specifications) === newSpecsNorm
+      )
+      if (duplicate) {
+        return NextResponse.json(
+          {
+            error: `These specs match existing SKU ${duplicate.full_sku_code}. Use "Fix SKU" on the affected assets to reassign them there instead of editing this SKU's specs.`,
+          },
+          { status: 409 }
+        )
+      }
     }
   }
 

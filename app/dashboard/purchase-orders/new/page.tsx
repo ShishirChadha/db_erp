@@ -4,10 +4,18 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { SkuFormModal } from '@/components/SkuFormModal'
 
 interface Vendor {
   id: string
   company_name: string
+}
+
+interface CategoryTemplate {
+  category: string
+  display_name: string
+  field_schema: any
+  sku_code_format?: string
 }
 
 interface SKU {
@@ -19,7 +27,7 @@ interface SKU {
   model_name: string
   specifications: Record<string, any>
   base_cost: number | null
-  hsn_code: string | null
+  hsn_code?: string | null
 }
 
 interface LineItem {
@@ -53,6 +61,8 @@ function NewPurchaseOrderPage() {
   const [skuSearch, setSkuSearch] = useState('')
   const [skuOptions, setSkuOptions] = useState<SKU[]>([])
   const [showSkuDropdown, setShowSkuDropdown] = useState(false)
+  const [skuTemplates, setSkuTemplates] = useState<CategoryTemplate[]>([])
+  const [showCreateSku, setShowCreateSku] = useState(false)
 
   // Line items
   const [items, setItems] = useState<LineItem[]>([])
@@ -61,7 +71,6 @@ function NewPurchaseOrderPage() {
   const [unitPrice, setUnitPrice] = useState<number>(0)
   const [gstPercent, setGstPercent] = useState(18)
   const [lineTotalInput, setLineTotalInput] = useState<number>(0)
-  const [editMode, setEditMode] = useState<'unit' | 'total'>('unit')
   const [hsnCode, setHsnCode] = useState('')
 
   // Submit
@@ -71,6 +80,11 @@ function NewPurchaseOrderPage() {
   // Load vendors
   useEffect(() => {
     apiFetch('/api/vendors').then(res => res.json()).then(setVendors)
+  }, [])
+
+  // Load SKU category templates (needed for the inline "create new SKU" modal)
+  useEffect(() => {
+    apiFetch('/api/sku-category-templates').then(res => res.json()).then(setSkuTemplates)
   }, [])
 
   // Debounced SKU search
@@ -95,29 +109,45 @@ function NewPurchaseOrderPage() {
       setQuantity(1)
       setGstPercent(18)
       setHsnCode(selectedSku.hsn_code || '')
-      setEditMode('unit')
       const lineBeforeGst = baseCost * 1
       const gstAmt = lineBeforeGst * 18 / 100
       setLineTotalInput(lineBeforeGst + gstAmt)
     }
   }, [selectedSku])
 
-  // Dynamic calc: unit price → line total
-  useEffect(() => {
-    if (editMode === 'unit') {
-      const lineBeforeGst = unitPrice * quantity
-      const gstAmt = lineBeforeGst * gstPercent / 100
-      setLineTotalInput(lineBeforeGst + gstAmt)
-    }
-  }, [unitPrice, quantity, gstPercent, editMode])
+  // Forward calc: unit price/quantity/GST% -> line total. This is the only path
+  // quantity changes ever take -- increasing quantity must always scale the total
+  // up from the current unit price, never back-solve a smaller unit price from a
+  // stale total (that was the bug: a prior reverse-calc could silently shrink the
+  // unit price when quantity changed after the user had last edited Line Total).
+  const recalcLineTotal = (newUnitPrice: number, newQuantity: number, newGstPercent: number) => {
+    const lineBeforeGst = newUnitPrice * newQuantity
+    const gstAmt = lineBeforeGst * newGstPercent / 100
+    setLineTotalInput(lineBeforeGst + gstAmt)
+  }
 
-  // Dynamic calc: line total → unit price
-  useEffect(() => {
-    if (editMode === 'total') {
-      const lineBeforeGst = lineTotalInput / (1 + gstPercent / 100)
-      setUnitPrice(lineBeforeGst / quantity)
-    }
-  }, [lineTotalInput, quantity, gstPercent, editMode])
+  const handleQuantityChange = (newQty: number) => {
+    setQuantity(newQty)
+    recalcLineTotal(unitPrice, newQty, gstPercent)
+  }
+
+  const handleUnitPriceChange = (newUnitPrice: number) => {
+    setUnitPrice(newUnitPrice)
+    recalcLineTotal(newUnitPrice, quantity, gstPercent)
+  }
+
+  const handleGstPercentChange = (newGstPercent: number) => {
+    setGstPercent(newGstPercent)
+    recalcLineTotal(unitPrice, quantity, newGstPercent)
+  }
+
+  // Reverse calc: only a direct edit of the Line Total field itself back-solves
+  // unit price -- quantity/unit-price/GST% edits never trigger this.
+  const handleLineTotalChange = (newLineTotal: number) => {
+    setLineTotalInput(newLineTotal)
+    const lineBeforeGst = newLineTotal / (1 + gstPercent / 100)
+    setUnitPrice(quantity > 0 ? lineBeforeGst / quantity : 0)
+  }
 
   const addItem = () => {
     if (!selectedSku || quantity <= 0 || unitPrice <= 0) return
@@ -293,6 +323,18 @@ function NewPurchaseOrderPage() {
                 ))}
               </ul>
             )}
+            {showSkuDropdown && skuSearch.trim() && skuOptions.length === 0 && (
+              <div className="absolute z-10 bg-white border w-full p-3 text-sm">
+                No matching SKU found.{' '}
+                <button
+                  type="button"
+                  onClick={() => setShowCreateSku(true)}
+                  className="text-blue-600 underline"
+                >
+                  + Create new SKU
+                </button>
+              </div>
+            )}
           </div>
 
           {selectedSku && (
@@ -318,19 +360,19 @@ function NewPurchaseOrderPage() {
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
                 <div>
                   <label className="block text-sm font-medium">Quantity</label>
-                  <input type="number" min={1} value={quantity} onChange={(e) => setQuantity(Number(e.target.value))} className="border p-2 w-full rounded" />
+                  <input type="number" min={1} value={quantity} onChange={(e) => handleQuantityChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium">Unit Price (₹)</label>
-                  <input type="number" value={unitPrice} onChange={(e) => { setUnitPrice(Number(e.target.value)); setEditMode('unit'); }} className="border p-2 w-full rounded" />
+                  <input type="number" value={unitPrice} onChange={(e) => handleUnitPriceChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium">GST %</label>
-                  <input type="number" value={gstPercent} onChange={(e) => { setGstPercent(Number(e.target.value)); setEditMode('unit'); }} className="border p-2 w-full rounded" />
+                  <input type="number" value={gstPercent} onChange={(e) => handleGstPercentChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
                   <label className="block text-sm font-medium">Line Total (₹)</label>
-                  <input type="number" value={lineTotalInput} onChange={(e) => { setLineTotalInput(Number(e.target.value)); setEditMode('total'); }} className="border p-2 w-full rounded" />
+                  <input type="number" value={lineTotalInput} onChange={(e) => handleLineTotalChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div className="col-span-2 md:col-span-4">
                   <label className="block text-sm font-medium">HSN Code</label>
@@ -468,6 +510,20 @@ function NewPurchaseOrderPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {showCreateSku && (
+        <SkuFormModal
+          templates={skuTemplates}
+          existingSku={null}
+          onClose={() => setShowCreateSku(false)}
+          onSaved={(sku) => {
+            setSelectedSku(sku)
+            setSkuSearch(sku.full_sku_code)
+            setShowCreateSku(false)
+            setShowSkuDropdown(false)
+          }}
+        />
       )}
     </div>
   )

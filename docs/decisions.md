@@ -72,4 +72,40 @@ Impact: those 751 POs stay `po_status='received'` with no invoice indefinitely; 
 
 **Legacy quick-entry customer/vendor CRM forms are not touched by the new quick-entry flows.**
 Why: `AddCustomerDialog.tsx` (full CRM form, GST fields, marketing-source tracking) is still needed as-is on the main Customers management page; the Sell/Service quick-entry screens needed a much lighter version and editing the shared component in place would have added noise to the main CRM page's field set for no benefit there.
-Impact: a separate `QuickAddCustomerDialog.tsx` (name/type/phone/email/address only) was built for Sell/Service instead of modifying the shared one — two components, not one component with conditional complexity.
+Impact: a separate `QuickAddCustomerDialog.tsx` (name/type/phone/email/address only) was built for Sell/Service instead of modifying the shared one — two components, not one component with conditional complexity. Later revised (2026-07-22): Has GST / GST Number were added back conditionally (only when type=Business) after the owner hit this gap selling to a business customer — GST is needed for that customer type specifically, not for the lightweight default (Individual).
+
+---
+
+**Asset-number reconciliation must be numeric/format-aware, not lexicographic.**
+Why: two admin tools (`app/api/settings/asset-counters/route.ts`, and formerly a step in PO hard-delete) found "the current max asset number for a prefix" via `.order('asset_number', desc).limit(1)` — a plain string sort. Once old-format numbers (`DBAS682`, no year) and new-format numbers (`DBAS26-699`, with year) coexist under the same prefix, string order can rank the old one higher (`'6' > '2'` at the first differing character), silently resetting the counter to the wrong value. This is what let a real PO's numbering jump from the last real unit (`DBAS682`) to `DBAS26-699` instead of continuing at 683 — an earlier reservation had already run ahead due to this exact bug plus an unrelated non-transactional reserve-then-write gap in PO submission (still open, see below).
+Impact: both reconciliation tools now filter candidates to `^PREFIX\d{2}-\d+$` matching the target year, then compare the extracted integer — never a raw string sort. PO hard-delete's equivalent step was removed outright rather than fixed (see next entry).
+
+---
+
+**PO hard-delete no longer tries to "recover" reserved asset numbers on delete.**
+Why: recalculating the counter back down when a PO is deleted actively fights this project's own numbering design (`reserve_assets()` is an atomic, never-reused sequence — a cancelled purchase's numbers are meant to just be spent, not clawed back) and was the concrete source of the lexicographic-sort bug above.
+Impact: `app/api/purchase-orders/[id]/hard-delete/route.ts` no longer touches `asset_counters` at all. Deleting a PO leaves the counter wherever it is — a small, permanent gap, which is the accepted behavior per the original numbering ADR, not a bug to re-introduce a fix for.
+
+---
+
+**Legacy (pre-2026) asset numbers were renamed to match the current format.**
+Why: 697 legacy `asset_ledger` rows used old, inconsistent formats (`DBAS0001`-`DBAS682`, `C0001`-`C0024` — an even older Cash prefix predating today's `CSAS` — `SHIS1`, and 2 malformed numbers). The owner asked for these aligned to the current `PREFIX<YY>-<seq>` format rather than left as permanent legacy noise, accepting the risk that these numbers may already be on physical tags/old invoices.
+Impact: each row was renamed using its *real* historical purchase year (from its linked PO's `po_date` — the 2026-05-15 bulk-migration timestamp on the rows themselves is unrelated to when units were actually purchased), sequenced chronologically within each (prefix, year) bucket. The original number is preserved in a new `asset_ledger.legacy_asset_number` column specifically so a physical tag or an already-issued document can still be cross-referenced after the rename. `asset_counters` was corrected to match. Verified zero collisions and zero remaining old-format rows before considering this done.
+
+---
+
+**Reassigning a unit's SKU is open to both roles; editing SKU master specs stays owner-only.**
+Why: correcting which SKU an asset is linked to (a data-entry mistake, or a physical upgrade discovered at sale time) never reads or writes cost/vendor data — unlike editing a SKU's own specifications in `sku_master`, which does. Restricting reassignment to the owner would have forced every employee who notices a wrong/upgraded unit at the point of sale to interrupt the owner instead of just fixing it.
+Impact: `PATCH /api/asset-ledger/[id]/reassign-sku` requires only a valid session, not `isOwner`. `PUT /api/sku-master/[id]` (editing specs) remains owner-gated. The Stock view's "Fix SKU" button stays owner-only by UI choice (a power-user correction tool), while the Sell form's "Change SKU" (same underlying dialog, `components/FixSkuDialog.tsx`) is shown to both roles — the permission boundary lives in the route, not the button.
+
+---
+
+**Cost of upgrading a specific unit before resale is an append-only ledger, not a single field.**
+Why: a unit's `cost_price` is set once at purchase time; there was no way to record that a specific unit later had money spent on it (added RAM, a bigger SSD) before resale, which matters for accurate margin. A single overwritable "extra cost" field would lose history if a unit is upgraded more than once and can't say who added what or when.
+Impact: new `asset_cost_adjustments` table (`asset_id`, `amount`, `reason`, `added_by`, `created_at`) — same idiom as `stock_movements`/`asset_qc_checks` elsewhere in this codebase. Owner-only end to end (`GET`/`POST /api/asset-ledger/[id]/cost-adjustments`, optionally filled in from the Fix-SKU dialog at the moment of a reassignment, or anytime from the asset detail page's Cost Adjustments panel) — employees never see or set it, consistent with cost/vendor redaction everywhere else.
+
+---
+
+**RAM/SSD spec entry moved from free-typed number+regex to a `custom_options` dropdown; combined configs are their own atomic entries, not parsed.**
+Why: `SkuFormModal` and `AddPurchaseDialog` typed RAM/SSD as plain numbers with a regex-normalization rule (`(\d+)` — extract the first number). That rule silently collapsed any combined-module string (e.g. "8GB + 8GB") down to "8", making a dual-8GB unit indistinguishable from a genuine single-8GB unit in SKU-variant matching. Once entry is dropdown-only, the regex extraction became unnecessary *and* actively harmful.
+Impact: RAM/SSD/Storage fields switched to `text` + `custom_options`-backed `SearchableSelect` (same pattern already used correctly in Stock Intake), with the regex-normalization rule removed entirely rather than replaced — `normalizeSpecifications` already no-ops safely when no rule is present. A combined configuration is added as its own literal `custom_options` value (e.g. `"8GB + 8GB (16GB)"`) alongside the atomic ones, so it compares as a fully distinct string with zero parsing logic. Existing catalog data was migrated from bare numbers to the matching canonical strings so old and new entries keep resolving to the same SKU variants.

@@ -5,6 +5,8 @@ import { useState, useEffect, useRef } from "react";
 import { ModelSelect } from "@/components/ModelSelect";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api-client";
+import { useCustomOptions } from "@/lib/useCustomOptions";
+import { SearchableSelect } from "@/components/SearchableSelect";
 import {
   Dialog,
   DialogContent,
@@ -188,6 +190,13 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
   const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
 
+  const { values: cpuOptions } = useCustomOptions('cpu');
+  const { values: generationOptions } = useCustomOptions('generation');
+  const { values: ramOptions } = useCustomOptions('ram');
+  const { values: storageOptions } = useCustomOptions('storage');
+  const { values: laptopScreenOptions } = useCustomOptions('screen_size_laptop');
+  const { values: monitorScreenOptions } = useCustomOptions('screen_size_monitor');
+
   const [formData, setFormData] = useState({
     entry_date: today,
     purchase_date: "",
@@ -203,10 +212,10 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     asset_description: "",
     serial_number: "",
     cpu: "",
-    generation: null as number | null,
-    ram: null as number | null,
-    ssd: null as number | null,
-    screen_size: null as number | null,
+    generation: "",
+    ram: "",
+    ssd: "",
+    screen_size: "",
     charger: false,
     monitor_size: null as number | null,
     has_keyboard: false,
@@ -278,10 +287,10 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         asset_description: "",
         serial_number: "",
         cpu: "",
-        generation: null,
-        ram: null,
-        ssd: null,
-        screen_size: null,
+        generation: "",
+        ram: "",
+        ssd: "",
+        screen_size: "",
         charger: false,
         monitor_size: null,
         has_keyboard: false,
@@ -557,11 +566,11 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           <div className="border rounded-lg p-4 space-y-4">
             <h3 className="font-semibold">Hardware Specifications</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div><Label>CPU</Label><Input value={formData.cpu} onChange={(e) => handleChange("cpu", e.target.value)} /></div>
-              <div><Label>Generation</Label><Input type="number" step="1" value={formData.generation ?? ""} onChange={(e) => handleChange("generation", e.target.value === "" ? null : parseInt(e.target.value))} /></div>
-              <div><Label>RAM (GB)</Label><Input type="number" step="1" value={formData.ram ?? ""} onChange={(e) => handleChange("ram", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-              <div><Label>SSD / HDD (GB)</Label><Input type="number" step="1" value={formData.ssd ?? ""} onChange={(e) => handleChange("ssd", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-              {isLaptopOrMonitor && <div><Label>Screen Size (inches)</Label><Input type="number" step="0.1" value={formData.screen_size ?? ""} onChange={(e) => handleChange("screen_size", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>}
+              <div><Label>CPU</Label><SearchableSelect options={cpuOptions} value={formData.cpu} onChange={(v) => handleChange("cpu", v)} placeholder="Select CPU..." /></div>
+              <div><Label>Generation</Label><SearchableSelect options={generationOptions} value={formData.generation} onChange={(v) => handleChange("generation", v)} placeholder="Select generation..." /></div>
+              <div><Label>RAM (GB)</Label><SearchableSelect options={ramOptions} value={formData.ram} onChange={(v) => handleChange("ram", v)} placeholder="Select RAM..." /></div>
+              <div><Label>SSD / HDD (GB)</Label><SearchableSelect options={storageOptions} value={formData.ssd} onChange={(v) => handleChange("ssd", v)} placeholder="Select storage..." /></div>
+              {isLaptopOrMonitor && <div><Label>Screen Size (inches)</Label><SearchableSelect options={formData.type === "Monitor" ? monitorScreenOptions : laptopScreenOptions} value={formData.screen_size} onChange={(v) => handleChange("screen_size", v)} placeholder="Select screen size..." /></div>}
               {isDesktop && (
                 <>
                   <div><Label>Monitor Size (inches)</Label><Input type="number" step="0.1" value={formData.monitor_size ?? ""} onChange={(e) => handleChange("monitor_size", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import { useRole } from '@/lib/auth/useRole'
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -18,6 +19,13 @@ interface CheckResult {
   check_item: string
   result: 'pass' | 'fail' | 'na'
   notes: string
+}
+
+interface CostAdjustment {
+  id: string
+  amount: number
+  reason: string | null
+  created_at: string
 }
 
 interface AssetDetail {
@@ -45,6 +53,7 @@ export default function AssetQCPage() {
   const params = useParams()
   const router = useRouter()
   const assetId = params.id as string
+  const { isOwner } = useRole()
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -53,6 +62,47 @@ export default function AssetQCPage() {
   const [checkResults, setCheckResults] = useState<CheckResult[]>([])
   const [grade, setGrade] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Owner-only cost tracking (original cost + any upgrade/refurb adjustments).
+  const [costPrice, setCostPrice] = useState<number | null>(null)
+  const [adjustments, setAdjustments] = useState<CostAdjustment[]>([])
+  const [totalCost, setTotalCost] = useState<number | null>(null)
+  const [newAmount, setNewAmount] = useState('')
+  const [newReason, setNewReason] = useState('')
+  const [savingAdjustment, setSavingAdjustment] = useState(false)
+
+  const fetchCostAdjustments = useCallback(async () => {
+    if (!isOwner) return
+    const res = await apiFetch(`/api/asset-ledger/${assetId}/cost-adjustments`)
+    if (!res.ok) return
+    const data = await res.json()
+    setCostPrice(data.cost_price)
+    setAdjustments(data.adjustments || [])
+    setTotalCost(data.total_cost)
+  }, [assetId, isOwner])
+
+  useEffect(() => { fetchCostAdjustments() }, [fetchCostAdjustments])
+
+  const addAdjustment = async () => {
+    if (!newAmount.trim() || isNaN(Number(newAmount))) return
+    setSavingAdjustment(true)
+    try {
+      const res = await apiFetch(`/api/asset-ledger/${assetId}/cost-adjustments`, {
+        method: 'POST',
+        body: JSON.stringify({ amount: Number(newAmount), reason: newReason || null }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to add adjustment')
+        return
+      }
+      setNewAmount('')
+      setNewReason('')
+      await fetchCostAdjustments()
+    } finally {
+      setSavingAdjustment(false)
+    }
+  }
 
   const fetchAsset = useCallback(async () => {
     setLoading(true)
@@ -244,6 +294,56 @@ export default function AssetQCPage() {
           >
             {saving ? 'Saving…' : 'Submit QC Result'}
           </button>
+        </div>
+      )}
+
+      {isOwner && (
+        <div className="border rounded-lg p-4 mt-6">
+          <h2 className="font-semibold mb-3">Cost Adjustments</h2>
+          <p className="text-sm text-gray-600 mb-2">
+            Original cost: ₹{(costPrice ?? 0).toFixed(2)}
+            {adjustments.length > 0 && totalCost !== null && (
+              <> — Total cost: ₹{totalCost.toFixed(2)}</>
+            )}
+          </p>
+          {adjustments.length > 0 && (
+            <ul className="text-sm mb-3 divide-y border rounded">
+              {adjustments.map((a) => (
+                <li key={a.id} className="p-2 flex justify-between">
+                  <span>{a.reason || '—'} <span className="text-gray-400 text-xs">({a.created_at.slice(0, 10)})</span></span>
+                  <span className="font-medium">₹{Number(a.amount).toFixed(2)}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="block text-xs font-medium mb-1">Amount (₹)</label>
+              <input
+                type="number"
+                value={newAmount}
+                onChange={(e) => setNewAmount(e.target.value)}
+                className="border p-2 w-full rounded"
+              />
+            </div>
+            <div className="flex-1">
+              <label className="block text-xs font-medium mb-1">Reason</label>
+              <input
+                type="text"
+                value={newReason}
+                onChange={(e) => setNewReason(e.target.value)}
+                placeholder="e.g. Upgraded to 16GB RAM"
+                className="border p-2 w-full rounded"
+              />
+            </div>
+            <button
+              onClick={addAdjustment}
+              disabled={savingAdjustment}
+              className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            >
+              {savingAdjustment ? 'Adding…' : 'Add'}
+            </button>
+          </div>
         </div>
       )}
     </div>

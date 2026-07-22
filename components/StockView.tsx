@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
+import { FixSkuDialog } from '@/components/FixSkuDialog'
 
 interface AssetRow {
   id: string
@@ -75,6 +76,7 @@ export default function StockView({
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showPoForm, setShowPoForm] = useState(false)
+  const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
 
   // Owner-only discrepancy counts, independent of the active tab.
   const [missingPoCount, setMissingPoCount] = useState(0)
@@ -234,6 +236,14 @@ export default function StockView({
         />
       )}
 
+      {fixSkuAssetId && (
+        <FixSkuDialog
+          assetId={fixSkuAssetId}
+          onClose={() => setFixSkuAssetId(null)}
+          onReassigned={() => { fetchAssets(); fetchCounts() }}
+        />
+      )}
+
       {loading ? (
         <div>Loading assets…</div>
       ) : (
@@ -311,10 +321,28 @@ export default function StockView({
                     </td>
                   )}
                   {isOwner && (
-                    <td className="border p-2">
-                      <button onClick={() => router.push(`/dashboard/sku-master?search=${encodeURIComponent(asset.sku_code)}`)} className="text-blue-600 underline text-xs">
+                    <td className="border p-2 space-x-2">
+                      <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">
                         Fix SKU
                       </button>
+                      {tab === 'current' && !asset.po_id && (
+                        <button
+                          onClick={async () => {
+                            if (!confirm(`Delete asset ${identifier(asset)}? This cannot be undone.`)) return
+                            const res = await apiFetch(`/api/asset-ledger/${asset.id}`, { method: 'DELETE' })
+                            if (!res.ok) {
+                              const err = await res.json().catch(() => ({}))
+                              alert(err.error || 'Delete failed')
+                              return
+                            }
+                            fetchAssets()
+                            fetchCounts()
+                          }}
+                          className="text-red-600 underline text-xs"
+                        >
+                          Delete
+                        </button>
+                      )}
                     </td>
                   )}
                   {tab === 'current' && (

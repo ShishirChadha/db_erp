@@ -35,7 +35,7 @@ export async function DELETE(
 
   const { data: items } = await supabaseAdmin
     .from('purchase_order_items')
-    .select('id, sku_id, quantity, serial_numbers, asset_prefix')
+    .select('id, sku_id, quantity, serial_numbers')
     .eq('po_id', id)
 
   // 3. Decrement stock for each item that has serials (i.e., was received)
@@ -68,41 +68,16 @@ export async function DELETE(
     return NextResponse.json({ error: poErr.message }, { status: 500 })
   }
 
-  // 6. Reset asset counters for each prefix involved
-  if (items && items.length > 0) {
-    const currentYear = new Date().getFullYear().toString()
-    const prefixes = [...new Set(items.map(i => i.asset_prefix).filter(Boolean))]
-
-    for (const prefix of prefixes) {
-      const { data: maxAsset } = await supabaseAdmin
-        .from('asset_ledger')
-        .select('asset_number')
-        .ilike('asset_number', `${prefix}%`)
-        .order('asset_number', { ascending: false })
-        .limit(1)
-
-      let maxNum = 0
-      let maxSuffix = ''
-      if (maxAsset && maxAsset.length > 0) {
-        const lastAsset = maxAsset[0].asset_number
-        const newRegex = new RegExp(`^${prefix}(\\d{2})-(\\d+)$`)
-        const newMatch = lastAsset.match(newRegex)
-        if (newMatch) {
-          maxSuffix = newMatch[1]
-          maxNum = parseInt(newMatch[2], 10)
-        } else {
-          const oldMatch = lastAsset.match(/(\d+)$/)
-          if (oldMatch) maxNum = parseInt(oldMatch[1], 10)
-        }
-      }
-
-      await supabaseAdmin
-        .from('asset_counters')
-        .upsert({ prefix, year: currentYear, last_number: maxNum, year_suffix: maxSuffix || null }, { onConflict: 'prefix,year' })
-    }
-  }
-
-  // 7. Reset PO counter for the year
+  // 6. Reset PO counter for the year
+  //
+  // Note: this route intentionally does NOT try to "recover" the asset numbers
+  // this PO had reserved (previously via a recalculate-from-asset_ledger step
+  // here). Asset numbers are an atomic, never-reused sequence by design (see
+  // docs/decisions.md) -- a deleted PO's numbers are meant to simply be spent,
+  // not clawed back. That recalculation also used a lexicographic string sort
+  // that could pick the wrong "max" once old-format legacy numbers (no year
+  // segment) coexist with new-format ones under the same prefix -- removing it
+  // avoids that bug entirely rather than patching it.
   if (po) {
     const year = po.po_number.split('-')[1]
     const { data: maxPO } = await supabaseAdmin

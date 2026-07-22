@@ -10,7 +10,7 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const statusFilter = searchParams.get('status')      // optional
-  const search = searchParams.get('search')            // optional (asset number or serial)
+  const search = searchParams.get('search')            // optional (asset number, serial, or SKU code/brand/model/description)
   const sku_id = searchParams.get('sku_id')            // optional
   const id = searchParams.get('id')                    // optional (fetch a single unit by id)
   const source = searchParams.get('source')            // optional exact match, e.g. 'employee_intake'
@@ -64,7 +64,21 @@ export async function GET(req: NextRequest) {
     query = statuses.length > 1 ? query.in('status', statuses) : query.eq('status', statuses[0])
   }
   if (search) {
-    query = query.or(`asset_number.ilike.%${search}%,serial_number.ilike.%${search}%`)
+    // A search term can match the asset's own tag (asset/serial number) or the
+    // SKU it belongs to (code/brand/model/description, e.g. "Lenovo" or "T450") --
+    // asset_ledger.sku_id is always populated regardless of PO-link status, so
+    // resolving matching SKUs first and OR-ing on sku_id covers both cases.
+    const { data: matchingSkus } = await supabaseAdmin
+      .from('sku_master')
+      .select('id')
+      .or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%,brand.ilike.%${search}%,model_name.ilike.%${search}%`)
+
+    const skuIds = (matchingSkus || []).map((s) => s.id)
+    const orClauses = [`asset_number.ilike.%${search}%`, `serial_number.ilike.%${search}%`]
+    if (skuIds.length > 0) {
+      orClauses.push(`sku_id.in.(${skuIds.join(',')})`)
+    }
+    query = query.or(orClauses.join(','))
   }
   if (sku_id) {
     query = query.eq('sku_id', sku_id)
