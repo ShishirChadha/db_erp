@@ -67,6 +67,7 @@ function SellPageInner() {
   const [salePrice, setSalePrice] = useState<number>(0)
   const [gstPercent, setGstPercent] = useState<number>(18)
   const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
+  const [priceMode, setPriceMode] = useState<'pre_gst' | 'post_gst'>('pre_gst')
 
   const [paymentStatus, setPaymentStatus] = useState<'paid' | 'partial' | 'pending'>('paid')
   const [amountPaid, setAmountPaid] = useState<number>(0)
@@ -133,16 +134,32 @@ function SellPageInner() {
     return () => clearTimeout(timer)
   }, [accessorySearch])
 
-  const gstAmount = saleType === 'GST' ? Math.round(salePrice * gstPercent) / 100 : 0
-  const total = salePrice + gstAmount
+  const baseGstPrice = priceMode === 'pre_gst' ? salePrice : salePrice / (1 + gstPercent / 100)
+  const gstAmount = saleType === 'GST' ? Math.round(baseGstPrice * gstPercent * 100) / 10000 : 0
+  const total = saleType === 'GST'
+    ? (priceMode === 'post_gst' ? salePrice : baseGstPrice + gstAmount)
+    : salePrice
   const balanceDue = total - (paymentStatus === 'paid' ? total : amountPaid)
+
+  // Switching modes converts the number in the box so the total the customer pays
+  // stays the same -- never just relabels a stale number under the new meaning.
+  const handlePriceModeChange = (newMode: 'pre_gst' | 'post_gst') => {
+    if (saleType === 'GST' && salePrice > 0 && newMode !== priceMode) {
+      if (newMode === 'post_gst') {
+        setSalePrice(Math.round(salePrice * (1 + gstPercent / 100) * 100) / 100)
+      } else {
+        setSalePrice(Math.round((salePrice / (1 + gstPercent / 100)) * 100) / 100)
+      }
+    }
+    setPriceMode(newMode)
+  }
 
   const resetForm = () => {
     setSelectedUnit(null); setUnitSearch(''); setUnits([]); setBundled([])
     setSelectedAccessory(null); setAccessoryQty(1)
     setAccessorySearch(''); setAccessoryOptions([])
     setCustomerId(null); setCustomerData(null)
-    setSalePrice(0); setGstPercent(18); setSaleType('GST')
+    setSalePrice(0); setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
     setPaymentStatus('paid'); setAmountPaid(0); setPaymentAccount('Digitalbluez'); setSoldBy('')
   }
 
@@ -163,7 +180,7 @@ function SellPageInner() {
     try {
       const payload: any = {
         customer_id: customerId,
-        sale_base_price: salePrice,
+        sale_base_price: baseGstPrice,
         gst_percentage: saleType === 'GST' ? gstPercent : 0,
         sale_type: saleType,
         payment_status: paymentStatus,
@@ -402,7 +419,9 @@ function SellPageInner() {
             </select>
           </div>
           <div>
-            <label className="block font-medium text-sm mb-1">Selling Price (₹) *</label>
+            <label className="block font-medium text-sm mb-1">
+              Selling Price {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST) ' : '(GST-Inclusive) ') : ''}(₹) *
+            </label>
             <input type="number" value={salePrice || ''} onChange={(e) => setSalePrice(Number(e.target.value))} className="border p-2 w-full rounded" />
           </div>
           {saleType === 'GST' && (
@@ -412,6 +431,22 @@ function SellPageInner() {
             </div>
           )}
         </div>
+
+        {saleType === 'GST' && (
+          <div>
+            <label className="block font-medium text-sm mb-1">Price entered is</label>
+            <div className="flex gap-4 text-sm">
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={priceMode === 'pre_gst'} onChange={() => handlePriceModeChange('pre_gst')} />
+                Before GST
+              </label>
+              <label className="flex items-center gap-1">
+                <input type="radio" checked={priceMode === 'post_gst'} onChange={() => handlePriceModeChange('post_gst')} />
+                After GST (Inclusive)
+              </label>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-3 gap-4">
           <div>
@@ -441,6 +476,7 @@ function SellPageInner() {
         </div>
 
         <div className="text-right text-sm space-y-1">
+          {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{baseGstPrice.toFixed(2)}</p>}
           {saleType === 'GST' && <p>GST: ₹{gstAmount.toFixed(2)}</p>}
           <p className="font-bold text-base">Total: ₹{total.toFixed(2)}</p>
           {paymentStatus !== 'paid' && <p className="text-amber-700">Balance due: ₹{balanceDue.toFixed(2)}</p>}
