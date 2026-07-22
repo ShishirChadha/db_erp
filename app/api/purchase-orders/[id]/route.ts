@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals } from '@/lib/purchase-utils'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   // Fetch PO header
@@ -28,7 +32,7 @@ export async function GET(
 
   // Fetch all asset mappings for this PO to get the current asset numbers
   const { data: allAssets } = await supabaseAdmin
-    .from('purchase_order_asset_mapping')
+    .from('asset_ledger')
     .select('po_item_id, asset_number, serial_number, status')
     .eq('po_id', id)
 
@@ -66,6 +70,9 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
   const body = await req.json()
 
@@ -166,6 +173,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   // Soft delete

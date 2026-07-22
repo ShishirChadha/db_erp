@@ -1,276 +1,181 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { CalendarIcon } from "lucide-react";
-import { format } from "date-fns";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import AddSaleDialog from "@/components/AddSaleDialog";
-import BulkAddDialog from "@/components/BulkAddDialog";
-import EditSaleDialog from "@/components/EditSaleDialog";
-import DeleteRecordDialog from "@/components/DeleteRecordDialog";
+import { apiFetch } from "@/lib/api-client";
+import RequireOwner from "@/components/RequireOwner";
 
-type SortField = "sale_date" | "invoice_number" | "customer_name" | "sale_total" | "sale_type";
-type SortOrder = "asc" | "desc";
+interface Sale {
+  id: string;
+  sale_date: string;
+  customer_name: string | null;
+  asset_number: string | null;
+  serial_number: string | null;
+  accessory_id: string | null;
+  accessory_quantity: number | null;
+  sale_base_price: number;
+  sale_gst: number;
+  sale_total: number;
+  sale_type: string;
+  payment_status: string;
+  amount_paid: number;
+  payment_account: string | null;
+  sold_by: string | null;
+  finalized: boolean;
+  invoice_number: string | null;
+}
 
-export default function SalesPage() {
-  const [sales, setSales] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [editingSale, setEditingSale] = useState<any | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [saleToDelete, setSaleToDelete] = useState<any>(null);
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
-  const supabase = createClient();
+const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [customerFilter, setCustomerFilter] = useState<string>("");
-  const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
-  const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
-  const [sortField, setSortField] = useState<SortField>("sale_date");
-  const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
+function SaleRow({ sale, onDone }: { sale: Sale; onDone: () => void }) {
+  const [paymentStatus, setPaymentStatus] = useState(sale.payment_status);
+  const [amountPaid, setAmountPaid] = useState(sale.amount_paid);
+  const [paymentAccount, setPaymentAccount] = useState(sale.payment_account || "");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
 
-  const fetchSales = useCallback(async () => {
-    setLoading(true);
-    let query = supabase.from("sales").select("*");
+  const save = async () => {
+    setErr("");
+    setBusy(true);
+    try {
+      const res = await apiFetch(`/api/sales/${sale.id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ payment_status: paymentStatus, amount_paid: amountPaid, payment_account: paymentAccount || null }),
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to save.");
+      onDone();
+    } catch (e: any) {
+      setErr(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
 
-    if (showDeleted) {
-      query = query.eq("is_deleted", true);
+  const generateInvoice = async () => {
+    setBusy(true);
+    const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: "POST", body: "{}" });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || "Failed to generate invoice.");
     } else {
-      query = query.eq("is_deleted", false);
+      onDone();
     }
-
-    // GLOBAL SEARCH across multiple columns
-    if (searchTerm) {
-      query = query.or(
-        `invoice_number.ilike.%${searchTerm}%,` +
-        `customer_name.ilike.%${searchTerm}%,` +
-        `asset_number.ilike.%${searchTerm}%,` +
-        `sku.ilike.%${searchTerm}%,` +
-        `type.ilike.%${searchTerm}%,` +
-        `asset_description.ilike.%${searchTerm}%,` +
-        `serial_number.ilike.%${searchTerm}%,` +
-        `sale_type.ilike.%${searchTerm}%`
-      );
-    }
-
-    if (typeFilter && typeFilter !== "all") {
-      query = query.eq("sale_type", typeFilter);
-    }
-    if (customerFilter) {
-      query = query.ilike("customer_name", `%${customerFilter}%`);
-    }
-    if (dateFrom) query = query.gte("sale_date", format(dateFrom, "yyyy-MM-dd"));
-    if (dateTo) query = query.lte("sale_date", format(dateTo, "yyyy-MM-dd"));
-
-    query = query.order(sortField, { ascending: sortOrder === "asc" });
-
-    const { data, error } = await query;
-    if (error) console.error(error);
-    else setSales(data || []);
-    setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, customerFilter, dateFrom, dateTo, sortField, sortOrder, supabase]);
-
-  useEffect(() => { fetchSales(); }, [fetchSales]);
-
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    else { setSortField(field); setSortOrder("asc"); }
-  };
-
-  const handleEditClick = (sale: any) => {
-    setEditingSale(sale);
-    setDialogOpen(true);
-  };
-
-  const handleSoftDelete = async (remarks: string) => {
-    if (!saleToDelete) return;
-    const { error } = await supabase
-      .from("sales")
-      .update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() })
-      .eq("id", saleToDelete.id);
-    if (error) console.error(error);
-    else fetchSales();
-    setSaleToDelete(null);
-  };
-
-  const handleRestore = async (sale: any) => {
-    await supabase
-      .from("sales")
-      .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
-      .eq("id", sale.id);
-    fetchSales();
+    setBusy(false);
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Sales</h1>
-        <div className="space-x-2">
-          <AddSaleDialog onAdd={fetchSales} />
-          <BulkAddDialog
-            tableName="sales"
-            onAdd={fetchSales}
-            transformRow={(row: any) => ({
-              sale_date: row.sale_date,
-              invoice_number: row.invoice_number,
-              customer_name: row.customer_name,
-              asset_number: row.asset_number,
-              sku: row.sku,
-              type: row.type,
-              asset_description: row.asset_description,
-              serial_number: row.serial_number,
-              sale_base_price: row.sale_base_price ? parseFloat(row.sale_base_price) : null,
-              sale_gst: row.sale_gst ? parseFloat(row.sale_gst) : null,
-              sale_total: row.sale_total ? parseFloat(row.sale_total) : null,
-              sale_type: row.sale_type,
-              is_deleted: false,
-            })}
-          />
-        </div>
+    <tr>
+      <td className="border p-2">{sale.sale_date?.slice(0, 10)}</td>
+      <td className="border p-2">{sale.customer_name || "—"}</td>
+      <td className="border p-2">{sale.asset_number || (sale.serial_number ? `SN: ${sale.serial_number}` : sale.accessory_id ? "Accessory" : "—")}</td>
+      <td className="border p-2 text-right">₹{sale.sale_total?.toFixed(2)}</td>
+      <td className="border p-2">
+        <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="border p-1 rounded text-xs">
+          <option value="pending">Pending</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+      </td>
+      <td className="border p-2">
+        <input type="number" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} className="border p-1 w-20 rounded text-xs" />
+      </td>
+      <td className="border p-2">
+        <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 rounded text-xs">
+          <option value="">—</option>
+          {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+      </td>
+      <td className="border p-2">{sale.sold_by || "—"}</td>
+      <td className="border p-2">
+        {sale.finalized ? (
+          <span className="text-green-600">✓ {sale.invoice_number}</span>
+        ) : (
+          <button onClick={generateInvoice} disabled={busy} className="text-amber-700 underline text-xs">Generate Invoice</button>
+        )}
+      </td>
+      <td className="border p-2">
+        {err && <div className="text-red-600 text-xs mb-1">{err}</div>}
+        <button onClick={save} disabled={busy} className="text-blue-600 underline text-xs">Save</button>
+      </td>
+    </tr>
+  );
+}
+
+function SalesLedgerPage() {
+  const [sales, setSales] = useState<Sale[]>([]);
+  const [search, setSearch] = useState("");
+  const [paymentFilter, setPaymentFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+
+  const fetchSales = useCallback(async () => {
+    setLoading(true);
+    const params = new URLSearchParams();
+    if (search) params.set("search", search);
+    if (paymentFilter) params.set("payment_status", paymentFilter);
+    const res = await apiFetch(`/api/sales?${params.toString()}`);
+    setSales(res.ok ? await res.json() : []);
+    setLoading(false);
+  }, [search, paymentFilter]);
+
+  useEffect(() => { fetchSales(); }, [fetchSales]);
+
+  return (
+    <div className="p-4">
+      <h1 className="text-2xl font-bold mb-4">Sales Ledger</h1>
+      <p className="text-sm text-gray-500 mb-4">
+        Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell" className="underline">New Entry → Sell</a>.
+      </p>
+
+      <div className="flex gap-4 mb-4 flex-wrap">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search customer, asset, serial, invoice..."
+          className="border p-2 rounded"
+        />
+        <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded">
+          <option value="">All Payment Statuses</option>
+          <option value="pending">Payment Pending</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
       </div>
 
-      {/* Filters Bar */}
-      <div className="flex flex-wrap gap-4 items-end">
-        {/* GLOBAL SEARCH BOX */}
-        <div className="w-64">
-          <Label>Global Search</Label>
-          <Input
-            placeholder="Invoice, customer, asset, serial..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {loading ? (
+        <div>Loading...</div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full border text-sm">
+            <thead>
+              <tr>
+                <th className="border p-2">Date</th>
+                <th className="border p-2">Customer</th>
+                <th className="border p-2">Item</th>
+                <th className="border p-2">Total</th>
+                <th className="border p-2">Payment</th>
+                <th className="border p-2">Amount Paid</th>
+                <th className="border p-2">Received Into</th>
+                <th className="border p-2">Sold By</th>
+                <th className="border p-2">Invoice</th>
+                <th className="border p-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sales.map(s => <SaleRow key={s.id} sale={s} onDone={fetchSales} />)}
+              {sales.length === 0 && (
+                <tr><td colSpan={10} className="border p-4 text-center text-gray-400">No sales found.</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
-
-        <div className="w-48">
-          <Label>Sale Type</Label>
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger><SelectValue placeholder="All types" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="GST">GST</SelectItem>
-              <SelectItem value="Cash">Cash</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="w-64">
-          <Label>Customer Name</Label>
-          <Input placeholder="Search customer" value={customerFilter} onChange={(e) => setCustomerFilter(e.target.value)} />
-        </div>
-
-        <div>
-          <Label>From Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline"><CalendarIcon className="mr-2 h-4 w-4"/>{dateFrom ? format(dateFrom, "dd/MM/yyyy") : "Select"}</Button>
-            </PopoverTrigger>
-            <PopoverContent><Calendar mode="single" selected={dateFrom} onSelect={setDateFrom} /></PopoverContent>
-          </Popover>
-        </div>
-
-        <div>
-          <Label>To Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline"><CalendarIcon className="mr-2 h-4 w-4"/>{dateTo ? format(dateTo, "dd/MM/yyyy") : "Select"}</Button>
-            </PopoverTrigger>
-            <PopoverContent><Calendar mode="single" selected={dateTo} onSelect={setDateTo} /></PopoverContent>
-          </Popover>
-        </div>
-
-        <div className="flex items-center space-x-2">
-          <input type="checkbox" id="showDeleted" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
-          <Label htmlFor="showDeleted">Show deleted records</Label>
-        </div>
-
-        <Button variant="secondary" onClick={() => {
-          setSearchTerm("");
-          setTypeFilter("all");
-          setCustomerFilter("");
-          setDateFrom(undefined);
-          setDateTo(undefined);
-        }}>
-          Clear Filters
-        </Button>
-      </div>
-
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("sale_date")}>Date {sortField === "sale_date" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("invoice_number")}>Invoice No {sortField === "invoice_number" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("customer_name")}>Customer {sortField === "customer_name" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead>Asset No</TableHead>
-              <TableHead>SKU</TableHead>
-              <TableHead>Description</TableHead>
-              <TableHead>Serial No</TableHead>
-              <TableHead className="cursor-pointer text-right" onClick={() => handleSort("sale_total")}>Total {sortField === "sale_total" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("sale_type")}>Type {sortField === "sale_type" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead>Deleted Remarks</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? <TableRow><TableCell colSpan={11} className="text-center">Loading…</TableCell></TableRow> : sales.length === 0 ? <TableRow><TableCell colSpan={11} className="text-center">No sales found.</TableCell></TableRow> : sales.map((s) => (
-              <TableRow key={s.id}>
-                <TableCell>{s.sale_date?.slice(0,10)}</TableCell>
-                <TableCell>{s.invoice_number}</TableCell>
-                <TableCell>{s.customer_name}</TableCell>
-                <TableCell>{s.asset_number}</TableCell>
-                <TableCell>{s.sku}</TableCell>
-                <TableCell className="max-w-xs truncate">{s.asset_description}</TableCell>
-                <TableCell>{s.serial_number}</TableCell>
-                <TableCell className="text-right">₹{s.sale_total?.toFixed(2)}</TableCell>
-                <TableCell>{s.sale_type}</TableCell>
-                <TableCell>{s.deleted_remarks}</TableCell>
-                <TableCell className="text-right space-x-2">
-                  {s.is_deleted ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => handleEditClick(s)}>Edit</Button>
-                      <Button variant="default" size="sm" onClick={() => handleRestore(s)}>Restore</Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => handleEditClick(s)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => { setSaleToDelete(s); setDeleteDialogOpen(true); }}>Delete</Button>
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      {editingSale && <EditSaleDialog sale={editingSale} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchSales} />}
-      {saleToDelete && <DeleteRecordDialog title="Delete Sale" identifier={saleToDelete.invoice_number} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}
+      )}
     </div>
+  );
+}
+
+export default function SalesPageGuarded() {
+  return (
+    <RequireOwner>
+      <SalesLedgerPage />
+    </RequireOwner>
   );
 }

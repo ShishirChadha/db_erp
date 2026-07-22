@@ -1,14 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
+// Purchase Orders carry vendor/cost/GST data end-to-end -- owner-only, no employee access.
 // ---------- GET (list) ----------
 export async function GET(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { searchParams } = new URL(req.url)
   const statusRaw = searchParams.get('status')
   const vendor_id = searchParams.get('vendor_id')
   const search = searchParams.get('search')
   const exclude_invoiced = searchParams.get('exclude_invoiced') === 'true'
+  const date_from = searchParams.get('date_from')
+  const date_to = searchParams.get('date_to')
 
   let query = supabaseAdmin
     .from('purchase_orders')
@@ -23,6 +30,8 @@ export async function GET(req: NextRequest) {
 
   if (vendor_id) query = query.eq('vendor_id', vendor_id)
   if (search) query = query.ilike('po_number', `%${search}%`)
+  if (date_from) query = query.gte('po_date', date_from)
+  if (date_to) query = query.lte('po_date', date_to)
 
   let { data: pos, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -45,7 +54,9 @@ export async function GET(req: NextRequest) {
 
 // ---------- POST (create) ----------
 export async function POST(req: NextRequest) {
-  // Authentication can be added back later
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const body = await req.json()
   const {
     vendor_id,
@@ -87,7 +98,7 @@ export async function POST(req: NextRequest) {
       delivery_location,
       remarks,
       po_status: 'draft',
-      created_by: 'e37e471b-6bf4-4a1a-8c86-60297df59202', // replace with real auth later
+      created_by: sessionUser.id,
     })
     .select()
     .single()

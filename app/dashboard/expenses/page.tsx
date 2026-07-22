@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import RequireOwner from "@/components/RequireOwner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,7 +36,7 @@ import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 
 type SortField = "expense_date" | "type" | "amount";
 
-export default function ExpensesPage() {
+function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
@@ -228,5 +229,13 @@ export default function ExpensesPage() {
       {editingExpense && <EditExpenseDialog expense={editingExpense} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchExpenses} />}
       {expenseToDelete && <DeleteRecordDialog title="Delete Expense" identifier={expenseToDelete.description || expenseToDelete.id} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}
     </div>
+  );
+}
+
+export default function ExpensesPageGuarded() {
+  return (
+    <RequireOwner>
+      <ExpensesPage />
+    </RequireOwner>
   );
 }

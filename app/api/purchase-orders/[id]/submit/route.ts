@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 export async function POST(
   req: NextRequest,
@@ -15,13 +8,13 @@ export async function POST(
 ) {
   const { id: poId } = await params
 
-  // Authentication
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  const user = { id: sessionUser.id }
 
   const { data: po } = await supabaseAdmin
     .from('purchase_orders')
-    .select('purchased_by_type, po_status')
+    .select('purchased_by_type, po_status, vendor_id')
     .eq('id', poId)
     .single()
 
@@ -66,9 +59,14 @@ export async function POST(
       sku_id: item.sku_id,
       asset_number: asset,
       status: 'reserved',
-      reserved_at: new Date().toISOString()
+      reserved_at: new Date().toISOString(),
+      source: 'purchase_order',
+      vendor_id: po.vendor_id,
+      purchased_by_type: po.purchased_by_type,
+      cost_price: item.unit_price,
+      gst_percentage: item.gst_percentage
     }))
-    await supabaseAdmin.from('purchase_order_asset_mapping').insert(mappings)
+    await supabaseAdmin.from('asset_ledger').insert(mappings)
   }
 
   // Update PO status and track who submitted

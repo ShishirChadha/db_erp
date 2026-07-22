@@ -1,0 +1,21 @@
+-- Note (not a full dump) for Phase 2a of the purchase-module unification plan:
+-- backfilling provenance/vendor/cost columns on the 751 asset_ledger rows that were
+-- adopted in place from the original legacy->PO bulk migration (_migration_tracking).
+--
+-- These columns (source, legacy_purchase_id, vendor_id, purchased_by_type, cost_price,
+-- gst_percentage) were only just added in Phase 1 and are currently either NULL or the
+-- column default (source='purchase_order' for all rows) -- there is no prior meaningful
+-- data to lose here. Full baseline data/schema backups already exist from Phase 1:
+--   backups/20260721_phase1_full_data_backup.sql
+--   backups/20260721_phase1_schema_backup.sql
+--
+-- Exact revert for this specific backfill, if ever needed:
+--
+-- UPDATE asset_ledger
+-- SET source = 'purchase_order',
+--     legacy_purchase_id = NULL,
+--     vendor_id = NULL,
+--     purchased_by_type = NULL,
+--     cost_price = NULL,
+--     gst_percentage = NULL
+-- WHERE source = 'legacy_purchase';

@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
+import DropdownOptionsManager from '@/components/DropdownOptionsManager'
 
 interface AssetCounter {
   prefix: string
@@ -17,7 +19,7 @@ const ENTITY_LABELS: Record<string, string> = {
   OTHR: 'Other',
 }
 
-export default function SettingsPage() {
+function SettingsPage() {
   const [counters, setCounters] = useState<AssetCounter[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
@@ -168,7 +170,17 @@ const preview = `${counter.prefix}${suffix}-${nextNum}`
         </button>
       </section>
 
+      <DropdownOptionsManager />
+
       <p className="text-sm text-gray-400 mt-8">More settings coming soon.</p>
     </div>
+  )
+}
+
+export default function SettingsPageGuarded() {
+  return (
+    <RequireOwner>
+      <SettingsPage />
+    </RequireOwner>
   )
 }

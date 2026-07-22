@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   // 1. Invoice check – refuse if invoiced
@@ -39,28 +43,13 @@ export async function DELETE(
     for (const item of items) {
       const receivedQty = item.serial_numbers ? item.serial_numbers.length : 0
       if (receivedQty > 0 && item.sku_id) {
-        // Get current stock
-        const { data: sku } = await supabaseAdmin
-          .from('sku_master')
-          .select('quantity_in_stock')
-          .eq('id', item.sku_id)
-          .single()
-
-        const currentStock = sku?.quantity_in_stock ?? 0
-        const newStock = Math.max(0, currentStock - receivedQty)
-
-        await supabaseAdmin
-          .from('sku_master')
-          .update({ quantity_in_stock: newStock })
-          .eq('id', item.sku_id)
-
-        // Record stock movement for audit trail
+        // sku_master.quantity_in_stock is updated atomically by the trg_sync_sku_stock
+        // trigger (BEFORE INSERT on stock_movements), which also computes
+        // quantity_before/quantity_after and floors at 0. No manual read-then-write here.
         await supabaseAdmin.from('stock_movements').insert({
           sku_id: item.sku_id,
           movement_type: 'adjustment',      // or 'deletion'
           quantity_change: -receivedQty,
-          quantity_before: currentStock,
-          quantity_after: newStock,
           po_id: id,
           notes: `Stock reduced due to PO deletion (${po?.po_number})`,
         })
@@ -69,7 +58,7 @@ export async function DELETE(
   }
 
   // 4. Delete asset mappings and line items
-  await supabaseAdmin.from('purchase_order_asset_mapping').delete().eq('po_id', id)
+  await supabaseAdmin.from('asset_ledger').delete().eq('po_id', id)
   await supabaseAdmin.from('purchase_order_items').delete().eq('po_id', id)
 
   // 5. Delete the PO itself
@@ -86,7 +75,7 @@ export async function DELETE(
 
     for (const prefix of prefixes) {
       const { data: maxAsset } = await supabaseAdmin
-        .from('purchase_order_asset_mapping')
+        .from('asset_ledger')
         .select('asset_number')
         .ilike('asset_number', `${prefix}%`)
         .order('asset_number', { ascending: false })

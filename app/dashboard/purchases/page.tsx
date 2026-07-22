@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
+import RequireOwner from "@/components/RequireOwner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -102,7 +103,7 @@ const defaultVisibleColumns = [
   "status_purchase",
 ];
 
-export default function PurchasesPage() {
+function PurchasesPage() {
   const [purchases, setPurchases] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
@@ -574,5 +575,13 @@ const handleRestore = async (purchase: any) => {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+export default function PurchasesPageGuarded() {
+  return (
+    <RequireOwner>
+      <PurchasesPage />
+    </RequireOwner>
   );
 }

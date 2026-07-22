@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
 
 interface Vendor {
   id: string
@@ -35,7 +36,7 @@ interface LineItem {
   hsn_code: string
 }
 
-export default function NewPurchaseOrderPage() {
+function NewPurchaseOrderPage() {
   const router = useRouter()
   const [step, setStep] = useState(1)
 
@@ -193,6 +194,9 @@ export default function NewPurchaseOrderPage() {
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
+      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+        ← Back to Purchase Orders
+      </button>
       <h1 className="text-2xl font-bold mb-4">New Purchase Order</h1>
       <div className="flex mb-6">
         {[1, 2, 3].map(s => (
@@ -466,5 +470,13 @@ export default function NewPurchaseOrderPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function NewPurchaseOrderPageGuarded() {
+  return (
+    <RequireOwner>
+      <NewPurchaseOrderPage />
+    </RequireOwner>
   )
 }

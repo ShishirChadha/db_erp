@@ -22,10 +22,16 @@ import {
   Sparkles,
   CalendarDays,
   ChevronDown,
+  PackagePlus,
+  Wrench,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useRole } from '@/lib/auth/useRole'
+
 
 // ---------- Menu structure with categories ----------
+// ownerOnly: hidden from the sidebar entirely for the 'employee' role. This is nav
+// convenience only -- every underlying API route enforces the same restriction itself.
 const menuGroups = [
   {
     label: 'Dashboard',
@@ -33,8 +39,24 @@ const menuGroups = [
     href: '/dashboard',
   },
   {
+    label: 'New Entry',
+    icon: PackagePlus,
+    href: '/dashboard/entry',
+  },
+  {
+    label: 'Accessories',
+    icon: Sparkles,
+    href: '/dashboard/accessories',
+  },
+  {
+    label: 'Repair Jobs',
+    icon: Wrench,
+    href: '/dashboard/repair-jobs',
+  },
+  {
     label: 'Purchases',
     icon: ShoppingCart,
+    ownerOnly: true,
     children: [
       { href: '/dashboard/purchase-orders', label: 'Purchase Orders' },
       { href: '/dashboard/purchase-invoices', label: 'Purchase Invoices' },
@@ -46,13 +68,15 @@ const menuGroups = [
     icon: Barcode,
     children: [
       { href: '/dashboard/sku-master', label: 'SKU Master' },
-      { href: '/dashboard/stock', label: 'Stock / Assets' },
+      { href: '/dashboard/live-stock', label: 'Live Stock' },
+      { href: '/dashboard/stock', label: 'Stock / Assets (Main ERP)', ownerOnly: true },
     ],
   },
   {
     label: 'Sales',
     icon: TrendingUp,
     href: '/dashboard/sales',
+    ownerOnly: true,
   },
   {
     label: 'Invoices',
@@ -63,6 +87,7 @@ const menuGroups = [
     label: 'Expenses',
     icon: Receipt,
     href: '/dashboard/expenses',
+    ownerOnly: true,
   },
   {
     label: 'Customers',
@@ -73,11 +98,19 @@ const menuGroups = [
     label: 'Vendors',
     icon: Building2,
     href: '/dashboard/vendors',
+    ownerOnly: true,
   },
   {
     label: 'Reports',
     icon: BarChart3,
     href: '/dashboard/reports',
+    ownerOnly: true,
+  },
+  {
+    label: 'RMA (Vendor Returns)',
+    icon: Wrench,
+    href: '/dashboard/rma',
+    ownerOnly: true,
   },
   {
     label: 'Activity Hub',
@@ -88,6 +121,7 @@ const menuGroups = [
     label: 'Settings',
     icon: Settings,
     href: '/dashboard/settings',
+    ownerOnly: true,
   },
 ]
 
@@ -96,11 +130,23 @@ function SidebarContent({
   pathname,
   onLogout,
   onMobileClose,
+  isOwner,
 }: {
   pathname: string
   onLogout: () => void
   onMobileClose: () => void
+  isOwner: boolean
 }) {
+  const visibleGroups = useMemo(
+    () => menuGroups
+      .filter(group => isOwner || !group.ownerOnly)
+      .map(group => 'children' in group && group.children
+        ? { ...group, children: group.children.filter((c: any) => isOwner || !c.ownerOnly) }
+        : group
+      ),
+    [isOwner]
+  )
+
   // State for each group (key = label) whether it's open
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     // Initialize: open the group if it contains the current path
@@ -146,7 +192,7 @@ function SidebarContent({
 
       {/* Nav items */}
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {menuGroups.map(group => {
+        {visibleGroups.map(group => {
           // If it has children, render a collapsible group
           if (group.children) {
             const isOpen = openGroups[group.label] ?? false
@@ -238,6 +284,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
+  const { isOwner } = useRole()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [clientPathname, setClientPathname] = useState('')
 
@@ -268,9 +315,10 @@ export default function Sidebar() {
         pathname={clientPathname}
         onLogout={handleLogout}
         onMobileClose={closeMobile}
+        isOwner={isOwner}
       />
     ),
-    [clientPathname, handleLogout, closeMobile]
+    [clientPathname, handleLogout, closeMobile, isOwner]
   )
 
   return (
@@ -308,6 +356,7 @@ export default function Sidebar() {
               pathname={clientPathname}
               onLogout={handleLogout}
               onMobileClose={closeMobile}
+              isOwner={isOwner}
             />
           </aside>
         </div>

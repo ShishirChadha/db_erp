@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { InvoiceForm } from "@/components/InvoiceForm";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 
 export default function EditInvoicePage() {
   const { id } = useParams();
@@ -114,6 +116,9 @@ export default function EditInvoicePage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
+      <Button variant="ghost" onClick={() => router.push(`/dashboard/invoices/${id}`)}>
+        <ArrowLeft className="mr-2 h-4 w-4" /> Back
+      </Button>
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Edit Invoice #{invoice.invoice_number}</h1>
       </div>

@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 
-export default function AddCustomerDialog({ onAdd }: { onAdd: () => void }) {
+export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) => void }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -45,14 +45,14 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: () => void }) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.from("customers").insert([formData]);
+    const { data, error } = await supabase.from("customers").insert([formData]).select().single();
     setLoading(false);
     if (error) {
       console.error(error);
       alert("Failed to add customer.");
     } else {
       setOpen(false);
-      onAdd();
+      onAdd(data);
       setFormData({
         customer_name: "",
         type: "Individual",

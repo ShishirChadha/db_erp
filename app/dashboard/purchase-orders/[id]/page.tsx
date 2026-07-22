@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
 
 interface POItem {
   id: string
@@ -41,7 +42,7 @@ interface PurchaseOrder {
   items: POItem[]
 }
 
-export default function PODetailPage() {
+function PODetailPage() {
   const params = useParams()
   const router = useRouter()
   const poId = params.id as string
@@ -103,6 +104,9 @@ export default function PODetailPage() {
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
+      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+        ← Back to Purchase Orders
+      </button>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">{po.po_number}</h1>
         <span className={`px-2 py-1 rounded text-white capitalize ${po.po_status === 'draft' ? 'bg-gray-500' : 'bg-green-600'}`}>
@@ -287,5 +291,13 @@ export default function PODetailPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function PODetailPageGuarded() {
+  return (
+    <RequireOwner>
+      <PODetailPage />
+    </RequireOwner>
   )
 }

@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { InvoiceForm } from "@/components/InvoiceForm";
 import { suggestNextInvoiceNumber, isInvoiceNumberUnique } from "@/app/actions/invoice";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft } from "lucide-react";
 
 export default function NewInvoicePage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
@@ -77,6 +79,9 @@ export default function NewInvoicePage() {
 
   return (
     <div className="container mx-auto py-6 space-y-6">
+      <Button variant="ghost" onClick={() => router.push("/dashboard/invoices")}>
+        <ArrowLeft className="mr-2 h-4 w-4" /> Back
+      </Button>
       <div className="flex justify-between items-center">
         <h1 className="text-3xl font-bold">Create New Invoice</h1>
       </div>

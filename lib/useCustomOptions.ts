@@ -1,29 +1,40 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { useState, useEffect, useCallback } from 'react'
+import { apiFetch } from '@/lib/api-client'
 
+export interface CustomOption {
+  id: string
+  category: string
+  value: string
+  is_active: boolean
+  sort_order: number
+}
+
+// Generic dropdown-values hook, backed by the `custom_options` table -- any page can
+// pull a named list (category) of owner-curated values. Reads work for any signed-in
+// role; only the owner can actually add/edit values (enforced server-side).
 export function useCustomOptions(category: string) {
-  const [options, setOptions] = useState<string[]>([])
-  const supabase = createClient()
+  const [options, setOptions] = useState<CustomOption[]>([])
+  const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    supabase
-      .from('custom_options')
-      .select('value')
-      .eq('category', category)
-      .then(({ data }) => {
-        if (data) setOptions(data.map(d => d.value))
-      })
+  const refresh = useCallback(async () => {
+    setLoading(true)
+    const res = await apiFetch(`/api/custom-options?category=${encodeURIComponent(category)}`)
+    if (res.ok) setOptions(await res.json())
+    setLoading(false)
   }, [category])
 
+  useEffect(() => { refresh() }, [refresh])
+
   const addOption = async (value: string) => {
-    const { error } = await supabase
-      .from('custom_options')
-      .insert([{ category, value }])
-    if (!error) setOptions(prev => [...prev, value])
-    return !error
+    const res = await apiFetch('/api/custom-options', {
+      method: 'POST',
+      body: JSON.stringify({ category, value }),
+    })
+    if (res.ok) await refresh()
+    return res.ok
   }
 
-  return { options, addOption }
+  return { options, values: options.map(o => o.value), loading, addOption, refresh }
 }

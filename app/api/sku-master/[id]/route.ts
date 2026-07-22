@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { normalizeSpecifications } from '@/lib/sku-normalizer'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { redactForRole } from '@/lib/auth/redact'
 
 // ---------- GET (detail) ----------
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { id } = await params
 
   const { data: sku, error } = await supabaseAdmin
@@ -16,7 +21,7 @@ export async function GET(
     .single()
 
   if (error || !sku) return NextResponse.json({ error: 'SKU not found' }, { status: 404 })
-  return NextResponse.json(sku)
+  return NextResponse.json(redactForRole(sku, 'sku_master', sessionUser.role))
 }
 
 // ---------- PUT (update) ----------
@@ -24,6 +29,9 @@ export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
   const body = await req.json()
 
@@ -39,6 +47,7 @@ export async function PUT(
     'notes',
     'full_sku_code',
     'hsn_code',  
+    'category',
   ]
   const updatable: any = {}
   for (const key of allowedKeys) {
@@ -79,6 +88,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   const { error } = await supabaseAdmin

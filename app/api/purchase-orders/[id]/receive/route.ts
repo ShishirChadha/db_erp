@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 export async function POST(
   req: NextRequest,
@@ -15,8 +8,9 @@ export async function POST(
 ) {
   const { id: poId } = await params
 
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  const user = { id: sessionUser.id }
 
   const body = await req.json()
   const { items } = body
@@ -30,8 +24,6 @@ export async function POST(
   if (!po || !['submitted', 'partially_received'].includes(po.po_status)) {
     return NextResponse.json({ error: 'PO cannot be received at this stage' }, { status: 400 })
   }
-
-  let allFullyReceived = true
 
   for (const recItem of items) {
     const { po_item_id, assets } = recItem
@@ -52,13 +44,15 @@ export async function POST(
       return NextResponse.json({ error: `Receiving ${nowReceiving} would exceed ordered ${orderedQty}` }, { status: 400 })
     }
 
-    // Update asset mapping
+    // Update asset mapping — a received unit moves straight into the QC queue
+    // (qc_pending) rather than sitting at a terminal 'received' status; received_at
+    // still records the physical-receipt timestamp.
     for (const asset of assets) {
       await supabaseAdmin
-        .from('purchase_order_asset_mapping')
+        .from('asset_ledger')
         .update({
           serial_number: asset.serial_number,
-          status: 'received',
+          status: 'qc_pending',
           received_at: new Date().toISOString()
         })
         .eq('asset_number', asset.asset_number)
@@ -71,34 +65,33 @@ export async function POST(
       .update({ serial_numbers: newSerials })
       .eq('id', po_item_id)
 
-    // Update stock
-    const { data: sku } = await supabaseAdmin
-      .from('sku_master')
-      .select('quantity_in_stock')
-      .eq('id', poItem.sku_id)
-      .single()
-    const oldQty = sku?.quantity_in_stock || 0
-    const newQty = oldQty + nowReceiving
-    await supabaseAdmin
-      .from('sku_master')
-      .update({ quantity_in_stock: newQty })
-      .eq('id', poItem.sku_id)
-
-    // Stock movement (with user ID)
+    // Stock movement — sku_master.quantity_in_stock is updated atomically by the
+    // trg_sync_sku_stock trigger (BEFORE INSERT on stock_movements), which also
+    // computes quantity_before/quantity_after. No manual read-then-write here.
     await supabaseAdmin.from('stock_movements').insert({
       sku_id: poItem.sku_id,
       movement_type: 'receipt',
       quantity_change: nowReceiving,
-      quantity_before: oldQty,
-      quantity_after: newQty,
       po_id: poId,
       po_item_id,
       notes: `Goods receipt for PO ${po.po_number}`,
       created_by: user.id
     })
 
-    if (newSerials.length < orderedQty) allFullyReceived = false
   }
+
+  // Determine final PO status from ALL line items belonging to this PO, not just the
+  // ones present in this request body — a partial payload (e.g. receiving only 2 of 3
+  // SKU lines today) must never mark the PO as fully 'received' while another line
+  // item still has outstanding quantity.
+  const { data: allItems } = await supabaseAdmin
+    .from('purchase_order_items')
+    .select('quantity, serial_numbers')
+    .eq('po_id', poId)
+
+  const allFullyReceived = (allItems ?? []).every(
+    (item) => (item.serial_numbers?.length || 0) >= item.quantity
+  )
 
   const newStatus = allFullyReceived ? 'received' : 'partially_received'
   await supabaseAdmin

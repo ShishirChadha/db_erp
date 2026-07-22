@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiFetch } from "@/lib/api-client";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -33,47 +33,38 @@ export function SearchableItemSelect({ onSelect }: { onSelect: (item: Item | nul
   const [items, setItems] = useState<Item[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [loading, setLoading] = useState(false);
-  const supabase = createClient();
 
   useEffect(() => {
     const fetchAssets = async () => {
       setLoading(true);
       try {
-        let query = supabase
-          .from("purchases")
-          .select("id, asset_number, sku, asset_description, total_price, purchase_date")
-          .eq("is_deleted", false)
-          .order("purchase_date", { ascending: false }); // Latest first
+        // Routed through the (now auth-gated, role-redacted) /api/stock endpoint
+        // instead of a direct client-side query against `purchases` -- that query
+        // exposed cost data to any logged-in session with no role check at all.
+        const params = new URLSearchParams();
+        if (searchTerm) params.set("search", searchTerm);
+        const res = await apiFetch(`/api/stock?${params.toString()}`);
 
-        if (searchTerm) {
-          query = query.or(
-            `asset_number.ilike.%${searchTerm}%,` +
-            `sku.ilike.%${searchTerm}%,` +
-            `asset_description.ilike.%${searchTerm}%`
-          );
-        }
-
-        const { data, error } = await query.limit(100);
-
-        if (error) {
-          console.error("Error fetching purchases:", error);
+        if (!res.ok) {
+          console.error("Error fetching assets:", await res.text());
           setItems([]);
           return;
         }
 
+        const data = await res.json();
+
         if (data && data.length > 0) {
-          const mapped = data.map((item) => {
-            // Build a rich description: Model (SKU) - CPU/RAM/SSD
-            const model = item.sku || "";
-            const specs = item.asset_description || "";
-            const description = `${model} ${specs}`.trim();
+          const mapped = data.slice(0, 100).map((item: any) => {
+            const description = `${item.sku_code || ""} ${item.description || ""}`.trim();
             return {
               id: item.id,
               type: "asset" as const,
               identifier: item.asset_number,
               description: description || item.asset_number,
-              price: item.total_price || 0,
-              gst_rate: 18,
+              // cost_price is stripped from the response for non-owner roles --
+              // falls back to 0 (employee must type the actual selling price themselves).
+              price: item.unit_price ?? item.cost_price ?? 0,
+              gst_rate: item.gst_percentage ?? 18,
             };
           });
           setItems(mapped);
@@ -89,7 +80,7 @@ export function SearchableItemSelect({ onSelect }: { onSelect: (item: Item | nul
     };
 
     fetchAssets();
-  }, [searchTerm, supabase]);
+  }, [searchTerm]);
 
   const handleSelect = (item: Item) => {
     onSelect(item);

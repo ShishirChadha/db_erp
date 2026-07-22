@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# supabase CLI local cache (contains project ref/org id/pooler host)
+/supabase/.temp/
+
+# local schema/data backups (data dumps can contain auth.users password hashes)
+backups/*_data_backup.sql

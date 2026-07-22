@@ -1,0 +1,561 @@
+{\rtf1\ansi\ansicpg1252\cocoartf2870
+\cocoatextscaling0\cocoaplatform0{\fonttbl\f0\fswiss\fcharset0 Helvetica;}
+{\colortbl;\red255\green255\blue255;}
+{\*\expandedcolortbl;;}
+\paperw11900\paperh16840\margl1440\margr1440\vieww11520\viewh8400\viewkind0
+\pard\tx566\tx1133\tx1700\tx2267\tx2834\tx3401\tx3968\tx4535\tx5102\tx5669\tx6236\tx6803\pardirnatural\partightenfactor0
+
+\f0\fs24 \cf0 -- WARNING: This schema is for context only and is not meant to be run.\
+-- Table order and constraints may not be valid for execution.\
+\
+CREATE TABLE public.purchases (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  purchase_date date NOT NULL,\
+  purchase_month character varying,\
+  purchase_year integer,\
+  vendor_name text,\
+  asset_number text UNIQUE,\
+  sku text,\
+  type text,\
+  brand text,\
+  asset_description text,\
+  serial_number text,\
+  base_price numeric,\
+  gst numeric,\
+  total_price numeric,\
+  stock_status text,\
+  purchased_by text,\
+  purchase_type text CHECK (purchase_type = ANY (ARRAY['Cash'::text, 'GST'::text])),\
+  selling_price numeric,\
+  created_at timestamp with time zone DEFAULT now(),\
+  category text CHECK (category = ANY (ARRAY['New'::text, 'Preowned'::text])),\
+  ram text,\
+  ram_custom text,\
+  ssd text,\
+  ssd_custom text,\
+  hdd text,\
+  hdd_custom text,\
+  cpu text,\
+  cpu_custom text,\
+  generation text,\
+  accessory_type text,\
+  accessory_type_custom text,\
+  remarks text,\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  entry_date date DEFAULT CURRENT_DATE,\
+  charger boolean DEFAULT false,\
+  expense boolean DEFAULT false,\
+  expense_amount numeric,\
+  expense_description text,\
+  status_purchase text DEFAULT 'QC Pending'::text,\
+  status_other text,\
+  purchased_by_type text DEFAULT 'Digitalbluez'::text,\
+  purchased_by_other text,\
+  model text,\
+  purchased_invoice_number text,\
+  eway_bill_no text,\
+  vendor_id uuid,\
+  screen_size text,\
+  monitor_size text,\
+  has_keyboard boolean DEFAULT false,\
+  has_mouse boolean DEFAULT false,\
+  public_photo_url text,\
+  make_year integer,\
+  vendor_invoice_total numeric,\
+  status text DEFAULT 'draft'::text,\
+  submitted_at timestamp with time zone,\
+  brand_other text,\
+  gst_amount numeric,\
+  model_id uuid,\
+  sku_variant_id uuid,\
+  CONSTRAINT purchases_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchases_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id),\
+  CONSTRAINT purchases_model_id_fkey FOREIGN KEY (model_id) REFERENCES public.models(id),\
+  CONSTRAINT purchases_sku_variant_id_fkey FOREIGN KEY (sku_variant_id) REFERENCES public.sku_variants(id)\
+);\
+CREATE TABLE public.sales (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  sale_date date NOT NULL,\
+  sale_month character varying,\
+  sale_year integer,\
+  invoice_number text UNIQUE,\
+  customer_name text,\
+  pmt text,\
+  asset_number text,\
+  sku text,\
+  type text,\
+  brand text,\
+  asset_description text,\
+  serial_number text,\
+  sale_base_price numeric,\
+  sale_gst numeric,\
+  sale_total numeric,\
+  sale_type text CHECK (sale_type = ANY (ARRAY['Cash'::text, 'GST'::text])),\
+  created_at timestamp with time zone DEFAULT now(),\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  CONSTRAINT sales_pkey PRIMARY KEY (id),\
+  CONSTRAINT sales_asset_number_fkey FOREIGN KEY (asset_number) REFERENCES public.purchases(asset_number)\
+);\
+CREATE TABLE public.expenses (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  expense_date date NOT NULL,\
+  description text,\
+  type text CHECK (type = ANY (ARRAY['Food'::text, 'Transport'::text, 'Stationary'::text, 'Water'::text, 'Birthday'::text])),\
+  from_location text,\
+  to_location text,\
+  amount numeric,\
+  remarks text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  CONSTRAINT expenses_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.customers (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  customer_name text NOT NULL,\
+  type text CHECK (type = ANY (ARRAY['Business'::text, 'Individual'::text])),\
+  has_gst boolean DEFAULT false,\
+  gst_number text,\
+  address text,\
+  phone text,\
+  email text,\
+  source text,\
+  google_review boolean DEFAULT false,\
+  social_following text CHECK (social_following = ANY (ARRAY['FB'::text, 'Insta'::text, 'Both'::text, 'None'::text])),\
+  created_at timestamp with time zone DEFAULT now(),\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  CONSTRAINT customers_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.vendors (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  company_name text NOT NULL,\
+  spoc_name text,\
+  owner_name text,\
+  phone text,\
+  address text,\
+  email text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  has_gst boolean DEFAULT false,\
+  gst_number text,\
+  gst_company_name text,\
+  address_line1 text,\
+  address_line2 text,\
+  city text,\
+  state text,\
+  pincode text,\
+  remarks text,\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  vendor_code character varying UNIQUE,\
+  CONSTRAINT vendors_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.custom_options (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  category text NOT NULL,\
+  value text NOT NULL,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT custom_options_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.counters (\
+  id text NOT NULL,\
+  value integer NOT NULL DEFAULT 0,\
+  CONSTRAINT counters_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.accessories (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  accessory_name text NOT NULL,\
+  category text,\
+  brand text,\
+  model_number text,\
+  compatible_models text,\
+  quantity integer DEFAULT 0,\
+  unit_cost numeric,\
+  selling_price numeric,\
+  supplier text,\
+  purchase_date date,\
+  remarks text,\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT accessories_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.sale_items (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  sale_id uuid NOT NULL,\
+  item_type text NOT NULL CHECK (item_type = ANY (ARRAY['asset'::text, 'accessory'::text])),\
+  asset_id uuid,\
+  accessory_id uuid,\
+  quantity integer NOT NULL DEFAULT 1,\
+  unit_price numeric NOT NULL,\
+  gst numeric,\
+  total_price numeric NOT NULL,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT sale_items_pkey PRIMARY KEY (id),\
+  CONSTRAINT sale_items_sale_id_fkey FOREIGN KEY (sale_id) REFERENCES public.sales(id),\
+  CONSTRAINT sale_items_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.purchases(id),\
+  CONSTRAINT sale_items_accessory_id_fkey FOREIGN KEY (accessory_id) REFERENCES public.accessories(id)\
+);\
+CREATE TABLE public.invoices (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  invoice_number text NOT NULL UNIQUE,\
+  invoice_date date NOT NULL DEFAULT CURRENT_DATE,\
+  place_of_supply text,\
+  customer_id uuid,\
+  customer_name text,\
+  customer_gst text,\
+  customer_address text,\
+  customer_phone text,\
+  customer_email text,\
+  shipping_address text,\
+  subject text,\
+  notes text,\
+  bank_details text,\
+  terms_conditions text,\
+  subtotal numeric DEFAULT 0,\
+  total_gst numeric DEFAULT 0,\
+  grand_total numeric DEFAULT 0,\
+  status text DEFAULT 'draft'::text,\
+  approved_by uuid,\
+  approved_at timestamp with time zone,\
+  created_by uuid,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  is_deleted boolean DEFAULT false,\
+  deleted_remarks text,\
+  deleted_at timestamp with time zone,\
+  po_id uuid,\
+  invoice_type text DEFAULT 'sales'::text CHECK (invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])),\
+  attachment_urls jsonb,\
+  payment_status text DEFAULT 'pending'::text,\
+  total_amount numeric,\
+  gst_total numeric,\
+  CONSTRAINT invoices_pkey PRIMARY KEY (id),\
+  CONSTRAINT invoices_customer_id_fkey FOREIGN KEY (customer_id) REFERENCES public.customers(id),\
+  CONSTRAINT invoices_approved_by_fkey FOREIGN KEY (approved_by) REFERENCES auth.users(id),\
+  CONSTRAINT invoices_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)\
+);\
+CREATE TABLE public.invoice_items (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  invoice_id uuid NOT NULL,\
+  item_type text NOT NULL CHECK (item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text])),\
+  asset_id uuid,\
+  accessory_id uuid,\
+  description text NOT NULL,\
+  hsn_code text,\
+  quantity numeric NOT NULL DEFAULT 1,\
+  rate numeric NOT NULL,\
+  gst_rate numeric NOT NULL DEFAULT 0,\
+  gst_type text CHECK (gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])),\
+  cgst_amount numeric DEFAULT 0,\
+  sgst_amount numeric DEFAULT 0,\
+  igst_amount numeric DEFAULT 0,\
+  amount numeric NOT NULL,\
+  created_at timestamp with time zone DEFAULT now(),\
+  sku_id uuid,\
+  asset_number text,\
+  po_item_id uuid,\
+  cost_of_goods numeric,\
+  CONSTRAINT invoice_items_pkey PRIMARY KEY (id),\
+  CONSTRAINT invoice_items_invoice_id_fkey FOREIGN KEY (invoice_id) REFERENCES public.invoices(id),\
+  CONSTRAINT invoice_items_asset_id_fkey FOREIGN KEY (asset_id) REFERENCES public.purchases(id),\
+  CONSTRAINT invoice_items_accessory_id_fkey FOREIGN KEY (accessory_id) REFERENCES public.accessories(id),\
+  CONSTRAINT invoice_items_sku_id_fkey FOREIGN KEY (sku_id) REFERENCES public.sku_master(id)\
+);\
+CREATE TABLE public.invoice_sequences (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  prefix text NOT NULL,\
+  financial_year text NOT NULL,\
+  last_number integer NOT NULL DEFAULT 0,\
+  CONSTRAINT invoice_sequences_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.asset_sequences (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  prefix text NOT NULL UNIQUE,\
+  last_number integer NOT NULL DEFAULT 0,\
+  CONSTRAINT asset_sequences_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.purchase_files (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  purchase_id uuid,\
+  asset_number text NOT NULL,\
+  file_name text NOT NULL,\
+  file_path text NOT NULL,\
+  file_type text NOT NULL CHECK (file_type = ANY (ARRAY['invoice'::text, 'eway_bill'::text, 'receipt'::text, 'other'::text])),\
+  file_size_kb integer,\
+  storage_provider text DEFAULT 'supabase'::text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT purchase_files_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchase_files_purchase_id_fkey FOREIGN KEY (purchase_id) REFERENCES public.purchases(id)\
+);\
+CREATE TABLE public.models (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  name text NOT NULL UNIQUE,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT models_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.activities (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  user_id uuid NOT NULL,\
+  title text NOT NULL,\
+  description text,\
+  tags ARRAY DEFAULT '\{\}'::text[],\
+  status text DEFAULT 'pending'::text CHECK (status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text])),\
+  due_date timestamp with time zone,\
+  reminder_at timestamp with time zone,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  last_reminder_sent timestamp with time zone,\
+  CONSTRAINT activities_pkey PRIMARY KEY (id),\
+  CONSTRAINT activities_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)\
+);\
+CREATE TABLE public.sku_base (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  sku_base text NOT NULL UNIQUE,\
+  product_name text NOT NULL,\
+  brand text,\
+  category text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT sku_base_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.sku_variants (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  sku_base_id uuid NOT NULL,\
+  variant_code text NOT NULL,\
+  variant_name text,\
+  cpu text,\
+  ram_gb integer,\
+  ssd_gb integer,\
+  screen_size numeric,\
+  charger boolean DEFAULT true,\
+  has_keyboard boolean DEFAULT false,\
+  has_mouse boolean DEFAULT false,\
+  make_year integer,\
+  generation text,\
+  unit_cost numeric,\
+  selling_price numeric,\
+  current_stock integer DEFAULT 0,\
+  reorder_level integer DEFAULT 0,\
+  warranty_months integer,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  specs jsonb DEFAULT '\{\}'::jsonb,\
+  CONSTRAINT sku_variants_pkey PRIMARY KEY (id),\
+  CONSTRAINT sku_variants_sku_base_id_fkey FOREIGN KEY (sku_base_id) REFERENCES public.sku_base(id)\
+);\
+CREATE TABLE public.users (\
+  id uuid NOT NULL,\
+  email text,\
+  name text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT users_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.purchase_line_items (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  po_id uuid NOT NULL,\
+  sku_variant_id uuid NOT NULL,\
+  quantity integer NOT NULL CHECK (quantity > 0),\
+  unit_cost numeric NOT NULL,\
+  discount_percent numeric DEFAULT 0,\
+  line_total numeric DEFAULT (((quantity)::numeric * unit_cost) * ((1)::numeric - (discount_percent / (100)::numeric))),\
+  serial_numbers text,\
+  asset_description text,\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT purchase_line_items_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchase_line_items_sku_variant_id_fkey FOREIGN KEY (sku_variant_id) REFERENCES public.sku_variants(id)\
+);\
+CREATE TABLE public.assets (\
+  id uuid NOT NULL DEFAULT gen_random_uuid(),\
+  asset_number text NOT NULL UNIQUE,\
+  serial_number text UNIQUE,\
+  purchase_line_item_id uuid NOT NULL,\
+  sku_variant_id uuid NOT NULL,\
+  cost_price numeric NOT NULL,\
+  selling_price numeric,\
+  status text DEFAULT 'in_stock'::text CHECK (status = ANY (ARRAY['in_stock'::text, 'sold'::text, 'damaged'::text])),\
+  qc_status text DEFAULT 'pending_qc'::text CHECK (qc_status = ANY (ARRAY['pending_qc'::text, 'ready_for_sale'::text, 'faulty'::text, 'other'::text])),\
+  warehouse_location text,\
+  assigned_to text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  po_id uuid,\
+  CONSTRAINT assets_pkey PRIMARY KEY (id),\
+  CONSTRAINT assets_purchase_line_item_id_fkey FOREIGN KEY (purchase_line_item_id) REFERENCES public.purchase_line_items(id),\
+  CONSTRAINT assets_sku_variant_id_fkey FOREIGN KEY (sku_variant_id) REFERENCES public.sku_variants(id)\
+);\
+CREATE TABLE public.sku_inventory (\
+  sku_variant_id uuid NOT NULL,\
+  current_stock integer DEFAULT 0,\
+  reorder_level integer DEFAULT 0,\
+  avg_cost_price numeric,\
+  last_updated timestamp with time zone DEFAULT now(),\
+  CONSTRAINT sku_inventory_pkey PRIMARY KEY (sku_variant_id),\
+  CONSTRAINT sku_inventory_sku_variant_id_fkey FOREIGN KEY (sku_variant_id) REFERENCES public.sku_variants(id)\
+);\
+CREATE TABLE public.sku_master (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  base_sku_code text NOT NULL,\
+  variant_number integer NOT NULL DEFAULT 1,\
+  full_sku_code text NOT NULL UNIQUE,\
+  category text NOT NULL,\
+  item_type text NOT NULL,\
+  brand text,\
+  model_name text,\
+  specifications jsonb DEFAULT '\{\}'::jsonb,\
+  sku_description text,\
+  base_cost numeric,\
+  selling_price_default numeric,\
+  quantity_in_stock integer DEFAULT 0,\
+  reorder_level integer DEFAULT 5,\
+  status text DEFAULT 'active'::text CHECK (status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])),\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  created_by uuid,\
+  updated_by uuid,\
+  hsn_code text,\
+  CONSTRAINT sku_master_pkey PRIMARY KEY (id),\
+  CONSTRAINT sku_master_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),\
+  CONSTRAINT sku_master_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id)\
+);\
+CREATE TABLE public.sku_category_templates (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  category character varying NOT NULL UNIQUE,\
+  display_name character varying,\
+  field_schema jsonb,\
+  sku_code_prefix character varying,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  sku_code_format text,\
+  CONSTRAINT sku_category_templates_pkey PRIMARY KEY (id)\
+);\
+CREATE TABLE public.stock_movements (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  sku_id uuid NOT NULL,\
+  movement_type USER-DEFINED NOT NULL,\
+  quantity_change integer NOT NULL,\
+  quantity_before integer NOT NULL,\
+  quantity_after integer NOT NULL,\
+  po_id uuid,\
+  po_item_id uuid,\
+  invoice_id uuid,\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  created_by uuid,\
+  CONSTRAINT stock_movements_pkey PRIMARY KEY (id),\
+  CONSTRAINT stock_movements_sku_id_fkey FOREIGN KEY (sku_id) REFERENCES public.sku_master(id),\
+  CONSTRAINT stock_movements_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id)\
+);\
+CREATE TABLE public.reorder_rules (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  sku_id uuid NOT NULL,\
+  vendor_id uuid NOT NULL,\
+  reorder_quantity integer NOT NULL CHECK (reorder_quantity > 0),\
+  reorder_at_quantity integer NOT NULL,\
+  is_active boolean DEFAULT true,\
+  auto_generate_po boolean DEFAULT false,\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT reorder_rules_pkey PRIMARY KEY (id),\
+  CONSTRAINT reorder_rules_sku_id_fkey FOREIGN KEY (sku_id) REFERENCES public.sku_master(id),\
+  CONSTRAINT reorder_rules_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id)\
+);\
+CREATE TABLE public.purchase_orders (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  po_number text NOT NULL UNIQUE,\
+  po_date date NOT NULL,\
+  vendor_id uuid NOT NULL,\
+  vendor_name text,\
+  po_status text DEFAULT 'draft'::text CHECK (po_status = ANY (ARRAY['draft'::text, 'submitted'::text, 'partially_received'::text, 'received'::text, 'invoiced'::text, 'cancelled'::text])),\
+  purchase_type text DEFAULT 'GST'::text CHECK (purchase_type = ANY (ARRAY['GST'::text, 'Cash'::text])),\
+  purchased_by_type text DEFAULT 'Digitalbluez'::text CHECK (purchased_by_type = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text, 'Other'::text])),\
+  purchased_by_other text,\
+  po_reference text,\
+  expected_delivery_date date,\
+  delivery_location text,\
+  total_amount numeric,\
+  gst_total numeric,\
+  grand_total numeric,\
+  expense_amount numeric,\
+  expense_description text,\
+  terms_and_conditions text,\
+  remarks text,\
+  created_by uuid,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_by uuid,\
+  updated_at timestamp with time zone DEFAULT now(),\
+  is_deleted boolean DEFAULT false,\
+  CONSTRAINT purchase_orders_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchase_orders_vendor_id_fkey FOREIGN KEY (vendor_id) REFERENCES public.vendors(id),\
+  CONSTRAINT purchase_orders_created_by_fkey FOREIGN KEY (created_by) REFERENCES auth.users(id),\
+  CONSTRAINT purchase_orders_updated_by_fkey FOREIGN KEY (updated_by) REFERENCES auth.users(id)\
+);\
+CREATE TABLE public.purchase_order_items (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  po_id uuid NOT NULL,\
+  line_item_number integer NOT NULL,\
+  sku_id uuid NOT NULL,\
+  base_sku_code text,\
+  variant_number integer,\
+  quantity integer NOT NULL CHECK (quantity > 0),\
+  base_price numeric NOT NULL,\
+  unit_price numeric NOT NULL,\
+  gst_percentage numeric DEFAULT 18,\
+  gst_amount numeric,\
+  line_total numeric,\
+  asset_prefix text,\
+  asset_numbers_reserved ARRAY,\
+  serial_numbers ARRAY,\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  updated_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT purchase_order_items_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchase_order_items_po_id_fkey FOREIGN KEY (po_id) REFERENCES public.purchase_orders(id),\
+  CONSTRAINT purchase_order_items_sku_id_fkey FOREIGN KEY (sku_id) REFERENCES public.sku_master(id)\
+);\
+CREATE TABLE public.purchase_order_asset_mapping (\
+  id uuid NOT NULL DEFAULT uuid_generate_v4(),\
+  po_id uuid NOT NULL,\
+  po_item_id uuid NOT NULL,\
+  sku_id uuid NOT NULL,\
+  asset_number text NOT NULL UNIQUE,\
+  serial_number text,\
+  status text DEFAULT 'reserved'::text CHECK (status = ANY (ARRAY['reserved'::text, 'received'::text, 'in_stock'::text, 'sold'::text, 'faulty'::text, 'returned'::text])),\
+  reserved_at timestamp with time zone DEFAULT now(),\
+  received_at timestamp with time zone,\
+  sold_at timestamp with time zone,\
+  notes text,\
+  created_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT purchase_order_asset_mapping_pkey PRIMARY KEY (id),\
+  CONSTRAINT purchase_order_asset_mapping_po_id_fkey FOREIGN KEY (po_id) REFERENCES public.purchase_orders(id),\
+  CONSTRAINT purchase_order_asset_mapping_po_item_id_fkey FOREIGN KEY (po_item_id) REFERENCES public.purchase_order_items(id),\
+  CONSTRAINT purchase_order_asset_mapping_sku_id_fkey FOREIGN KEY (sku_id) REFERENCES public.sku_master(id)\
+);\
+CREATE TABLE public.po_counter (\
+  year integer NOT NULL,\
+  last_number integer DEFAULT 0,\
+  CONSTRAINT po_counter_pkey PRIMARY KEY (year)\
+);\
+CREATE TABLE public.asset_counters (\
+  prefix text NOT NULL,\
+  year text NOT NULL,\
+  last_number integer DEFAULT 0,\
+  year_suffix text,\
+  CONSTRAINT asset_counters_pkey PRIMARY KEY (prefix, year)\
+);\
+CREATE TABLE public._migration_tracking (\
+  old_purchase_id uuid NOT NULL,\
+  new_po_id uuid,\
+  migrated_at timestamp with time zone DEFAULT now(),\
+  CONSTRAINT _migration_tracking_pkey PRIMARY KEY (old_purchase_id)\
+);}

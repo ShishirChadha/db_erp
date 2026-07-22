@@ -1,7 +1,12 @@
 import { createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
 import ReportsClient from './reports-client'
 
 export default async function ReportsPage() {
+  const sessionUser = await getCookieSessionUser()
+  if (!isOwner(sessionUser)) redirect('/dashboard')
+
   const supabase = await createClient()
 
   const now = new Date()

@@ -4,6 +4,7 @@
 import { useState, useEffect, useRef } from "react";
 import { ModelSelect } from "@/components/ModelSelect";
 import { createClient } from "@/lib/supabase/client";
+import { apiFetch } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -31,61 +32,6 @@ import {
 import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
-
-// ---------- Helper: generate next asset number (without leading zeros) ----------
-async function getNextAssetNumber(prefix: string): Promise<string> {
-  const supabase = createClient();
-
-  // Special handling for TechTenth (with year and hyphen)
-if (prefix === "TTAS") {
-  const currentYear = new Date().getFullYear() % 100; // 26 for 2026
-  // Fetch all TTAS numbers (any year) to find the maximum numeric suffix
-  const { data, error } = await supabase
-    .from("purchases")
-    .select("asset_number")
-    .ilike("asset_number", "TTAS%")
-    .limit(1000); // adjust limit if needed
-  if (error) throw error;
-  let maxSeq = 0;
-  if (data && data.length > 0) {
-    for (const item of data) {
-      const match = item.asset_number.match(/-(\d+)$/);
-      if (match) {
-        const seq = parseInt(match[1], 10);
-        if (seq > maxSeq) maxSeq = seq;
-      }
-    }
-  }
-  const nextSeq = maxSeq + 1;
-  return `TTAS${currentYear}-${nextSeq}`;
-}
-
-  // For other prefixes (DBAS, CSAS, OTHR) – simple increment without year
-  const { data, error } = await supabase
-    .from("purchases")
-    .select("asset_number")
-    .ilike("asset_number", `${prefix}%`)
-    .order("asset_number", { ascending: false })
-    .limit(1);
-  if (error) throw error;
-  let maxNum = 0;
-  if (data && data.length > 0) {
-    const match = data[0].asset_number.match(/\d+$/);
-    if (match) maxNum = parseInt(match[0], 10);
-  }
-  const nextNum = maxNum + 1;
-  return `${prefix}${nextNum}`;
-}
-
-const getAssetPrefix = (purchasedBy: string, purchasedByOther?: string): string => {
-  switch (purchasedBy) {
-    case "Digitalbluez": return "DBAS";
-    case "Techtenth": return "TTAS";
-    case "Cash": return "CSAS";
-    case "Other": return purchasedByOther ? purchasedByOther.toUpperCase().substring(0, 4) : "OTHR";
-    default: return "DBAS";
-  }
-};
 
 // ---------- Inline Add Vendor Component (full) ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
@@ -236,37 +182,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   const today = new Date().toISOString().split("T")[0];
   const supabase = createClient();
 
-  const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
-    console.log("updateVendorInvoiceTotal called with:", { vendorId, invoiceNumber });
-    if (!invoiceNumber || !vendorId) {
-      console.log("Missing vendorId or invoiceNumber – skipping update");
-      return;
-    }
-    const { data, error } = await supabase
-      .from("purchases")
-      .select("total_price")
-      .eq("vendor_id", vendorId)
-      .eq("purchased_invoice_number", invoiceNumber)
-      .eq("is_deleted", false);
-    if (error) {
-      console.error("Error fetching sum:", error);
-      return;
-    }
-    const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
-    console.log("Total sum for vendor/invoice:", totalSum);
-    const { error: updateError } = await supabase
-      .from("purchases")
-      .update({ vendor_invoice_total: totalSum })
-      .eq("vendor_id", vendorId)
-      .eq("purchased_invoice_number", invoiceNumber)
-      .eq("is_deleted", false);
-    if (updateError) {
-      console.error("Error updating vendor_invoice_total:", updateError);
-    } else {
-      console.log("Successfully updated vendor_invoice_total for all matching records");
-    }
-  };
-
   const [quantity, setQuantity] = useState(1);
   const [serialNumbersList, setSerialNumbersList] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
@@ -334,18 +249,12 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   };
 
   const loadInitialData = async () => {
-    const originalPurchasedBy = initialData?.purchased_by_type || formData.purchased_by_type;
-    const originalPurchasedByOther = initialData?.purchased_by_other || formData.purchased_by_other;
-    const prefix = getAssetPrefix(originalPurchasedBy, originalPurchasedByOther);
-    const nextAsset = await getNextAssetNumber(prefix);
-    setFormData(prev => ({ ...prev, asset_number: nextAsset }));
-
     if (initialData) {
       setFormData(prev => ({
         ...prev,
         ...initialData,
         serial_number: "",
-        asset_number: nextAsset,
+        asset_number: "",
         purchased_by_type: initialData.purchased_by_type || "Digitalbluez",
         purchased_by_other: initialData.purchased_by_other || "",
         model_id: initialData.model_id || null,
@@ -396,9 +305,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         purchased_by_other: "",
         remarks: "",
         public_photo_url: "",
-        asset_number: nextAsset,
-        
-       
+        asset_number: "",
       });
       setQuantity(1);
       setSerialNumbersList("");
@@ -466,15 +373,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     }
     if (field === "brand" && value !== "Other") setFormData((prev) => ({ ...prev, brand_other: "" }));
     if (field === "brand" || field === "model") setSkuGenerated(false);
-    if ((field === "purchased_by_type" || field === "purchased_by_other") && isInitialized.current) {
-      const prefix = getAssetPrefix(
-        field === "purchased_by_type" ? value : formData.purchased_by_type,
-        field === "purchased_by_other" ? value : formData.purchased_by_other
-      );
-      getNextAssetNumber(prefix).then(num => {
-        setFormData(prev => ({ ...prev, asset_number: num }));
-      });
-    }
   };
 
   const handleVendorAdded = (vendorId: string, vendorName: string) => {
@@ -490,120 +388,25 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       if (!formData.vendor_id) throw new Error("Please select a vendor.");
       if (!formData.type) throw new Error("Type is required.");
 
-      let finalAssetNumber = null;
-      if (status === 'submitted') {
-        finalAssetNumber = formData.asset_number?.trim();
-        if (!finalAssetNumber) {
-          const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
-          finalAssetNumber = await getNextAssetNumber(prefix);
-        } else {
-          const { data: existing } = await supabase
-            .from("purchases")
-            .select("id")
-            .eq("asset_number", finalAssetNumber)
-            .maybeSingle();
-          if (existing) throw new Error(`Asset number "${finalAssetNumber}" already exists. Please change it.`);
-        }
+      const serialNumbers = quantity > 1
+        ? serialNumbersList.split(/\r?\n/).map(s => s.trim())
+        : undefined;
+
+      const res = await apiFetch("/api/purchases", {
+        method: "POST",
+        body: JSON.stringify({
+          ...formData,
+          quantity,
+          serial_numbers: serialNumbers,
+          status,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Failed to save purchase.");
       }
 
-      const baseRecord = {
-        entry_date: formData.entry_date,
-        purchase_date: formData.purchase_date,
-        vendor_id: formData.vendor_id,
-        vendor_name: formData.vendor_name,
-        type: formData.type,
-        brand: formData.brand === "Other" ? (formData.brand_other || "Other") : formData.brand,
-        brand_other: formData.brand === "Other" ? formData.brand_other : null,
-        model: formData.model,
-        model_id: formData.model_id,
-        make_year: formData.make_year,
-        sku: formData.sku,
-        asset_description: formData.asset_description,
-        cpu: formData.cpu,
-        generation: formData.generation,
-        ram: formData.ram,
-        ssd: formData.ssd,
-        screen_size: formData.screen_size,
-        charger: formData.charger,
-        monitor_size: formData.monitor_size,
-        has_keyboard: formData.has_keyboard,
-        has_mouse: formData.has_mouse,
-        base_price: formData.base_price,
-        gst: formData.gst,
-        gst_amount: formData.gst_amount,
-        total_price: formData.total_price ?? formData.base_price ?? 0,
-        selling_price: formData.selling_price,
-        vendor_invoice_total: formData.vendor_invoice_total,
-        purchase_type: formData.purchase_type === "GST" ? "GST" : "Cash",
-        purchased_invoice_number: formData.purchased_invoice_number,
-        eway_bill_no: formData.eway_bill_no,
-        expense: formData.expense,
-        expense_amount: formData.expense_amount,
-        expense_description: formData.expense_description,
-        stock_status: formData.stock_status,
-        status_purchase: formData.status_purchase,
-        status_other: formData.status_purchase === "Other" ? formData.status_other : null,
-        purchased_by_type: formData.purchased_by_type,
-        purchased_by_other: formData.purchased_by_type === "Other" ? formData.purchased_by_other : null,
-        remarks: formData.remarks,
-        public_photo_url: formData.public_photo_url,
-        status: status,
-        submitted_at: status === 'submitted' ? new Date().toISOString() : null,
-        is_deleted: false,
-        asset_number: finalAssetNumber,
-      };
-
-      let serials: string[] = [];
-      if (quantity > 1) {
-        const entered = serialNumbersList.split(/\r?\n/).map(s => s.trim()).filter(s => s.length > 0);
-        serials = Array(quantity).fill("");
-        for (let i = 0; i < Math.min(entered.length, quantity); i++) {
-          serials[i] = entered[i];
-        }
-      } else {
-        serials = [formData.serial_number || ""];
-      }
-
-      const records = [];
-      let currentAsset = finalAssetNumber;
-      for (let i = 0; i < serials.length; i++) {
-        if (i > 0 && currentAsset && status === 'submitted') {
-          const hyphenMatch = currentAsset.match(/^(.+?)-(\d+)$/);
-          if (hyphenMatch) {
-            const prefix = hyphenMatch[1];
-            const num = parseInt(hyphenMatch[2], 10);
-            const nextNum = num + 1;
-            currentAsset = `${prefix}-${nextNum}`;
-          } else {
-            const suffixMatch = currentAsset.match(/(\D+)(\d+)$/);
-            if (suffixMatch) {
-              const prefix = suffixMatch[1];
-              const num = parseInt(suffixMatch[2], 10);
-              const nextNum = num + 1;
-              currentAsset = `${prefix}${nextNum}`;
-            } else {
-              const prefix = getAssetPrefix(formData.purchased_by_type, formData.purchased_by_other);
-              currentAsset = await getNextAssetNumber(prefix);
-            }
-          }
-        }
-        records.push({ ...baseRecord, asset_number: currentAsset, serial_number: serials[i] });
-      }
-
-      if (status === 'submitted') {
-        const assetNumbers = records.map(r => r.asset_number).filter(Boolean);
-        if (assetNumbers.length) {
-          const { data: dup } = await supabase.from("purchases").select("asset_number").in("asset_number", assetNumbers);
-          if (dup && dup.length > 0) throw new Error(`Asset numbers already exist: ${dup.map(d => d.asset_number).join(", ")}`);
-        }
-      }
-
-      const { error } = await supabase.from("purchases").insert(records);
-      if (error) throw error;
-      await new Promise(resolve => setTimeout(resolve, 100));
-      if (formData.purchased_invoice_number) {
-        await updateVendorInvoiceTotal(formData.vendor_id, formData.purchased_invoice_number);
-      }
       onOpenChange(false);
       onAdd();
     } catch (err: any) {
@@ -706,15 +509,18 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
           {/* Asset Number */}
           <div>
-            <Label>Asset Number {quantity > 1 && "(starting number)"}</Label>
+            <Label>Asset Number (optional override)</Label>
             <Input
               value={formData.asset_number}
               onChange={(e) => handleChange("asset_number", e.target.value)}
-              placeholder="e.g., DBAS582"
+              placeholder="Leave blank to auto-assign on Submit"
+              disabled={quantity > 1}
             />
-            {quantity > 1 && (
-              <p className="text-xs text-muted-foreground mt-1">Subsequent numbers will be auto‑incremented.</p>
-            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              {quantity > 1
+                ? "Numbers are auto-assigned for multi-unit entries."
+                : "Auto-assigned on Submit unless you specify one. Draft entries don't consume a number until finalized."}
+            </p>
           </div>
 
           {/* Serial Numbers */}

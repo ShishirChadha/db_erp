@@ -1,0 +1,170 @@
+.
+├── AGENTS.md
+├── app
+│   ├── actions
+│   │   ├── asset.ts
+│   │   ├── invoice.ts
+│   │   └── reminders.ts
+│   ├── api
+│   │   ├── activities
+│   │   ├── gst
+│   │   ├── inventory
+│   │   ├── purchase-invoices
+│   │   ├── purchase-orders
+│   │   ├── settings
+│   │   ├── sku-category-templates
+│   │   ├── sku-master
+│   │   ├── stock
+│   │   ├── storage
+│   │   ├── tags
+│   │   ├── upload
+│   │   └── vendors
+│   ├── csv_to_sql.py
+│   ├── dashboard
+│   │   ├── activities
+│   │   ├── customers
+│   │   ├── expenses
+│   │   ├── invoices
+│   │   ├── layout.tsx
+│   │   ├── page.tsx
+│   │   ├── purchase-invoices
+│   │   ├── purchase-orders
+│   │   ├── purchases
+│   │   ├── reports
+│   │   ├── sales
+│   │   ├── settings
+│   │   ├── sku-master
+│   │   ├── stock
+│   │   └── vendors
+│   ├── favicon.ico
+│   ├── globals.css
+│   ├── layout.tsx
+│   ├── login
+│   │   └── page.tsx
+│   └── page.tsx
+├── app.zip
+├── CLAUDE.md
+├── components
+│   ├── ActivityCalendar.tsx
+│   ├── ActivityDetailDialog
+│   ├── ActivityList.tsx
+│   ├── AddActivityDialog.tsx
+│   ├── AddCustomerDialog.tsx
+│   ├── AddExpenseDialog.tsx
+│   ├── AddPurchaseDialog.tsx
+│   ├── AddSaleDialog.tsx
+│   ├── BulkAddDialog.tsx
+│   ├── DeleteInvoiceDialog.tsx
+│   ├── DeletePurchaseDialog.tsx
+│   ├── DeleteRecordDialog.tsx
+│   ├── EditActivityDialog.tsx
+│   ├── EditCustomerDialog.tsx
+│   ├── EditExpenseDialog.tsx
+│   ├── EditPurchaseDialog.tsx
+│   ├── EditSaleDialog.tsx
+│   ├── FileUpload.tsx
+│   ├── InvoiceForm.tsx
+│   ├── ModelSelect.tsx
+│   ├── SearchableCustomerSelect.tsx
+│   ├── SearchableItemSelect.tsx
+│   ├── sidebar.tsx
+│   └── ui
+│       ├── badge.tsx
+│       ├── button.tsx
+│       ├── calendar.tsx
+│       ├── card.tsx
+│       ├── command.tsx
+│       ├── dialog.tsx
+│       ├── dropdown-menu.tsx
+│       ├── input-group.tsx
+│       ├── input.tsx
+│       ├── label.tsx
+│       ├── popover.tsx
+│       ├── select.tsx
+│       ├── sheet.tsx
+│       ├── table.tsx
+│       ├── tabs.tsx
+│       └── textarea.tsx
+├── components.json
+├── components.zip
+├── db_erp_schema.rtf
+├── db_erp.git
+│   ├── config
+│   ├── description
+│   ├── HEAD
+│   ├── hooks
+│   │   ├── applypatch-msg.sample
+│   │   ├── commit-msg.sample
+│   │   ├── fsmonitor-watchman.sample
+│   │   ├── post-update.sample
+│   │   ├── pre-applypatch.sample
+│   │   ├── pre-commit.sample
+│   │   ├── pre-merge-commit.sample
+│   │   ├── pre-push.sample
+│   │   ├── pre-rebase.sample
+│   │   ├── pre-receive.sample
+│   │   ├── prepare-commit-msg.sample
+│   │   ├── push-to-checkout.sample
+│   │   ├── sendemail-validate.sample
+│   │   └── update.sample
+│   ├── info
+│   │   └── exclude
+│   ├── next-monorepo
+│   │   ├── apps
+│   │   ├── package-lock.json
+│   │   ├── package.json
+│   │   ├── packages
+│   │   ├── README.md
+│   │   ├── tsconfig.json
+│   │   └── turbo.json
+│   ├── objects
+│   │   ├── info
+│   │   └── pack
+│   ├── packed-refs
+│   ├── refs
+│   │   ├── heads
+│   │   └── tags
+│   └── supabase
+│       ├── config.toml
+│       └── functions
+├── eslint.config.mjs
+├── folder_structure.txt
+├── lib
+│   ├── api-client.ts
+│   ├── generateInvoicePDF.ts
+│   ├── gstCalculation.ts
+│   ├── purchase-utils.ts
+│   ├── schemas
+│   │   └── invoiceSchema.ts
+│   ├── sku-code-generator.ts
+│   ├── sku-normalizer.ts
+│   ├── supabase
+│   │   ├── client.ts
+│   │   ├── server.ts
+│   │   └── service.ts
+│   ├── useCustomOptions.ts
+│   └── utils.ts
+├── lib.zip
+├── LocallLLM_Scripts
+│   └── Terminal Saved Output.txt
+├── next-env.d.ts
+├── next.config.ts
+├── package-lock.json
+├── package.json
+├── postcss.config.mjs
+├── public
+│   ├── DB_LOGO.png
+│   ├── file.svg
+│   ├── globe.svg
+│   ├── next.svg
+│   ├── templates
+│   │   ├── customers_template.csv
+│   │   ├── expenses_template.csv
+│   │   ├── purchases_template.csv
+│   │   └── sales_template.csv
+│   ├── vercel.svg
+│   └── window.svg
+├── README.md
+└── tsconfig.json
+
+54 directories, 114 files

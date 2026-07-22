@@ -41,7 +41,7 @@ export async function PUT(req: NextRequest) {
 
   // Check for collision: see if any existing asset has number > last_number
   const { data: maxAsset } = await supabaseAdmin
-    .from('purchase_order_asset_mapping')
+    .from('asset_ledger')
     .select('asset_number')
     .ilike('asset_number', `${prefix}%`)
     .order('asset_number', { ascending: false })
@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
   for (const prefix of PREFIXES) {
     // Find the highest asset number currently in use for this prefix
     const { data: maxAsset } = await supabaseAdmin
-      .from('purchase_order_asset_mapping')
+      .from('asset_ledger')
       .select('asset_number')
       .ilike('asset_number', `${prefix}%`)
       .order('asset_number', { ascending: false })

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -70,11 +71,15 @@ const ResizableHeader = ({
   width,
   onResize,
   className,
+  onSort,
+  sortIndicator,
 }: {
   label: string
   width: number
   onResize: (w: number) => void
   className?: string
+  onSort?: () => void
+  sortIndicator?: string
 }) => {
   const startX = useRef(0)
   const startWidth = useRef(width)
@@ -109,7 +114,13 @@ const ResizableHeader = ({
 
   return (
     <th className={cn(className, 'relative')} style={{ width }}>
-      {label}
+      {onSort ? (
+        <span className="cursor-pointer select-none" onClick={onSort}>
+          {label}{sortIndicator || ''}
+        </span>
+      ) : (
+        label
+      )}
       <div
         onMouseDown={handleMouseDown}
         className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-200"
@@ -118,10 +129,15 @@ const ResizableHeader = ({
   )
 }
 
-export default function VendorsPage() {
+type VendorSortField = 'company_name' | 'spoc_name' | 'phone' | 'city'
+type SortOrder = 'asc' | 'desc'
+
+function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [search, setSearch] = useState('')
   const [showDeleted, setShowDeleted] = useState(false)
+  const [sortField, setSortField] = useState<VendorSortField | null>(null)
+  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [showForm, setShowForm] = useState(false)
   const [viewItem, setViewItem] = useState<Vendor | null>(null)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
@@ -147,7 +163,7 @@ export default function VendorsPage() {
   }, [])
 
   // Filter vendors based on search and deleted toggle
-  const filtered = vendors.filter(v => {
+  const filteredUnsorted = vendors.filter(v => {
     if (!showDeleted && v.is_deleted) return false
     if (!search) return true
     const searchLower = search.toLowerCase()
@@ -160,6 +176,27 @@ export default function VendorsPage() {
       v.email?.toLowerCase().includes(searchLower)
     )
   })
+
+  const toggleSort = (field: VendorSortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortOrder('asc')
+    }
+  }
+
+  const filtered = sortField
+    ? [...filteredUnsorted].sort((a, b) => {
+        const av = (a[sortField] || '') as string
+        const bv = (b[sortField] || '') as string
+        const cmp = av.localeCompare(bv)
+        return sortOrder === 'asc' ? cmp : -cmp
+      })
+    : filteredUnsorted
+
+  const sortIndicatorFor = (field: VendorSortField) =>
+    sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''
 
   const handleGstBlur = async () => {
     if (!form.gst_number || form.gst_number.length !== 15) return
@@ -349,19 +386,30 @@ export default function VendorsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
-                  {['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Actions'].map((label, i) => (
-                    <ResizableHeader
-                      key={label}
-                      label={label}
-                      width={colWidths[i]}
-                      onResize={(newWidth) => {
-                        const newWidths = [...colWidths]
-                        newWidths[i] = Math.max(60, newWidth)
-                        setColWidths(newWidths)
-                      }}
-                      className="text-left px-4 py-3 font-medium text-gray-600"
-                    />
-                  ))}
+                  {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Actions'] as const).map((label, i) => {
+                    const sortableField: Partial<Record<typeof label, VendorSortField>> = {
+                      Company: 'company_name',
+                      SPOC: 'spoc_name',
+                      Phone: 'phone',
+                      City: 'city',
+                    }
+                    const field = sortableField[label]
+                    return (
+                      <ResizableHeader
+                        key={label}
+                        label={label}
+                        width={colWidths[i]}
+                        onResize={(newWidth) => {
+                          const newWidths = [...colWidths]
+                          newWidths[i] = Math.max(60, newWidth)
+                          setColWidths(newWidths)
+                        }}
+                        className="text-left px-4 py-3 font-medium text-gray-600"
+                        onSort={field ? () => toggleSort(field) : undefined}
+                        sortIndicator={field ? sortIndicatorFor(field) : undefined}
+                      />
+                    )
+                  })}
                 </tr>
               </thead>
               <tbody>
@@ -602,5 +650,13 @@ export default function VendorsPage() {
         onConfirm={handleSoftDelete}
       />
     </div>
+  )
+}
+
+export default function VendorsPageGuarded() {
+  return (
+    <RequireOwner>
+      <VendorsPage />
+    </RequireOwner>
   )
 }

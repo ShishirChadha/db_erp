@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
 
 interface PO {
   po_number: string
@@ -46,7 +47,7 @@ interface Invoice {
   po_items: POItem[]
 }
 
-export default function InvoiceDetailPage() {
+function InvoiceDetailPage() {
   const params = useParams()
   const router = useRouter()
   const invoiceId = params.id as string
@@ -166,10 +167,26 @@ export default function InvoiceDetailPage() {
       {invoice.attachment_urls && invoice.attachment_urls.length > 0 && (
         <div className="mb-4">
           <h3 className="font-semibold mb-1">Attachments</h3>
-          {invoice.attachment_urls.map((url, idx) => (
-            <a key={idx} href={url} target="_blank" rel="noopener noreferrer" className="text-blue-600 underline block">
+          {invoice.attachment_urls.map((key, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={async () => {
+                const res = await apiFetch('/api/storage/download-url', {
+                  method: 'POST',
+                  body: JSON.stringify({ key, expiresIn: 300 }),
+                })
+                if (!res.ok) {
+                  alert('Could not open attachment')
+                  return
+                }
+                const { url } = await res.json()
+                window.open(url, '_blank')
+              }}
+              className="text-blue-600 underline block text-left"
+            >
               View Attachment {idx + 1}
-            </a>
+            </button>
           ))}
         </div>
       )}
@@ -194,5 +211,13 @@ export default function InvoiceDetailPage() {
         <button onClick={() => router.back()} className="bg-gray-200 px-4 py-2 rounded">Back</button>
       </div>
     </div>
+  )
+}
+
+export default function InvoiceDetailPageGuarded() {
+  return (
+    <RequireOwner>
+      <InvoiceDetailPage />
+    </RequireOwner>
   )
 }

@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
 
 interface PO {
   id: string
@@ -13,7 +14,7 @@ interface PO {
   total_amount: number
 }
 
-export default function NewPurchaseInvoicePage() {
+function NewPurchaseInvoicePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const preselectedPoId = searchParams.get('po_id') || ''
@@ -75,50 +76,51 @@ export default function NewPurchaseInvoicePage() {
     }
   }, [poId, pos])
 
-  // Upload file helper
+  // Upload file helper — signed-URL flow (private bucket), same mechanism as
+  // components/FileUpload.tsx, instead of the old base64-through-server/public-bucket
+  // route. Returns the storage key (not a public URL); viewing it later requires a
+  // signed download URL (see app/dashboard/purchase-invoices/[id]/page.tsx).
   const handleUpload = async () => {
-  if (!attachment) return null
-  setUploading(true)
+    if (!attachment) return null
+    setUploading(true)
 
-  // Read file as base64
-  const toBase64 = (file: File): Promise<string> =>
-    new Promise((resolve, reject) => {
-      const reader = new FileReader()
-      reader.readAsDataURL(file)
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          // strip the data:...;base64, prefix
-          const base64 = reader.result.split(',')[1]
-          resolve(base64)
-        }
+    try {
+      const selectedPO = pos.find(p => p.id === poId)
+      const folder = `purchase-invoices/${selectedPO?.po_number || 'unassigned'}`
+
+      const urlRes = await apiFetch('/api/storage/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({
+          fileName: attachment.name,
+          contentType: attachment.type,
+          folder,
+          fileType: 'invoice',
+        }),
+      })
+      if (!urlRes.ok) {
+        alert('Upload failed')
+        return null
       }
-      reader.onerror = reject
-    })
+      const { uploadUrl, key } = await urlRes.json()
 
-  try {
-    const base64data = await toBase64(attachment)
+      const putRes = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: attachment,
+        headers: { 'Content-Type': attachment.type },
+      })
+      if (!putRes.ok) {
+        alert('Upload failed')
+        return null
+      }
 
-    const res = await apiFetch('/api/upload', {
-      method: 'POST',
-      body: JSON.stringify({
-        file: base64data,
-        filename: attachment.name,
-      }),
-    })
-
-    setUploading(false)
-    if (!res.ok) {
+      return key
+    } catch (err) {
       alert('Upload failed')
       return null
+    } finally {
+      setUploading(false)
     }
-    const { url } = await res.json()
-    return url
-  } catch (err) {
-    setUploading(false)
-    alert('Upload failed')
-    return null
   }
-}
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -279,5 +281,13 @@ export default function NewPurchaseInvoicePage() {
         </div>
       </form>
     </div>
+  )
+}
+
+export default function NewPurchaseInvoicePageGuarded() {
+  return (
+    <RequireOwner>
+      <NewPurchaseInvoicePage />
+    </RequireOwner>
   )
 }

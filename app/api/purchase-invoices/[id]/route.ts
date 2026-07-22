@@ -1,11 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 // ---------- GET (detail) ----------
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   // Get invoice
@@ -49,7 +53,7 @@ export async function GET(
             .single()
 
           const { data: assets } = await supabaseAdmin
-            .from('purchase_order_asset_mapping')
+            .from('asset_ledger')
             .select('asset_number, serial_number, status')
             .eq('po_item_id', item.id)
 
@@ -76,6 +80,9 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
 
   // 1. Get invoice to know its PO
@@ -95,11 +102,26 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
-  // 3. If this invoice was linked to a PO, revert PO status to 'received'
+  // 3. If this invoice was linked to a PO, revert PO status based on the PO's actual
+  // receiving progress — not a hardcoded 'received'. An invoice can be created while a
+  // PO is still 'submitted' (nothing received yet) or 'partially_received', so deleting
+  // it must not silently advance the PO past where receiving actually stands.
   if (invoice?.po_id) {
+    const { data: items } = await supabaseAdmin
+      .from('purchase_order_items')
+      .select('quantity, serial_numbers')
+      .eq('po_id', invoice.po_id)
+
+    const allFullyReceived = (items ?? []).length > 0 && (items ?? []).every(
+      (item) => (item.serial_numbers?.length || 0) >= item.quantity
+    )
+    const anyReceived = (items ?? []).some((item) => (item.serial_numbers?.length || 0) > 0)
+
+    const revertedStatus = allFullyReceived ? 'received' : anyReceived ? 'partially_received' : 'submitted'
+
     await supabaseAdmin
       .from('purchase_orders')
-      .update({ po_status: 'received' })
+      .update({ po_status: revertedStatus })
       .eq('id', invoice.po_id)
   }
 

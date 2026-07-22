@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
+// Purchase Invoices carry vendor/cost/GST data -- owner-only, no employee access.
 // ---------- GET: list purchase invoices ----------
 export async function GET(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { searchParams } = new URL(req.url)
   const po_id = searchParams.get('po_id')
+  const payment_status = searchParams.get('payment_status')
+  const search = searchParams.get('search')
+  const date_from = searchParams.get('date_from')
+  const date_to = searchParams.get('date_to')
 
   let invoiceQuery = supabaseAdmin
     .from('invoices')
@@ -13,6 +22,10 @@ export async function GET(req: NextRequest) {
     .order('invoice_date', { ascending: false })
 
   if (po_id) invoiceQuery = invoiceQuery.eq('po_id', po_id)
+  if (payment_status) invoiceQuery = invoiceQuery.eq('payment_status', payment_status)
+  if (search) invoiceQuery = invoiceQuery.ilike('invoice_number', `%${search}%`)
+  if (date_from) invoiceQuery = invoiceQuery.gte('invoice_date', date_from)
+  if (date_to) invoiceQuery = invoiceQuery.lte('invoice_date', date_to)
 
   const { data: invoices, error } = await invoiceQuery
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -44,6 +57,9 @@ export async function GET(req: NextRequest) {
 
 // ---------- POST: create a purchase invoice ----------
 export async function POST(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const body = await req.json()
   const {
     po_id,

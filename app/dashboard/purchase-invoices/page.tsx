@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import RequireOwner from '@/components/RequireOwner'
 
 interface Invoice {
   id: string
@@ -14,17 +15,32 @@ interface Invoice {
   payment_status: string
 }
 
-export default function PurchaseInvoicesPage() {
+type SortField = 'invoice_number' | 'invoice_date' | 'vendor_name' | 'grand_total' | 'payment_status'
+type SortOrder = 'asc' | 'desc'
+
+function PurchaseInvoicesPage() {
   const router = useRouter()
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [sortField, setSortField] = useState<SortField>('invoice_date')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const res = await apiFetch('/api/purchase-invoices')
+      const params = new URLSearchParams()
+      if (paymentStatusFilter) params.append('payment_status', paymentStatusFilter)
+      if (search) params.append('search', search)
+      if (dateFrom) params.append('date_from', dateFrom)
+      if (dateTo) params.append('date_to', dateTo)
+
+      const res = await apiFetch(`/api/purchase-invoices?${params.toString()}`)
       if (!res.ok) {
         const errText = await res.text()
         throw new Error(errText || `Request failed with status ${res.status}`)
@@ -38,11 +54,37 @@ export default function PurchaseInvoicesPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [paymentStatusFilter, search, dateFrom, dateTo])
 
   useEffect(() => {
     fetchInvoices()
   }, [fetchInvoices])
+
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+    } else {
+      setSortField(field)
+      setSortOrder('asc')
+    }
+  }
+
+  const sortedInvoices = useMemo(() => {
+    const value = (inv: Invoice) =>
+      sortField === 'vendor_name' ? inv.purchase_orders?.vendor_name : (inv as any)[sortField]
+    const sorted = [...invoices].sort((a, b) => {
+      const av = value(a)
+      const bv = value(b)
+      if (av == null && bv == null) return 0
+      if (av == null) return 1
+      if (bv == null) return -1
+      if (typeof av === 'number' && typeof bv === 'number') return av - bv
+      return String(av).localeCompare(String(bv))
+    })
+    return sortOrder === 'asc' ? sorted : sorted.reverse()
+  }, [invoices, sortField, sortOrder])
+
+  const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
 
   if (loading) {
     return <div className="p-4">Loading invoices…</div>
@@ -74,22 +116,74 @@ export default function PurchaseInvoicesPage() {
         </button>
       </div>
 
+      <div className="flex flex-wrap gap-4 mb-4 items-end">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Payment Status</label>
+          <select
+            value={paymentStatusFilter}
+            onChange={(e) => setPaymentStatusFilter(e.target.value)}
+            className="border p-2 rounded"
+          >
+            <option value="">All</option>
+            <option value="pending">Pending</option>
+            <option value="paid">Paid</option>
+            <option value="partial">Partial</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">From</label>
+          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border p-2 rounded" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">To</label>
+          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border p-2 rounded" />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Search Invoice #</label>
+          <input
+            type="text"
+            placeholder="Search invoice number..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="border p-2 rounded"
+          />
+        </div>
+        {(paymentStatusFilter || search || dateFrom || dateTo) && (
+          <button
+            onClick={() => { setPaymentStatusFilter(''); setSearch(''); setDateFrom(''); setDateTo('') }}
+            className="text-sm text-gray-500 underline"
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {invoices.length === 0 ? (
         <div className="text-gray-500">No purchase invoices found.</div>
       ) : (
         <table className="min-w-full border">
           <thead>
             <tr>
-              <th className="border p-2">Invoice #</th>
-              <th className="border p-2">Date</th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_number')}>
+                Invoice #{sortIndicator('invoice_number')}
+              </th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_date')}>
+                Date{sortIndicator('invoice_date')}
+              </th>
               <th className="border p-2">PO Number</th>
-              <th className="border p-2">Vendor</th>
-              <th className="border p-2">Amount</th>
-              <th className="border p-2">Status</th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
+                Vendor{sortIndicator('vendor_name')}
+              </th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('grand_total')}>
+                Amount{sortIndicator('grand_total')}
+              </th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('payment_status')}>
+                Status{sortIndicator('payment_status')}
+              </th>
             </tr>
           </thead>
           <tbody>
-            {invoices.map((inv) => (
+            {sortedInvoices.map((inv) => (
               <tr
                 key={inv.id}
                 className="cursor-pointer hover:bg-gray-50"
@@ -109,5 +203,13 @@ export default function PurchaseInvoicesPage() {
         </table>
       )}
     </div>
+  )
+}
+
+export default function PurchaseInvoicesPageGuarded() {
+  return (
+    <RequireOwner>
+      <PurchaseInvoicesPage />
+    </RequireOwner>
   )
 }
