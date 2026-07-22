@@ -26,6 +26,7 @@ import { Plus, Eye, Edit, FileText, Trash2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import DeleteInvoiceDialog from "@/components/DeleteInvoiceDialog";
+import RequirePageAccess from "@/components/RequirePageAccess";
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-500",
@@ -34,7 +35,7 @@ const statusColors: Record<string, string> = {
   paid: "bg-green-500",
 };
 
-export default function InvoicesPage() {
+function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -226,5 +227,13 @@ export default function InvoicesPage() {
         onConfirm={handleSoftDelete}
       />
     </div>
+  );
+}
+
+export default function InvoicesPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="invoices">
+      <InvoicesPage />
+    </RequirePageAccess>
   );
 }

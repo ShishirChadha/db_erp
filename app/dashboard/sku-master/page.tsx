@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { SkuFormModal } from '@/components/SkuFormModal'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 interface SKU {
   id: string
@@ -33,7 +34,7 @@ interface CategoryTemplate {
 type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in_stock'
 type SortOrder = 'asc' | 'desc'
 
-export default function SkuMasterPage() {
+function SkuMasterPage() {
   const [skus, setSkus] = useState<SKU[]>([])
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -212,5 +213,13 @@ export default function SkuMasterPage() {
         />
       )}
     </div>
+  )
+}
+
+export default function SkuMasterPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="sku_master">
+      <SkuMasterPage />
+    </RequirePageAccess>
   )
 }

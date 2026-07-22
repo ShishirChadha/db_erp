@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -49,7 +50,7 @@ interface AssetDetail {
   checks: { check_item: string; result: string; notes: string | null }[]
 }
 
-export default function AssetQCPage() {
+function AssetQCPage() {
   const params = useParams()
   const router = useRouter()
   const assetId = params.id as string
@@ -347,5 +348,13 @@ export default function AssetQCPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function AssetQCPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="live_stock">
+      <AssetQCPage />
+    </RequirePageAccess>
   )
 }

@@ -24,10 +24,11 @@ import AddCustomerDialog from "@/components/AddCustomerDialog";
 import BulkAddDialog from "@/components/BulkAddDialog";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
+import RequirePageAccess from "@/components/RequirePageAccess";
 
 type SortField = "customer_name" | "type" | "phone" | "email";
 
-export default function CustomersPage() {
+function CustomersPage() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
@@ -202,5 +203,13 @@ export default function CustomersPage() {
       {editingCustomer && <EditCustomerDialog customer={editingCustomer} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchCustomers} />}
       {customerToDelete && <DeleteRecordDialog title="Delete Customer" identifier={customerToDelete.customer_name} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}
     </div>
+  );
+}
+
+export default function CustomersPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="customers">
+      <CustomersPage />
+    </RequirePageAccess>
   );
 }

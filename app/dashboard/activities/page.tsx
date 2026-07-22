@@ -9,10 +9,9 @@ import ActivityCalendar from '@/components/ActivityCalendar';
 import { toast } from 'sonner';
 import { getPendingReminders, markReminderSent } from '@/app/actions/reminders';
 import { CalendarDays } from 'lucide-react';
+import RequirePageAccess from '@/components/RequirePageAccess';
 
-
-
-export default function ActivitiesPage() {
+function ActivitiesPage() {
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
@@ -56,5 +55,13 @@ export default function ActivitiesPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function ActivitiesPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="activities">
+      <ActivitiesPage />
+    </RequirePageAccess>
   );
 }

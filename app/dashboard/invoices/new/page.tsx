@@ -8,8 +8,9 @@ import { suggestNextInvoiceNumber, isInvoiceNumberUnique } from "@/app/actions/i
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import RequirePageAccess from "@/components/RequirePageAccess";
 
-export default function NewInvoicePage() {
+function NewInvoicePage() {
   const [invoiceNumber, setInvoiceNumber] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
@@ -91,5 +92,13 @@ export default function NewInvoicePage() {
         isSubmitting={isSubmitting}
       />
     </div>
+  );
+}
+
+export default function NewInvoicePageGuarded() {
+  return (
+    <RequirePageAccess pageKey="invoices">
+      <NewInvoicePage />
+    </RequirePageAccess>
   );
 }

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 interface Accessory {
   id: string
@@ -63,7 +64,7 @@ function ActivateRow({ item, onDone }: { item: Accessory; onDone: () => void }) 
   )
 }
 
-export default function AccessoriesPage() {
+function AccessoriesPage() {
   const router = useRouter()
   const { isOwner } = useRole()
   const [active, setActive] = useState<Accessory[]>([])
@@ -160,5 +161,13 @@ export default function AccessoriesPage() {
         </table>
       )}
     </div>
+  )
+}
+
+export default function AccessoriesPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="accessories">
+      <AccessoriesPage />
+    </RequirePageAccess>
   )
 }

@@ -1,12 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { resolveOrCreateSku } from '@/lib/sku-resolver'
-import { getSessionUser } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { redactForRole, redactManyForRole } from '@/lib/auth/redact'
 
+// Used by SKU Master, PO wizard's inline SKU search (owner-only page), and Sell's
+// Fix-SKU/Change-SKU picker -- gate on either the SKU Master or New Entry page key.
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['sku_master', 'new_entry'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search')
@@ -30,6 +33,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['sku_master', 'new_entry'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
   const {

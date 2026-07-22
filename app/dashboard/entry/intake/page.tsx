@@ -5,12 +5,13 @@ import { useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 const TYPE_OPTIONS = ['Laptop', 'Desktop', 'Monitor', 'Tablet', 'Tiny']
 const BRAND_OPTIONS = ['Apple', 'Dell', 'HP', 'Lenovo', 'Windows', 'Asus', 'Acer', 'Other']
 const BUYER_OPTIONS = ['Digitalbluez', 'Techtenth', 'Cash', 'Other']
 
-export default function StockIntakePage() {
+function StockIntakePage() {
   const router = useRouter()
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -192,5 +193,13 @@ export default function StockIntakePage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function StockIntakePageGuarded() {
+  return (
+    <RequirePageAccess pageKey="new_entry">
+      <StockIntakePage />
+    </RequirePageAccess>
   )
 }

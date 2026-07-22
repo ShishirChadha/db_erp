@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
@@ -365,8 +366,10 @@ function ServicePageInner() {
 
 export default function ServicePage() {
   return (
-    <Suspense fallback={<div className="p-4">Loading...</div>}>
-      <ServicePageInner />
-    </Suspense>
+    <RequirePageAccess pageKey="new_entry">
+      <Suspense fallback={<div className="p-4">Loading...</div>}>
+        <ServicePageInner />
+      </Suspense>
+    </RequirePageAccess>
   )
 }

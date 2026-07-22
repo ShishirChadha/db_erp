@@ -1,14 +1,17 @@
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { getCookieSessionUser, hasPageAccess } from '@/lib/auth/session';
 
 export async function PUT(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;  // ✅ await the Promise
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPageAccess(sessionUser, 'activities')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = { id: sessionUser.id };
 
   const body = await req.json();
   const { error } = await supabase
@@ -29,9 +32,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  if (!hasPageAccess(sessionUser, 'activities')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  const user = { id: sessionUser.id };
 
   const { error } = await supabase
     .from('activities')

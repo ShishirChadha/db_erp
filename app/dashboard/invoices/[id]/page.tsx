@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, Edit, Printer, FileText } from "lucide-react";
 import { format } from "date-fns";
 import { generateInvoicePDF } from "@/lib/generateInvoicePDF";
+import RequirePageAccess from "@/components/RequirePageAccess";
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-500",
@@ -17,7 +18,7 @@ const statusColors: Record<string, string> = {
   paid: "bg-green-500",
 };
 
-export default function ViewInvoicePage() {
+function ViewInvoicePage() {
   const { id } = useParams();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -211,5 +212,13 @@ export default function ViewInvoicePage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+export default function ViewInvoicePageGuarded() {
+  return (
+    <RequirePageAccess pageKey="invoices">
+      <ViewInvoicePage />
+    </RequirePageAccess>
   );
 }

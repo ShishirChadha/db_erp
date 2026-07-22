@@ -1,6 +1,11 @@
 # Current Progress
 
-Last updated: 2026-07-22 (end of a session that: committed the previously-uncommitted
+Last updated: 2026-07-22 (later same session: added a pre-GST/post-GST toggle to
+the Sell form, and a per-employee page-access permission system with a
+self-service Settings → Users & Access panel, replacing the previous
+manual/Supabase-admin-only way of creating employee logins).
+
+Prior update same day: committed the previously-uncommitted
 employee-facing operational system; ran a dead-table audit; cleaned up leaked test
 data; fixed a batch of real bugs the owner found while entering live purchase data
 (PO wizard totals, asset numbering, SKU dropdowns/variants, Fix SKU); and added
@@ -58,8 +63,22 @@ support for selling a physically-upgraded unit with cost tracking).
 - **Stock/Sell search**: `GET /api/stock`'s `search` param only matched `asset_number`/`serial_number` — typing a brand/model (e.g. "Lenovo", "T450") returned nothing. Now also resolves matching SKUs by code/brand/model/description and includes their units.
 - **Selling a physically-upgraded unit**: the Sell form (`app/dashboard/entry/sell/page.tsx`) now has a "Wrong or upgraded spec? Change SKU" link once a unit is selected, open to both roles, using the same Fix-SKU picker (with its own "+ Create new SKU" escape hatch for a spec that's never existed before). If the owner is the one doing it, an optional "Additional cost for this upgrade" field is also shown (never shown to employees) — recorded via a new `asset_cost_adjustments` table (append-only ledger, same idiom as `stock_movements`/`asset_qc_checks`) and a new owner-only `GET`/`POST /api/asset-ledger/[id]/cost-adjustments` route. The asset detail page (`/dashboard/stock/[id]`) has a matching owner-only "Cost Adjustments" panel (original cost, running total, add-anytime form) — not only reachable from the sale moment, matching the project's "owner's paperwork is deferred" pattern.
 
+**Pre-GST/post-GST toggle on Sell** (`app/dashboard/entry/sell/page.tsx`)
+- Employee can specify whether the entered Selling Price is pre-GST or GST-inclusive; switching modes auto-converts the number in the box to keep the customer's total unchanged. Frontend-only — `sale_base_price` sent to `POST /api/sales-entry` is always resolved to the pre-GST amount, so no API/schema changes were needed.
+
+**Per-employee page access + self-service user creation** (replaces manual/Supabase-admin-only account creation)
+- New `profiles.allowed_pages text[]` column (CHECK-constrained to 8 keys: `new_entry`, `accessories`, `repair_jobs`, `sku_master`, `live_stock`, `invoices`, `customers`, `activities`) — only meaningful for `role='employee'`; owners always have full access regardless.
+- `lib/auth/session.ts`/`lib/auth/useRole.ts`: new `hasPageAccess(sessionUser, key | key[])` helper alongside `isOwner()`.
+- `components/sidebar.tsx`: nav items gained an optional `pageKey`, filtered the same way `ownerOnly` already was.
+- New `components/RequirePageAccess.tsx` (mirrors `RequireOwner.tsx`) wraps the default export of every page under the 8 areas.
+- Added matching `hasPageAccess` checks to each area's primary API route (`stock-intake`, `sales-entry`, `accessories`, `sku-master`, `stock`, `repair-jobs`, `activities`/`activities/[id]`). **Known limitation**: Customers and Invoices pages call Supabase directly client-side (RLS-based, no API route at all) — a pre-existing architectural difference from the rest of the app, not introduced by this feature; enforcement for those two is page-level only (`RequirePageAccess` + nav-hiding), not API-level. A handful of already-role-blind shared utility routes (`reassign-sku`, `qc`, `mark-ready`, `accessory-movements`, `storage/*`, `tags`) were also left ungated for the same "shared across features, no financial-data exposure" reasoning already used elsewhere in this codebase.
+- New owner-only `GET`/`POST /api/users` and `PATCH /api/users/[id]` (create user + profile row via `supabaseAdmin.auth.admin`, list all users, update role/allowed_pages/is_active/password). No `DELETE` — deactivation (`is_active=false`) is the only revoke action, since it already fully blocks login and a hard delete would orphan `sales.entered_by`/`sold_by`-style references.
+- New `components/UserManager.tsx` (Create User form + existing-users list with Edit Access / Deactivate / Set New Password), following `DropdownOptionsManager.tsx`'s self-contained-section pattern.
+- **Settings page redesigned** into a simple category layout (left category list, right content pane) — Asset Numbering / Dropdown Options / Users & Access — replacing the old single long-scroll page.
+- Verified end-to-end via a disposable script (real HTTP calls against the running dev server, real Supabase auth users signed in as both a test owner and a test employee, cleaned up and re-verified after): user creation, bogus page-key filtering, page-access enforcement (both an allowed and a blocked route), and deactivation all behave correctly.
+
 ## Currently being worked on
-Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully.
+Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully. The GST-toggle and user-permissions work above is type-checked and verified but **not yet committed**.
 
 ## Remaining / not yet started
 - **Issue E's deeper structural fix** (deferred, flagged during the asset-numbering pass): make PO submission fully atomic via one Postgres RPC (reserve + insert + update, all in one transaction) so the counter can never again drift ahead of the ledger from a mid-submit failure. The `manualOverride` free-text asset-number path in the legacy `purchases` routes also still bypasses the numbering system entirely — a known risk, not yet addressed.

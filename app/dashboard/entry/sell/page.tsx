@@ -8,6 +8,7 @@ import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 interface StockUnit {
   id: string
@@ -506,8 +507,10 @@ function SellPageInner() {
 
 export default function SellPage() {
   return (
-    <Suspense fallback={<div className="p-4">Loading...</div>}>
-      <SellPageInner />
-    </Suspense>
+    <RequirePageAccess pageKey="new_entry">
+      <Suspense fallback={<div className="p-4">Loading...</div>}>
+        <SellPageInner />
+      </Suspense>
+    </RequirePageAccess>
   )
 }

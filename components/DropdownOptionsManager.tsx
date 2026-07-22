@@ -76,8 +76,7 @@ export default function DropdownOptionsManager() {
   }
 
   return (
-    <section className="mb-8">
-      <h2 className="text-lg font-semibold mb-3">Dropdown Options</h2>
+    <div>
       <p className="text-sm text-gray-600 mb-4">
         Values shown in searchable dropdowns across the app (e.g. Stock Intake's CPU, RAM, storage, screen size). Deactivating a value hides it from the picker without deleting history that already used it.
       </p>
@@ -131,6 +130,6 @@ export default function DropdownOptionsManager() {
           Add
         </button>
       </div>
-    </section>
+    </div>
   )
 }

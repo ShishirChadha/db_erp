@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 interface RepairJob {
   id: string
@@ -101,7 +102,7 @@ function JobRow({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; on
   )
 }
 
-export default function RepairJobsPage() {
+function RepairJobsPage() {
   const { isOwner } = useRole()
   const [jobs, setJobs] = useState<RepairJob[]>([])
   const [statusFilter, setStatusFilter] = useState('')
@@ -157,5 +158,13 @@ export default function RepairJobsPage() {
         </div>
       )}
     </div>
+  )
+}
+
+export default function RepairJobsPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="repair_jobs">
+      <RepairJobsPage />
+    </RequirePageAccess>
   )
 }

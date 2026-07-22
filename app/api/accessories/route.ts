@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { redactManyForRole } from '@/lib/auth/redact'
 
 // ---------- GET: list/search accessories (active by default) ----------
+// Used by both the Accessories page and New Entry's Sell (accessory browse/bundle picker).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['accessories', 'new_entry'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search')
@@ -41,6 +43,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['accessories', 'new_entry'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
   if (!body.accessory_name?.trim()) {

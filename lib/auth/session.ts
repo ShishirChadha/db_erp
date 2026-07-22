@@ -9,6 +9,7 @@ export interface SessionUser {
   email: string | undefined
   role: Role
   isActive: boolean
+  allowedPages: string[]
 }
 
 // Bearer-token pattern -- for API routes called via lib/api-client.ts's apiFetch(),
@@ -23,13 +24,13 @@ export async function getSessionUser(req: NextRequest): Promise<SessionUser | nu
 
   const { data: profile } = await supabaseAdmin
     .from('profiles')
-    .select('role, is_active')
+    .select('role, is_active, allowed_pages')
     .eq('id', user.id)
     .single()
 
   if (!profile || !profile.is_active) return null
 
-  return { id: user.id, email: user.email, role: profile.role as Role, isActive: profile.is_active }
+  return { id: user.id, email: user.email, role: profile.role as Role, isActive: profile.is_active, allowedPages: profile.allowed_pages || [] }
 }
 
 // Cookie-session pattern -- for routes/pages using lib/supabase/server.ts's createClient()
@@ -41,15 +42,25 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('role, is_active')
+    .select('role, is_active, allowed_pages')
     .eq('id', user.id)
     .single()
 
   if (!profile || !profile.is_active) return null
 
-  return { id: user.id, email: user.email, role: profile.role as Role, isActive: profile.is_active }
+  return { id: user.id, email: user.email, role: profile.role as Role, isActive: profile.is_active, allowedPages: profile.allowed_pages || [] }
 }
 
 export function isOwner(sessionUser: SessionUser | null): sessionUser is SessionUser & { role: 'owner' } {
   return !!sessionUser && sessionUser.role === 'owner'
+}
+
+// Owners always have full access; employees need the given page-key(s) in
+// their profiles.allowed_pages allowlist. Accepts an array so shared utility
+// routes (reachable from more than one nav area) can OR across several keys.
+export function hasPageAccess(sessionUser: SessionUser | null, key: string | string[]): boolean {
+  if (!sessionUser) return false
+  if (isOwner(sessionUser)) return true
+  const keys = Array.isArray(key) ? key : [key]
+  return keys.some(k => sessionUser.allowedPages.includes(k))
 }

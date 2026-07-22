@@ -7,8 +7,9 @@ import { InvoiceForm } from "@/components/InvoiceForm";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
+import RequirePageAccess from "@/components/RequirePageAccess";
 
-export default function EditInvoicePage() {
+function EditInvoicePage() {
   const { id } = useParams();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
@@ -128,5 +129,13 @@ export default function EditInvoicePage() {
         isSubmitting={isSubmitting}
       />
     </div>
+  );
+}
+
+export default function EditInvoicePageGuarded() {
+  return (
+    <RequirePageAccess pageKey="invoices">
+      <EditInvoicePage />
+    </RequirePageAccess>
   );
 }

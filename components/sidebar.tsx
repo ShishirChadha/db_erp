@@ -42,16 +42,19 @@ const menuGroups = [
     label: 'New Entry',
     icon: PackagePlus,
     href: '/dashboard/entry',
+    pageKey: 'new_entry',
   },
   {
     label: 'Accessories',
     icon: Sparkles,
     href: '/dashboard/accessories',
+    pageKey: 'accessories',
   },
   {
     label: 'Repair Jobs',
     icon: Wrench,
     href: '/dashboard/repair-jobs',
+    pageKey: 'repair_jobs',
   },
   {
     label: 'Purchases',
@@ -67,8 +70,8 @@ const menuGroups = [
     label: 'Inventory',
     icon: Barcode,
     children: [
-      { href: '/dashboard/sku-master', label: 'SKU Master' },
-      { href: '/dashboard/live-stock', label: 'Live Stock' },
+      { href: '/dashboard/sku-master', label: 'SKU Master', pageKey: 'sku_master' },
+      { href: '/dashboard/live-stock', label: 'Live Stock', pageKey: 'live_stock' },
       { href: '/dashboard/stock', label: 'Stock / Assets (Main ERP)', ownerOnly: true },
     ],
   },
@@ -82,6 +85,7 @@ const menuGroups = [
     label: 'Invoices',
     icon: FileText,
     href: '/dashboard/invoices',
+    pageKey: 'invoices',
   },
   {
     label: 'Expenses',
@@ -93,6 +97,7 @@ const menuGroups = [
     label: 'Customers',
     icon: Users,
     href: '/dashboard/customers',
+    pageKey: 'customers',
   },
   {
     label: 'Vendors',
@@ -116,6 +121,7 @@ const menuGroups = [
     label: 'Activity Hub',
     icon: CalendarDays,
     href: '/dashboard/activities',
+    pageKey: 'activities',
   },
   {
     label: 'Settings',
@@ -131,20 +137,25 @@ function SidebarContent({
   onLogout,
   onMobileClose,
   isOwner,
+  allowedPages,
 }: {
   pathname: string
   onLogout: () => void
   onMobileClose: () => void
   isOwner: boolean
+  allowedPages: string[]
 }) {
+  const canSee = (item: { ownerOnly?: boolean; pageKey?: string }) =>
+    (isOwner || !item.ownerOnly) && (isOwner || !item.pageKey || allowedPages.includes(item.pageKey))
+
   const visibleGroups = useMemo(
     () => menuGroups
-      .filter(group => isOwner || !group.ownerOnly)
+      .filter(canSee)
       .map(group => 'children' in group && group.children
-        ? { ...group, children: group.children.filter((c: any) => isOwner || !c.ownerOnly) }
+        ? { ...group, children: group.children.filter((c: any) => canSee(c)) }
         : group
       ),
-    [isOwner]
+    [isOwner, allowedPages]
   )
 
   // State for each group (key = label) whether it's open
@@ -284,7 +295,7 @@ export default function Sidebar() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = createClient()
-  const { isOwner } = useRole()
+  const { isOwner, allowedPages } = useRole()
   const [mobileOpen, setMobileOpen] = useState(false)
   const [clientPathname, setClientPathname] = useState('')
 
@@ -316,9 +327,10 @@ export default function Sidebar() {
         onLogout={handleLogout}
         onMobileClose={closeMobile}
         isOwner={isOwner}
+        allowedPages={allowedPages}
       />
     ),
-    [clientPathname, handleLogout, closeMobile, isOwner]
+    [clientPathname, handleLogout, closeMobile, isOwner, allowedPages]
   )
 
   return (
@@ -357,6 +369,7 @@ export default function Sidebar() {
               onLogout={handleLogout}
               onMobileClose={closeMobile}
               isOwner={isOwner}
+              allowedPages={allowedPages}
             />
           </aside>
         </div>

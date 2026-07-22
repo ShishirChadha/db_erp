@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { PackagePlus, ShoppingBag, Wrench } from 'lucide-react'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 const TILES = [
   {
@@ -27,7 +28,7 @@ const TILES = [
   },
 ]
 
-export default function EntryLauncherPage() {
+function EntryLauncherPage() {
   return (
     <div className="p-4 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">New Entry</h1>
@@ -56,5 +57,13 @@ export default function EntryLauncherPage() {
         })}
       </div>
     </div>
+  )
+}
+
+export default function EntryLauncherPageGuarded() {
+  return (
+    <RequirePageAccess pageKey="new_entry">
+      <EntryLauncherPage />
+    </RequirePageAccess>
   )
 }
