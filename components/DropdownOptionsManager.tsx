@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '@/lib/api-client'
 
 interface Option {
@@ -12,7 +12,15 @@ interface Option {
 }
 
 const KNOWN_CATEGORIES = [
+  { key: 'brand', label: 'Brand' },
+  { key: 'model_laptop', label: 'Model (Laptop)' },
+  { key: 'model_desktop', label: 'Model (Desktop)' },
+  { key: 'model_tablet', label: 'Model (Tablet)' },
   { key: 'cpu', label: 'CPU' },
+  { key: 'cpu_series', label: 'CPU Series (standalone CPU SKUs)' },
+  { key: 'gpu_series', label: 'GPU Series (standalone GPU SKUs)' },
+  { key: 'monitor_resolution', label: 'Monitor Resolution' },
+  { key: 'apple_model_year', label: 'Apple Model Year' },
   { key: 'generation', label: 'Generation' },
   { key: 'ram', label: 'RAM' },
   { key: 'storage', label: 'Storage' },
@@ -32,6 +40,7 @@ export default function DropdownOptionsManager() {
   const [newValue, setNewValue] = useState('')
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
   const [error, setError] = useState('')
 
   const activeCategory = category === '__custom__' ? customCategory.trim() : category
@@ -46,9 +55,14 @@ export default function DropdownOptionsManager() {
 
   useEffect(() => { fetchOptions() }, [fetchOptions])
 
+  // Both actions share a single `busy` lock (matching existing behavior where
+  // add and toggle disable each other) -- guard re-entrancy with a ref so a
+  // rapid double click can't fire two requests before the state update renders.
   const addValue = async () => {
+    if (busyRef.current) return
+    busyRef.current = true
     setError('')
-    if (!newValue.trim()) return
+    if (!newValue.trim()) { busyRef.current = false; return }
     setBusy(true)
     try {
       const res = await apiFetch('/api/custom-options', {
@@ -61,18 +75,25 @@ export default function DropdownOptionsManager() {
     } catch (e: any) {
       setError(e.message)
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const toggleActive = async (opt: Option) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
-    await apiFetch(`/api/custom-options/${opt.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ is_active: !opt.is_active }),
-    })
-    await fetchOptions()
-    setBusy(false)
+    try {
+      await apiFetch(`/api/custom-options/${opt.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ is_active: !opt.is_active }),
+      })
+      await fetchOptions()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   return (

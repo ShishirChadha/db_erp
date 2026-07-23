@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface PO {
   po_number: string
@@ -55,6 +57,18 @@ function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  const { run: handleDelete, pending: deleting } = useAsyncAction(async () => {
+    if (!confirm('Permanently delete this invoice? This cannot be undone.')) return
+    const res = await apiFetch(`/api/purchase-invoices/${invoiceId}`, { method: 'DELETE' })
+    if (res.ok) {
+      alert('Invoice deleted.')
+      router.push('/dashboard/purchase-invoices')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || 'Failed to delete invoice')
+    }
+  })
 
   useEffect(() => {
     const fetchInvoice = async () => {
@@ -193,22 +207,14 @@ function InvoiceDetailPage() {
 
       <div className="mt-4 flex gap-2">
         <button
-          onClick={async () => {
-            if (!confirm('Permanently delete this invoice? This cannot be undone.')) return
-            const res = await apiFetch(`/api/purchase-invoices/${invoiceId}`, { method: 'DELETE' })
-            if (res.ok) {
-              alert('Invoice deleted.')
-              router.push('/dashboard/purchase-invoices')
-            } else {
-              const err = await res.json().catch(() => ({}))
-              alert(err.error || 'Failed to delete invoice')
-            }
-          }}
-          className="bg-red-600 text-white px-4 py-2 rounded"
+          onClick={() => handleDelete()}
+          disabled={deleting}
+          className="bg-red-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
         >
+          {deleting && <Loader2 className="size-4 animate-spin" />}
           Delete Invoice
         </button>
-        <button onClick={() => router.back()} className="bg-gray-200 px-4 py-2 rounded">Back</button>
+        <button onClick={() => router.back()} disabled={deleting} className="bg-gray-200 px-4 py-2 rounded disabled:opacity-50">Back</button>
       </div>
     </div>
   )

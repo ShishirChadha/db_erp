@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
+import { useAsyncAction } from '@/lib/useAsyncAction';
 
 export default function EditActivityDialog({ 
   activity, 
@@ -20,7 +21,6 @@ export default function EditActivityDialog({
   onOpenChange: (open: boolean) => void; 
   onUpdate: () => void;
 }) {
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -56,22 +56,20 @@ export default function EditActivityDialog({
     setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   };
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async () => {
     if (!form.title) return toast.error('Title is required');
-    setLoading(true);
     const res = await fetch(`/api/activities/${activity.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     });
-    setLoading(false);
     if (res.ok) {
       onOpenChange(false);
       onUpdate();
     } else {
       toast.error('Failed to update activity');
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -110,7 +108,7 @@ export default function EditActivityDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={loading}>Update</Button>
+          <Button onClick={handleSubmit} loading={loading}>Update</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

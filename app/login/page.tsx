@@ -7,19 +7,17 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
 import Image from 'next/image'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
   const router = useRouter()
   const supabase = createClient()
 
-  const handleLogin = async () => {
-    setLoading(true)
+  const { run: handleLogin, pending: loading } = useAsyncAction(async () => {
     setError('')
 
     const { error } = await supabase.auth.signInWithPassword({
@@ -29,13 +27,12 @@ export default function LoginPage() {
 
     if (error) {
       setError('Invalid email or password. Please try again.')
-      setLoading(false)
       return
     }
 
     router.push('/dashboard')
     router.refresh()
-  }
+  })
 
   return (
     // Outer container – full height, items start from top
@@ -102,16 +99,9 @@ export default function LoginPage() {
               <Button
                 className="w-full bg-blue-600 hover:bg-blue-700 py-2.5"
                 onClick={handleLogin}
-                disabled={loading}
+                loading={loading}
               >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Signing in...
-                  </>
-                ) : (
-                  'Sign in'
-                )}
+                Sign in
               </Button>
             </CardContent>
           </Card>

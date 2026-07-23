@@ -20,10 +20,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     expense_date: "",
     description: "",
@@ -39,11 +39,9 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const { error } = await supabase.from("expenses").insert([formData]);
-    setLoading(false);
     if (error) {
       console.error(error);
       alert("Failed to add expense.");
@@ -60,7 +58,7 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
         remarks: "",
       });
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -83,7 +81,7 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
           </div>
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? "Adding..." : "Add Expense"}</Button>
+            <Button type="submit" loading={loading}>Add Expense</Button>
           </div>
         </form>
       </DialogContent>

@@ -232,17 +232,25 @@ const handleSoftDelete = async (remarks: string) => {
   setPurchaseToDelete(null);
 };
 
+const [restoringId, setRestoringId] = useState<string | null>(null);
+
 const handleRestore = async (purchase: any) => {
-  const { error } = await supabase
-    .from("purchases")
-    .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
-    .eq("id", purchase.id);
-  if (error) console.error(error);
-  else {
-    if (purchase.purchased_invoice_number) {
-      await updateVendorInvoiceTotal(purchase.vendor_id, purchase.purchased_invoice_number);
+  if (restoringId) return;
+  setRestoringId(purchase.id);
+  try {
+    const { error } = await supabase
+      .from("purchases")
+      .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
+      .eq("id", purchase.id);
+    if (error) console.error(error);
+    else {
+      if (purchase.purchased_invoice_number) {
+        await updateVendorInvoiceTotal(purchase.vendor_id, purchase.purchased_invoice_number);
+      }
+      fetchPurchases();
     }
-    fetchPurchases();
+  } finally {
+    setRestoringId(null);
   }
 };
 
@@ -459,7 +467,7 @@ const handleRestore = async (purchase: any) => {
                         </Button>
                       </>
                     ) : (
-                      <Button variant="default" size="sm" onClick={() => handleRestore(p)}>Restore</Button>
+                      <Button variant="default" size="sm" onClick={() => handleRestore(p)} loading={restoringId === p.id}>Restore</Button>
                     )}
                   </TableCell>
                 </TableRow>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
 import RequireOwner from "@/components/RequireOwner";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { CalendarIcon } from "lucide-react";
+import { CalendarIcon, Loader2 } from "lucide-react";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import { format } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -97,9 +98,22 @@ function ExpensesPage() {
     fetchExpenses();
     setExpenseToDelete(null);
   };
+
+  // Restore acts on one row at a time -- guard re-entrancy per-id so a double
+  // click on the same row's Restore button can't fire a duplicate update.
+  const [restoringId, setRestoringId] = useState<string | null>(null);
+  const restoringRef = useRef<Set<string>>(new Set());
   const handleRestore = async (e: any) => {
-    await supabase.from("expenses").update({ is_deleted: false, deleted_remarks: null, deleted_at: null }).eq("id", e.id);
-    fetchExpenses();
+    if (restoringRef.current.has(e.id)) return;
+    restoringRef.current.add(e.id);
+    setRestoringId(e.id);
+    try {
+      await supabase.from("expenses").update({ is_deleted: false, deleted_remarks: null, deleted_at: null }).eq("id", e.id);
+      fetchExpenses();
+    } finally {
+      restoringRef.current.delete(e.id);
+      setRestoringId(prev => (prev === e.id ? null : prev));
+    }
   };
 
   return (
@@ -211,7 +225,10 @@ function ExpensesPage() {
                   {e.is_deleted ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(e)}>Edit</Button>
-                      <Button variant="default" size="sm" onClick={() => handleRestore(e)}>Restore</Button>
+                      <Button variant="default" size="sm" onClick={() => handleRestore(e)} disabled={restoringId === e.id}>
+                        {restoringId === e.id && <Loader2 className="inline size-3 animate-spin mr-1" />}
+                        Restore
+                      </Button>
                     </>
                   ) : (
                     <>

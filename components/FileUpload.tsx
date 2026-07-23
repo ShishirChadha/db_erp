@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Upload, Loader2, FileText, Share2, Trash2, Eye } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { useAsyncAction } from '@/lib/useAsyncAction';
 
 interface FileRecord {
   id: string;
@@ -29,7 +30,6 @@ export default function FileUpload({
   assetNumber: string;
 }) {
   const [files, setFiles] = useState<FileRecord[]>([]);
-  const [uploading, setUploading] = useState(false);
   const [selectedType, setSelectedType] = useState('invoice');
   const supabase = createClient();
 
@@ -46,10 +46,9 @@ export default function FileUpload({
     fetchFiles();
   }, [purchaseId]);
 
-  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const { run: handleUpload, pending: uploading } = useAsyncAction(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
 
     try {
       const res = await fetch('/api/storage/upload-url', {
@@ -84,10 +83,8 @@ export default function FileUpload({
     } catch (err) {
       console.error(err);
       alert('Upload failed');
-    } finally {
-      setUploading(false);
     }
-  };
+  });
 
   const handleView = async (filePath: string) => {
     const res = await fetch('/api/storage/download-url', {
@@ -110,14 +107,26 @@ export default function FileUpload({
     alert('Share link copied! Valid for 15 minutes.');
   };
 
+  // Delete acts on one row at a time -- guard re-entrancy per file id so a
+  // double click on the same row's delete button can't fire a duplicate delete.
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const deletingRef = useRef<Set<string>>(new Set());
   const handleDelete = async (fileId: string, filePath: string) => {
-    await fetch('/api/storage/delete', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: filePath }),
-    });
-    await supabase.from('purchase_files').delete().eq('id', fileId);
-    fetchFiles();
+    if (deletingRef.current.has(fileId)) return;
+    deletingRef.current.add(fileId);
+    setDeletingId(fileId);
+    try {
+      await fetch('/api/storage/delete', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: filePath }),
+      });
+      await supabase.from('purchase_files').delete().eq('id', fileId);
+      fetchFiles();
+    } finally {
+      deletingRef.current.delete(fileId);
+      setDeletingId(prev => (prev === fileId ? null : prev));
+    }
   };
 
   return (
@@ -192,8 +201,13 @@ export default function FileUpload({
                 variant="ghost"
                 size="sm"
                 onClick={() => handleDelete(f.id, f.file_path)}
+                disabled={deletingId === f.id}
               >
-                <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                {deletingId === f.id ? (
+                  <Loader2 className="h-3.5 w-3.5 text-red-500 animate-spin" />
+                ) : (
+                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                )}
               </Button>
             </div>
           ))}

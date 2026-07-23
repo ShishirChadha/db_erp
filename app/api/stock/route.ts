@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { redactManyForRole } from '@/lib/auth/redact'
+import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
+import { logFieldCorrections } from '@/lib/field-corrections'
 
 // ---------- GET: list all assets ----------
 // Used by Live Stock, Sell/Service unit search, and (owner-only) Stock/Main ERP + RMA.
@@ -55,7 +57,9 @@ export async function GET(req: NextRequest) {
         ),
         sku_master (
           full_sku_code,
-          sku_description
+          sku_description,
+          category,
+          specifications
         )
       )
     `)
@@ -109,7 +113,7 @@ export async function GET(req: NextRequest) {
 
   const [{ data: fallbackSkus }, { data: fallbackVendors }] = await Promise.all([
     fallbackSkuIds.length
-      ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', fallbackSkuIds)
+      ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', fallbackSkuIds)
       : Promise.resolve({ data: [] as any[] }),
     fallbackVendorIds.length
       ? supabaseAdmin.from('vendors').select('id, company_name').in('id', fallbackVendorIds)
@@ -118,6 +122,19 @@ export async function GET(req: NextRequest) {
   const skuById = new Map((fallbackSkus || []).map((s: any) => [s.id, s]))
   const vendorById = new Map((fallbackVendors || []).map((v: any) => [v.id, v]))
 
+  // A unit currently out for repair keeps whatever asset_ledger.status it already
+  // had (repair-job creation never changes it) -- this is the only place that fact
+  // is otherwise visible, so surface it as a badge here rather than a stored status.
+  const assetIds = (assets || []).map((a: any) => a.id)
+  const { data: openRepairJobs } = assetIds.length
+    ? await supabaseAdmin
+        .from('repair_jobs')
+        .select('asset_id, job_number')
+        .in('asset_id', assetIds)
+        .in('status', ['intake', 'in_progress'])
+    : { data: [] as any[] }
+  const repairJobByAssetId = new Map((openRepairJobs || []).map((r: any) => [r.asset_id, r.job_number]))
+
   // Sold units get their sale info merged in (customer, invoice status) -- this is
   // what makes the Sold Stock view usable as a warranty lookup, and lets the owner see
   // which sales still need an invoice, without a second page/request.
@@ -125,10 +142,28 @@ export async function GET(req: NextRequest) {
   const { data: salesRows } = soldIds.length
     ? await supabaseAdmin
         .from('sales')
-        .select('asset_ledger_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by')
+        .select('asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by')
         .in('asset_ledger_id', soldIds)
     : { data: [] as any[] }
-  const saleByAssetId = new Map((salesRows || []).map((s: any) => [s.asset_ledger_id, s]))
+
+  // customer_name is a snapshot frozen at sale creation -- for sales not yet finalized
+  // into a GST invoice, prefer the customer's current name so a correction made on the
+  // Customers tab (e.g. an employee left the company name incomplete) shows up here
+  // immediately. Finalized sales keep their frozen snapshot (legal GST record).
+  const unfinalizedCustomerIds = [...new Set(
+    (salesRows || []).filter((s: any) => !s.finalized && s.customer_id).map((s: any) => s.customer_id)
+  )]
+  const { data: liveCustomers } = unfinalizedCustomerIds.length
+    ? await supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
+    : { data: [] as any[] }
+  const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
+
+  const saleByAssetId = new Map((salesRows || []).map((s: any) => [
+    s.asset_ledger_id,
+    !s.finalized && s.customer_id && liveCustomerNameById.has(s.customer_id)
+      ? { ...s, customer_name: liveCustomerNameById.get(s.customer_id) }
+      : s,
+  ]))
 
   // Flatten the nested joins into a simpler structure
   const result = (assets || []).map((asset: any) => {
@@ -151,6 +186,9 @@ export async function GET(req: NextRequest) {
       sku_id: asset.sku_id,
       sku_code: sku?.full_sku_code || '',
       description: sku?.sku_description || '',
+      category: sku?.category || null,
+      specifications: sku?.specifications || null,
+      under_repair_job_number: repairJobByAssetId.get(asset.id) || null,
       quantity: item?.quantity ?? 1,
       unit_price: item?.unit_price ?? asset.cost_price,
       gst_percentage: item?.gst_percentage ?? asset.gst_percentage,
@@ -177,16 +215,37 @@ export async function PUT(req: NextRequest) {
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { id, asset_number, serial_number } = body
+  const { id, asset_number, serial_number, confirm_duplicate } = body
 
   if (!id) {
     return NextResponse.json({ error: 'Asset id is required' }, { status: 400 })
   }
 
+  // Serial number has no DB-level uniqueness constraint -- warn-then-confirm before
+  // letting a correction silently collide with another existing unit's serial.
+  if (serial_number) {
+    const dup = await findDuplicateSerial(serial_number, id)
+    if (dup) {
+      if (dup.status === 'sold' && !isOwner(sessionUser)) {
+        return NextResponse.json({
+          error: `Serial "${serial_number}" already exists as a SOLD unit (${dup.asset_number || dup.id}). Please check with the owner before making this change.`,
+          error_code: 'duplicate_serial_sold',
+        }, { status: 409 })
+      }
+      if (!confirm_duplicate) {
+        return NextResponse.json({
+          error: duplicateSerialMessage(serial_number, dup),
+          error_code: 'duplicate_serial',
+          existing: dup,
+        }, { status: 409 })
+      }
+    }
+  }
+
   // Check current asset status
   const { data: asset, error: fetchErr } = await supabaseAdmin
     .from('asset_ledger')
-    .select('status')
+    .select('status, asset_number, serial_number')
     .eq('id', id)
     .single()
 
@@ -219,6 +278,11 @@ export async function PUT(req: NextRequest) {
   if (updateErr) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
+
+  await logFieldCorrections('asset_ledger', id, [
+    { field: 'asset_number', oldValue: asset.asset_number, newValue: updates.asset_number ?? asset.asset_number },
+    { field: 'serial_number', oldValue: asset.serial_number, newValue: updates.serial_number ?? asset.serial_number },
+  ], sessionUser.id)
 
   return NextResponse.json({ success: true })
 }

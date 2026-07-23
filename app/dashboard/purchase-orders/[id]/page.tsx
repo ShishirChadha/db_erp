@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface POItem {
   id: string
@@ -23,6 +25,9 @@ interface POItem {
   line_total: number
   asset_numbers_reserved: string[]
   serial_numbers: string[]
+  sku_category: string | null
+  is_serialized: boolean
+  received_quantity: number
 }
 
 interface PurchaseOrder {
@@ -50,7 +55,8 @@ function PODetailPage() {
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [loading, setLoading] = useState(true)
   const [showReceiveModal, setShowReceiveModal] = useState(false)
-  const [receipts, setReceipts] = useState<Record<string, string>>({})
+  const [receipts, setReceipts] = useState<Record<string, string>>({}) // serialized: asset_number -> serial
+  const [fungibleReceipts, setFungibleReceipts] = useState<Record<string, number | ''>>({}) // fungible: po_item_id -> qty received now
 
   const fetchPO = async () => {
     setLoading(true)
@@ -68,20 +74,24 @@ function PODetailPage() {
     fetchPO()
   }, [poId])
 
-  const handleReceiveSubmit = async () => {
+  const { run: handleReceiveSubmit, pending: receiving } = useAsyncAction(async () => {
     if (!po) return
     const itemsPayload: any[] = []
     for (const item of po.items) {
-      const assetsToReceive = (item.asset_numbers_reserved || []).filter(asset => receipts[asset])
-      if (assetsToReceive.length === 0) continue
-      const assets = assetsToReceive.map(asset => ({
-        asset_number: asset,
-        serial_number: receipts[asset],
-      }))
-      itemsPayload.push({ po_item_id: item.id, assets })
+      if (item.is_serialized) {
+        const assetsToReceive = (item.asset_numbers_reserved || []).filter(asset => receipts[asset])
+        if (assetsToReceive.length === 0) continue
+        const assets = assetsToReceive.map(asset => ({ asset_number: asset, serial_number: receipts[asset] }))
+        itemsPayload.push({ po_item_id: item.id, assets })
+      } else {
+        // Fungible line: a single quantity received now (no serials).
+        const qty = fungibleReceipts[item.id]
+        if (!qty || qty <= 0) continue
+        itemsPayload.push({ po_item_id: item.id, quantity: qty })
+      }
     }
     if (itemsPayload.length === 0) {
-      alert('No serial numbers entered.')
+      alert('Nothing entered to receive.')
       return
     }
     const res = await apiFetch(`/api/purchase-orders/${poId}/receive`, {
@@ -92,12 +102,76 @@ function PODetailPage() {
       alert('Goods received successfully!')
       setShowReceiveModal(false)
       setReceipts({})
+      setFungibleReceipts({})
+      fetchPO()
+      return
+    }
+    const err = await res.json().catch(() => ({}))
+    // One or more serials already exist elsewhere in the system -- surface exactly
+    // which ones and let the owner confirm this is legitimate before proceeding.
+    if (err.error_code === 'duplicate_serial') {
+      const lines = (err.duplicates || []).map((d: any) =>
+        `${d.serial_number} -- already ${d.existing.asset_number || 'untagged'} (status: ${d.existing.status}, source: ${d.existing.source})`
+      ).join('\n')
+      if (confirm(`${err.error}\n\n${lines}\n\nProceed anyway?`)) {
+        const res2 = await apiFetch(`/api/purchase-orders/${poId}/receive`, {
+          method: 'POST',
+          body: JSON.stringify({ items: itemsPayload, confirm_duplicate: true }),
+        })
+        if (res2.ok) {
+          alert('Goods received successfully!')
+          setShowReceiveModal(false)
+          setReceipts({})
+          setFungibleReceipts({})
+          fetchPO()
+          return
+        }
+        const err2 = await res2.json().catch(() => ({}))
+        alert(err2.error || 'Failed to receive goods.')
+        return
+      }
+      return
+    }
+    alert(err.error || 'Failed to receive goods.')
+  })
+
+  const { run: handleSubmitPO, pending: submittingPO } = useAsyncAction(async () => {
+    const res = await apiFetch(`/api/purchase-orders/${poId}/submit`, { method: 'POST' })
+    if (res.ok) {
+      alert('PO submitted successfully.')
       fetchPO()
     } else {
       const err = await res.json().catch(() => ({}))
-      alert(err.error || 'Failed to receive goods.')
+      alert(err.error || 'Submission failed')
     }
-  }
+  })
+
+  const { run: handleCancelPO, pending: cancellingPO } = useAsyncAction(async () => {
+    if (!confirm('Are you sure you want to cancel this Purchase Order?')) return
+    const res = await apiFetch(`/api/purchase-orders/${poId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ po_status: 'cancelled' })
+    })
+    if (res.ok) {
+      alert('Purchase Order cancelled.')
+      fetchPO()
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || 'Failed to cancel PO')
+    }
+  })
+
+  const { run: handleDeletePO, pending: deletingPO } = useAsyncAction(async () => {
+    if (!confirm('PERMANENTLY DELETE this Purchase Order? All items and assets will be removed. This cannot be undone.')) return
+    const res = await apiFetch(`/api/purchase-orders/${poId}/hard-delete`, { method: 'DELETE' })
+    if (res.ok) {
+      alert('Purchase Order permanently deleted.')
+      router.push('/dashboard/purchase-orders')
+    } else {
+      const err = await res.json().catch(() => ({}))
+      alert(err.error || 'Failed to delete PO')
+    }
+  })
 
   if (loading) return <div className="p-4">Loading PO...</div>
   if (!po) return <div className="p-4 text-red-600">Purchase Order not found.</div>
@@ -140,7 +214,7 @@ function PODetailPage() {
             <th className="border p-2">GST</th>
             <th className="border p-2">Line Total</th>
             <th className="border p-2">Assets Reserved</th>
-            <th className="border p-2">Serials Received</th>
+            <th className="border p-2">Received</th>
           </tr>
         </thead>
         <tbody>
@@ -167,8 +241,12 @@ function PODetailPage() {
                 <td className="border p-2">₹{(item.unit_price ?? 0).toFixed(2)}</td>
                 <td className="border p-2">{item.gst_percentage}%</td>
                 <td className="border p-2">₹{(item.line_total ?? 0).toFixed(2)}</td>
-                <td className="border p-2 text-sm">{(item.asset_numbers_reserved || []).join(', ') || '-'}</td>
-                <td className="border p-2 text-sm">{(item.serial_numbers || []).join(', ') || '-'}</td>
+                <td className="border p-2 text-sm">{item.is_serialized ? ((item.asset_numbers_reserved || []).join(', ') || '-') : <span className="text-gray-400">quantity item</span>}</td>
+                <td className="border p-2 text-sm">
+                  {item.is_serialized
+                    ? ((item.serial_numbers || []).join(', ') || '-')
+                    : `${item.received_quantity} of ${item.quantity}`}
+                </td>
               </tr>
             )
           })}
@@ -190,37 +268,17 @@ function PODetailPage() {
 
       {po.po_status === 'draft' && (
         <div className="mt-4">
-          <button onClick={async () => {
-            const res = await apiFetch(`/api/purchase-orders/${poId}/submit`, { method: 'POST' })
-            if (res.ok) {
-              alert('PO submitted successfully! Assets reserved.')
-              fetchPO()
-            } else {
-              const err = await res.json().catch(() => ({}))
-              alert(err.error || 'Submission failed')
-            }
-          }} className="bg-green-600 text-white px-4 py-2 rounded">
-            Submit PO (Reserve Assets)
+          <button onClick={() => handleSubmitPO()} disabled={submittingPO} className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            {submittingPO && <Loader2 className="size-4 animate-spin" />}
+            Submit PO
           </button>
         </div>
       )}
 
       {['draft', 'submitted'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={async () => {
-            if (!confirm('Are you sure you want to cancel this Purchase Order?')) return
-            const res = await apiFetch(`/api/purchase-orders/${poId}`, {
-              method: 'PUT',
-              body: JSON.stringify({ po_status: 'cancelled' })
-            })
-            if (res.ok) {
-              alert('Purchase Order cancelled.')
-              fetchPO()
-            } else {
-              const err = await res.json().catch(() => ({}))
-              alert(err.error || 'Failed to cancel PO')
-            }
-          }} className="bg-red-600 text-white px-4 py-2 rounded">
+          <button onClick={() => handleCancelPO()} disabled={cancellingPO} className="bg-red-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            {cancellingPO && <Loader2 className="size-4 animate-spin" />}
             Cancel PO
           </button>
         </div>
@@ -228,17 +286,8 @@ function PODetailPage() {
 
       {['draft', 'cancelled'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={async () => {
-            if (!confirm('PERMANENTLY DELETE this Purchase Order? All items and assets will be removed. This cannot be undone.')) return
-            const res = await apiFetch(`/api/purchase-orders/${poId}/hard-delete`, { method: 'DELETE' })
-            if (res.ok) {
-              alert('Purchase Order permanently deleted.')
-              router.push('/dashboard/purchase-orders')
-            } else {
-              const err = await res.json().catch(() => ({}))
-              alert(err.error || 'Failed to delete PO')
-            }
-          }} className="bg-red-700 text-white px-4 py-2 rounded">
+          <button onClick={() => handleDeletePO()} disabled={deletingPO} className="bg-red-700 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            {deletingPO && <Loader2 className="size-4 animate-spin" />}
             Delete PO
           </button>
         </div>
@@ -258,32 +307,56 @@ function PODetailPage() {
           <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
             <h2 className="text-xl font-bold mb-4">Receive Goods</h2>
             <p className="mb-4 text-sm text-gray-600">
-              Enter serial numbers for the assets you are receiving.
+              Enter serial numbers for serialized units, or a received quantity for accessory lines.
             </p>
-            {po.items.map(item => (
-              <div key={item.id} className="mb-4">
-                <p className="font-medium">
-                  {item.base_sku_code}-{String(item.variant_number).padStart(3, '0')} (Qty: {item.quantity})
-                </p>
-                {(item.asset_numbers_reserved || []).map(asset => (
-                  <div key={asset} className="flex items-center gap-2 mt-1">
-                    <label className="w-24 text-sm">{asset}</label>
-                    <input
-                      type="text"
-                      value={receipts[asset] || ''}
-                      onChange={(e) => setReceipts(prev => ({ ...prev, [asset]: e.target.value }))}
-                      className="border p-1 flex-1 rounded"
-                      placeholder="Serial #"
-                    />
-                  </div>
-                ))}
-              </div>
-            ))}
+            {po.items.map(item => {
+              const remaining = item.quantity - item.received_quantity
+              return (
+                <div key={item.id} className="mb-4">
+                  <p className="font-medium">
+                    {item.sku_code || `${item.base_sku_code}-${String(item.variant_number).padStart(3, '0')}`} (Qty: {item.quantity})
+                    {!item.is_serialized && item.received_quantity > 0 && (
+                      <span className="text-xs text-gray-500"> — {item.received_quantity} already received</span>
+                    )}
+                  </p>
+                  {item.is_serialized ? (
+                    (item.asset_numbers_reserved || []).map(asset => (
+                      <div key={asset} className="flex items-center gap-2 mt-1">
+                        <label className="w-24 text-sm">{asset}</label>
+                        <input
+                          type="text"
+                          value={receipts[asset] || ''}
+                          onChange={(e) => setReceipts(prev => ({ ...prev, [asset]: e.target.value }))}
+                          className="border p-1 flex-1 rounded"
+                          placeholder="Serial #"
+                        />
+                      </div>
+                    ))
+                  ) : remaining > 0 ? (
+                    <div className="flex items-center gap-2 mt-1">
+                      <label className="text-sm">Quantity received now:</label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={remaining}
+                        value={fungibleReceipts[item.id] ?? ''}
+                        onChange={(e) => setFungibleReceipts(prev => ({ ...prev, [item.id]: e.target.value === '' ? '' : Number(e.target.value) }))}
+                        className="border p-1 w-24 rounded"
+                        placeholder={`max ${remaining}`}
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-green-700 mt-1">Fully received.</p>
+                  )}
+                </div>
+              )
+            })}
             <div className="flex justify-end gap-2 mt-4">
               <button onClick={() => setShowReceiveModal(false)} className="px-4 py-2 border rounded">
                 Cancel
               </button>
-              <button onClick={handleReceiveSubmit} className="px-4 py-2 bg-blue-600 text-white rounded">
+              <button onClick={() => handleReceiveSubmit()} disabled={receiving} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+                {receiving && <Loader2 className="size-4 animate-spin" />}
                 Confirm Receipt
               </button>
             </div>

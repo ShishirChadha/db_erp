@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Search, Eye, Loader2, Star } from 'lucide-react'
+import { Plus, Search, Eye, Star } from 'lucide-react'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 type Customer = {
   id: string
@@ -61,17 +62,15 @@ export default function CustomersClient({ initialData }: { initialData: Customer
   const [showForm, setShowForm] = useState(false)
   const [viewItem, setViewItem] = useState<Customer | null>(null)
   const [form, setForm] = useState(emptyForm)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async () => {
     setError('')
     if (!form.customer_name) {
       setError('Customer Name is required.')
       return
     }
-    setLoading(true)
 
     const { data, error: err } = await supabase
       .from('customers')
@@ -85,15 +84,13 @@ export default function CustomersClient({ initialData }: { initialData: Customer
 
     if (err) {
       setError(err.message)
-      setLoading(false)
       return
     }
 
     setCustomers([data, ...customers])
     setForm(emptyForm)
     setShowForm(false)
-    setLoading(false)
-  }
+  })
 
   const filtered = customers.filter(c =>
     c.customer_name?.toLowerCase().includes(search.toLowerCase()) ||
@@ -351,17 +348,14 @@ export default function CustomersClient({ initialData }: { initialData: Customer
           <div className="flex gap-3 mt-4">
             <Button
               className="flex-1 bg-blue-600 hover:bg-blue-700"
-              onClick={handleSubmit}
-              disabled={loading}
+              onClick={() => handleSubmit()}
+              loading={loading}
             >
-              {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
-              ) : (
-                'Save Customer'
-              )}
+              Save Customer
             </Button>
             <Button
               variant="outline"
+              disabled={loading}
               onClick={() => { setShowForm(false); setError('') }}
             >
               Cancel

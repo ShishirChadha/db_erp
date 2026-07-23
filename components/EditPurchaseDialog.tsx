@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ModelSelect } from "@/components/ModelSelect";
 import { createClient } from "@/lib/supabase/client";
+import { apiFetch } from "@/lib/api-client";
 import FileUpload from "@/components/FileUpload";
+import { useCustomOptions } from "@/lib/useCustomOptions";
+import { SearchableSelect } from "@/components/SearchableSelect";
+import { getCustomOptionsCategory } from "@/lib/sku-field-options";
+import { TYPE_TO_CATEGORY } from "@/lib/sku-category-map";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import {
 Dialog,
 DialogContent,
@@ -32,66 +37,9 @@ import { Calendar } from "@/components/ui/calendar";
 import { CalendarIcon, Plus } from "lucide-react";
 import { format } from "date-fns";
 
-// ---------- Helper: get asset prefix based on purchased_by ----------
-function getAssetPrefix(purchasedBy: string, purchasedByOther?: string): string {
-switch (purchasedBy) {
-case "Digitalbluez": return "DBAS";
-case "Techtenth": return "TTAS";
-case "Cash": return "CSAS";
-case "Other": return purchasedByOther ? purchasedByOther.toUpperCase().substring(0, 4) : "OTHR";
-default: return "DBAS";
-}
-}
-
-// ---------- Helper: generate next asset number (non‑consuming) ----------
-async function getNextAssetNumber(prefix: string): Promise<string> {
-const supabase = createClient();
-
-// Special handling for TechTenth (with year and hyphen)
-if (prefix === "TTAS") {
-const currentYear = new Date().getFullYear() % 100; // 26 for 2026
-// Fetch all TTAS numbers (any year) to find the maximum numeric suffix
-const { data, error } = await supabase
-.from("purchases")
-.select("asset_number")
-.ilike("asset_number", "TTAS%")
-.limit(1000); // adjust limit if needed
-if (error) throw error;
-let maxSeq = 0;
-if (data && data.length > 0) {
-for (const item of data) {
-const match = item.asset_number.match(/-(\d+)$/);
-if (match) {
-const seq = parseInt(match[1], 10);
-if (seq > maxSeq) maxSeq = seq;
-}
-}
-}
-const nextSeq = maxSeq + 1;
-return `TTAS${currentYear}-${nextSeq}`;
-}
-
-// For other prefixes (DBAS, CSAS, OTHR) – simple increment without year
-const { data, error } = await supabase
-.from("purchases")
-.select("asset_number")
-.ilike("asset_number", `${prefix}%`)
-.order("asset_number", { ascending: false })
-.limit(1);
-if (error) throw error;
-let maxNum = 0;
-if (data && data.length > 0) {
-const match = data[0].asset_number.match(/\d+$/);
-if (match) maxNum = parseInt(match[0], 10);
-}
-const nextNum = maxNum + 1;
-return `${prefix}${nextNum}`;
-}
-
 // ---------- Inline Add Vendor Component ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
 const [open, setOpen] = useState(false);
-const [loading, setLoading] = useState(false);
 const [formData, setFormData] = useState({
 company_name: "",
 spoc_name: "",
@@ -114,13 +62,12 @@ const handleChange = (field: string, value: any) => {
 setFormData((prev) => ({ ...prev, [field]: value }));
 };
 
-const handleSubmit = async (e: React.FormEvent) => {
+const { run: handleSubmit, pending: vendorSubmitting } = useAsyncAction(async (e: React.FormEvent) => {
 e.preventDefault();
 if (!formData.company_name) {
 alert("Company name is required");
 return;
 }
-setLoading(true);
 const payload = {
 company_name: formData.company_name,
 spoc_name: formData.spoc_name,
@@ -137,7 +84,6 @@ gst_number: formData.gst_number,
 gst_company_name: formData.gst_company_name,
 };
 const { data, error } = await supabase.from("vendors").insert([payload]).select().single();
-setLoading(false);
 if (error) {
 alert("Failed to add vendor: " + error.message);
 } else {
@@ -157,10 +103,10 @@ pincode: "",
 has_gst: false,
 gst_number: "",
 gst_company_name: "",
-        model_id: null,   // ✅ add this line
+model_id: null,
 });
 }
-};
+});
 
 return (
 <Dialog open={open} onOpenChange={setOpen}>
@@ -196,8 +142,8 @@ return (
 </>
 )}
 <div className="flex justify-end space-x-2">
-<Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-<Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save Vendor"}</Button>
+<Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={vendorSubmitting}>Cancel</Button>
+<Button type="submit" loading={vendorSubmitting}>Save Vendor</Button>
 </div>
 </form>
 </DialogContent>
@@ -217,7 +163,6 @@ type: string;
 brand: string;
 brand_other?: string;
 model: string;
-  model_id: string | null;   // ✅ add this line
 make_year: number | null;
 cpu: string;
 generation: number | null;
@@ -267,31 +212,14 @@ onUpdate: () => void;
 }) {
 const [formData, setFormData] = useState<Partial<Purchase>>({});
 const isUpdating = useRef(false);
-const [loading, setLoading] = useState(false);
 const [vendors, setVendors] = useState<{ id: string; company_name: string }[]>([]);
 const [loadingVendors, setLoadingVendors] = useState(false);
 const [datePickerOpen, setDatePickerOpen] = useState(false);
 const supabase = createClient();
 
-const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string) => {
-if (!invoiceNumber) return;
-const { data, error } = await supabase
-.from("purchases")
-.select("total_price")
-.eq("vendor_id", vendorId)
-.eq("purchased_invoice_number", invoiceNumber)
-.eq("is_deleted", false);
-if (error) return;
-const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
-await supabase
-.from("purchases")
-.update({ vendor_invoice_total: totalSum })
-.eq("vendor_id", vendorId)
-.eq("purchased_invoice_number", invoiceNumber)
-.eq("is_deleted", false);
-};
-
-const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
+const { values: brandOptions } = useCustomOptions('brand');
+const modelCategory = getCustomOptionsCategory(TYPE_TO_CATEGORY[formData.type || ''] || 'OTHER', 'model');
+const { values: modelOptions } = useCustomOptions(modelCategory || 'model_laptop');
 
 const fetchVendors = async () => {
 setLoadingVendors(true);
@@ -313,25 +241,7 @@ setFormData({
 ...purchase,
 asset_number: purchase.asset_number ? String(purchase.asset_number) : "",
 });
-if (!purchase.asset_number && purchase.status === "draft") {
-const prefix = getAssetPrefix(purchase.purchased_by_type, purchase.purchased_by_other);
-getNextAssetNumber(prefix).then(num => {
-setFormData(prev => ({ ...prev, asset_number: num }));
-});
-}
 }, [purchase]);
-// When purchased_by_type changes for a draft, update the suggested asset number
-useEffect(() => {
-if (open && purchase.status === "draft") {
-const prefix = getAssetPrefix(
-formData.purchased_by_type || purchase.purchased_by_type,
-formData.purchased_by_other || purchase.purchased_by_other
-);
-getNextAssetNumber(prefix).then(num => {
-setFormData(prev => ({ ...prev, asset_number: num }));
-});
-}
-}, [formData.purchased_by_type, formData.purchased_by_other, open, purchase.status]);
 
 // Bi‑directional price calculation
 useEffect(() => {
@@ -382,64 +292,26 @@ setFormData((prev) => ({ ...prev, vendor_id: vendorId, vendor_name: vendorName }
 fetchVendors();
 };
 
-const savePurchase = async (targetStatus: 'draft' | 'submitted') => {
-setLoading(true);
+const { run: savePurchase, pending: loading } = useAsyncAction(async (targetStatus: 'draft' | 'submitted') => {
 try {
 if (!formData.purchase_date) throw new Error("Purchase date is required.");
 if (!formData.vendor_id) throw new Error("Please select a vendor.");
 if (!formData.type) throw new Error("Type is required.");
-let finalAssetNumber = null;
-if (targetStatus === 'draft') {
-finalAssetNumber = null;
-} else if (targetStatus === 'submitted') {
-// Get the new value from the form (user may have edited it)
-const newAssetNumber = formData.asset_number?.toString().trim() || "";
-const originalAssetNumber = purchase.asset_number?.toString().trim() || "";
 
-if (newAssetNumber && newAssetNumber !== originalAssetNumber) {
-// User changed the asset number – validate uniqueness
-const { data: existing } = await supabase
-.from("purchases")
-.select("id")
-.eq("asset_number", newAssetNumber)
-.neq("id", purchase.id)
-.maybeSingle();
-if (existing) throw new Error(`Asset number "${newAssetNumber}" already exists. Please choose another.`);
-finalAssetNumber = newAssetNumber;
-} else if (newAssetNumber) {
-// Keep the original (unchanged)
-finalAssetNumber = originalAssetNumber;
-} else {
-// If empty, generate a new one
-const prefix = getAssetPrefix(formData.purchased_by_type || purchase.purchased_by_type, formData.purchased_by_other || purchase.purchased_by_other);
-finalAssetNumber = await getNextAssetNumber(prefix);
+const res = await apiFetch(`/api/purchases/${purchase.id}`, {
+method: "PATCH",
+body: JSON.stringify({ ...formData, status: targetStatus }),
+});
+if (!res.ok) {
+const err = await res.json().catch(() => ({}));
+throw new Error(err.error || "Failed to save purchase.");
 }
-}
-
-const { id, ...updateData } = formData;
-const payload = {
-...updateData,
-asset_number: finalAssetNumber,
-status: targetStatus,
-submitted_at: targetStatus === 'submitted' ? new Date().toISOString() : purchase.submitted_at,
-};
-const { error } = await supabase
-.from("purchases")
-.update(payload)
-.eq("id", purchase.id);
-if (error) throw error;
-await updateVendorInvoiceTotal(
-formData.vendor_id || purchase.vendor_id || "",
-formData.purchased_invoice_number || purchase.purchased_invoice_number || ""
-);
 onOpenChange(false);
 onUpdate();
 } catch (err: any) {
 alert(err.message);
-} finally {
-setLoading(false);
 }
-};
+});
 
 const isGST = formData.purchase_type === "GST";
 const isDesktop = formData.type === "Desktop";
@@ -530,27 +402,15 @@ placeholder="e.g., DBAS582"
 </div>
 <div>
 <Label>Brand</Label>
-<Select value={formData.brand || ""} onValueChange={(val) => handleChange("brand", val)}>
-<SelectTrigger><SelectValue /></SelectTrigger>
-<SelectContent>
-{BRAND_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}
-</SelectContent>
-</Select>
+<SearchableSelect options={brandOptions} value={formData.brand || ""} onChange={(v) => handleChange("brand", v)} placeholder="Select brand..." />
 </div>
-{formData.brand === "Other" && (
-<div>
-<Label>Other Brand</Label>
-<Input value={formData.brand_other || ""} onChange={(e) => handleChange("brand_other", e.target.value)} />
-</div>
-)}
 <div>
 <Label>Model</Label>
-<ModelSelect
-    value={formData.model_id ?? null}
-    onChange={(id, name) => {
-        setFormData(prev => ({ ...prev, model_id: id, model: name }));
-    }}
-/>
+{modelCategory ? (
+<SearchableSelect options={modelOptions} value={formData.model || ""} onChange={(v) => handleChange("model", v)} placeholder="Select model..." />
+) : (
+<Input value={formData.model || ""} onChange={(e) => handleChange("model", e.target.value)} />
+)}
 </div>
 <div>
 <Label>Make Year</Label>
@@ -638,12 +498,12 @@ className="bg-gray-100"
 
 {/* Action Buttons */}
 <div className="flex justify-end space-x-2">
-<Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-<Button type="button" variant="secondary" disabled={loading} onClick={() => savePurchase('draft')}>
-{loading ? "Saving..." : "Save Draft"}
+<Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>Cancel</Button>
+<Button type="button" variant="secondary" loading={loading} onClick={() => savePurchase('draft')}>
+Save Draft
 </Button>
-<Button type="button" variant="default" disabled={loading} onClick={() => savePurchase('submitted')}>
-{loading ? "Submitting..." : "Submit"}
+<Button type="button" variant="default" loading={loading} onClick={() => savePurchase('submitted')}>
+Submit
 </Button>
 </div>
 </div>

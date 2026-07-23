@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { SkuFormModal } from '@/components/SkuFormModal'
@@ -70,13 +71,29 @@ export function FixSkuDialog({
         : `Reassign this unit to ${sku.full_sku_code}?`
       if (!confirm(confirmMsg)) { setSubmitting(false); return }
 
-      const res = await apiFetch(`/api/asset-ledger/${assetId}/reassign-sku`, {
+      let res = await apiFetch(`/api/asset-ledger/${assetId}/reassign-sku`, {
         method: 'PATCH',
         body: JSON.stringify({ new_sku_id: sku.id }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Reassignment failed')
+        // Already invoiced -- let the seller confirm they understand the invoice
+        // won't reflect this change, rather than silently blocking or allowing it.
+        if (err.error_code === 'already_invoiced' && confirm(`${err.error}\n\nProceed anyway?`)) {
+          res = await apiFetch(`/api/asset-ledger/${assetId}/reassign-sku`, {
+            method: 'PATCH',
+            body: JSON.stringify({ new_sku_id: sku.id, confirm_despite_invoice: true }),
+          })
+          if (!res.ok) {
+            const err2 = await res.json().catch(() => ({}))
+            throw new Error(err2.error || 'Reassignment failed')
+          }
+        } else if (err.error_code === 'already_invoiced') {
+          setSubmitting(false)
+          return
+        } else {
+          throw new Error(err.error || 'Reassignment failed')
+        }
       }
 
       if (isOwner && upgradeCost.trim()) {
@@ -134,10 +151,13 @@ export function FixSkuDialog({
                   type="button"
                   disabled={submitting}
                   onClick={() => reassignTo(sku)}
-                  className="w-full text-left p-2 hover:bg-gray-50 disabled:opacity-50"
+                  className="w-full text-left p-2 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
                 >
-                  <div className="font-medium">{sku.full_sku_code}</div>
-                  <div className="text-xs text-gray-500">{sku.sku_description}</div>
+                  {submitting && <Loader2 className="size-4 animate-spin shrink-0" />}
+                  <div>
+                    <div className="font-medium">{sku.full_sku_code}</div>
+                    <div className="text-xs text-gray-500">{sku.sku_description}</div>
+                  </div>
                 </button>
               </li>
             ))}

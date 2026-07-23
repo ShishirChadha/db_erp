@@ -1,8 +1,9 @@
 import { createClient } from '@/lib/supabase/server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ShoppingCart, TrendingUp, Users, Receipt, Package, IndianRupee } from 'lucide-react'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
-export default async function DashboardPage() {
+async function DashboardPageContent() {
   const supabase = await createClient()
 
   // Fetch counts for summary cards
@@ -89,5 +90,13 @@ export default async function DashboardPage() {
         ))}
       </div>
     </div>
+  )
+}
+
+export default async function DashboardPage() {
+  return (
+    <RequirePageAccess pageKey="dashboard">
+      <DashboardPageContent />
+    </RequirePageAccess>
   )
 }

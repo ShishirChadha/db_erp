@@ -21,9 +21,10 @@ export async function GET(
     .select(`
       id, asset_number, serial_number, status,
       qc_grade, qc_status, qc_notes, qc_by, qc_at,
+      warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
       po_id, po_item_id, sku_id,
       purchase_order_items (
-        sku_master ( full_sku_code, sku_description, category, brand, model_name )
+        sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications )
       )
     `)
     .eq('id', id)
@@ -38,7 +39,7 @@ export async function GET(
   if (!(asset as any).purchase_order_items && asset.sku_id) {
     const { data: sku } = await supabaseAdmin
       .from('sku_master')
-      .select('full_sku_code, sku_description, category, brand, model_name')
+      .select('full_sku_code, sku_description, category, brand, model_name, specifications')
       .eq('id', asset.sku_id)
       .single()
     if (sku) (asset as any).purchase_order_items = { sku_master: sku }

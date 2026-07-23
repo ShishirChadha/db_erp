@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { SkuFormModal } from '@/components/SkuFormModal'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface Vendor {
   id: string
@@ -74,7 +76,6 @@ function NewPurchaseOrderPage() {
   const [hsnCode, setHsnCode] = useState('')
 
   // Submit
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
   // Load vendors
@@ -190,8 +191,7 @@ function NewPurchaseOrderPage() {
     return { totalBeforeGst, totalGst, grandTotal }
   }, [items])
 
-  const handleSubmit = async () => {
-    setSubmitting(true)
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     setError('')
     const payload = {
       vendor_id: vendorId,
@@ -219,8 +219,7 @@ function NewPurchaseOrderPage() {
       const err = await res.json().catch(() => ({}))
       setError(err.error || 'Failed to create PO')
     }
-    setSubmitting(false)
-  }
+  })
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
@@ -505,7 +504,8 @@ function NewPurchaseOrderPage() {
 
           <div className="flex justify-between mt-4">
             <button onClick={() => setStep(2)} className="bg-gray-200 px-4 py-2 rounded">Back</button>
-            <button onClick={handleSubmit} disabled={submitting} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50">
+            <button onClick={() => handleSubmit()} disabled={submitting} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+              {submitting && <Loader2 className="size-4 animate-spin" />}
               {submitting ? 'Creating...' : 'Create Purchase Order'}
             </button>
           </div>

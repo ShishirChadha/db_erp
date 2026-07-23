@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '@/lib/api-client'
 
 interface AppUser {
@@ -13,6 +13,8 @@ interface AppUser {
 }
 
 const PAGE_OPTIONS = [
+  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'pending_tasks', label: 'Pending Tasks' },
   { key: 'new_entry', label: 'New Entry' },
   { key: 'accessories', label: 'Accessories' },
   { key: 'repair_jobs', label: 'Repair Jobs' },
@@ -51,6 +53,7 @@ export default function UserManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const busyRef = useRef(false)
 
   // Create-user form state
   const [email, setEmail] = useState('')
@@ -73,10 +76,16 @@ export default function UserManager() {
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
 
+  // All actions below share a single `busy` lock (matching existing behavior
+  // where any in-flight action disables the others) -- guard re-entrancy with
+  // a ref so a rapid double click can't fire two requests before the state
+  // update renders.
   const createUser = async () => {
+    if (busyRef.current) return
     setError('')
     if (!email.trim()) { setError('Email is required.'); return }
     if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return }
+    busyRef.current = true
     setBusy(true)
     try {
       const res = await apiFetch('/api/users', {
@@ -95,15 +104,22 @@ export default function UserManager() {
     } catch (e: any) {
       setError(e.message)
     } finally {
+      busyRef.current = false
       setBusy(false)
     }
   }
 
   const toggleActive = async (u: AppUser) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
-    await apiFetch(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !u.is_active }) })
-    await fetchUsers()
-    setBusy(false)
+    try {
+      await apiFetch(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !u.is_active }) })
+      await fetchUsers()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   const openEditAccess = (u: AppUser) => {
@@ -112,20 +128,32 @@ export default function UserManager() {
   }
 
   const saveAccess = async (id: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
     setBusy(true)
-    await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ allowed_pages: editPages }) })
-    setEditingId(null)
-    await fetchUsers()
-    setBusy(false)
+    try {
+      await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ allowed_pages: editPages }) })
+      setEditingId(null)
+      await fetchUsers()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   const setNewPassword = async (id: string) => {
+    if (busyRef.current) return
     const pw = newPasswordById[id]
     if (!pw || pw.length < 6) { setError('New password must be at least 6 characters.'); return }
+    busyRef.current = true
     setBusy(true)
-    await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) })
-    setNewPasswordById(prev => ({ ...prev, [id]: '' }))
-    setBusy(false)
+    try {
+      await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) })
+      setNewPasswordById(prev => ({ ...prev, [id]: '' }))
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
   }
 
   return (

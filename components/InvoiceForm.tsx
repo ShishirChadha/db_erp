@@ -114,17 +114,28 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
     return () => subscription.unsubscribe();
   }, [watch, setValue]);
 
+  // Digitalbluez is the only fully-configured GST entity today (state code
+  // '09', UP). TODO(Phase 1 follow-up): add an entity picker to this form so
+  // Techtenth/Cash invoices resolve their own (non-GST) profile instead.
+  const ENTITY_STATE_CODE = "09";
+
   const updateItemGST = (index: number) => {
     const item = watchedItems[index];
     if (!item) return;
     const quantity = item.quantity || 0;
     const rate = item.rate || 0;
     const amount = quantity * rate;
+    // Place-of-supply state code: derived from the customer's GSTIN (first two
+    // digits) for B2B; defaults to the entity's own state (intra-state) for
+    // B2C/individual customers with no GSTIN on file.
+    const placeOfSupplyStateCode = watchedCustomerGst?.trim()
+      ? watchedCustomerGst.trim().slice(0, 2)
+      : ENTITY_STATE_CODE;
     const gstResult = calculateGST(
       amount,
       item.gst_rate || 18,
-      watchedPlaceOfSupply || "",
-      watchedCustomerGst || null
+      placeOfSupplyStateCode,
+      ENTITY_STATE_CODE
     );
     setValue(`items.${index}.gst_type`, gstResult.gstType);
     setValue(`items.${index}.cgst_amount`, gstResult.cgstAmount);
@@ -137,11 +148,14 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
     if (!item) return;
     const quantity = 1;
     const amount = quantity * item.price;
+    const placeOfSupplyStateCode = watchedCustomerGst?.trim()
+      ? watchedCustomerGst.trim().slice(0, 2)
+      : ENTITY_STATE_CODE;
     const gstResult = calculateGST(
       amount,
       item.gst_rate || 18,
-      watchedPlaceOfSupply || "",
-      watchedCustomerGst || null
+      placeOfSupplyStateCode,
+      ENTITY_STATE_CODE
     );
     const newItem: InvoiceItemFormData = {
       item_type: item.type,
@@ -171,8 +185,17 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
 
       <div className="grid grid-cols-2 gap-4">
         <div>
-          <Label htmlFor="invoice_number">Invoice Number *</Label>
-          <Input id="invoice_number" {...register("invoice_number")} placeholder="e.g., DBIN/2026-27/0001" />
+          <Label htmlFor="invoice_number">Invoice Number</Label>
+          {/* Server-assigned via next_document_number() at save time -- never
+              client-editable, per this project's numbering rules. */}
+          <Input
+            id="invoice_number"
+            readOnly
+            disabled
+            className="bg-gray-50 text-gray-500"
+            value={watch("invoice_number") || "Assigned on save"}
+          />
+          <input type="hidden" {...register("invoice_number")} />
           {errors.invoice_number && <p className="text-sm text-red-500">{errors.invoice_number.message}</p>}
         </div>
         <div>
@@ -351,18 +374,18 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
         </Button>
         <Button
           type="button"
-          disabled={isSubmitting}
+          loading={isSubmitting}
           onClick={() => {
             console.log("🔵 Save Draft button clicked, calling handleSubmit");
             handleSubmit(onSubmit)();
           }}
         >
-          {isSubmitting ? "Saving..." : "Save Draft"}
+          Save Draft
         </Button>
         <Button
           type="button"
           variant="default"
-          disabled={isSubmitting}
+          loading={isSubmitting}
           onClick={() => {
             console.log("🔵 Submit for Approval clicked");
             handleSubmit(async (data) => {

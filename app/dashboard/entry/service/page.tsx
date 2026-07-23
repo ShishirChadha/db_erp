@@ -2,10 +2,12 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
@@ -19,6 +21,16 @@ interface StockUnit {
 }
 
 const RETURN_REASONS = ['Defective on arrival', 'Not as described', 'Changed mind', 'Wrong item', 'Other']
+
+// Parts consumed during a repair (battery, screen, keyboard, etc.) are sku_master
+// rows like every other accessory -- consuming one writes a stock_movements 'sale'
+// row via POST /api/repair-jobs's parts array, same mechanism a normal sale uses.
+const PART_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MOUSE', 'ACC', 'ADP']
+
+interface PartOption {
+  id: string
+  label: string
+}
 
 function unitLabel(u: StockUnit) {
   return u.asset_number || (u.serial_number ? `SN: ${u.serial_number}` : 'no tag yet')
@@ -113,7 +125,6 @@ function ServicePageInner() {
   const prefillAssetId = searchParams.get('asset_id')
 
   const [subType, setSubType] = useState<'repair' | 'replacement' | 'return'>(prefillSubtype || 'repair')
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState('')
 
@@ -128,6 +139,26 @@ function ServicePageInner() {
   const [paymentAccount, setPaymentAccount] = useState('Digitalbluez')
   const [replacementUnit, setReplacementUnit] = useState<StockUnit | null>(null)
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
+
+  const [partsUsed, setPartsUsed] = useState<{ sku_id: string; label: string; quantity: number }[]>([])
+  const [partsSearch, setPartsSearch] = useState('')
+  const [partsOptions, setPartsOptions] = useState<PartOption[]>([])
+
+  useEffect(() => {
+    if (!partsSearch.trim()) { setPartsOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${PART_CATEGORIES.join(',')}&search=${encodeURIComponent(partsSearch)}`)
+      const data = await res.json()
+      setPartsOptions(Array.isArray(data) ? data.map((s: any) => ({ id: s.id, label: s.sku_description || s.full_sku_code })) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [partsSearch])
+
+  const addPart = (p: PartOption) => {
+    if (partsUsed.some(x => x.sku_id === p.id)) return
+    setPartsUsed(prev => [...prev, { sku_id: p.id, label: p.label, quantity: 1 }])
+    setPartsSearch(''); setPartsOptions([])
+  }
 
   const [returnUnit, setReturnUnit] = useState<StockUnit | null>(null)
   const [returnReason, setReturnReason] = useState(RETURN_REASONS[0])
@@ -156,16 +187,16 @@ function ServicePageInner() {
     setPaymentAccount('Digitalbluez')
     setReplacementUnit(null); setReturnUnit(null); setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
     setServiceDate(today())
+    setPartsUsed([]); setPartsSearch(''); setPartsOptions([])
   }
 
-  const handleSubmitRepairOrReplacement = async () => {
+  const { run: handleSubmitRepairOrReplacement, pending: submittingRepair } = useAsyncAction(async () => {
     setError('')
     if (!customerId) { setError('Select or add a customer.'); return }
     if (isOwnStock && !ownUnit) { setError('Select the unit from our stock.'); return }
     if (!isOwnStock && !deviceDescription.trim()) { setError('Describe the customer\'s device.'); return }
     if (subType === 'replacement' && !replacementUnit) { setError('Select the replacement unit.'); return }
 
-    setSubmitting(true)
     try {
       const res = await apiFetch('/api/repair-jobs', {
         method: 'POST',
@@ -181,6 +212,7 @@ function ServicePageInner() {
           amount_charged: amountCharged === '' ? null : amountCharged,
           payment_account: paymentAccount,
           job_date: serviceDate,
+          parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
         }),
       })
       if (!res.ok) {
@@ -193,16 +225,13 @@ function ServicePageInner() {
       router.replace('/dashboard/entry/service')
     } catch (err: any) {
       setError(err.message)
-    } finally {
-      setSubmitting(false)
     }
-  }
+  })
 
-  const handleSubmitReturn = async () => {
+  const { run: handleSubmitReturn, pending: submittingReturn } = useAsyncAction(async () => {
     setError('')
     if (!returnUnit) { setError('Select the unit being returned.'); return }
 
-    setSubmitting(true)
     try {
       const res = await apiFetch('/api/rma', {
         method: 'POST',
@@ -223,10 +252,8 @@ function ServicePageInner() {
       router.replace('/dashboard/entry/service')
     } catch (err: any) {
       setError(err.message)
-    } finally {
-      setSubmitting(false)
     }
-  }
+  })
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -317,6 +344,42 @@ function ServicePageInner() {
             <textarea value={problem} onChange={(e) => setProblem(e.target.value)} rows={2} className="border p-2 w-full rounded" />
           </div>
 
+          <div>
+            <label className="block font-medium text-sm mb-1">Parts Used (e.g. battery, screen, keyboard)</label>
+            <input
+              value={partsSearch}
+              onChange={(e) => setPartsSearch(e.target.value)}
+              placeholder="Search to add..."
+              className="border p-2 w-full rounded"
+            />
+            {partsOptions.length > 0 && (
+              <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
+                {partsOptions.map(p => (
+                  <li key={p.id} onClick={() => addPart(p)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
+                    {p.label}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {partsUsed.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {partsUsed.map((p, idx) => (
+                  <span key={p.sku_id} className="bg-gray-100 text-sm px-2 py-1 rounded flex items-center gap-1">
+                    {p.label}
+                    <input
+                      type="number"
+                      min={1}
+                      value={p.quantity}
+                      onChange={(e) => setPartsUsed(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Number(e.target.value) } : x))}
+                      className="w-12 border rounded text-center"
+                    />
+                    <button onClick={() => setPartsUsed(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
           {subType === 'replacement' && (
             <div>
               <label className="block font-medium text-sm mb-1">Replacement Unit (given to customer) *</label>
@@ -345,8 +408,9 @@ function ServicePageInner() {
           </div>
 
           <div className="flex justify-end">
-            <button onClick={handleSubmitRepairOrReplacement} disabled={submitting} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50">
-              {submitting ? 'Saving...' : `Save ${subType === 'repair' ? 'Repair' : 'Replacement'}`}
+            <button onClick={() => handleSubmitRepairOrReplacement()} disabled={submittingRepair} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+              {submittingRepair && <Loader2 className="size-4 animate-spin" />}
+              {submittingRepair ? 'Saving...' : `Save ${subType === 'repair' ? 'Repair' : 'Replacement'}`}
             </button>
           </div>
         </div>
@@ -386,8 +450,9 @@ function ServicePageInner() {
             <textarea value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} rows={2} className="border p-2 w-full rounded" />
           </div>
           <div className="flex justify-end">
-            <button onClick={handleSubmitReturn} disabled={submitting} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50">
-              {submitting ? 'Saving...' : 'Record Return'}
+            <button onClick={() => handleSubmitReturn()} disabled={submittingReturn} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+              {submittingReturn && <Loader2 className="size-4 animate-spin" />}
+              {submittingReturn ? 'Saving...' : 'Record Return'}
             </button>
           </div>
         </div>

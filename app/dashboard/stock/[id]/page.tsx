@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -38,6 +40,10 @@ interface AssetDetail {
   qc_status: string
   qc_notes: string | null
   qc_at: string | null
+  warranty_type: string | null
+  warranty_start_date: string | null
+  warranty_duration_months: number | null
+  warranty_expiry_date: string | null
   purchase_order_items: {
     sku_master: {
       full_sku_code: string
@@ -45,6 +51,7 @@ interface AssetDetail {
       category: string
       brand: string
       model_name: string
+      specifications: Record<string, any> | null
     } | null
   } | null
   checks: { check_item: string; result: string; notes: string | null }[]
@@ -57,6 +64,7 @@ function AssetQCPage() {
   const { isOwner } = useRole()
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
+  const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -138,6 +146,12 @@ function AssetQCPage() {
     fetchAsset()
   }, [fetchAsset])
 
+  useEffect(() => {
+    apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
+      setTemplates(Array.isArray(data) ? data : [])
+    })
+  }, [])
+
   const updateCheck = (idx: number, field: keyof CheckResult, value: string) => {
     setCheckResults((prev) =>
       prev.map((c, i) => (i === idx ? { ...c, [field]: value } : c))
@@ -188,8 +202,13 @@ function AssetQCPage() {
     <div className="p-4 max-w-3xl mx-auto">
       <button onClick={() => router.back()} className="text-sm text-gray-500 mb-2">&larr; Back</button>
       <h1 className="text-2xl font-bold mb-1">{asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}</h1>
-      <p className="text-gray-600 mb-4">
-        {sku?.full_sku_code} — {sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
+      <p className="text-gray-600 mb-1">
+        {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
+      </p>
+      <p className="text-sm text-gray-500 mb-4">
+        {asset.warranty_type || asset.warranty_expiry_date
+          ? `Warranty: ${asset.warranty_type || '—'}${asset.warranty_expiry_date ? ` — expires ${asset.warranty_expiry_date.slice(0, 10)}` : ''}`
+          : 'No warranty on file.'}
       </p>
 
       <div className="flex gap-4 mb-6 text-sm">
@@ -217,8 +236,9 @@ function AssetQCPage() {
           <button
             onClick={markReady}
             disabled={saving}
-            className="bg-green-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50"
+            className="bg-green-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
           >
+            {saving && <Loader2 className="size-4 animate-spin" />}
             Mark Ready for Sale
           </button>
         </div>
@@ -291,8 +311,9 @@ function AssetQCPage() {
           <button
             onClick={submitQC}
             disabled={saving}
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
           >
+            {saving && <Loader2 className="size-4 animate-spin" />}
             {saving ? 'Saving…' : 'Submit QC Result'}
           </button>
         </div>
@@ -340,8 +361,9 @@ function AssetQCPage() {
             <button
               onClick={addAdjustment}
               disabled={savingAdjustment}
-              className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+              className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
             >
+              {savingAdjustment && <Loader2 className="size-4 animate-spin" />}
               {savingAdjustment ? 'Adding…' : 'Add'}
             </button>
           </div>

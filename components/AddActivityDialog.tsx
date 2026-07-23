@@ -9,10 +9,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
+import { useAsyncAction } from '@/lib/useAsyncAction';
 
 export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -31,15 +31,13 @@ export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
   };
   const removeTag = (tag: string) => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async () => {
     if (!form.title) return toast.error('Title is required');
-    setLoading(true);
     const res = await fetch('/api/activities', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(form),
     });
-    setLoading(false);
     if (res.ok) {
       setOpen(false);
       onAdd();
@@ -47,7 +45,7 @@ export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
     } else {
       toast.error('Failed to add activity');
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -79,7 +77,7 @@ export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={loading}>Save</Button>
+          <Button onClick={handleSubmit} loading={loading}>Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

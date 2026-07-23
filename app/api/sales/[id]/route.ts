@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logFieldCorrections } from '@/lib/field-corrections'
 
 // ---------- GET: fetch one sale (owner-only -- the Sales ledger is owner-facing) ----------
 export async function GET(
@@ -37,6 +38,17 @@ export async function PATCH(
   const body = await req.json()
   const updates: Record<string, any> = {}
 
+  // A price edit on an already-invoiced sale silently desyncs the printed/sent
+  // invoice from the live record (the invoice is a frozen snapshot, never
+  // retroactively updated by this route) -- warn and require explicit confirmation.
+  const editingPrice = body.sale_base_price !== undefined || body.gst_percentage !== undefined
+  if (existing.finalized && editingPrice && !body.confirm_despite_invoice) {
+    return NextResponse.json({
+      error: `This sale is already invoiced (${existing.invoice_number || existing.invoice_id}) -- changing the price will NOT update that invoice, which will then disagree with the live record. Confirm to proceed anyway.`,
+      error_code: 'already_invoiced',
+    }, { status: 409 })
+  }
+
   if (body.customer_id !== undefined) {
     updates.customer_id = body.customer_id
     const { data: customer } = await supabaseAdmin.from('customers').select('customer_name').eq('id', body.customer_id).single()
@@ -62,5 +74,13 @@ export async function PATCH(
 
   const { data, error } = await supabaseAdmin.from('sales').update(updates).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logFieldCorrections(
+    'sales',
+    id,
+    Object.keys(updates).map((field) => ({ field, oldValue: existing[field], newValue: updates[field] })),
+    sessionUser.id
+  )
+
   return NextResponse.json(data)
 }

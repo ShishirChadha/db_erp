@@ -24,9 +24,12 @@ import {
   ChevronDown,
   PackagePlus,
   Wrench,
+  Loader2,
+  ListChecks,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 
 // ---------- Menu structure with categories ----------
@@ -37,6 +40,13 @@ const menuGroups = [
     label: 'Dashboard',
     icon: LayoutDashboard,
     href: '/dashboard',
+    pageKey: 'dashboard',
+  },
+  {
+    label: 'Pending Tasks',
+    icon: ListChecks,
+    href: '/dashboard/pending-tasks',
+    pageKey: 'pending_tasks',
   },
   {
     label: 'New Entry',
@@ -49,12 +59,6 @@ const menuGroups = [
     icon: Sparkles,
     href: '/dashboard/accessories',
     pageKey: 'accessories',
-  },
-  {
-    label: 'Repair Jobs',
-    icon: Wrench,
-    href: '/dashboard/repair-jobs',
-    pageKey: 'repair_jobs',
   },
   {
     label: 'Purchases',
@@ -78,44 +82,36 @@ const menuGroups = [
   {
     label: 'Sales',
     icon: TrendingUp,
-    href: '/dashboard/sales',
-    ownerOnly: true,
+    children: [
+      { href: '/dashboard/sales', label: 'Sales', ownerOnly: true },
+      { href: '/dashboard/invoices', label: 'Invoices', pageKey: 'invoices' },
+      { href: '/dashboard/quotations', label: 'Quotations', ownerOnly: true },
+    ],
   },
   {
-    label: 'Invoices',
-    icon: FileText,
-    href: '/dashboard/invoices',
-    pageKey: 'invoices',
-  },
-  {
-    label: 'Expenses',
-    icon: Receipt,
-    href: '/dashboard/expenses',
-    ownerOnly: true,
-  },
-  {
-    label: 'Customers',
+    label: 'Contacts',
     icon: Users,
-    href: '/dashboard/customers',
-    pageKey: 'customers',
+    children: [
+      { href: '/dashboard/customers', label: 'Customers', pageKey: 'customers' },
+      { href: '/dashboard/vendors', label: 'Vendors', ownerOnly: true },
+    ],
   },
   {
-    label: 'Vendors',
-    icon: Building2,
-    href: '/dashboard/vendors',
-    ownerOnly: true,
-  },
-  {
-    label: 'Reports',
-    icon: BarChart3,
-    href: '/dashboard/reports',
-    ownerOnly: true,
-  },
-  {
-    label: 'RMA (Vendor Returns)',
+    label: 'Service',
     icon: Wrench,
-    href: '/dashboard/rma',
+    children: [
+      { href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
+      { href: '/dashboard/rma', label: 'RMA (Vendor Returns)', ownerOnly: true },
+    ],
+  },
+  {
+    label: 'Finance',
+    icon: Receipt,
     ownerOnly: true,
+    children: [
+      { href: '/dashboard/expenses', label: 'Expenses' },
+      { href: '/dashboard/reports', label: 'Reports' },
+    ],
   },
   {
     label: 'Activity Hub',
@@ -135,12 +131,14 @@ const menuGroups = [
 function SidebarContent({
   pathname,
   onLogout,
+  loggingOut,
   onMobileClose,
   isOwner,
   allowedPages,
 }: {
   pathname: string
   onLogout: () => void
+  loggingOut: boolean
   onMobileClose: () => void
   isOwner: boolean
   allowedPages: string[]
@@ -154,7 +152,10 @@ function SidebarContent({
       .map(group => 'children' in group && group.children
         ? { ...group, children: group.children.filter((c: any) => canSee(c)) }
         : group
-      ),
+      )
+      // A group whose children are all filtered out for this role would otherwise
+      // render as a dead-end expandable header with nothing inside it.
+      .filter(group => !('children' in group && group.children) || group.children.length > 0),
     [isOwner, allowedPages]
   )
 
@@ -280,9 +281,10 @@ function SidebarContent({
       <div className="px-3 py-4 border-t border-gray-200">
         <button
           onClick={onLogout}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all w-full"
+          disabled={loggingOut}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all w-full disabled:opacity-50"
         >
-          <LogOut className="h-4 w-4" />
+          {loggingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
           Sign out
         </button>
       </div>
@@ -303,11 +305,11 @@ export default function Sidebar() {
     if (pathname) setClientPathname(pathname)
   }, [pathname])
 
-  const handleLogout = useCallback(async () => {
+  const { run: handleLogout, pending: loggingOut } = useAsyncAction(async () => {
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()
-  }, [supabase, router])
+  })
 
   const closeMobile = useCallback(() => setMobileOpen(false), [])
   const toggleMobile = useCallback(() => setMobileOpen(prev => !prev), [])
@@ -325,12 +327,13 @@ export default function Sidebar() {
       <SidebarContent
         pathname={clientPathname}
         onLogout={handleLogout}
+        loggingOut={loggingOut}
         onMobileClose={closeMobile}
         isOwner={isOwner}
         allowedPages={allowedPages}
       />
     ),
-    [clientPathname, handleLogout, closeMobile, isOwner, allowedPages]
+    [clientPathname, handleLogout, loggingOut, closeMobile, isOwner, allowedPages]
   )
 
   return (
@@ -367,6 +370,7 @@ export default function Sidebar() {
             <SidebarContent
               pathname={clientPathname}
               onLogout={handleLogout}
+              loggingOut={loggingOut}
               onMobileClose={closeMobile}
               isOwner={isOwner}
               allowedPages={allowedPages}

@@ -38,10 +38,24 @@ export async function DELETE(
     .select('id, sku_id, quantity, serial_numbers')
     .eq('po_id', id)
 
-  // 3. Decrement stock for each item that has serials (i.e., was received)
+  // Received quantity per line: serialized lines count their serials; fungible lines
+  // (accessories, no serials) count their summed 'receipt' movements. Both must be
+  // reversed so quantity_in_stock doesn't stay inflated after the PO is gone.
+  const { data: receiptMovements } = await supabaseAdmin
+    .from('stock_movements')
+    .select('po_item_id, quantity_change')
+    .eq('po_id', id)
+    .eq('movement_type', 'receipt')
+  const receivedByItem: Record<string, number> = {}
+  receiptMovements?.forEach(m => {
+    if (!m.po_item_id) return
+    receivedByItem[m.po_item_id] = (receivedByItem[m.po_item_id] || 0) + m.quantity_change
+  })
+
+  // 3. Decrement stock for each item that was received (serialized or fungible)
   if (items && items.length > 0) {
     for (const item of items) {
-      const receivedQty = item.serial_numbers ? item.serial_numbers.length : 0
+      const receivedQty = (item.serial_numbers?.length || 0) || (receivedByItem[item.id] || 0)
       if (receivedQty > 0 && item.sku_id) {
         // sku_master.quantity_in_stock is updated atomically by the trg_sync_sku_stock
         // trigger (BEFORE INSERT on stock_movements), which also computes

@@ -43,16 +43,20 @@ interface ResolveSkuInput {
 export async function resolveOrCreateSku(
   input: ResolveSkuInput
 ): Promise<{ sku: any; created: boolean }> {
+  // Defense in depth: the UI now only ever supplies brand/model as owner-curated
+  // dropdown values, but trim/case-fold here too so a non-UI caller (a script, a
+  // future API consumer) can't reintroduce spelling-variant duplicates.
+  const brand = (input.brand || '').trim()
+  const modelName = (input.model_name || '').trim()
+
   const normalizedSpecs = await normalizeSpecifications(input.category, input.specifications || {})
   const baseSkuCode = await generateBaseSkuCode(input.category, normalizedSpecs)
 
   const { data: existing } = await supabaseAdmin
     .from('sku_master')
-    .select('variant_number, specifications')
+    .select('variant_number, specifications, full_sku_code')
     .eq('base_sku_code', baseSkuCode)
     .order('variant_number', { ascending: true })
-
-  let variantNumber = 1
 
   if (existing && existing.length > 0) {
     const newSpecsNorm = canonicalJson(normalizedSpecs)
@@ -67,33 +71,54 @@ export async function resolveOrCreateSku(
         return { sku: existingSku, created: false }
       }
     }
-    variantNumber = existing[existing.length - 1].variant_number + 1
   }
 
-  const fullSkuCode = `${baseSkuCode}-${String(variantNumber).padStart(3, '0')}`
+  // variant_number and full_sku_code should always move in lockstep
+  // (full_sku_code = base_sku_code + '-' + variant_number padded), but historical
+  // rows can drift out of sync (a manual edit, a migration) -- trusting
+  // "array length + 1" then collides with an existing full_sku_code that a stale
+  // variant_number left unclaimed. Self-heal instead: pick a starting candidate
+  // from the actual data, and on a unique-violation, just try the next number.
+  const usedCodes = new Set((existing || []).map((v) => v.full_sku_code))
+  let variantNumber = existing && existing.length > 0
+    ? existing[existing.length - 1].variant_number + 1
+    : 1
 
-  const { data: newSku, error: insertErr } = await supabaseAdmin
-    .from('sku_master')
-    .insert({
-      base_sku_code: baseSkuCode,
-      variant_number: variantNumber,
-      full_sku_code: fullSkuCode,
-      category: input.category,
-      item_type: input.item_type || input.category,
-      brand: input.brand || '',
-      model_name: input.model_name || '',
-      specifications: normalizedSpecs,
-      sku_description: input.sku_description || `${input.brand} ${input.model_name}`,
-      base_cost: input.base_cost ?? null,
-      selling_price_default: input.selling_price_default ?? null,
-      reorder_level: input.reorder_level ?? 5,
-      quantity_in_stock: 0,
-      hsn_code: input.hsn_code ?? null,
-    })
-    .select()
-    .single()
+  const maxAttempts = (existing?.length || 0) + 25
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    while (usedCodes.has(`${baseSkuCode}-${String(variantNumber).padStart(3, '0')}`)) {
+      variantNumber++
+    }
+    const fullSkuCode = `${baseSkuCode}-${String(variantNumber).padStart(3, '0')}`
 
-  if (insertErr) throw insertErr
+    const { data: newSku, error: insertErr } = await supabaseAdmin
+      .from('sku_master')
+      .insert({
+        base_sku_code: baseSkuCode,
+        variant_number: variantNumber,
+        full_sku_code: fullSkuCode,
+        category: input.category,
+        item_type: input.item_type || input.category,
+        brand,
+        model_name: modelName,
+        specifications: normalizedSpecs,
+        sku_description: input.sku_description || `${brand} ${modelName}`,
+        base_cost: input.base_cost ?? null,
+        selling_price_default: input.selling_price_default ?? null,
+        reorder_level: input.reorder_level ?? 5,
+        quantity_in_stock: 0,
+        hsn_code: input.hsn_code ?? null,
+      })
+      .select()
+      .single()
 
-  return { sku: newSku, created: true }
+    if (!insertErr) return { sku: newSku, created: true }
+
+    // 23505 = unique_violation. Only retry on that; anything else is a real error.
+    if (insertErr.code !== '23505') throw insertErr
+    usedCodes.add(fullSkuCode)
+    variantNumber++
+  }
+
+  throw new Error(`Could not find an available variant number for ${baseSkuCode} after ${maxAttempts} attempts`)
 }

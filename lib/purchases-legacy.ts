@@ -1,16 +1,6 @@
 import { supabaseAdmin } from './supabase/service'
 
-// Maps the legacy quick-entry form's free "type" field to a sku_category_templates
-// category code. "Tiny" (small-form-factor desktop) has no dedicated template, so it
-// shares DES -- matching the precedent already present in migrated data
-// (SKU-DES-LENOVO-TINY).
-export const TYPE_TO_CATEGORY: Record<string, string> = {
-  Laptop: 'LAP',
-  Desktop: 'DES',
-  Monitor: 'MON',
-  Tablet: 'TAB',
-  Tiny: 'DES',
-}
+export { TYPE_TO_CATEGORY } from './sku-category-map'
 
 export function resolveBrand(body: { brand?: string; brand_other?: string }): string {
   return body.brand === 'Other' ? body.brand_other || 'Other' : body.brand || ''
@@ -31,6 +21,7 @@ export function buildSpecifications(category: string, body: any): Record<string,
         ram: body.ram,
         ssd: body.ssd,
         screen_size: body.screen_size,
+        model_year: body.model_year,
       }
     case 'MON':
       return { brand, size: body.screen_size }
@@ -44,7 +35,7 @@ export function buildSpecifications(category: string, body: any): Record<string,
       }
     case 'DES':
     default:
-      return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd }
+      return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd, model_year: body.model_year }
   }
 }
 
@@ -113,7 +104,6 @@ export function buildPurchaseRecord(body: any, opts: {
     brand: opts.brand,
     brand_other: body.brand === 'Other' ? body.brand_other : null,
     model: body.model,
-    model_id: body.model_id || null,
     make_year: body.make_year,
     sku: opts.skuFullCode,
     asset_description: body.asset_description,

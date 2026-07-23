@@ -13,6 +13,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Upload } from "lucide-react";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 export default function BulkAddDialog({
   tableName,
@@ -26,7 +27,6 @@ export default function BulkAddDialog({
   templateLink?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const supabase = createClient();
 
@@ -34,38 +34,39 @@ export default function BulkAddDialog({
     if (e.target.files && e.target.files[0]) setFile(e.target.files[0]);
   };
 
-  const handleUpload = async () => {
+  const { run: handleUpload, pending: loading } = useAsyncAction(async () => {
     if (!file) return;
-    setLoading(true);
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: true,
-      complete: async (results) => {
-        const records = results.data.map(transformRow);
-        if (records.length === 0) {
-          alert("No valid records found.");
-          setLoading(false);
-          return;
-        }
-        const { error } = await supabase.from(tableName).insert(records);
-        setLoading(false);
-        if (error) {
-          console.error(error);
-          alert(`Bulk insert failed: ${error.message}`);
-        } else {
-          setOpen(false);
-          setFile(null);
-          onAdd();
-          alert(`Successfully added ${records.length} records.`);
-        }
-      },
-      error: (err) => {
-        console.error(err);
-        alert("Error parsing CSV.");
-        setLoading(false);
-      },
+    await new Promise<void>((resolve) => {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: async (results) => {
+          const records = results.data.map(transformRow);
+          if (records.length === 0) {
+            alert("No valid records found.");
+            resolve();
+            return;
+          }
+          const { error } = await supabase.from(tableName).insert(records);
+          if (error) {
+            console.error(error);
+            alert(`Bulk insert failed: ${error.message}`);
+          } else {
+            setOpen(false);
+            setFile(null);
+            onAdd();
+            alert(`Successfully added ${records.length} records.`);
+          }
+          resolve();
+        },
+        error: (err) => {
+          console.error(err);
+          alert("Error parsing CSV.");
+          resolve();
+        },
+      });
     });
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -93,8 +94,8 @@ export default function BulkAddDialog({
           </p>
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button onClick={handleUpload} disabled={!file || loading}>
-              {loading ? "Uploading..." : "Upload"}
+            <Button onClick={() => handleUpload()} disabled={!file} loading={loading}>
+              Upload
             </Button>
           </div>
         </div>

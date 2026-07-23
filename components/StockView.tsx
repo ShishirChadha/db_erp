@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
+import { StatCardsRow } from '@/components/StatCardsRow'
+import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 interface AssetRow {
   id: string
@@ -19,6 +22,9 @@ interface AssetRow {
   sku_id?: string
   sku_code: string
   description: string
+  category?: string | null
+  specifications?: Record<string, any> | null
+  under_repair_job_number?: string | null
   unit_price?: number
   gst_percentage?: number
   po_number?: string
@@ -77,10 +83,20 @@ export default function StockView({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showPoForm, setShowPoForm] = useState(false)
   const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
+  const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
+
+  useEffect(() => {
+    apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
+      setTemplates(Array.isArray(data) ? data : [])
+    })
+  }, [])
 
   // Owner-only discrepancy counts, independent of the active tab.
   const [missingPoCount, setMissingPoCount] = useState(0)
   const [missingInvoiceCount, setMissingInvoiceCount] = useState(0)
+  // Summary counts shown as clickable stat cards -- independent of the active tab/filter
+  // so they always reflect the whole picture, not just what's currently displayed.
+  const [statCounts, setStatCounts] = useState({ totalCurrent: 0, readyForSale: 0, qcPending: 0, totalSold: 0 })
 
   const sourceParam = sourceMode === 'employee_intake' ? 'source=employee_intake' : 'exclude_source=employee_intake'
 
@@ -111,15 +127,22 @@ export default function StockView({
   useEffect(() => { fetchAssets() }, [fetchAssets])
 
   const fetchCounts = useCallback(async () => {
-    if (!isOwner) return
     const [currentRes, soldRes] = await Promise.all([
       apiFetch(`/api/stock?${sourceParam}&status=${CURRENT_STATUSES.join(',')}`),
       apiFetch(`/api/stock?${sourceParam}&status=sold`),
     ])
     const currentData = currentRes.ok ? await currentRes.json() : []
     const soldData = soldRes.ok ? await soldRes.json() : []
-    setMissingPoCount(currentData.filter((a: AssetRow) => !a.po_id).length)
-    setMissingInvoiceCount(soldData.filter((a: AssetRow) => !a.invoice_finalized).length)
+    setStatCounts({
+      totalCurrent: currentData.length,
+      readyForSale: currentData.filter((a: AssetRow) => a.status === 'ready_for_sale').length,
+      qcPending: currentData.filter((a: AssetRow) => a.status === 'qc_pending').length,
+      totalSold: soldData.length,
+    })
+    if (isOwner) {
+      setMissingPoCount(currentData.filter((a: AssetRow) => !a.po_id).length)
+      setMissingInvoiceCount(soldData.filter((a: AssetRow) => !a.invoice_finalized).length)
+    }
   }, [isOwner, sourceParam])
 
   useEffect(() => { fetchCounts() }, [fetchCounts])
@@ -159,20 +182,52 @@ export default function StockView({
     })
   }
 
+  const [pendingRowKey, setPendingRowKey] = useState<string | null>(null)
+
   const generateInvoice = async (saleAssetId: string) => {
-    // Look up the sale by asset_ledger_id via the sales queue, then finalize it.
-    const res = await apiFetch(`/api/sales-entry`)
-    const pending = res.ok ? await res.json() : []
-    const sale = pending.find((s: any) => s.asset_number === displayedAssets.find(a => a.id === saleAssetId)?.asset_number)
-    if (!sale) { alert('Could not find the pending sale for this unit.'); return }
-    const finRes = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: 'POST', body: '{}' })
-    if (!finRes.ok) {
-      const err = await finRes.json().catch(() => ({}))
-      alert(err.error || 'Failed to generate invoice.')
-      return
+    if (pendingRowKey) return
+    setPendingRowKey(`${saleAssetId}:invoice`)
+    try {
+      // Look up the sale by asset_ledger_id via the sales queue, then finalize it.
+      const res = await apiFetch(`/api/sales-entry`)
+      const pending = res.ok ? await res.json() : []
+      const sale = pending.find((s: any) => s.asset_number === displayedAssets.find(a => a.id === saleAssetId)?.asset_number)
+      if (!sale) { alert('Could not find the pending sale for this unit.'); return }
+      const finRes = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: 'POST', body: '{}' })
+      if (!finRes.ok) {
+        const err = await finRes.json().catch(() => ({}))
+        // During the Zoho transition this entity records external numbers, not
+        // generated ones -- that's done from the Sales Ledger.
+        if (err.error_code === 'external_invoicing') {
+          alert(`${err.error}\n\nDo this from the Sales page (Record Zoho Invoice #).`)
+        } else {
+          alert(err.error || 'Failed to generate invoice.')
+        }
+        return
+      }
+      fetchAssets()
+      fetchCounts()
+    } finally {
+      setPendingRowKey(null)
     }
-    fetchAssets()
-    fetchCounts()
+  }
+
+  const deleteAsset = async (asset: { id: string }, label: string) => {
+    if (pendingRowKey) return
+    if (!confirm(`Delete asset ${label}? This cannot be undone.`)) return
+    setPendingRowKey(`${asset.id}:delete`)
+    try {
+      const res = await apiFetch(`/api/asset-ledger/${asset.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Delete failed')
+        return
+      }
+      fetchAssets()
+      fetchCounts()
+    } finally {
+      setPendingRowKey(null)
+    }
   }
 
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>
@@ -191,12 +246,38 @@ export default function StockView({
         </button>
       </div>
 
-      {isOwner && (missingPoCount > 0 || missingInvoiceCount > 0) && (
-        <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded p-3 mb-4 text-sm flex gap-6">
-          {missingPoCount > 0 && <span>{missingPoCount} unit{missingPoCount !== 1 ? 's' : ''} missing a PO</span>}
-          {missingInvoiceCount > 0 && <span>{missingInvoiceCount} sale{missingInvoiceCount !== 1 ? 's' : ''} missing an invoice</span>}
-        </div>
-      )}
+      <StatCardsRow
+        cards={[
+          {
+            label: 'Total Current Stock',
+            value: statCounts.totalCurrent,
+            active: tab === 'current' && !statusFilter,
+            onClick: () => { setTab('current'); setStatusFilter('') },
+          },
+          {
+            label: 'Ready for Sale',
+            value: statCounts.readyForSale,
+            active: tab === 'current' && statusFilter === 'ready_for_sale',
+            onClick: () => { setTab('current'); setStatusFilter('ready_for_sale') },
+          },
+          {
+            label: 'QC Pending',
+            value: statCounts.qcPending,
+            active: tab === 'current' && statusFilter === 'qc_pending',
+            onClick: () => { setTab('current'); setStatusFilter('qc_pending') },
+          },
+          {
+            label: 'Sold',
+            value: statCounts.totalSold,
+            active: tab === 'sold',
+            onClick: () => setTab('sold'),
+          },
+          ...(isOwner ? [
+            { label: 'Missing PO', value: missingPoCount },
+            { label: 'Missing Invoice', value: missingInvoiceCount },
+          ] : []),
+        ]}
+      />
 
       <div className="flex gap-4 mb-4 flex-wrap">
         {tab === 'current' && (
@@ -291,9 +372,14 @@ export default function StockView({
                     <Link href={`/dashboard/stock/${asset.id}`} className="text-blue-600 underline">
                       {identifier(asset)}
                     </Link>
+                    {asset.under_repair_job_number && (
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs whitespace-nowrap" title={`Repair job ${asset.under_repair_job_number}`}>
+                        Under Repair
+                      </span>
+                    )}
                   </td>
                   <td className="border p-2">{asset.sku_code}</td>
-                  <td className="border p-2">{asset.description}</td>
+                  <td className="border p-2">{buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}</td>
                   <td className="border p-2 capitalize">{asset.status.replace(/_/g, ' ')}</td>
                   <td className="border p-2">{asset.qc_grade || '—'}</td>
                   {isOwner && tab === 'current' && (
@@ -314,7 +400,8 @@ export default function StockView({
                       {asset.invoice_finalized ? (
                         <span className="text-green-600">✓ {asset.invoice_number}</span>
                       ) : (
-                        <button onClick={() => generateInvoice(asset.id)} className="text-amber-700 underline text-xs">
+                        <button onClick={() => generateInvoice(asset.id)} disabled={!!pendingRowKey} className="text-amber-700 underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
+                          {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
                           Generate Invoice
                         </button>
                       )}
@@ -327,19 +414,11 @@ export default function StockView({
                       </button>
                       {tab === 'current' && !asset.po_id && (
                         <button
-                          onClick={async () => {
-                            if (!confirm(`Delete asset ${identifier(asset)}? This cannot be undone.`)) return
-                            const res = await apiFetch(`/api/asset-ledger/${asset.id}`, { method: 'DELETE' })
-                            if (!res.ok) {
-                              const err = await res.json().catch(() => ({}))
-                              alert(err.error || 'Delete failed')
-                              return
-                            }
-                            fetchAssets()
-                            fetchCounts()
-                          }}
-                          className="text-red-600 underline text-xs"
+                          onClick={() => deleteAsset(asset, identifier(asset))}
+                          disabled={!!pendingRowKey}
+                          className="text-red-600 underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
                         >
+                          {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
                           Delete
                         </button>
                       )}
@@ -507,7 +586,8 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
 
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
-        <button onClick={handleSubmit} disabled={submitting} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+        <button onClick={handleSubmit} disabled={submitting} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+          {submitting && <Loader2 className="size-4 animate-spin" />}
           {submitting ? 'Creating...' : 'Create PO'}
         </button>
       </div>

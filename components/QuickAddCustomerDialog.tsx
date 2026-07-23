@@ -19,7 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus } from "lucide-react";
+import { Plus, Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 // Lightweight customer-add for the Sell/Service quick-entry flows -- just enough to
 // identify who the customer is (individual or business) and reach them. The full CRM
@@ -27,7 +29,8 @@ import { Plus } from "lucide-react";
 // page's AddCustomerDialog; this form doesn't need or show them.
 export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: any) => void }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [gstFetching, setGstFetching] = useState(false);
+  const [gstError, setGstError] = useState("");
   const [formData, setFormData] = useState({
     customer_name: "",
     type: "Individual",
@@ -36,6 +39,8 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
     email: "",
     has_gst: false,
     gst_number: "",
+    state: "",
+    state_code: "",
   });
   const supabase = createClient();
 
@@ -43,20 +48,41 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleFetchGst = async () => {
+    if (!formData.gst_number.trim()) return;
+    setGstFetching(true);
+    setGstError("");
+    try {
+      const res = await apiFetch(`/api/gst?gst=${encodeURIComponent(formData.gst_number.trim())}`);
+      const data = await res.json();
+      setFormData((prev) => ({
+        ...prev,
+        customer_name: data.company_name || prev.customer_name,
+        address: data.address || prev.address,
+        state: data.state || prev.state,
+        state_code: data.state_code || prev.state_code,
+      }));
+      if (!res.ok) setGstError(data.error || "Could not verify this GSTIN, but state was derived from it.");
+    } catch (err: any) {
+      setGstError("Failed to reach GST lookup service.");
+    } finally {
+      setGstFetching(false);
+    }
+  };
+
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const { data, error } = await supabase.from("customers").insert([formData]).select().single();
-    setLoading(false);
     if (error) {
       console.error(error);
       alert("Failed to add customer.");
     } else {
       setOpen(false);
       onAdd(data);
-      setFormData({ customer_name: "", type: "Individual", address: "", phone: "", email: "", has_gst: false, gst_number: "" });
+      setFormData({ customer_name: "", type: "Individual", address: "", phone: "", email: "", has_gst: false, gst_number: "", state: "", state_code: "" });
+      setGstError("");
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -88,12 +114,22 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
                 <input type="checkbox" id="qa_has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
                 <Label htmlFor="qa_has_gst">Has GST</Label>
               </div>
-              <div><Label>GST Number</Label><Input value={formData.gst_number} onChange={(e) => handleChange("gst_number", e.target.value)} /></div>
+              <div>
+                <Label>GST Number</Label>
+                <div className="flex gap-2">
+                  <Input value={formData.gst_number} onChange={(e) => handleChange("gst_number", e.target.value.toUpperCase())} placeholder="e.g. 09AAICD2790D1ZM" />
+                  <Button type="button" variant="outline" disabled={gstFetching || !formData.gst_number.trim()} onClick={handleFetchGst}>
+                    {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
+                  </Button>
+                </div>
+                {gstError && <p className="text-xs text-red-500 mt-1">{gstError}</p>}
+                {formData.state && <p className="text-xs text-gray-400 mt-1">State: {formData.state} ({formData.state_code})</p>}
+              </div>
             </>
           )}
           <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? "Adding..." : "Add Customer"}</Button>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={loading}>Cancel</Button>
+            <Button type="submit" loading={loading}>Add Customer</Button>
           </div>
         </form>
       </DialogContent>

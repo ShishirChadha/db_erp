@@ -20,7 +20,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Plus, Search, Loader2 } from 'lucide-react'
+import { Plus, Search } from 'lucide-react'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 type Expense = {
   id: string
@@ -59,19 +60,17 @@ export default function ExpensesClient({ initialData }: { initialData: Expense[]
   const [search, setSearch] = useState('')
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState(emptyForm)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const supabase = createClient()
 
   const totalAmount = expenses.reduce((sum, e) => sum + (e.amount || 0), 0)
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async () => {
     setError('')
     if (!form.expense_date || !form.description || !form.amount) {
       setError('Date, Description and Amount are required.')
       return
     }
-    setLoading(true)
 
     const { data, error: err } = await supabase
       .from('expenses')
@@ -84,15 +83,13 @@ export default function ExpensesClient({ initialData }: { initialData: Expense[]
 
     if (err) {
       setError(err.message)
-      setLoading(false)
       return
     }
 
     setExpenses([data, ...expenses])
     setForm(emptyForm)
     setShowForm(false)
-    setLoading(false)
-  }
+  })
 
   const filtered = expenses.filter(e =>
     e.description?.toLowerCase().includes(search.toLowerCase()) ||
@@ -291,13 +288,9 @@ export default function ExpensesClient({ initialData }: { initialData: Expense[]
             <Button
               className="flex-1 bg-blue-600 hover:bg-blue-700"
               onClick={handleSubmit}
-              disabled={loading}
+              loading={loading}
             >
-              {loading ? (
-                <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</>
-              ) : (
-                'Save Expense'
-              )}
+              Save Expense
             </Button>
             <Button
               variant="outline"

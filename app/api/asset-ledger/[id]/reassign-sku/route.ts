@@ -48,7 +48,7 @@ export async function PATCH(
 
   const { id } = await params
   const body = await req.json()
-  const { new_sku_id } = body as { new_sku_id?: string }
+  const { new_sku_id, confirm_despite_invoice } = body as { new_sku_id?: string; confirm_despite_invoice?: boolean }
 
   if (!new_sku_id) {
     return NextResponse.json({ error: 'new_sku_id is required' }, { status: 400 })
@@ -60,6 +60,23 @@ export async function PATCH(
     .eq('id', new_sku_id)
     .single()
   if (!sku) return NextResponse.json({ error: 'Target SKU not found' }, { status: 404 })
+
+  // A reassignment on a unit whose sale is already invoiced silently desyncs the
+  // printed/sent invoice from the live system (the invoice is a frozen snapshot,
+  // never retroactively updated) -- warn and require explicit confirmation rather
+  // than allowing that drift unnoticed.
+  const { data: invoicedSale } = await supabaseAdmin
+    .from('sales')
+    .select('id, invoice_number')
+    .eq('asset_ledger_id', id)
+    .eq('finalized', true)
+    .maybeSingle()
+  if (invoicedSale && !confirm_despite_invoice) {
+    return NextResponse.json({
+      error: `This unit is already on invoice ${invoicedSale.invoice_number || invoicedSale.id} -- reassigning its SKU will NOT update that invoice, which will then disagree with the live system. Confirm to proceed anyway.`,
+      error_code: 'already_invoiced',
+    }, { status: 409 })
+  }
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')

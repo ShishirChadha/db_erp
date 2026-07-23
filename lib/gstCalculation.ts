@@ -7,26 +7,29 @@ export interface GSTResult {
 }
 
 /**
- * Calculate GST based on place of supply and customer GST status
+ * Calculate GST by comparing state codes: the seller entity's home state code
+ * (from business_profiles.state_code, e.g. '09' for Digitalbluez/UP) against
+ * the place of supply's state code. Same state -> CGST+SGST; different -> IGST.
+ * A GSTIN's first two digits are its state code (e.g. '09AAICD...' -> '09'),
+ * so a customer's placeOfSupplyStateCode can be derived from their GSTIN when
+ * no explicit customer state is on file.
  * @param amount - The taxable amount
  * @param gstRate - GST rate in percentage (e.g., 18 for 18%)
- * @param placeOfSupply - State where goods/services are supplied
- * @param customerGst - Customer's GST number (null if not registered)
- * @param businessState - Your business state (default: 'Delhi')
+ * @param placeOfSupplyStateCode - Two-digit GST state code of the place of supply
+ * @param entityStateCode - The selling entity's home state code (e.g. '09')
  * @returns GSTResult with split details
  */
 export function calculateGST(
   amount: number,
   gstRate: number,
-  placeOfSupply: string = '',
-  customerGst: string | null = null,
-  businessState: string = 'Delhi'
+  placeOfSupplyStateCode: string = '',
+  entityStateCode: string = ''
 ): GSTResult {
   const totalGst = (amount * gstRate) / 100;
   const halfGst = totalGst / 2;
 
-  // If place of supply is same as business state AND customer has GST number -> Intra-state (CGST+SGST)
-  const isIntraState = placeOfSupply === businessState && customerGst && customerGst.trim() !== '';
+  const isIntraState =
+    !!entityStateCode && !!placeOfSupplyStateCode && entityStateCode === placeOfSupplyStateCode;
 
   if (isIntraState) {
     return {

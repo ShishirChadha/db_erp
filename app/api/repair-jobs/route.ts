@@ -34,6 +34,7 @@ export async function POST(req: NextRequest) {
   const {
     customer_id, is_own_stock, asset_id, customer_device_description, customer_device_serial,
     job_type, replacement_asset_id, problem_description, amount_charged, payment_account, job_date,
+    parts,
   } = body
 
   if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
@@ -48,6 +49,28 @@ export async function POST(req: NextRequest) {
   }
   if (job_date && !/^\d{4}-\d{2}-\d{2}$/.test(job_date)) {
     return NextResponse.json({ error: 'job_date must be in YYYY-MM-DD format.' }, { status: 400 })
+  }
+
+  // Parts consumed during the repair (accessory sku_master rows -- battery, screen,
+  // keyboard, etc.) -- validated up front so a job never gets created only to find
+  // out a part is oversold. repair_job_parts links back to the exact stock_movements
+  // row it produced, same idiom as every other stock-affecting action in this app.
+  const partsToConsume: Array<{ sku_id: string; quantity: number }> = Array.isArray(parts)
+    ? parts.filter((p: any) => p?.sku_id && p?.quantity > 0)
+    : []
+  if (partsToConsume.length > 0) {
+    const { data: skuRows } = await supabaseAdmin
+      .from('sku_master')
+      .select('id, full_sku_code, quantity_in_stock')
+      .in('id', partsToConsume.map((p) => p.sku_id))
+    const skuById = new Map((skuRows || []).map((s) => [s.id, s]))
+    for (const part of partsToConsume) {
+      const sku = skuById.get(part.sku_id)
+      if (!sku) return NextResponse.json({ error: 'Part not found.' }, { status: 404 })
+      if (sku.quantity_in_stock < part.quantity) {
+        return NextResponse.json({ error: `Only ${sku.quantity_in_stock} of ${sku.full_sku_code} in stock.` }, { status: 400 })
+      }
+    }
   }
 
   // Backdate support: an employee logging a job that actually happened earlier can
@@ -131,6 +154,28 @@ export async function POST(req: NextRequest) {
       notes: `Given as replacement -- job ${jobNumber}`,
       created_by: sessionUser.id,
     })
+  }
+
+  for (const part of partsToConsume) {
+    const { data: movement, error: moveErr } = await supabaseAdmin
+      .from('stock_movements')
+      .insert({
+        sku_id: part.sku_id,
+        movement_type: 'sale',
+        quantity_change: -part.quantity,
+        notes: `Used in repair job ${jobNumber}`,
+        created_by: sessionUser.id,
+      })
+      .select('id')
+      .single()
+    if (!moveErr && movement) {
+      await supabaseAdmin.from('repair_job_parts').insert({
+        repair_job_id: job.id,
+        sku_id: part.sku_id,
+        quantity: part.quantity,
+        stock_movement_id: movement.id,
+      })
+    }
   }
 
   return NextResponse.json({ success: true, id: job.id, job_number: job.job_number }, { status: 201 })

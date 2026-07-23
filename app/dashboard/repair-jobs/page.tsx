@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface RepairJob {
   id: string
@@ -26,12 +28,10 @@ function JobRow({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; on
   const [paymentStatus, setPaymentStatus] = useState(job.payment_status)
   const [amountPaid, setAmountPaid] = useState(job.amount_paid || 0)
   const [paymentAccount, setPaymentAccount] = useState(job.payment_account || '')
-  const [busy, setBusy] = useState(false)
   const [err, setErr] = useState('')
 
-  const savePayment = async () => {
+  const { run: savePayment, pending: saving } = useAsyncAction(async () => {
     setErr('')
-    setBusy(true)
     try {
       const res = await apiFetch(`/api/repair-jobs/${job.id}`, {
         method: 'PATCH',
@@ -41,13 +41,10 @@ function JobRow({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; on
       onDone()
     } catch (e: any) {
       setErr(e.message)
-    } finally {
-      setBusy(false)
     }
-  }
+  })
 
-  const markDone = async () => {
-    setBusy(true)
+  const { run: markDone, pending: marking } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/repair-jobs/${job.id}/finalize`, { method: 'POST' })
     if (!res.ok) {
       const e = await res.json().catch(() => ({}))
@@ -55,8 +52,9 @@ function JobRow({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; on
     } else {
       onDone()
     }
-    setBusy(false)
-  }
+  })
+
+  const busy = saving || marking
 
   return (
     <tr>
@@ -85,9 +83,13 @@ function JobRow({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; on
           </td>
           <td className="border p-2 space-y-1">
             {err && <div className="text-red-600 text-xs">{err}</div>}
-            <button onClick={savePayment} disabled={busy} className="text-blue-600 underline text-xs block">Save</button>
+            <button onClick={() => savePayment()} disabled={busy} className="text-blue-600 underline text-xs flex items-center gap-1">
+              {saving && <Loader2 className="size-3 animate-spin" />}Save
+            </button>
             {job.status !== 'done' && (
-              <button onClick={markDone} disabled={busy} className="text-green-700 underline text-xs block">Mark Done</button>
+              <button onClick={() => markDone()} disabled={busy} className="text-green-700 underline text-xs flex items-center gap-1">
+                {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
+              </button>
             )}
           </td>
         </>

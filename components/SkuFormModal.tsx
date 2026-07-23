@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
+import { getCustomOptionsCategory } from '@/lib/sku-field-options'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface SKU {
   id: string
@@ -28,20 +31,6 @@ interface CategoryTemplate {
   display_name: string
   field_schema: any
   sku_code_format?: string
-}
-
-// Maps a (sku category code, field name) pair to a custom_options category slug.
-// Returns null for fields with no dropdown equivalent (brand, model, HSN, gpu, os,
-// etc.) -- those fall through to the existing text/number/select/checkbox
-// rendering unchanged.
-function getCustomOptionsCategory(skuCategory: string, fieldName: string): string | null {
-  if (fieldName === 'cpu') return 'cpu'
-  if (fieldName === 'generation') return 'generation'
-  if (fieldName === 'ram') return 'ram'
-  if (fieldName === 'ssd') return 'storage'
-  if (fieldName === 'screen_size' && skuCategory === 'LAP') return 'screen_size_laptop'
-  if (fieldName === 'size' && skuCategory === 'MON') return 'screen_size_monitor'
-  return null
 }
 
 // useCustomOptions is a hook, so it can't be called conditionally inside a
@@ -158,7 +147,7 @@ export function SkuFormModal({
     setDescManuallyEdited(true)
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault()
     const payload: any = {
       category,
@@ -185,7 +174,7 @@ export function SkuFormModal({
     const data = await res.json()
     onSaved(existingSku ? data : data.sku)
     onClose()
-  }
+  })
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
@@ -294,8 +283,9 @@ export function SkuFormModal({
           </div>
 
           <div className="flex justify-end space-x-2 mt-4">
-            <button type="button" onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-            <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded">
+            <button type="button" onClick={onClose} disabled={submitting} className="px-4 py-2 border rounded disabled:opacity-50">Cancel</button>
+            <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+              {submitting && <Loader2 className="size-4 animate-spin" />}
               {existingSku ? 'Update' : 'Create'}
             </button>
           </div>

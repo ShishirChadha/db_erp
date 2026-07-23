@@ -90,9 +90,16 @@ function CustomersPage() {
     fetchCustomers();
     setCustomerToDelete(null);
   };
+  const [restoringId, setRestoringId] = useState<string | null>(null);
   const handleRestore = async (c: any) => {
-    await supabase.from("customers").update({ is_deleted: false, deleted_remarks: null, deleted_at: null }).eq("id", c.id);
-    fetchCustomers();
+    if (restoringId) return;
+    setRestoringId(c.id);
+    try {
+      await supabase.from("customers").update({ is_deleted: false, deleted_remarks: null, deleted_at: null }).eq("id", c.id);
+      fetchCustomers();
+    } finally {
+      setRestoringId(null);
+    }
   };
 
   return (
@@ -185,7 +192,7 @@ function CustomersPage() {
                   {c.is_deleted ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(c)}>Edit</Button>
-                      <Button variant="default" size="sm" onClick={() => handleRestore(c)}>Restore</Button>
+                      <Button variant="default" size="sm" onClick={() => handleRestore(c)} loading={restoringId === c.id}>Restore</Button>
                     </>
                   ) : (
                     <>

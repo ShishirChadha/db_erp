@@ -4,6 +4,19 @@ import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { SELLABLE_STATUSES } from '@/lib/sales-entry'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
 
+// Best-effort: if this sale converts one line of a quotation/proforma, mark
+// that line converted so it stops showing as open. Never blocks the sale
+// itself on failure -- the sale is the primary source of truth and has
+// already succeeded by the time this runs.
+async function markSourceDocumentItemConverted(sourceDocumentItemId: string | undefined, saleId: string) {
+  if (!sourceDocumentItemId) return
+  await supabaseAdmin
+    .from('sales_document_items')
+    .update({ converted: true, sale_id: saleId })
+    .eq('id', sourceDocumentItemId)
+    .eq('converted', false)
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -42,6 +55,7 @@ export async function POST(req: NextRequest) {
     asset_ledger_id, accessory_id, accessory_quantity, customer_id, sale_base_price,
     gst_percentage, sale_type, bundled_accessories, sale_date,
     payment_status, amount_paid, payment_account, sold_by,
+    source_document_item_id,
   } = body
 
   if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
@@ -80,6 +94,20 @@ export async function POST(req: NextRequest) {
   // credited. Falls back to the entering user's own email if left blank.
   const resolvedSoldBy = sold_by || sessionUser.email || null
 
+  // A newly-typed name (not yet in the staff_names list) is saved back into
+  // custom_options so it shows up in the dropdown for future sales -- otherwise
+  // it's only ever usable by re-typing it each time. Best-effort: never blocks
+  // the sale itself. Skipped for the email fallback above, since that's not a
+  // real staff name to add to the list.
+  if (typeof sold_by === 'string' && sold_by.trim()) {
+    await supabaseAdmin
+      .from('custom_options')
+      .upsert(
+        { category: 'staff_names', value: sold_by.trim() },
+        { onConflict: 'category,value', ignoreDuplicates: true }
+      )
+  }
+
   const baseSaleRecord = {
     sale_date: resolvedSaleDate,
     sale_month: saleMonth,
@@ -99,22 +127,24 @@ export async function POST(req: NextRequest) {
   }
 
   // ---------- Standalone accessory sale (no unit involved) ----------
+  // Accessories are sku_master rows like everything else (see docs/decisions.md,
+  // 2026-07-23) -- no per-unit asset_ledger row, just a quantity decrement.
   if (!asset_ledger_id) {
     const qty = accessory_quantity || 1
-    const { data: accessory } = await supabaseAdmin
-      .from('accessories')
-      .select('id, quantity, review_status')
+    const { data: accessorySku } = await supabaseAdmin
+      .from('sku_master')
+      .select('id, quantity_in_stock, status')
       .eq('id', accessory_id)
       .single()
 
-    if (!accessory) return NextResponse.json({ error: 'Accessory not found.' }, { status: 404 })
-    if (accessory.review_status !== 'active') {
-      return NextResponse.json({ error: 'This accessory is still pending owner review and cannot be sold yet.' }, { status: 400 })
+    if (!accessorySku) return NextResponse.json({ error: 'Accessory not found.' }, { status: 404 })
+    if (accessorySku.status !== 'active') {
+      return NextResponse.json({ error: 'This item is archived and cannot be sold.' }, { status: 400 })
+    }
+    if (accessorySku.quantity_in_stock < qty) {
+      return NextResponse.json({ error: `Only ${accessorySku.quantity_in_stock} in stock.` }, { status: 400 })
     }
 
-    // Create the sales row first so the stock-out movement can reference its id --
-    // if the movement then fails (e.g. oversell, caught by the DB trigger), delete
-    // the sale row so nothing is left half-done.
     const { data: sale, error: saleErr } = await supabaseAdmin
       .from('sales')
       .insert({ ...baseSaleRecord, accessory_id, accessory_quantity: qty })
@@ -124,10 +154,9 @@ export async function POST(req: NextRequest) {
     if (saleErr) return NextResponse.json({ error: saleErr.message }, { status: 500 })
 
     const { error: moveErr } = await insertAccessoryMovement({
-      accessoryId: accessory.id,
-      movementType: 'out',
+      skuId: accessorySku.id,
+      movementType: 'sale',
       quantityChange: -qty,
-      saleId: sale.id,
       notes: 'Standalone accessory sale',
       createdBy: sessionUser.id,
     })
@@ -135,6 +164,8 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin.from('sales').delete().eq('id', sale.id)
       return NextResponse.json({ error: moveErr.message }, { status: 400 })
     }
+
+    await markSourceDocumentItemConverted(source_document_item_id, sale.id)
 
     return NextResponse.json({ success: true, id: sale.id }, { status: 201 })
   }
@@ -193,20 +224,22 @@ export async function POST(req: NextRequest) {
     created_by: sessionUser.id,
   })
 
-  // Bundled accessories are given away with the unit (no separate charge) -- decrement
-  // them now too, same as the unit itself.
+  // Bundled accessories -- free by default, or an extra charge already folded into
+  // sale_base_price by the client (see the Sell form's per-item price field) --
+  // decrement their stock now too, same as the unit itself.
   const bundled: Array<{ accessory_id: string; quantity: number }> = bundled_accessories || []
   for (const item of bundled) {
     if (!item?.accessory_id || !item?.quantity) continue
     await insertAccessoryMovement({
-      accessoryId: item.accessory_id,
-      movementType: 'out',
+      skuId: item.accessory_id,
+      movementType: 'sale',
       quantityChange: -item.quantity,
-      saleId: sale.id,
       notes: `Bundled with unit sale ${asset.asset_number}`,
       createdBy: sessionUser.id,
     })
   }
+
+  await markSourceDocumentItemConverted(source_document_item_id, sale.id)
 
   return NextResponse.json({ success: true, id: sale.id }, { status: 201 })
 }

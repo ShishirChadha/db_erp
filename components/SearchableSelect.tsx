@@ -31,12 +31,14 @@ export function SearchableSelect({
   onChange,
   placeholder = "Select...",
   allowOther = true,
+  otherPosition = "bottom",
 }: {
   options: string[];
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   allowOther?: boolean;
+  otherPosition?: "top" | "bottom";
 }) {
   const [open, setOpen] = useState(false);
   const isCustomValue = value !== "" && !options.includes(value);
@@ -72,6 +74,14 @@ export function SearchableSelect({
           <CommandList>
             <CommandEmpty>No match.</CommandEmpty>
             <CommandGroup>
+              {allowOther && otherPosition === "top" && (
+                <CommandItem
+                  value={OTHER}
+                  onSelect={() => { setUsingOther(true); onChange(""); setOpen(false); }}
+                >
+                  Other...
+                </CommandItem>
+              )}
               {options.map((opt) => (
                 <CommandItem
                   key={opt}
@@ -82,7 +92,7 @@ export function SearchableSelect({
                   {opt}
                 </CommandItem>
               ))}
-              {allowOther && (
+              {allowOther && otherPosition === "bottom" && (
                 <CommandItem
                   value={OTHER}
                   onSelect={() => { setUsingOther(true); onChange(""); setOpen(false); }}

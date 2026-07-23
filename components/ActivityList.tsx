@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
-import { Edit, Trash2, Copy, X, ArrowUp, ArrowDown } from 'lucide-react';
+import { Edit, Trash2, Copy, X, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { useAsyncAction } from '@/lib/useAsyncAction';
 
 // ---------- Type definitions ----------
 interface Activity {
@@ -89,7 +90,7 @@ function AddActivityModal({
     setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   };
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title) return alert('Title is required');
     const res = await fetch('/api/activities', {
       method: 'POST',
@@ -103,7 +104,7 @@ function AddActivityModal({
     } else {
       alert('Failed to add activity');
     }
-  };
+  });
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="New Activity">
@@ -158,7 +159,10 @@ function AddActivityModal({
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-          <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+          <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
+            {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
+            Save
+          </button>
         </div>
       </div>
     </SimpleModal>
@@ -214,7 +218,7 @@ function EditActivityModal({
     setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   };
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title || !activity) return alert('Title is required');
     const res = await fetch(`/api/activities/${activity.id}`, {
       method: 'PUT',
@@ -227,7 +231,7 @@ function EditActivityModal({
     } else {
       alert('Failed to update');
     }
-  };
+  });
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Edit Activity">
@@ -282,7 +286,10 @@ function EditActivityModal({
         </div>
         <div className="flex justify-end gap-2 pt-2">
           <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-          <button onClick={handleSubmit} className="px-4 py-2 bg-blue-600 text-white rounded">Update</button>
+          <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
+            {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
+            Update
+          </button>
         </div>
       </div>
     </SimpleModal>
@@ -297,14 +304,20 @@ function DeleteConfirmModal({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: () => void;
+  onConfirm: () => void | Promise<void>;
 }) {
+  const { run: handleConfirm, pending: deleting } = useAsyncAction(async () => {
+    await onConfirm();
+  });
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Delete Activity">
       <p>Are you sure you want to delete this activity?</p>
       <div className="flex justify-end gap-2 mt-4">
-        <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-        <button onClick={onConfirm} className="px-4 py-2 bg-red-600 text-white rounded">Delete</button>
+        <button onClick={onClose} disabled={deleting} className="px-4 py-2 border rounded disabled:opacity-50">Cancel</button>
+        <button onClick={handleConfirm} disabled={deleting} className="px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50">
+          {deleting && <Loader2 className="inline size-4 animate-spin mr-1" />}
+          Delete
+        </button>
       </div>
     </SimpleModal>
   );
@@ -405,14 +418,26 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
     setDeleteId(null);
   };
 
+  // Duplicate acts on one row at a time -- guard re-entrancy per activity id so
+  // a double click on the same row's copy button can't fire a duplicate POST.
+  const [duplicatingId, setDuplicatingId] = useState<string | null>(null);
+  const duplicatingRef = useRef<Set<string>>(new Set());
   const handleDuplicate = async (act: Activity) => {
-    const { id, ...rest } = act;
-    await fetch('/api/activities', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...rest, title: `${act.title} (copy)`, status: 'pending' }),
-    });
-    onUpdate();
+    if (duplicatingRef.current.has(act.id)) return;
+    duplicatingRef.current.add(act.id);
+    setDuplicatingId(act.id);
+    try {
+      const { id, ...rest } = act;
+      await fetch('/api/activities', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...rest, title: `${act.title} (copy)`, status: 'pending' }),
+      });
+      onUpdate();
+    } finally {
+      duplicatingRef.current.delete(act.id);
+      setDuplicatingId(prev => (prev === act.id ? null : prev));
+    }
   };
 
   const SortIcon = ({ column }: { column: string }) => {
@@ -497,7 +522,9 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
                 <td className="px-6 py-4">{act.created_at ? format(new Date(act.created_at), 'dd/MM/yyyy HH:mm') : '-'}</td>
                 <td className="px-6 py-4 text-right space-x-2">
                   <button onClick={() => setEditingActivity(act)} className="text-gray-600 hover:text-blue-600"><Edit className="h-4 w-4 inline" /></button>
-                  <button onClick={() => handleDuplicate(act)} className="text-gray-600 hover:text-green-600"><Copy className="h-4 w-4 inline" /></button>
+                  <button onClick={() => handleDuplicate(act)} disabled={duplicatingId === act.id} className="text-gray-600 hover:text-green-600 disabled:opacity-50">
+                    {duplicatingId === act.id ? <Loader2 className="h-4 w-4 inline animate-spin" /> : <Copy className="h-4 w-4 inline" />}
+                  </button>
                   <button onClick={() => setDeleteId(act.id)} className="text-gray-600 hover:text-red-600"><Trash2 className="h-4 w-4 inline" /></button>
                 </td>
               </tr>

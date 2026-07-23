@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 export default function DeleteRecordDialog({
   title,
@@ -23,15 +24,15 @@ export default function DeleteRecordDialog({
   identifier: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (remarks: string) => void;
+  onConfirm: (remarks: string) => void | Promise<void>;
 }) {
   const [remarks, setRemarks] = useState("");
 
-  const handleConfirm = () => {
-    onConfirm(remarks);
+  const { run: handleConfirm, pending } = useAsyncAction(async () => {
+    await onConfirm(remarks);
     setRemarks("");
     onOpenChange(false);
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -51,10 +52,10 @@ export default function DeleteRecordDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={handleConfirm}>
+          <Button variant="destructive" onClick={() => handleConfirm()} loading={pending}>
             Delete Permanently
           </Button>
         </DialogFooter>

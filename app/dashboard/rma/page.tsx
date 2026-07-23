@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 
@@ -131,17 +132,24 @@ function RmaPage() {
     }
   }
 
+  const [advancingKey, setAdvancingKey] = useState<string | null>(null)
   const advanceStatus = async (event: RmaEvent, newStatus: string) => {
-    const res = await apiFetch(`/api/rma/${event.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status: newStatus }),
-    })
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}))
-      alert(err.error || 'Failed to update RMA')
-      return
+    if (advancingKey) return
+    setAdvancingKey(`${event.id}:${newStatus}`)
+    try {
+      const res = await apiFetch(`/api/rma/${event.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to update RMA')
+        return
+      }
+      fetchEvents()
+    } finally {
+      setAdvancingKey(null)
     }
-    fetchEvents()
   }
 
   return (
@@ -202,8 +210,10 @@ function RmaPage() {
                     <button
                       key={next}
                       onClick={() => advanceStatus(e, next)}
-                      className="text-blue-600 underline text-xs capitalize"
+                      disabled={!!advancingKey}
+                      className="text-blue-600 underline text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
                     >
+                      {advancingKey === `${e.id}:${next}` && <Loader2 className="size-3 animate-spin" />}
                       {next.replace(/_/g, ' ')}
                     </button>
                   ))}

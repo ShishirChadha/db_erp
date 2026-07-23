@@ -18,6 +18,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 interface Expense {
   id: string;
@@ -42,7 +43,6 @@ export default function EditExpenseDialog({
   onUpdate: () => void;
 }) {
   const [formData, setFormData] = useState<Partial<Expense>>({});
-  const [loading, setLoading] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -53,15 +53,13 @@ const handleChange = (field: keyof Expense, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const { id, ...updateData } = formData;
     const { error } = await supabase
       .from("expenses")
       .update(updateData)
       .eq("id", expense.id);
-    setLoading(false);
     if (error) {
       console.error(error);
       alert("Update failed.");
@@ -69,7 +67,7 @@ const handleChange = (field: keyof Expense, value: string | number | null) => {
       onOpenChange(false);
       onUpdate();
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -149,8 +147,8 @@ const handleChange = (field: keyof Expense, value: string | number | null) => {
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={loading}>
+              Save Changes
             </Button>
           </div>
         </form>

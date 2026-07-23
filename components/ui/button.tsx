@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cva, type VariantProps } from "class-variance-authority"
 import { Slot } from "radix-ui"
+import { Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -46,21 +47,42 @@ function Button({
   variant = "default",
   size = "default",
   asChild = false,
+  loading = false,
+  disabled,
+  children,
   ...props
 }: React.ComponentProps<"button"> &
   VariantProps<typeof buttonVariants> & {
     asChild?: boolean
+    // Instantly disables the button and shows a spinner -- pass the `pending`
+    // flag from useAsyncAction (or any in-flight-request boolean) here so a
+    // second click can't fire a duplicate submit while the first is running.
+    loading?: boolean
   }) {
   const Comp = asChild ? Slot.Root : "button"
 
+  // Slot.Root (asChild) clones its props onto a single child element -- it isn't
+  // a place to inject a second, sibling spinner node. `loading` only applies to
+  // real <button> usage; asChild callers manage their own pending state.
   return (
     <Comp
       data-slot="button"
       data-variant={variant}
       data-size={size}
       className={cn(buttonVariants({ variant, size, className }))}
+      disabled={disabled || loading}
+      aria-busy={loading || undefined}
       {...props}
-    />
+    >
+      {!asChild && loading ? (
+        <>
+          <Loader2 className="animate-spin" />
+          {children}
+        </>
+      ) : (
+        children
+      )}
+    </Comp>
   )
 }
 

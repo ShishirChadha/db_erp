@@ -2,8 +2,10 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface PO {
   id: string
@@ -122,7 +124,7 @@ function NewPurchaseInvoicePage() {
     }
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault()
     const attachmentUrl = await handleUpload()
 
@@ -148,7 +150,7 @@ function NewPurchaseInvoicePage() {
       const err = await res.json().catch(() => ({}))
       alert(err.error || 'Failed to create invoice')
     }
-  }
+  })
 
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>
 
@@ -268,15 +270,16 @@ function NewPurchaseInvoicePage() {
         </div>
 
         <div className="flex justify-end gap-2 mt-4">
-          <button type="button" onClick={() => router.back()} className="px-4 py-2 border rounded">
+          <button type="button" onClick={() => router.back()} disabled={submitting} className="px-4 py-2 border rounded disabled:opacity-50">
             Cancel
           </button>
           <button
             type="submit"
-            disabled={uploading}
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+            disabled={submitting}
+            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
           >
-            {uploading ? 'Uploading...' : 'Create Invoice'}
+            {submitting && <Loader2 className="size-4 animate-spin" />}
+            {uploading ? 'Uploading...' : submitting ? 'Saving...' : 'Create Invoice'}
           </button>
         </div>
       </form>

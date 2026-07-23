@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { isSerializedCategory } from '@/lib/sku-categories'
 
 export async function GET(
   req: NextRequest,
@@ -26,7 +27,7 @@ export async function GET(
   // Fetch line items with SKU details
   const { data: items } = await supabaseAdmin
     .from('purchase_order_items')
-    .select('*, sku:sku_master ( full_sku_code, sku_description, brand, model_name, specifications, hsn_code )')
+    .select('*, sku:sku_master ( full_sku_code, sku_description, brand, model_name, specifications, hsn_code, category )')
     .eq('po_id', id)
     .order('line_item_number', { ascending: true })
 
@@ -43,9 +44,24 @@ export async function GET(
     assetsByItem[asset.po_item_id].push(asset)
   })
 
+  // Received quantity for fungible lines is derived from their receipt movements
+  // (serialized lines derive it from their serial_numbers array instead).
+  const { data: receiptMovements } = await supabaseAdmin
+    .from('stock_movements')
+    .select('po_item_id, quantity_change')
+    .eq('po_id', id)
+    .eq('movement_type', 'receipt')
+  const receivedByItem: Record<string, number> = {}
+  receiptMovements?.forEach(m => {
+    if (!m.po_item_id) return
+    receivedByItem[m.po_item_id] = (receivedByItem[m.po_item_id] || 0) + m.quantity_change
+  })
+
   // Enrich items with SKU data and live asset numbers
-  const enrichedItems = (items || []).map(item => {
+  const enrichedItems = (items || []).map((item: any) => {
     const liveAssets = assetsByItem[item.id] || []
+    const serials = liveAssets.filter(a => a.serial_number).map(a => a.serial_number)
+    const serialized = isSerializedCategory(item.sku?.category)
     return {
       ...item,
       sku_code: item.sku?.full_sku_code || item.base_sku_code,
@@ -53,9 +69,12 @@ export async function GET(
       sku_brand: item.sku?.brand || '',
       sku_model: item.sku?.model_name || '',
       sku_specs: item.sku?.specifications || {},
+      sku_category: item.sku?.category || null,
+      is_serialized: serialized,
       hsn_code: item.sku?.hsn_code || item.hsn_code || '',
-      asset_numbers_reserved: liveAssets.map(a => a.asset_number),  // live list
-      serial_numbers: liveAssets.filter(a => a.serial_number).map(a => a.serial_number), // updated serials
+      asset_numbers_reserved: liveAssets.map(a => a.asset_number),  // live list (serialized only)
+      serial_numbers: serials, // updated serials (serialized only)
+      received_quantity: serialized ? serials.length : (receivedByItem[item.id] || 0),
     }
   })
 

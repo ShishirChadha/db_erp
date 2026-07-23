@@ -1,43 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { InvoiceForm } from "@/components/InvoiceForm";
-import { suggestNextInvoiceNumber, isInvoiceNumberUnique } from "@/app/actions/invoice";
+import { mintInvoiceNumber } from "@/app/actions/invoice";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { useAsyncAction } from "@/lib/useAsyncAction";
+
+// Digitalbluez is the only fully-configured GST entity today.
+// TODO(Phase 1 follow-up): let the user pick Techtenth/Cash once the
+// Business Profiles Settings UI exists.
+const ENTITY_KEY = "digitalbluez";
 
 function NewInvoicePage() {
-  const [invoiceNumber, setInvoiceNumber] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
-  // Load the suggested invoice number when the page loads
-  useEffect(() => {
-    const loadNumber = async () => {
-      const suggested = await suggestNextInvoiceNumber();
-      setInvoiceNumber(suggested);
-    };
-    loadNumber();
-  }, []);
-
-  const handleSubmit = async (data: any) => {
-    setIsSubmitting(true);
+  const { run: handleSubmit, pending: isSubmitting } = useAsyncAction(async (data: any) => {
     try {
-      // Use the invoice number from the form (user may have edited it)
-      const finalInvoiceNumber = data.invoice_number;
-
-      // Check uniqueness
-      const isUnique = await isInvoiceNumberUnique(finalInvoiceNumber);
-      if (!isUnique) {
-        toast.error("Invoice number already exists. Please change it.");
-        setIsSubmitting(false);
-        return;
-      }
+      // Mint the real number atomically, at the moment of save -- never
+      // pre-fetched, never client-editable, never uniqueness-checked because
+      // the atomic RPC guarantees uniqueness by construction.
+      const finalInvoiceNumber = await mintInvoiceNumber(ENTITY_KEY);
 
       const { items, ...invoiceData } = data;
 
@@ -48,6 +36,7 @@ function NewInvoicePage() {
           {
             ...invoiceData,
             invoice_number: finalInvoiceNumber,
+            entity_key: ENTITY_KEY,
             created_by: (await supabase.auth.getUser()).data.user?.id,
           },
         ])
@@ -73,10 +62,8 @@ function NewInvoicePage() {
     } catch (error) {
       console.error(error);
       toast.error("Failed to save invoice");
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  });
 
   return (
     <div className="container mx-auto py-6 space-y-6">
@@ -87,7 +74,6 @@ function NewInvoicePage() {
         <h1 className="text-3xl font-bold">Create New Invoice</h1>
       </div>
       <InvoiceForm
-        invoiceNumber={invoiceNumber}
         onSubmit={handleSubmit}
         isSubmitting={isSubmitting}
       />

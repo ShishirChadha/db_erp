@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 
@@ -87,16 +88,24 @@ function PurchaseOrdersPage() {
 
   const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
 
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+
   const handleDelete = async (po: PurchaseOrder) => {
+    if (deletingId) return
     if (!confirm(`Permanently delete ${po.po_number}? This cannot be undone.`)) return
 
-    const res = await apiFetch(`/api/purchase-orders/${po.id}/hard-delete`, { method: 'DELETE' })
-    if (res.ok) {
-      alert(`${po.po_number} deleted.`)
-      fetchOrders()
-    } else {
-      const err = await res.json().catch(() => ({}))
-      alert(err.error || 'Failed to delete PO.')
+    setDeletingId(po.id)
+    try {
+      const res = await apiFetch(`/api/purchase-orders/${po.id}/hard-delete`, { method: 'DELETE' })
+      if (res.ok) {
+        alert(`${po.po_number} deleted.`)
+        fetchOrders()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to delete PO.')
+      }
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -210,8 +219,10 @@ function PurchaseOrdersPage() {
                 </button>
                 <button
                   onClick={() => handleDelete(po)}
-                  className="text-red-600 underline"
+                  disabled={deletingId === po.id}
+                  className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1"
                 >
+                  {deletingId === po.id && <Loader2 className="size-3 animate-spin" />}
                   Delete
                 </button>
               </td>

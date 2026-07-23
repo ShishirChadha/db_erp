@@ -2,11 +2,13 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { ModelSelect } from "@/components/ModelSelect";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api-client";
 import { useCustomOptions } from "@/lib/useCustomOptions";
 import { SearchableSelect } from "@/components/SearchableSelect";
+import { getCustomOptionsCategory } from "@/lib/sku-field-options";
+import { TYPE_TO_CATEGORY } from "@/lib/sku-category-map";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 import {
   Dialog,
   DialogContent,
@@ -38,7 +40,6 @@ import { format } from "date-fns";
 // ---------- Inline Add Vendor Component (full) ----------
 function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, vendorName: string) => void }) {
   const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     company_name: "",
     spoc_name: "",
@@ -61,13 +62,12 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const { run: handleSubmit, pending: vendorSubmitting } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.company_name) {
       alert("Company name is required");
       return;
     }
-    setLoading(true);
     const payload = {
       company_name: formData.company_name,
       spoc_name: formData.spoc_name,
@@ -84,7 +84,6 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
       gst_company_name: formData.gst_company_name,
     };
     const { data, error } = await supabase.from("vendors").insert([payload]).select().single();
-    setLoading(false);
     if (error) {
       alert("Failed to add vendor: " + error.message);
     } else {
@@ -104,26 +103,10 @@ function AddVendorInline({ onVendorAdded }: { onVendorAdded: (vendorId: string, 
         has_gst: false,
         gst_number: "",
         gst_company_name: "",
-         model_id: null, 
+        model_id: null,
       });
-setFormData({
-  company_name: "",
-  spoc_name: "",
-  owner_name: "",
-  phone: "",
-  email: "",
-  address_line1: "",
-  address_line2: "",
-  city: "",
-  state: "",
-  pincode: "",
-  has_gst: false,
-  gst_number: "",
-  gst_company_name: "",
-  model_id: null,   // ✅ add this line
-});
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -160,7 +143,7 @@ setFormData({
           )}
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-            <Button type="submit" disabled={loading}>{loading ? "Saving..." : "Save Vendor"}</Button>
+            <Button type="submit" loading={vendorSubmitting}>Save Vendor</Button>
           </div>
         </form>
       </DialogContent>
@@ -177,7 +160,6 @@ interface AddPurchaseDialogProps {
 }
 
 export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialData }: AddPurchaseDialogProps) {
-  const [loading, setLoading] = useState(false);
   const [skuGenerated, setSkuGenerated] = useState(false);
   const [vendors, setVendors] = useState<{ id: string; company_name: string }[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
@@ -188,14 +170,13 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   const [serialNumbersList, setSerialNumbersList] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
 
-  const BRAND_OPTIONS = ["Apple", "Dell", "HP", "Lenovo", "Windows", "Asus", "Acer", "Other"];
-
   const { values: cpuOptions } = useCustomOptions('cpu');
   const { values: generationOptions } = useCustomOptions('generation');
   const { values: ramOptions } = useCustomOptions('ram');
   const { values: storageOptions } = useCustomOptions('storage');
   const { values: laptopScreenOptions } = useCustomOptions('screen_size_laptop');
   const { values: monitorScreenOptions } = useCustomOptions('screen_size_monitor');
+  const { values: brandOptions } = useCustomOptions('brand');
 
   const [formData, setFormData] = useState({
     entry_date: today,
@@ -206,7 +187,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     brand: "",
     brand_other: "",
     model: "",
-    model_id: null as string | null, 
     make_year: null as number | null,
     sku: "",
     asset_description: "",
@@ -243,6 +223,9 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
   });
 
+  const modelCategory = getCustomOptionsCategory(TYPE_TO_CATEGORY[formData.type] || 'OTHER', 'model');
+  const { values: modelOptions } = useCustomOptions(modelCategory || 'model_laptop');
+
   const isInitialized = useRef(false);
   const isUpdating = useRef(false);
 
@@ -266,7 +249,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         asset_number: "",
         purchased_by_type: initialData.purchased_by_type || "Digitalbluez",
         purchased_by_other: initialData.purchased_by_other || "",
-        model_id: initialData.model_id || null,
       }));
       setQuantity(1);
       setSerialNumbersList("");
@@ -274,7 +256,6 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     } else {
       setFormData({
         entry_date: today,
-        model_id: null,
         purchase_date: "",
         vendor_id: "",
         vendor_name: "",
@@ -390,8 +371,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     fetchVendors();
   };
 
-  const insertPurchase = async (status: 'draft' | 'submitted') => {
-    setLoading(true);
+  const { run: insertPurchase, pending: loading } = useAsyncAction(async (status: 'draft' | 'submitted') => {
     try {
       if (!formData.purchase_date) throw new Error("Purchase date is required.");
       if (!formData.vendor_id) throw new Error("Please select a vendor.");
@@ -421,10 +401,8 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
     } catch (err: any) {
       console.error("Insert error:", err);
       alert(err.message);
-    } finally {
-      setLoading(false);
     }
-  };
+  });
 
   const isGST = formData.purchase_type === "GST";
   const showSerialTextarea = quantity > 1;
@@ -556,9 +534,14 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           {/* Type, Brand, Model, Make Year */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div><Label>Type *</Label><Select value={formData.type} onValueChange={(val) => handleChange("type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Laptop">Laptop</SelectItem><SelectItem value="Desktop">Desktop</SelectItem><SelectItem value="Monitor">Monitor</SelectItem><SelectItem value="Tablet">Tablet</SelectItem><SelectItem value="Tiny">Tiny</SelectItem></SelectContent></Select></div>
-            <div><Label>Brand</Label><Select value={formData.brand || ""} onValueChange={(val) => handleChange("brand", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{BRAND_OPTIONS.map(b => <SelectItem key={b} value={b}>{b}</SelectItem>)}</SelectContent></Select></div>
-            {formData.brand === "Other" && <div><Label>Other Brand</Label><Input value={formData.brand_other || ""} onChange={(e) => handleChange("brand_other", e.target.value)} /></div>}
-            <div><Label>Model</Label><ModelSelect value={formData.model_id} onChange={(id, name) => { setFormData(prev => ({ ...prev, model_id: id, model: name })); }} /></div>
+            <div><Label>Brand</Label><SearchableSelect options={brandOptions} value={formData.brand} onChange={(v) => handleChange("brand", v)} placeholder="Select brand..." /></div>
+            <div><Label>Model</Label>
+              {modelCategory ? (
+                <SearchableSelect options={modelOptions} value={formData.model} onChange={(v) => handleChange("model", v)} placeholder="Select model..." />
+              ) : (
+                <Input value={formData.model} onChange={(e) => handleChange("model", e.target.value)} />
+              )}
+            </div>
             <div><Label>Make Year</Label><Input type="number" step="1" value={formData.make_year ?? ""} onChange={(e) => handleChange("make_year", e.target.value === "" ? null : parseInt(e.target.value))} /></div>
           </div>
 
@@ -630,12 +613,12 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
 
           {/* Action Buttons */}
           <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="button" variant="secondary" disabled={loading} onClick={() => insertPurchase('draft')}>
-              {loading ? "Saving..." : "Save Draft"}
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>Cancel</Button>
+            <Button type="button" variant="secondary" loading={loading} onClick={() => insertPurchase('draft')}>
+              Save Draft
             </Button>
-            <Button type="button" variant="default" disabled={loading} onClick={() => insertPurchase('submitted')}>
-              {loading ? "Submitting..." : "Submit"}
+            <Button type="button" variant="default" loading={loading} onClick={() => insertPurchase('submitted')}>
+              Submit
             </Button>
           </div>
         </div>

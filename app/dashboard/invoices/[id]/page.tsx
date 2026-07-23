@@ -6,10 +6,11 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Edit, Printer, FileText } from "lucide-react";
+import { ArrowLeft, Edit, Printer, FileText, Mail } from "lucide-react";
 import { format } from "date-fns";
-import { generateInvoicePDF } from "@/lib/generateInvoicePDF";
+import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-500",
@@ -54,37 +55,33 @@ function ViewInvoicePage() {
     if (id) fetchInvoice();
   }, [id, supabase, router]);
 
-  const handleDownloadPDF = async () => {
+  const { run: handleDownloadPDF, pending: downloading } = useAsyncAction(async () => {
     if (!invoice) return;
-    const pdfBlob = await generateInvoicePDF({
-      invoice_number: invoice.invoice_number,
-      invoice_date: format(new Date(invoice.invoice_date), "dd/MM/yyyy"),
-      customer_name: invoice.customer_name,
-      customer_address: invoice.customer_address,
-      customer_gst: invoice.customer_gst,
-      place_of_supply: invoice.place_of_supply,
-      items: items.map((item) => ({
-        description: item.description,
-        hsn_code: item.hsn_code,
-        quantity: item.quantity,
-        rate: item.rate,
-        gst_rate: item.gst_rate,
-        gst_type: item.gst_type,
-        cgst_amount: item.cgst_amount,
-        sgst_amount: item.sgst_amount,
-        igst_amount: item.igst_amount,
-        amount: item.amount,
-      })),
-      subtotal: invoice.subtotal,
-      total_gst: invoice.total_gst,
-      grand_total: invoice.grand_total,
-      notes: invoice.notes,
-      terms_conditions: invoice.terms_conditions,
-      bank_details: invoice.bank_details,
-    });
+    const res = await apiFetch(`/api/invoices/${invoice.id}/pdf`);
+    if (!res.ok) {
+      console.error("Failed to generate PDF", await res.text());
+      return;
+    }
+    const pdfBlob = await res.blob();
     const url = URL.createObjectURL(pdfBlob);
     window.open(url, "_blank");
-  };
+  });
+
+  const { run: handleEmail, pending: emailing } = useAsyncAction(async () => {
+    if (!invoice) return;
+    const to = window.prompt("Send invoice to which email address?", invoice.customer_email || "");
+    if (!to) return;
+    const res = await apiFetch(`/api/invoices/${invoice.id}/email`, {
+      method: "POST",
+      body: JSON.stringify({ to }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(data.error || "Failed to send email.");
+    } else {
+      alert(`Sent to ${data.sent_to}.`);
+    }
+  });
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (!invoice) return <div className="p-6">Invoice not found</div>;
@@ -101,8 +98,12 @@ function ViewInvoicePage() {
               <Edit className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
-          <Button variant="outline" onClick={handleDownloadPDF}>
+          <Button variant="outline" onClick={() => handleDownloadPDF()} loading={downloading}>
             <FileText className="mr-2 h-4 w-4" /> Download PDF
+          </Button>
+          <Button variant="outline" onClick={() => handleEmail()} loading={emailing}>
+            <Mail className="mr-2 h-4 w-4" />
+            Email
           </Button>
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print

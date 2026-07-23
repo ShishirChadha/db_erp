@@ -8,13 +8,13 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft } from "lucide-react";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 function EditInvoicePage() {
   const { id } = useParams();
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const router = useRouter();
   const supabase = createClient();
 
@@ -45,9 +45,8 @@ function EditInvoicePage() {
     if (id) fetchInvoice();
   }, [id, supabase, router]);
 
-  const handleSubmit = async (data: any) => {
+  const { run: handleSubmit, pending: isSubmitting } = useAsyncAction(async (data: any) => {
     console.log("🟡 Edit page received data:", data);
-    setIsSubmitting(true);
     try {
       const { items: newItems, ...invoiceData } = data;
 
@@ -95,10 +94,8 @@ function EditInvoicePage() {
     } catch (error) {
       console.error("Update error:", error);
       toast.error("Failed to update invoice");
-    } finally {
-      setIsSubmitting(false);
     }
-  };
+  });
 
   if (loading) return <div className="p-6">Loading...</div>;
   if (!invoice) return <div className="p-6">Invoice not found</div>;

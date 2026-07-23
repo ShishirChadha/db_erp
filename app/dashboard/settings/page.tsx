@@ -1,10 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import DropdownOptionsManager from '@/components/DropdownOptionsManager'
 import UserManager from '@/components/UserManager'
+import BusinessProfileManager from '@/components/BusinessProfileManager'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface AssetCounter {
   prefix: string
@@ -23,6 +25,7 @@ const ENTITY_LABELS: Record<string, string> = {
 const CATEGORIES = [
   { key: 'asset_numbering', label: 'Asset Numbering' },
   { key: 'dropdown_options', label: 'Dropdown Options' },
+  { key: 'business_profiles', label: 'Business Profiles' },
   { key: 'users', label: 'Users & Access' },
 ] as const
 
@@ -32,7 +35,7 @@ function AssetNumberingSection() {
   const [counters, setCounters] = useState<AssetCounter[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState<string | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const savingRef = useRef<Set<string>>(new Set())
 
   // Edit state
   const [editValues, setEditValues] = useState<Record<string, { last: number; suffix: string }>>({})
@@ -56,30 +59,37 @@ function AssetNumberingSection() {
     fetchCounters()
   }, [])
 
+  // Save acts on one prefix row at a time -- guard re-entrancy per-prefix so a
+  // double click on the same row's Save button can't fire a duplicate update.
   const handleSave = async (prefix: string) => {
+    if (savingRef.current.has(prefix)) return
+    savingRef.current.add(prefix)
     setSaving(prefix)
-    const vals = editValues[prefix]
-    const res = await apiFetch('/api/settings/asset-counters', {
-      method: 'PUT',
-      body: JSON.stringify({
-        prefix,
-        last_number: vals.last,
-        year_suffix: vals.suffix || null,
-      }),
-    })
-    if (res.ok) {
-      alert(`Counter for ${prefix} updated.`)
+    try {
+      const vals = editValues[prefix]
+      const res = await apiFetch('/api/settings/asset-counters', {
+        method: 'PUT',
+        body: JSON.stringify({
+          prefix,
+          last_number: vals.last,
+          year_suffix: vals.suffix || null,
+        }),
+      })
+      if (res.ok) {
+        alert(`Counter for ${prefix} updated.`)
 
-      fetchCounters()
-    } else {
-      const err = await res.json().catch(() => ({}))
-      alert(err.error || 'Failed to update')
+        fetchCounters()
+      } else {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to update')
+      }
+    } finally {
+      savingRef.current.delete(prefix)
+      setSaving(prev => (prev === prefix ? null : prev))
     }
-    setSaving(null)
   }
 
-  const handleRecalculate = async () => {
-    setRefreshing(true)
+  const { run: handleRecalculate, pending: refreshing } = useAsyncAction(async () => {
     const res = await apiFetch('/api/settings/asset-counters', { method: 'POST' })
     if (res.ok) {
       alert('Counters recalculated from existing assets.')
@@ -88,8 +98,7 @@ function AssetNumberingSection() {
       const err = await res.json().catch(() => ({}))
       alert(err.error || 'Recalculate failed')
     }
-    setRefreshing(false)
-  }
+  })
 
   const updateEdit = (prefix: string, field: 'last' | 'suffix', value: string) => {
     setEditValues(prev => ({
@@ -203,6 +212,7 @@ function SettingsPage() {
           <h2 className="text-lg font-semibold mb-3">{CATEGORIES.find(c => c.key === activeCategory)?.label}</h2>
           {activeCategory === 'asset_numbering' && <AssetNumberingSection />}
           {activeCategory === 'dropdown_options' && <DropdownOptionsManager />}
+          {activeCategory === 'business_profiles' && <BusinessProfileManager />}
           {activeCategory === 'users' && <UserManager />}
         </div>
       </div>

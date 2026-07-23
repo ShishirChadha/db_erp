@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { isSerializedCategory } from '@/lib/sku-categories'
 
 export async function POST(
   req: NextRequest,
@@ -32,7 +33,22 @@ export async function POST(
     return NextResponse.json({ error: 'No line items found' }, { status: 400 })
   }
 
+  // Serialized categories (laptops/desktops/monitors/tablets) reserve one asset number
+  // and one asset_ledger row per unit here. Fungible categories (accessories) have no
+  // per-unit identity -- they're a single quantity-based line that just moves stock on
+  // receipt, so submit is a no-op for them (nothing to reserve). This is what makes
+  // buying accessories through the normal PO -> receive -> Purchase-Invoice flow work
+  // without minting bogus asset numbers. See docs/decisions.md and lib/sku-categories.ts.
+  const skuIds = [...new Set(items.map((i) => i.sku_id))]
+  const { data: skuRows } = await supabaseAdmin
+    .from('sku_master')
+    .select('id, category')
+    .in('id', skuIds)
+  const categoryById = new Map((skuRows || []).map((s) => [s.id, s.category]))
+
   for (const item of items) {
+    if (!isSerializedCategory(categoryById.get(item.sku_id))) continue // fungible line: nothing to reserve
+
     let prefix: string
     switch (po.purchased_by_type) {
       case 'Digitalbluez': prefix = 'DBAS'; break

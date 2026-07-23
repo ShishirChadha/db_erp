@@ -22,11 +22,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Eye, Edit, FileText, Trash2 } from "lucide-react";
+import { Plus, Eye, Edit, FileText, Trash2, Mail, Loader2 } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import DeleteInvoiceDialog from "@/components/DeleteInvoiceDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { apiFetch } from "@/lib/api-client";
 
 const statusColors: Record<string, string> = {
   draft: "bg-gray-500",
@@ -101,13 +102,59 @@ function InvoicesPage() {
     </Badge>
   );
 
+  const [pendingKey, setPendingKey] = useState<string | null>(null);
+
+  const handleDownloadPDF = async (invoiceId: string) => {
+    const key = `${invoiceId}:pdf`;
+    if (pendingKey) return;
+    setPendingKey(key);
+    try {
+      const res = await apiFetch(`/api/invoices/${invoiceId}/pdf`);
+      if (!res.ok) {
+        toast.error("Failed to generate PDF");
+        return;
+      }
+      const pdfBlob = await res.blob();
+      const url = URL.createObjectURL(pdfBlob);
+      window.open(url, "_blank");
+    } finally {
+      setPendingKey(null);
+    }
+  };
+
+  const handleEmail = async (invoiceId: string, customerEmail: string | null) => {
+    if (pendingKey) return;
+    const to = window.prompt("Send invoice to which email address?", customerEmail || "");
+    if (!to) return;
+    setPendingKey(`${invoiceId}:email`);
+    try {
+      const res = await apiFetch(`/api/invoices/${invoiceId}/email`, {
+        method: "POST",
+        body: JSON.stringify({ to }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || "Failed to send email.");
+      } else {
+        toast.success(`Sent to ${data.sent_to}.`);
+      }
+    } finally {
+      setPendingKey(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Invoices</h1>
-        <Button onClick={() => router.push("/dashboard/invoices/new")}>
-          <Plus className="mr-2 h-4 w-4" /> New Invoice
-        </Button>
+        <div className="space-x-2">
+          <Button variant="outline" onClick={() => router.push("/dashboard/invoices/import")}>
+            Import Historical Invoice
+          </Button>
+          <Button onClick={() => router.push("/dashboard/invoices/new")}>
+            <Plus className="mr-2 h-4 w-4" /> New Invoice
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -166,7 +213,12 @@ function InvoicesPage() {
             ) : (
               invoices.map((inv) => (
                 <TableRow key={inv.id} className={inv.is_deleted ? "opacity-50" : ""}>
-                  <TableCell className="font-medium">{inv.invoice_number}</TableCell>
+                  <TableCell className="font-medium">
+                    {inv.invoice_number}
+                    {inv.source === "imported_zoho" && (
+                      <Badge variant="outline" className="ml-2 text-xs">Imported</Badge>
+                    )}
+                  </TableCell>
                   <TableCell>{format(new Date(inv.invoice_date), "dd/MM/yyyy")}</TableCell>
                   <TableCell>{inv.customer_name}</TableCell>
                   <TableCell>₹{inv.grand_total?.toFixed(2)}</TableCell>
@@ -194,9 +246,18 @@ function InvoicesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => window.open(`/api/invoices/${inv.id}/pdf`, "_blank")}
+                          onClick={() => handleDownloadPDF(inv.id)}
+                          disabled={pendingKey === `${inv.id}:pdf`}
                         >
-                          <FileText className="h-4 w-4" />
+                          {pendingKey === `${inv.id}:pdf` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => handleEmail(inv.id, inv.customer_email)}
+                          disabled={pendingKey === `${inv.id}:email`}
+                        >
+                          {pendingKey === `${inv.id}:email` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
                         </Button>
                         <Button
                           variant="ghost"

@@ -4,6 +4,7 @@ import { normalizeSpecifications } from '@/lib/sku-normalizer'
 import { canonicalJson } from '@/lib/sku-resolver'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { redactForRole } from '@/lib/auth/redact'
+import { logFieldCorrections } from '@/lib/field-corrections'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -47,8 +48,9 @@ export async function PUT(
     'reorder_level',
     'notes',
     'full_sku_code',
-    'hsn_code',  
+    'hsn_code',
     'category',
+    'status',
   ]
   const updatable: any = {}
   for (const key of allowedKeys) {
@@ -98,6 +100,12 @@ export async function PUT(
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
   }
 
+  const { data: before } = await supabaseAdmin
+    .from('sku_master')
+    .select(Object.keys(updatable).join(','))
+    .eq('id', id)
+    .single()
+
   const { data, error } = await supabaseAdmin
     .from('sku_master')
     .update(updatable)
@@ -106,6 +114,20 @@ export async function PUT(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  if (before) {
+    await logFieldCorrections(
+      'sku_master',
+      id,
+      Object.keys(updatable).map((field) => ({
+        field,
+        oldValue: typeof (before as any)[field] === 'object' ? JSON.stringify((before as any)[field]) : (before as any)[field],
+        newValue: typeof updatable[field] === 'object' ? JSON.stringify(updatable[field]) : updatable[field],
+      })),
+      sessionUser.id
+    )
+  }
+
   return NextResponse.json(data)
 }
 

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 export default function DeleteInvoiceDialog({
   invoice,
@@ -22,18 +23,18 @@ export default function DeleteInvoiceDialog({
   invoice: { id: string; invoice_number: string } | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (remarks: string) => void;
+  onConfirm: (remarks: string) => void | Promise<void>;
 }) {
   const [remarks, setRemarks] = useState("");
 
-  // Guard: if no invoice, don't render anything
-  if (!invoice) return null;
-
-  const handleConfirm = () => {
-    onConfirm(remarks);
+  const { run: handleConfirm, pending } = useAsyncAction(async () => {
+    await onConfirm(remarks);
     setRemarks("");
     onOpenChange(false);
-  };
+  });
+
+  // Guard: if no invoice, don't render anything
+  if (!invoice) return null;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -56,10 +57,10 @@ export default function DeleteInvoiceDialog({
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
             Cancel
           </Button>
-          <Button variant="destructive" onClick={handleConfirm}>
+          <Button variant="destructive" onClick={() => handleConfirm()} loading={pending}>
             Delete Invoice
           </Button>
         </DialogFooter>

@@ -19,12 +19,16 @@ SKU Master (sku_master) ──┐
                            ├─→ asset_ledger (one row per physical unit)
 Purchase Orders ───────────┘        │
   └─ purchase_order_items           ├─→ sales (one row per sale, unit or accessory)
-  └─ purchase_invoices (invoices)   │     └─→ invoices (invoice_type='sales')
+  └─ purchase_invoices (invoices)   │     └─→ invoices (invoice_type='sales', entity_key)
                                     ├─→ repair_jobs (repair / replacement / return-adjacent)
                                     └─→ asset_rma_events (vendor returns, customer returns)
 
-accessories ──→ accessory_movements (in/out/adjustment ledger)
-customers ──→ sales, repair_jobs, invoices
+business_profiles (Digitalbluez/Techtenth/Cash) ──→ invoices.entity_key, sales_documents.entity_key
+                                                  ──→ invoice_sequences (per-entity, per-doc-type numbering)
+sales_documents (quotation/proforma) ──→ sales_document_items ──→ sales (on conversion, per line)
+document_sends ──→ audit log of every invoice/quotation email (or future WhatsApp) send attempt
+sku_master (accessory categories: RAM/SSD/CPU/GPU/KBD/MOUSE/ACC) ──→ stock_movements (quantity ledger, no per-unit asset_ledger row)
+customers ──→ sales, repair_jobs, invoices, sales_documents
 vendors ──→ purchase_orders, asset_ledger.vendor_id
 custom_options ──→ every owner-curated dropdown list (CPU, RAM, storage, screen size, staff names)
 ```
@@ -49,11 +53,24 @@ Both are rendered by the same `components/StockView.tsx`, parameterized by a `so
 3. **Employee intake** (`/dashboard/entry/intake` → `POST /api/stock-intake`): the current default way new stock enters the system. No PO required at entry time — `asset_number` stays `NULL` until the owner runs `POST /api/purchase-orders/from-intake` to adopt a batch of intake units into a real PO (this is the *only* place these units get numbered, and it can happen at any time relative to QC/sale, including after the unit is already sold).
 
 ### Sales (`sales`, `invoices` where `invoice_type='sales'`)
-Employee records a sale via `/dashboard/entry/sell` → `POST /api/sales-entry`. This is final immediately: the unit (or accessory) leaves stock at that moment (status → `sold`, `stock_movements`/`accessory_movements` write immediately). The GST invoice is separate, deferred bookkeeping: owner calls `POST /api/sales/[id]/finalize` whenever, which mints the invoice and marks `sales.finalized=true` — it does **not** touch inventory again (that already happened at sale time).
+Employee records a sale via `/dashboard/entry/sell` → `POST /api/sales-entry`. This is final immediately: the unit (or accessory) leaves stock at that moment (status → `sold`, `stock_movements`/`accessory_movements` write immediately). The GST invoice is separate, deferred bookkeeping: owner calls `POST /api/sales/[id]/finalize` (one sale) or `POST /api/sales/finalize-batch` (2+ sales, same customer + same entity, combined into one multi-item invoice) whenever — these mint the invoice and mark the relevant `sales.finalized=true` — they do **not** touch inventory again (that already happened at sale time).
 
-Payment tracking is independent of invoicing: `sales.payment_status` (`pending`/`partial`/`paid`), `amount_paid`, `payment_account` (which of Digitalbluez/Techtenth/Cash received the money — orthogonal to `sale_type` GST/Cash), and `sold_by` (plain text staff name for incentive attribution, not tied to a login account).
+Payment tracking is independent of invoicing: `sales.payment_status` (`pending`/`partial`/`paid`), `amount_paid`, `payment_account` (which of Digitalbluez/Techtenth/Cash received the money — orthogonal to `sale_type` GST/Cash, and also the signal `finalize` uses to resolve which `business_profiles` entity issues the invoice), and `sold_by` (plain text staff name for incentive attribution, not tied to a login account).
 
-The **Sales Ledger** (`/dashboard/sales`, owner-only) is the transactional/financial view of every sale (payment state, invoice status, editable). This is distinct from the **Sold Stock** tab on Live Stock/Stock (inventory/warranty view — "which unit, sold when, to whom").
+The **Sales Ledger** (`/dashboard/sales`, owner-only) is the transactional/financial view of every sale (payment state, invoice status, editable, multi-select → combined invoice). This is distinct from the **Sold Stock** tab on Live Stock/Stock (inventory/warranty view — "which unit, sold when, to whom").
+
+### Business entities & GST (`business_profiles`)
+Digitalbluez, Techtenth, and Cash are each a row in `business_profiles` (`key`, `legal_name`, `address`, `state`/`state_code`, `gstin`, `is_gst_registered`, `logo_url`/`signature_url`/`stamp_url`, `bank_details` jsonb, `invoice_prefix`/`quotation_prefix`/`proforma_prefix`, `invoice_number_format`) — managed in Settings → Business Profiles, owner-only. Digitalbluez is GST-registered (GSTIN `09AAICD2790D1ZM`, Uttar Pradesh); Techtenth and Cash are not, so their invoices render as a "Bill of Supply" with no tax.
+
+GST classification (`lib/gstCalculation.ts`, `lib/invoice-finalize.ts`, `lib/sales-documents.ts`) compares the entity's `state_code` against the place of supply (customer's GSTIN state code if B2B, else the entity's own state) — same state → CGST+SGST, different → IGST.
+
+All document numbering (sales invoices, quotations, proformas) goes through one atomic RPC, `next_document_number(entity_key, doc_type, financial_year)`, backed by `invoice_sequences` keyed on `(entity_key, doc_type, financial_year)`. Numbers are server-minted only, never client-editable, never reused. Digitalbluez's real sales-invoice series continues Zoho's legal numbering unbroken (seeded at 680, so the ERP's first invoice is `DBI2026/27-00681`).
+
+### Quotations & Proforma Invoices (`sales_documents`, `sales_document_items`)
+A non-committal price offer (quotation) or a provisional-not-a-tax-invoice document (proforma), created at `/dashboard/quotations` (owner-only). Line items reference a **SKU** (not a specific physical unit — refurb units are qty-1/unique, so locking a serial number at quote time could strand it). Converting a line hands off to the normal `/dashboard/entry/sell` flow (customer + price pre-filled) rather than creating a sale/invoice directly — this keeps `POST /api/sales-entry` as the single place a unit ever gets marked sold. `sales_document_items.converted`/`sale_id` are set per-line on conversion, so partial conversion (some lines sold, others still open) falls out naturally. `sales_documents.status` (draft/sent/accepted/rejected/expired/void) is a real stored field — unlike most status-like facts in this app, a quotation's own lifecycle has no other table to derive it from.
+
+### Sharing invoices/quotations (`document_sends`)
+An "Email" button on invoices and quotations sends the PDF via Resend (`lib/email.ts`) and logs every attempt (success or failure) to `document_sends`. WhatsApp sharing is schema-ready (`document_sends.channel` accepts `'whatsapp'`) but not implemented — deferred pending Meta Business verification.
 
 ### Reassigning a unit's SKU, and tracking upgrade cost (`asset_cost_adjustments`)
 A physical unit can be upgraded after intake (more RAM added, a bigger SSD swapped
@@ -69,8 +86,8 @@ same idiom as `stock_movements`/`asset_qc_checks` — supports multiple upgrades
 a unit's life with an audit trail), surfaced via an owner-only panel on the asset
 detail page (`/dashboard/stock/[id]`) alongside the original `cost_price`.
 
-### Accessories (`accessories`, `accessory_movements`)
-Simple catalog + movement ledger (mirrors the `stock_movements` pattern: `movement_type` in/out/adjustment/return_in, trigger-maintained `quantity` on the parent row, hard-errors on oversell rather than clamping). Anyone can flag a new accessory type at point of sale (lands `review_status='pending_review'`, zero cost); only the owner activates it with real cost/supplier data (`/dashboard/accessories`).
+### Accessories (`sku_master` + `stock_movements` — no separate table)
+Accessories (RAM, SSD, CPU, GPU, keyboard, mouse, and anything else via the generic `ACC` category) are `sku_master` rows like a laptop, not a separate catalog — see `docs/decisions.md` (2026-07-23) for why the earlier `accessories`/`accessory_movements` table pair was retired. They're tracked purely via `stock_movements` (trigger-maintained `sku_master.quantity_in_stock`) with **no `asset_ledger` row** — fungible/quantity-only items don't need per-unit serial/QC/warranty tracking. A newly employee-created accessory SKU is immediately live and sellable, same as a new laptop SKU (`/dashboard/accessories`); the owner attaches a real vendor/PO/cost later via a deferred-PO-attach step (one `purchase_order_items` line, `quantity = N`, no per-unit asset number), mirroring `/api/purchase-orders/from-intake`'s "employee stock-in now, owner paperwork later" pattern.
 
 ### Repair / Replacement / Return (`repair_jobs`, `asset_rma_events`)
 `repair_jobs.job_type` ∈ `('repair','replacement')`, `is_own_stock` boolean (our unit vs. customer's own device). A `replacement` job swaps in one of our units for the customer's broken one — that swapped-in unit is marked `sold` **immediately** at job creation (same "live" principle as a sale), not gated behind owner approval. `status`/`payment_status`/`payment_account`/`amount_charged`/`amount_paid` track the job itself, separately from inventory state.
@@ -88,8 +105,8 @@ Customer/vendor returns use the older, separately-built `asset_rma_events` table
 | Reassign a unit's SKU ("Fix SKU" / Sell's "Change SKU") | ✅ | ✅ |
 | Record/view an asset's upgrade cost adjustments | ❌ | ✅ |
 | View Sales Ledger, Stock (Main ERP), RMA (vendor returns) | ❌ (page-gated) | ✅ |
-| Flag a new accessory type / add a new customer (lightweight fields) | ✅ | ✅ |
-| Activate a pending accessory, edit its cost | ❌ | ✅ |
+| Create a new accessory SKU / add a new customer (lightweight fields) | ✅ | ✅ |
+| Attach an accessory SKU's stock-in to a real PO/vendor/cost | ❌ | ✅ |
 
 Note the split above: **reassigning** which SKU an asset points to is open to both
 roles (it never reads or writes cost/vendor data), while **editing** a SKU's own
@@ -110,9 +127,11 @@ See `docs/current-progress.md`.
 
 ## Known limitations / technical debt
 - `sales.pmt` (legacy free-text payment note column) still exists but is unused by any current write path — superseded by `payment_status`/`payment_account`. Not removed (no harm leaving it).
-- `invoices.invoice_number` has two redundant unique constraints (`invoices_invoice_number_key`, `invoices_invoice_number_unique`) — flagged in earlier planning (Part 4 of the historical plan) as a fix needed before bulk-backfilling old purchase invoices that might share one real invoice number across multiple migrated POs. **Not yet applied** — UNCERTAIN whether this is still needed depends on whether that bulk-backfill work happens.
 - The 751 historically-migrated `purchase_orders` rows have no linked `invoices` (purchase-side) rows at all — by design, not a bug (see `docs/decisions.md`), but still an open backlog item for the owner.
 - No automated test suite. All verification during development was manual (browser) + disposable live-HTTP scripts against a running dev server, cleaned up after each run.
+- Email sending (invoices/quotations) is fully built but not yet live — needs a Resend account, a verified sending domain, and `RESEND_API_KEY`/`RESEND_FROM_EMAIL` in the environment. See `docs/CHANGELOG.md` (2026-07-23 entry).
+- WhatsApp sharing is schema-ready (`document_sends.channel` accepts `'whatsapp'`) but not implemented — deferred pending Meta Business verification (2-4 week external process).
+- `components/InvoiceForm.tsx` (the manual multi-item invoice form) is hardcoded to Digitalbluez's state code for GST classification — no entity picker yet. Low priority: the main sell→finalize flow already resolves the entity correctly from `payment_account`.
 - `docs/reconciliation_decisions.md` (pre-existing file, dated 2026-07-20) documents an earlier round of ADR-style decisions (trigger-based stock cache, RLS floor-raise, etc.) that were partially superseded/operationalized by the work described in `docs/decisions.md` — treat the newer file as authoritative where they overlap.
 
 ## Important assumptions

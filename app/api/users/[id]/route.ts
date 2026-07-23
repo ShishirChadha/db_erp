@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 const ALLOWED_PAGE_KEYS = [
-  'new_entry', 'accessories', 'repair_jobs', 'sku_master',
+  'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'sku_master',
   'live_stock', 'invoices', 'customers', 'activities',
 ]
 

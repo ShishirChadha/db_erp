@@ -2,9 +2,11 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { buildConfigSummary } from '@/lib/sku-config-summary'
 
 interface SKU {
   id: string
@@ -120,10 +122,17 @@ function SkuMasterPage() {
     setModalOpen(true)
   }
 
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const handleDelete = async (sku: SKU) => {
+    if (deletingId) return
     if (!confirm(`Permanently delete ${sku.full_sku_code}? This action cannot be undone.`)) return
-    await apiFetch(`/api/sku-master/${sku.id}`, { method: 'DELETE' })
-    fetchSkus()
+    setDeletingId(sku.id)
+    try {
+      await apiFetch(`/api/sku-master/${sku.id}`, { method: 'DELETE' })
+      fetchSkus()
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   if (loading) return <div className="p-4">Loading…</div>
@@ -191,13 +200,16 @@ function SkuMasterPage() {
           {displayedSkus.map(sku => (
             <tr key={sku.id}>
               <td className="border p-2">{sku.full_sku_code}</td>
-              <td className="border p-2">{sku.sku_description}</td>
+              <td className="border p-2">{buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description}</td>
               <td className="border p-2">{sku.hsn_code || '—'}</td>
               <td className="border p-2">{sku.category}</td>
               <td className="border p-2">{sku.quantity_in_stock ?? '0'}</td>
               <td className="border p-2 space-x-2">
-                <button onClick={() => handleEdit(sku)} className="text-blue-600 underline">Edit</button>
-                <button onClick={() => handleDelete(sku)} className="text-red-600 underline">Delete</button>
+                <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
+                <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1">
+                  {deletingId === sku.id && <Loader2 className="size-3 animate-spin" />}
+                  Delete
+                </button>
               </td>
             </tr>
           ))}

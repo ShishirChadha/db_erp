@@ -2,6 +2,7 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
@@ -9,6 +10,9 @@ import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { useAsyncAction } from '@/lib/useAsyncAction'
+import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
+import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 interface StockUnit {
   id: string
@@ -16,6 +20,8 @@ interface StockUnit {
   serial_number: string | null
   sku_code: string
   description: string
+  category?: string | null
+  specifications?: Record<string, any> | null
   status: string
 }
 
@@ -27,6 +33,19 @@ interface Accessory {
 }
 
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
+
+// Accessories are sku_master rows filtered to the non-serialized categories (see
+// docs/decisions.md, 2026-07-23) -- map the raw SKU shape into this page's existing
+// Accessory shape so the rest of the component doesn't need to change.
+const ACCESSORY_CATEGORIES = 'RAM,SSD,CPU,GPU,KBD,MOUSE,ACC,ADP'
+function mapSkuToAccessory(s: any): Accessory {
+  return {
+    id: s.id,
+    accessory_name: s.sku_description || s.model_name || s.full_sku_code,
+    quantity: s.quantity_in_stock,
+    selling_price: s.selling_price_default,
+  }
+}
 
 function unitLabel(u: StockUnit) {
   return u.asset_number || (u.serial_number ? `SN: ${u.serial_number}` : 'no tag yet')
@@ -41,10 +60,19 @@ function SellPageInner() {
   const searchParams = useSearchParams()
   const prefillAssetId = searchParams.get('asset_id')
   const prefillAccessoryId = searchParams.get('accessory_id')
+  // Prefill from converting one line of a quotation/proforma (see
+  // /dashboard/quotations) -- customer + price carried over, owner still
+  // picks the specific physical unit (refurb units are qty-1/unique, so a
+  // quote can never lock a specific serial number ahead of time).
+  const prefillCustomerId = searchParams.get('customer_id')
+  const sourceDocumentItemId = searchParams.get('source_document_item_id')
+  const prefillRate = searchParams.get('prefill_rate')
+  const prefillGstRate = searchParams.get('prefill_gst_rate')
+  const skuSearch = searchParams.get('sku_search')
 
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  const [showReview, setShowReview] = useState(false)
 
   const [mode, setMode] = useState<'unit' | 'accessory'>(prefillAccessoryId ? 'accessory' : 'unit')
 
@@ -53,8 +81,17 @@ function SellPageInner() {
   const [units, setUnits] = useState<StockUnit[]>([])
   const [selectedUnit, setSelectedUnit] = useState<StockUnit | null>(null)
   const [loadingUnits, setLoadingUnits] = useState(false)
-  const [bundled, setBundled] = useState<{ accessory_id: string; accessory_name: string; quantity: number }[]>([])
+  const [bundled, setBundled] = useState<{ accessory_id: string; accessory_name: string; quantity: number; price: number }[]>([])
   const [showChangeSku, setShowChangeSku] = useState(false)
+  const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
+
+  useEffect(() => {
+    apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
+      setTemplates(Array.isArray(data) ? data : [])
+    })
+  }, [])
+
+  const unitConfigSummary = (u: StockUnit) => buildConfigSummary(u.category, u.specifications, templates) || u.description
 
   // Accessory mode
   const [selectedAccessory, setSelectedAccessory] = useState<Accessory | null>(null)
@@ -86,8 +123,8 @@ function SellPageInner() {
   // instead of requiring the employee to type before seeing anything.
   useEffect(() => {
     if (mode !== 'accessory') return
-    apiFetch('/api/accessories').then(res => res.json()).then((data) => {
-      setBrowsableAccessories(Array.isArray(data) ? data : [])
+    apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}`).then(res => res.json()).then((data) => {
+      setBrowsableAccessories(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
     })
   }, [mode])
 
@@ -109,13 +146,21 @@ function SellPageInner() {
   // Prefill from Accessories page's "Sell" link.
   useEffect(() => {
     if (!prefillAccessoryId) return
-    apiFetch(`/api/accessories?id=${prefillAccessoryId}&include_pending=true`).then(res => res.json()).then((data) => {
+    apiFetch(`/api/sku-master?id=${prefillAccessoryId}`).then(res => res.json()).then((data) => {
       if (Array.isArray(data) && data[0]) {
         setMode('accessory')
-        setSelectedAccessory(data[0])
+        setSelectedAccessory(mapSkuToAccessory(data[0]))
       }
     })
   }, [prefillAccessoryId])
+
+  // Prefill from converting a quotation/proforma line.
+  useEffect(() => {
+    if (prefillCustomerId) setCustomerId(prefillCustomerId)
+    if (skuSearch) { setMode('unit'); setUnitSearch(skuSearch) }
+    if (prefillRate) { setSalePrice(Number(prefillRate)); setPriceMode('pre_gst') }
+    if (prefillGstRate) { setGstPercent(Number(prefillGstRate)); setSaleType(Number(prefillGstRate) > 0 ? 'GST' : 'Cash') }
+  }, [prefillCustomerId, skuSearch, prefillRate, prefillGstRate])
 
   useEffect(() => {
     if (mode !== 'unit') return
@@ -133,18 +178,18 @@ function SellPageInner() {
   useEffect(() => {
     if (!accessorySearch.trim()) { setAccessoryOptions([]); return }
     const timer = setTimeout(async () => {
-      const res = await apiFetch(`/api/accessories?search=${encodeURIComponent(accessorySearch)}`)
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(accessorySearch)}`)
       const data = await res.json()
-      setAccessoryOptions(Array.isArray(data) ? data : [])
+      setAccessoryOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
     }, 300)
     return () => clearTimeout(timer)
   }, [accessorySearch])
 
-  const baseGstPrice = priceMode === 'pre_gst' ? salePrice : salePrice / (1 + gstPercent / 100)
+  const bundledAddOnsTotal = bundled.reduce((sum, b) => sum + (b.price || 0) * b.quantity, 0)
+  const unitBaseGstPrice = priceMode === 'pre_gst' ? salePrice : salePrice / (1 + gstPercent / 100)
+  const baseGstPrice = unitBaseGstPrice + bundledAddOnsTotal
   const gstAmount = saleType === 'GST' ? Math.round(baseGstPrice * gstPercent * 100) / 10000 : 0
-  const total = saleType === 'GST'
-    ? (priceMode === 'post_gst' ? salePrice : baseGstPrice + gstAmount)
-    : salePrice
+  const total = saleType === 'GST' ? baseGstPrice + gstAmount : baseGstPrice
   const balanceDue = total - (paymentStatus === 'paid' ? total : amountPaid)
 
   // Switching modes converts the number in the box so the total the customer pays
@@ -172,18 +217,26 @@ function SellPageInner() {
 
   const addBundledAccessory = (a: Accessory) => {
     if (bundled.some(b => b.accessory_id === a.id)) return
-    setBundled(prev => [...prev, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1 }])
+    setBundled(prev => [...prev, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1, price: 0 }])
     setAccessorySearch(''); setAccessoryOptions([])
   }
 
-  const handleSubmit = async () => {
+  const openReview = () => {
+    setError('')
+    if (mode === 'unit' && !selectedUnit) { setError('Select a unit to sell.'); return }
+    if (mode === 'accessory' && !selectedAccessory) { setError('Select an accessory to sell.'); return }
+    if (!customerId) { setError('Select or add a customer.'); return }
+    if (!salePrice || salePrice <= 0) { setError('Enter a valid selling price.'); return }
+    setShowReview(true)
+  }
+
+  const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     setError('')
     if (mode === 'unit' && !selectedUnit) { setError('Select a unit to sell.'); return }
     if (mode === 'accessory' && !selectedAccessory) { setError('Select an accessory to sell.'); return }
     if (!customerId) { setError('Select or add a customer.'); return }
     if (!salePrice || salePrice <= 0) { setError('Enter a valid selling price.'); return }
 
-    setSubmitting(true)
     try {
       const payload: any = {
         customer_id: customerId,
@@ -195,11 +248,12 @@ function SellPageInner() {
         amount_paid: paymentStatus === 'partial' ? amountPaid : undefined,
         payment_account: paymentAccount,
         sold_by: soldBy || undefined,
+        source_document_item_id: sourceDocumentItemId || undefined,
       }
       if (mode === 'unit') {
         payload.asset_ledger_id = selectedUnit!.id
         if (bundled.length > 0) {
-          payload.bundled_accessories = bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity }))
+          payload.bundled_accessories = bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.price || 0 }))
         }
       } else {
         payload.accessory_id = selectedAccessory!.id
@@ -216,10 +270,8 @@ function SellPageInner() {
       router.replace('/dashboard/entry/sell')
     } catch (err: any) {
       setError(err.message)
-    } finally {
-      setSubmitting(false)
     }
-  }
+  })
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -231,6 +283,11 @@ function SellPageInner() {
         This unit/accessory leaves stock immediately. The GST invoice is generated separately by the owner.
       </p>
 
+      {sourceDocumentItemId && (
+        <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded p-3 mb-4 text-sm">
+          Converting one line from a quotation/proforma — customer and price carried over. Pick the specific unit to sell below.
+        </div>
+      )}
       {done && (
         <div className="bg-green-50 border border-green-200 text-green-800 rounded p-3 mb-4 flex justify-between items-center">
           <span>Sale recorded — stock updated. Invoice will be generated later.</span>
@@ -262,7 +319,7 @@ function SellPageInner() {
               <div className="border p-2 rounded flex justify-between items-center bg-blue-50">
                 <div>
                   <div className="font-medium">{unitLabel(selectedUnit)}</div>
-                  <div className="text-xs text-gray-600">{selectedUnit.sku_code} — {selectedUnit.description}</div>
+                  <div className="text-xs text-gray-600">{selectedUnit.sku_code} — {unitConfigSummary(selectedUnit)}</div>
                   <button type="button" onClick={() => setShowChangeSku(true)} className="text-blue-600 underline text-xs mt-1">
                     Wrong or upgraded spec? Change SKU
                   </button>
@@ -290,7 +347,7 @@ function SellPageInner() {
                         className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
                       >
                         <div className="font-medium">{unitLabel(u)}</div>
-                        <div className="text-xs text-gray-600">{u.sku_code} — {u.description}</div>
+                        <div className="text-xs text-gray-600">{u.sku_code} — {unitConfigSummary(u)}</div>
                       </li>
                     ))}
                   </ul>
@@ -361,7 +418,7 @@ function SellPageInner() {
 
         {mode === 'unit' && selectedUnit && (
           <div>
-            <label className="block font-medium text-sm mb-1">Bundled Accessories (included free, e.g. adapter, bag)</label>
+            <label className="block font-medium text-sm mb-1">Bundled Accessories (free by default -- set a price if the customer is paying extra, e.g. RAM upgrade, mouse)</label>
             <input
               value={accessorySearch}
               onChange={(e) => setAccessorySearch(e.target.value)}
@@ -388,6 +445,16 @@ function SellPageInner() {
                       value={b.quantity}
                       onChange={(e) => setBundled(prev => prev.map((p, i) => i === idx ? { ...p, quantity: Number(e.target.value) } : p))}
                       className="w-12 border rounded text-center"
+                      title="Quantity"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={b.price || ''}
+                      onChange={(e) => setBundled(prev => prev.map((p, i) => i === idx ? { ...p, price: Number(e.target.value) } : p))}
+                      placeholder="₹0 (free)"
+                      className="w-20 border rounded text-center"
+                      title="Extra charge per unit"
                     />
                     <button onClick={() => setBundled(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
                   </span>
@@ -495,6 +562,7 @@ function SellPageInner() {
         </div>
 
         <div className="text-right text-sm space-y-1">
+          {bundledAddOnsTotal > 0 && <p>Add-ons: ₹{bundledAddOnsTotal.toFixed(2)}</p>}
           {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{baseGstPrice.toFixed(2)}</p>}
           {saleType === 'GST' && <p>GST: ₹{gstAmount.toFixed(2)}</p>}
           <p className="font-bold text-base">Total: ₹{total.toFixed(2)}</p>
@@ -503,11 +571,12 @@ function SellPageInner() {
 
         <div className="flex justify-end">
           <button
-            onClick={handleSubmit}
+            onClick={() => openReview()}
             disabled={submitting}
             className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50"
           >
-            {submitting ? 'Saving...' : 'Record Sale'}
+            {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
+            {submitting ? 'Saving...' : 'Review & Record Sale'}
           </button>
         </div>
       </div>
@@ -517,6 +586,29 @@ function SellPageInner() {
           assetId={selectedUnit.id}
           onClose={() => setShowChangeSku(false)}
           onReassigned={() => fetchUnitById(selectedUnit.id)}
+        />
+      )}
+
+      {showReview && (
+        <ReviewSummaryDialog
+          title="Review Sale"
+          confirming={submitting}
+          onBack={() => setShowReview(false)}
+          onConfirm={async () => { await handleSubmit(); setShowReview(false) }}
+          rows={[
+            { label: 'Item', value: mode === 'unit'
+              ? (selectedUnit ? `${unitLabel(selectedUnit)} — ${selectedUnit.sku_code}` : '')
+              : (selectedAccessory ? `${selectedAccessory.accessory_name} × ${accessoryQty}` : '') },
+            { label: 'Customer', value: customerData?.customer_name || '' },
+            { label: 'Sale Type', value: saleType },
+            { label: 'Selling Price', value: `₹${salePrice.toFixed(2)}` },
+            ...(bundled.length > 0 ? [{ label: 'Bundled Accessories', value: bundled.map(b => `${b.accessory_name} ×${b.quantity}${b.price ? ` (+₹${b.price})` : ''}`).join(', ') }] : []),
+            { label: 'Total', value: `₹${total.toFixed(2)}` },
+            { label: 'Payment', value: paymentStatus === 'partial' ? `Partial — ₹${amountPaid.toFixed(2)} paid` : paymentStatus },
+            { label: 'Received Into', value: paymentAccount },
+            { label: 'Sold By', value: soldBy },
+            { label: 'Sale Date', value: saleDate },
+          ]}
         />
       )}
     </div>

@@ -18,6 +18,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Loader2 } from "lucide-react";
+import { apiFetch } from "@/lib/api-client";
+import { useAsyncAction } from "@/lib/useAsyncAction";
 
 interface Customer {
   id: string;
@@ -31,6 +34,8 @@ interface Customer {
   source: string;
   google_review: boolean;
   social_following: string;
+  state?: string;
+  state_code?: string;
 }
 
 export default function EditCustomerDialog({
@@ -45,26 +50,48 @@ export default function EditCustomerDialog({
   onUpdate: () => void;
 }) {
   const [formData, setFormData] = useState<Partial<Customer>>({});
-  const [loading, setLoading] = useState(false);
+  const [gstFetching, setGstFetching] = useState(false);
+  const [gstError, setGstError] = useState("");
   const supabase = createClient();
 
   useEffect(() => {
     setFormData(customer);
+    setGstError("");
   }, [customer]);
 
   const handleChange = (field: keyof Customer, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleFetchGst = async () => {
+    if (!formData.gst_number?.trim()) return;
+    setGstFetching(true);
+    setGstError("");
+    try {
+      const res = await apiFetch(`/api/gst?gst=${encodeURIComponent(formData.gst_number.trim())}`);
+      const data = await res.json();
+      setFormData((prev) => ({
+        ...prev,
+        customer_name: data.company_name || prev.customer_name,
+        address: data.address || prev.address,
+        state: data.state || prev.state,
+        state_code: data.state_code || prev.state_code,
+      }));
+      if (!res.ok) setGstError(data.error || "Could not verify this GSTIN, but state was derived from it.");
+    } catch (err: any) {
+      setGstError("Failed to reach GST lookup service.");
+    } finally {
+      setGstFetching(false);
+    }
+  };
+
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const { id, ...updateData } = formData;
     const { error } = await supabase
       .from("customers")
       .update(updateData)
       .eq("id", customer.id);
-    setLoading(false);
     if (error) {
       console.error(error);
       alert("Update failed.");
@@ -72,7 +99,7 @@ export default function EditCustomerDialog({
       onOpenChange(false);
       onUpdate();
     }
-  };
+  });
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -116,10 +143,17 @@ export default function EditCustomerDialog({
             </div>
             <div>
               <Label>GST Number</Label>
-              <Input
-                value={formData.gst_number || ""}
-                onChange={(e) => handleChange("gst_number", e.target.value)}
-              />
+              <div className="flex gap-2">
+                <Input
+                  value={formData.gst_number || ""}
+                  onChange={(e) => handleChange("gst_number", e.target.value.toUpperCase())}
+                />
+                <Button type="button" variant="outline" disabled={gstFetching || !formData.gst_number?.trim()} onClick={handleFetchGst}>
+                  {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
+                </Button>
+              </div>
+              {gstError && <p className="text-xs text-red-500 mt-1">{gstError}</p>}
+              {formData.state && <p className="text-xs text-gray-400 mt-1">State: {formData.state} ({formData.state_code})</p>}
             </div>
             <div>
               <Label>Address</Label>
@@ -179,11 +213,11 @@ export default function EditCustomerDialog({
             </div>
           </div>
           <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancel
             </Button>
-            <Button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Save Changes"}
+            <Button type="submit" loading={loading}>
+              Save Changes
             </Button>
           </div>
         </form>

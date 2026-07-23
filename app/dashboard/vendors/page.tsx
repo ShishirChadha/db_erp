@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner'
 import DeleteRecordDialog from '@/components/DeleteRecordDialog'
 import { cn } from '@/lib/utils'
+import { useAsyncAction } from '@/lib/useAsyncAction'
 
 type Vendor = {
   id: string
@@ -142,7 +143,6 @@ function VendorsPage() {
   const [viewItem, setViewItem] = useState<Vendor | null>(null)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [form, setForm] = useState(emptyForm)
-  const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [fetchingGst, setFetchingGst] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -248,13 +248,12 @@ function VendorsPage() {
     setShowForm(true)
   }
 
-  const handleSubmit = async () => {
+  const { run: handleSubmit, pending: loading } = useAsyncAction(async () => {
     setError('')
     if (!form.company_name) {
       setError('Company Name is required.')
       return
     }
-    setLoading(true)
 
     const payload = {
       company_name: form.company_name,
@@ -292,7 +291,6 @@ function VendorsPage() {
     const { data, error: err } = result
     if (err) {
       setError(err.message)
-      setLoading(false)
       return
     }
 
@@ -304,8 +302,7 @@ function VendorsPage() {
       toast.success('Vendor added successfully')
     }
     resetForm()
-    setLoading(false)
-  }
+  })
 
   const handleSoftDelete = async (remarks: string) => {
     if (!vendorToDelete) return
@@ -331,18 +328,25 @@ function VendorsPage() {
     setDeleteDialogOpen(false)
   }
 
+  const [restoringId, setRestoringId] = useState<string | null>(null)
   const handleRestore = async (vendor: Vendor) => {
-    const { error } = await supabase
-      .from('vendors')
-      .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
-      .eq('id', vendor.id)
-    if (error) {
-      toast.error('Failed to restore vendor')
-    } else {
-      setVendors(vendors.map(v =>
-        v.id === vendor.id ? { ...v, is_deleted: false, deleted_remarks: null, deleted_at: null } : v
-      ))
-      toast.success('Vendor restored')
+    if (restoringId) return
+    setRestoringId(vendor.id)
+    try {
+      const { error } = await supabase
+        .from('vendors')
+        .update({ is_deleted: false, deleted_remarks: null, deleted_at: null })
+        .eq('id', vendor.id)
+      if (error) {
+        toast.error('Failed to restore vendor')
+      } else {
+        setVendors(vendors.map(v =>
+          v.id === vendor.id ? { ...v, is_deleted: false, deleted_remarks: null, deleted_at: null } : v
+        ))
+        toast.success('Vendor restored')
+      }
+    } finally {
+      setRestoringId(null)
     }
   }
 
@@ -596,12 +600,12 @@ function VendorsPage() {
           <div className="flex gap-3 mt-4">
             <Button
               className="flex-1 bg-blue-600 hover:bg-blue-700"
-              onClick={handleSubmit}
-              disabled={loading}
+              onClick={() => handleSubmit()}
+              loading={loading}
             >
-              {loading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Saving...</> : editingVendor ? 'Update Vendor' : 'Save Vendor'}
+              {editingVendor ? 'Update Vendor' : 'Save Vendor'}
             </Button>
-            <Button variant="outline" onClick={resetForm}>
+            <Button variant="outline" onClick={resetForm} disabled={loading}>
               Cancel
             </Button>
           </div>
