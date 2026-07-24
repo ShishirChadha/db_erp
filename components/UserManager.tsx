@@ -10,6 +10,9 @@ interface AppUser {
   role: 'owner' | 'employee'
   is_active: boolean
   allowed_pages: string[]
+  username: string | null
+  contact_email: string | null
+  employee_id: string | null
 }
 
 const PAGE_OPTIONS = [
@@ -56,16 +59,20 @@ export default function UserManager() {
   const busyRef = useRef(false)
 
   // Create-user form state
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
   const [fullName, setFullName] = useState('')
+  const [contactEmail, setContactEmail] = useState('')
+  const [employeeId, setEmployeeId] = useState('')
   const [password, setPassword] = useState('')
   const [role, setRole] = useState<'owner' | 'employee'>('employee')
   const [allowedPages, setAllowedPages] = useState<string[]>([])
 
-  // Which existing user row has its access editor open
+  // Which existing user row has its access editor / profile editor open
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editPages, setEditPages] = useState<string[]>([])
   const [newPasswordById, setNewPasswordById] = useState<Record<string, string>>({})
+  const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
+  const [editProfile, setEditProfile] = useState({ fullName: '', employeeId: '', contactEmail: '' })
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -83,7 +90,8 @@ export default function UserManager() {
   const createUser = async () => {
     if (busyRef.current) return
     setError('')
-    if (!email.trim()) { setError('Email is required.'); return }
+    if (!username.trim()) { setError('User ID is required.'); return }
+    if (/[@\s]/.test(username.trim())) { setError('User ID cannot contain spaces or "@" — use a plain name like ShishirCH.'); return }
     if (!password || password.length < 6) { setError('Password must be at least 6 characters.'); return }
     busyRef.current = true
     setBusy(true)
@@ -91,15 +99,17 @@ export default function UserManager() {
       const res = await apiFetch('/api/users', {
         method: 'POST',
         body: JSON.stringify({
-          email: email.trim(),
+          username: username.trim(),
           password,
           full_name: fullName.trim() || undefined,
+          contact_email: contactEmail.trim() || undefined,
+          employee_id: employeeId.trim() || undefined,
           role,
           allowed_pages: allowedPages,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create user.')
-      setEmail(''); setFullName(''); setPassword(''); setRole('employee'); setAllowedPages([])
+      setUsername(''); setFullName(''); setContactEmail(''); setEmployeeId(''); setPassword(''); setRole('employee'); setAllowedPages([])
       await fetchUsers()
     } catch (e: any) {
       setError(e.message)
@@ -141,6 +151,32 @@ export default function UserManager() {
     }
   }
 
+  const openEditProfile = (u: AppUser) => {
+    setEditingProfileId(u.id)
+    setEditProfile({ fullName: u.full_name || '', employeeId: u.employee_id || '', contactEmail: u.contact_email || '' })
+  }
+
+  const saveProfile = async (id: string) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    try {
+      await apiFetch(`/api/users/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          full_name: editProfile.fullName.trim(),
+          employee_id: editProfile.employeeId.trim(),
+          contact_email: editProfile.contactEmail.trim(),
+        }),
+      })
+      setEditingProfileId(null)
+      await fetchUsers()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
   const setNewPassword = async (id: string) => {
     if (busyRef.current) return
     const pw = newPasswordById[id]
@@ -168,12 +204,20 @@ export default function UserManager() {
         <h3 className="font-medium text-sm mb-3">Create User</h3>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Email</label>
-            <input value={email} onChange={(e) => setEmail(e.target.value)} className="border p-2 w-full rounded" placeholder="employee@digitalbluez.com" />
+            <label className="block text-xs text-gray-500 mb-1">User ID</label>
+            <input value={username} onChange={(e) => setUsername(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. ShishirCH, Rohit" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Full Name (optional)</label>
-            <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="border p-2 w-full rounded" />
+            <label className="block text-xs text-gray-500 mb-1">Display Name</label>
+            <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. Rohit Sharma" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Employee ID (optional)</label>
+            <input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="border p-2 w-full rounded" />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Contact Email (optional, for notifications)</label>
+            <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="border p-2 w-full rounded" placeholder="employee@digitalbluez.com" />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Password</label>
@@ -215,13 +259,17 @@ export default function UserManager() {
             <div key={u.id} className="p-2">
               <div className="flex justify-between items-center">
                 <div>
-                  <div className="text-sm font-medium">{u.email}</div>
+                  <div className="text-sm font-medium">{u.full_name || u.username || u.email}</div>
                   <div className="text-xs text-gray-500">
-                    {u.full_name || '—'} · {u.role === 'owner' ? 'Owner' : 'Employee'}
+                    {u.username ? `ID: ${u.username}` : u.email} · {u.role === 'owner' ? 'Owner' : 'Employee'}
+                    {u.employee_id && <> · Emp #{u.employee_id}</>}
                     {!u.is_active && <span className="text-red-500"> · Inactive</span>}
                   </div>
                 </div>
                 <div className="flex gap-2 items-center">
+                  <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+                    Edit name / ID
+                  </button>
                   {u.role === 'employee' && (
                     <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
                       Edit access
@@ -236,6 +284,43 @@ export default function UserManager() {
                   </button>
                 </div>
               </div>
+
+              {editingProfileId === u.id && (
+                <div className="mt-2 border-t pt-2 grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Display Name</label>
+                    <input
+                      value={editProfile.fullName}
+                      onChange={(e) => setEditProfile(prev => ({ ...prev, fullName: e.target.value }))}
+                      className="border p-1 text-sm rounded w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Employee ID</label>
+                    <input
+                      value={editProfile.employeeId}
+                      onChange={(e) => setEditProfile(prev => ({ ...prev, employeeId: e.target.value }))}
+                      className="border p-1 text-sm rounded w-full"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Contact Email</label>
+                    <input
+                      value={editProfile.contactEmail}
+                      onChange={(e) => setEditProfile(prev => ({ ...prev, contactEmail: e.target.value }))}
+                      className="border p-1 text-sm rounded w-full"
+                    />
+                  </div>
+                  <div className="col-span-3 flex gap-2 mt-1">
+                    <button onClick={() => saveProfile(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
+                      Save
+                    </button>
+                    <button onClick={() => setEditingProfileId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {editingId === u.id && (
                 <div className="mt-2 border-t pt-2">

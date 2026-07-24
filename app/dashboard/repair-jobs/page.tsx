@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
+import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -123,7 +124,12 @@ function RepairJobsPage() {
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Repair Jobs</h1>
+      <div className="flex justify-between items-start gap-4 mb-4">
+        <h1 className="text-2xl font-bold">Repair Jobs</h1>
+        <Link href="/dashboard/entry/service?return_to=%2Fdashboard%2Frepair-jobs" className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0">
+          + New Service Entry
+        </Link>
+      </div>
 
       <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded mb-4">
         <option value="">All Statuses</option>

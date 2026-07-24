@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
@@ -39,6 +39,11 @@ function today() {
 
 function StockIntakePage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
+  // Where to return after Back/Done -- the page this form was opened from (Live
+  // Stock, Stock, etc.), falling back to the New Entry hub when opened from there.
+  const returnTo = searchParams.get('return_to')
+  const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/entry'
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const [showReview, setShowReview] = useState(false)
@@ -184,7 +189,7 @@ function StockIntakePage() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push('/dashboard/entry')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Stock Intake</h1>

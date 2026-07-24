@@ -5,13 +5,14 @@ import FullCalendar from '@fullcalendar/react';
 import dayGridPlugin from '@fullcalendar/daygrid';
 import timeGridPlugin from '@fullcalendar/timegrid';
 import interactionPlugin from '@fullcalendar/interaction';
+import { apiFetch } from '@/lib/api-client';
 
 export default function ActivityCalendar({ onUpdate }: { onUpdate: () => void }) {
   const [events, setEvents] = useState([]);
 
   useEffect(() => {
     const fetchEvents = async () => {
-      const res = await fetch('/api/activities');
+      const res = await apiFetch('/api/activities');
       const data = await res.json();
       if (res.ok) {
         const formatted = data.map((act: any) => ({
@@ -29,18 +30,16 @@ export default function ActivityCalendar({ onUpdate }: { onUpdate: () => void })
  const handleDateSelect = async (info: any) => {
     const title = prompt('Enter activity title:');
     if (!title) return;
-    await fetch('/api/activities', {
+    await apiFetch('/api/activities', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ title, due_date: info.startStr, status: 'pending' }),
     });
     onUpdate();
   };
 
   const handleEventDrop = async (info: any) => {
-    await fetch(`/api/activities/${info.event.id}`, {
+    await apiFetch(`/api/activities/${info.event.id}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ due_date: info.event.startStr }),
     });
     onUpdate();

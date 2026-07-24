@@ -319,7 +319,7 @@ function AccessoriesPage() {
                   <div className="flex flex-col gap-1 items-start">
                     {s.status === 'active' && <ReceiveStockControl skuId={s.id} onDone={fetchAll} />}
                     {s.status === 'active' && s.quantity_in_stock > 0 && (
-                      <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}`)} className="text-green-700 underline text-xs">
+                      <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-green-700 underline text-xs">
                         Sell
                       </button>
                     )}

@@ -249,7 +249,7 @@ function SalesLedgerPage() {
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Sales Ledger</h1>
       <p className="text-sm text-gray-500 mb-4">
-        Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell" className="underline">New Entry → Sell</a>.
+        Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
         Select 2 or more un-invoiced sales for the same customer and account to combine them into one invoice.
       </p>
 

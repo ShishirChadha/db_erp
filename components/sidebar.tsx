@@ -30,6 +30,7 @@ import {
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import NotificationBell from '@/components/NotificationBell'
 
 
 // ---------- Menu structure with categories ----------
@@ -192,14 +193,17 @@ function SidebarContent({
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-4 py-5 border-b border-gray-200">
-        <div className="bg-blue-600 p-2 rounded-xl">
-          <Laptop className="h-5 w-5 text-white" />
+      <div className="flex items-center justify-between gap-3 px-4 py-5 border-b border-gray-200">
+        <div className="flex items-center gap-3">
+          <div className="bg-blue-600 p-2 rounded-xl">
+            <Laptop className="h-5 w-5 text-white" />
+          </div>
+          <div>
+            <p className="font-semibold text-gray-900 text-sm">DigitalBluez</p>
+            <p className="text-xs text-gray-400">ERP System</p>
+          </div>
         </div>
-        <div>
-          <p className="font-semibold text-gray-900 text-sm">DigitalBluez</p>
-          <p className="text-xs text-gray-400">ERP System</p>
-        </div>
+        <NotificationBell />
       </div>
 
       {/* Nav items */}

@@ -1,10 +1,289 @@
 # Current Progress
 
-Last updated: 2026-07-24 — Data-integrity hardening pass (10-item priority list
-from the architectural review in `~/.claude/plans/stateless-shimmying-pearl.md`).
-See the newest ADR in `docs/decisions.md` (2026-07-23, "Data-integrity hardening
-pass") for the full per-item rationale. Summary below, then the earlier
-Sales/Invoice/Quotation redesign history.
+Last updated: 2026-07-24 — Activity Hub → internal task/collaboration system,
+**Phases 1, 2 & 3 COMPLETE**. The full plan from the original architectural
+review is now built: assignment/shared visibility, comments/@mentions, in-app
++ email notifications, and due-soon/overdue reminders (pg_cron) + attachments
++ reactions/pinning. See the ADRs in `docs/decisions.md` (2026-07-24, "Activity
+Hub redesign" / "Phase 1 built" / "Phase 2 built" / "Phase 3 built") and the
+full plan at `~/.claude/plans/stateless-shimmying-pearl.md`.
+
+## Activity Hub collaboration redesign — Phase 3 COMPLETE
+
+Owner's scope decision: build everything remaining in one pass (due-soon/
+overdue automation + attachments + reactions/pinning), with `pg_cron`
+(Supabase-native, decided over hosting-platform cron since it runs regardless
+of where/how the app is deployed) as the scheduler.
+
+**Schema** (backed up first — `..._phase3_schema_backup.sql` and a second
+backup before a same-day bugfix, `..._phase3b_scan_function_race_fix_schema_backup.sql`;
+migrations `activity_hub_phase3_reminders_attachments_reactions` +
+`fix_scan_activity_due_dates_race_condition`): `activities` gained
+`due_soon_notified_at`/`overdue_notified_at` (dedup markers, reset to `NULL`
+whenever `due_date` changes or a done/cancelled task is reopened, via the
+existing `PUT /api/activities/[id]`, so a changed or reopened task gets a
+fresh reminder cycle instead of staying silent forever). `activity_comments`
+gained `attachments jsonb` (`[{key,name,size}]`, same shape as the existing
+`/api/storage/*` signed-URL pattern already used by `FileUpload.tsx`/
+`RecordZohoInvoiceDialog.tsx` — reused as-is, no new storage mechanism) and
+`pinned`/`pinned_by`/`pinned_at`. New `activity_comment_reactions`
+(`comment_id`, `user_id`, `emoji`, `UNIQUE(comment_id,user_id,emoji)` — toggle
+on/off). `pg_cron` extension enabled; new `scan_activity_due_dates()`
+(SECURITY DEFINER plpgsql) scheduled every 15 minutes (`cron.schedule`),
+inserting `due_soon` (due within 24h) / `overdue` notifications for a task's
+creator + all assignees, in-app only.
+
+**A real concurrency bug found and fixed during verification, not just a test
+flake:** the function's original shape (SELECT candidates → loop-insert →
+UPDATE the dedup marker at the end) had a check-then-act race — two
+overlapping executions (a manual test call happened to overlap the real
+scheduled tick) could both pass the "marker IS NULL" check before either
+committed, producing duplicate notifications. Fixed by making the dedup
+marker itself the atomic claim: `UPDATE activities ... WHERE ... marker IS
+NULL RETURNING ...` inside the `FOR act IN` loop — the row lock a concurrent
+second execution's UPDATE takes naturally excludes any row the first run
+already claimed. Confirmed via `cron.job_run_details` that the real scheduled
+job was in fact independently executing during the debugging session,
+confirming this wasn't a hypothetical risk.
+
+**Deliberate, documented scope cut:** cron-driven `due_soon`/`overdue`
+notifications are **in-app only, no email**. Emailing them would need `pg_net`
+(available as an extension, not enabled) calling out to the app's public URL
+— not reachable/verifiable from this dev environment (`localhost:3000` isn't
+internet-routable), and Resend isn't even configured yet. Every other
+notification type still emails normally since those are triggered from the
+Next.js app itself (`lib/notifications.ts`), not from SQL.
+
+**API:** `POST /api/activities/[id]/comments/[commentId]/reactions` (toggle:
+insert if absent, delete if present) — visibility-gated the same way as
+comments, `emoji` validated against a fixed server-side palette
+(`lib/activities.ts`'s `ALLOWED_REACTIONS`). Comment `PATCH` extended to
+handle `pinned` as an independent, separately-permissioned operation from
+editing the body text — pinning is a **task-level curation action** (owner or
+the task's creator), not something any comment author can do to their own
+comment. `GET /api/activities/[id]/comments` now returns pinned-first
+ordering, per-comment reaction aggregates (`{emoji, count, reactedByMe}`), and
+`attachments`. `POST` accepts an `attachments` array, filtering out any
+malformed entry (missing `key`) rather than rejecting the whole comment.
+
+**UI:** `components/ActivityCommentThread.tsx` gained a paperclip button
+(uploads via the existing signed-URL flow, attaches on comment submit),
+inline attachment links (opens a fresh signed download URL), a pin/unpin
+button (visible only to the task's creator/owner), and an emoji reaction row
+per comment (existing reactions as toggleable pills + a small palette picker
+for a new one). `NotificationBell.tsx` composes `due_soon`/`overdue` messages
+alongside the existing 5 types.
+
+**Verified live** (disposable script, 24 checks, all passing, 1 owner + 3
+employees, real HTTP + a direct `admin.rpc('scan_activity_due_dates')` call to
+exercise the cron function without waiting 15 minutes): malformed attachment
+entries correctly dropped, well-formed ones stored; invalid reaction emoji
+rejected (400); an unrelated employee blocked from reacting (403); reaction
+toggle-on/toggle-off both correct with accurate count/`reactedByMe`; a
+non-creator assignee blocked from pinning (403) while the creator and owner
+both can; pinned comment correctly sorts first despite being older;
+due-soon/overdue notifications correctly fire for both creator and assignee;
+re-running the scan does **not** duplicate `due_soon`/`overdue` rows (the race
+fix holds); changing `due_date` correctly resets the marker and produces a
+fresh reminder; reopening a done+overdue task correctly resets its overdue
+marker. Cleaned up and re-queried, zero leftover rows (including reactions).
+`npx tsc --noEmit` + `npm run build` clean (dev server stopped for the build,
+`/api/activities/[id]/comments/[commentId]/reactions` confirmed present in
+the route list, dev server cleanly restarted after). `get_advisors` confirmed
+the new `scan_activity_due_dates` SECURITY DEFINER RPC exposure matches the
+exact same already-accepted risk class as the app's other RPCs
+(`generate_po_number`, `is_owner`, etc.) — nothing new.
+
+**This closes the Activity Hub redesign** described in
+`~/.claude/plans/stateless-shimmying-pearl.md`. No further phases remain from
+that plan. Any future extension (channels/DMs, real-time presence, threaded
+replies, client/external sharing) would be a new request, not a continuation.
+
+## Activity Hub collaboration redesign — Phase 2 COMPLETE
+
+Added comments, `@mentions`, and notifications on top of Phase 1's assignment
+core.
+
+**Schema** (backed up first, `backups/20260724_activity_hub_phase2_schema_backup.sql`;
+migration `activity_hub_phase2_comments_and_notifications`): new
+`activity_comments` (`activity_id`, `author_id`, `body`, `mentioned_user_ids
+uuid[]`, `is_deleted`, `edited`) and a **generic**, not activity-specific,
+`notifications` table (`recipient_id`, `type`, `actor_id`, nullable
+`activity_id`/`comment_id`, `title`, `body`, `link`, `read_at`) — any future
+module can enqueue a row via `link` + its own nullable refs, no new
+notification mechanism needed. Both tables use the same permissive-RLS/
+API-layer-is-the-boundary pattern as every other table added this session
+(`get_advisors` confirmed only the expected `rls_policy_always_true` WARN
+class, nothing new).
+
+**API:**
+- `GET/POST /api/activities/[id]/comments`, `PATCH/DELETE
+  /api/activities/[id]/comments/[commentId]` — comment CRUD, gated by the same
+  `canSeeActivity()` visibility check as the parent task. Edit/delete is
+  author-or-owner only. **Mentions are restricted to people who can already
+  see the task** (its assignees, its creator, or any owner) — rejected with
+  400 otherwise. This closes a real gap: without it, `@mentioning` an
+  unrelated employee would notify them with a link they'd get a 403 opening.
+- `lib/notifications.ts` (`notify`/`notifyMany`) — the single fan-out point:
+  inserts the in-app row, then best-effort emails the recipient via the new
+  `sendEmail()` (`lib/email.ts`, no-attachment variant of the existing Resend
+  wrapper). Email failures/missing config are swallowed by design — the in-app
+  row is the reliable record regardless. Never notifies the actor about their
+  own action.
+- Wired as a producer into the existing activity routes: `POST
+  /api/activities` (new assignees → `task_assigned`), `PUT
+  /api/activities/[id]` (status change → `status_changed` to current
+  assignees + creator; newly-added assignees on an existing task →
+  `task_reassigned`, distinct from `task_assigned` on creation), and the new
+  comment route (`comment_added` to assignees+creator, upgraded to `mention`
+  for anyone actually `@mentioned` — a recipient gets exactly one notification
+  even if both apply).
+- `GET /api/notifications` (mine, newest first, `?unread=true`/`?limit=`),
+  `GET /api/notifications/unread-count`, `PATCH /api/notifications/[id]`
+  (mark read, recipient-only), `POST /api/notifications/mark-all-read`.
+- `lib/activities.ts` gained `areValidAssignees()` — assignees must now be
+  active users who actually have Activity Hub page access (previously only
+  checked `is_active`), closing a gap where a task could be "assigned" to
+  someone who could never open it to see it.
+
+**UI:** `components/NotificationBell.tsx` (new) — mounted in the sidebar
+header (both desktop and mobile, since they share one memoized
+`SidebarContent`), polls unread count every 30s, dropdown panel with
+mark-read-on-click and mark-all-read, composes a plain-language sentence per
+notification type client-side from `type` + `actor_name` + `title`/`body`.
+`components/ActivityCommentThread.tsx` (new) — mounted in the task Detail
+view: comment list, an `@`-triggered mention autocomplete restricted to the
+task's own assignees + creator (matches the server-side allowed-mention
+pool), inline delete (author/owner). `ActivityList.tsx`'s `DetailModal` now
+also reads a `?open=<id>` query param on mount (what a notification's `link`
+points at) and opens that task's detail directly — works even if the task is
+filtered out of the current list view, since the detail fetch is independent.
+
+**Not done in Phase 2 (Phase 3, per the approved plan):** due-soon/overdue
+scheduler-driven notifications (needs a cron mechanism, still `PENDING USER
+DECISION` per the original ADR), attachments, reactions/pins, threaded
+replies.
+
+**Verified live** (disposable script, 34 checks, all passing, 1 owner + 4
+employees, real HTTP against the running dev server): task-assigned
+notification fires on creation; an unrelated employee is blocked from both
+reading and posting comments (403); mentioning someone outside the visible
+pool is rejected (400); mentioning the creator produces exactly one
+notification (`mention`, not also `comment_added`); mentioning the owner
+(who's neither assignee nor creator) is allowed and notifies them; comment
+thread returns correct author/mentioned names; unread-count and list both
+correct; a user cannot mark another user's notification read (403); recipient
+mark-read and owner mark-all-read both work; status change notifies the
+assignee but never self-notifies the actor; reassignment correctly fires
+`task_reassigned` to the new assignee; comment edit is author-only, delete is
+author-or-owner; **Resend confirmed unconfigured in this dev environment and
+every email-triggering action still completed successfully** (no-op path
+verified, not just assumed). Cleaned up and re-queried, zero leftover rows.
+`npx tsc --noEmit` + `npm run build` clean throughout (dev server stopped for
+the build; `/api/activities/[id]/comments`, `/api/activities/[id]/comments/
+[commentId]`, `/api/notifications`, `/api/notifications/[id]`,
+`/api/notifications/unread-count`, `/api/notifications/mark-all-read` all
+confirmed present in the route list; dev server cleanly restarted after).
+
+## Activity Hub collaboration redesign — Phase 1 COMPLETE
+
+Replaced the old private single-user to-do list (RLS-enforced, `user_id`-
+scoped on every route — the only feature in the app whose real boundary was
+RLS rather than API-layer checks) with a shared, assignable task model
+matching the rest of the app's enforcement style.
+
+**Schema** (backed up first, `backups/20260724_activity_hub_phase1_schema_backup.sql`;
+migration `activity_hub_phase1_assignment_and_visibility`): extended `activities`
+with `created_by` (backfilled from `user_id`), `priority` (`low`/`normal`/`high`/`urgent`),
+`related_type`/`related_id` (optional loose link to customer/sale/purchase_order/
+asset/repair_job/invoice/vendor — both-or-neither enforced by a CHECK), `completed_at`/
+`completed_by`, `reviewed_at`/`reviewed_by` (owner acknowledgement), `is_deleted`
+(soft-delete), and expanded `status` to add `'cancelled'`. New `activity_assignees`
+(multi-assignee, `UNIQUE(activity_id, user_id)`). Both tables' RLS moved from
+restrictive per-user policies to the same "permissive policy, API layer is the
+real boundary" idiom already used by `purchase_orders`/`asset_ledger`/
+`field_corrections` (confirmed via `get_advisors`: only the expected, already-
+accepted `rls_policy_always_true` WARNs, nothing new).
+
+**Confirmed decisions this session** (via clarifying questions, recorded in the
+ADR): any user with activities access can assign a task to any other active
+user (not self-assign-only); delete is soft (`is_deleted=true`, row + its
+comments/history survive).
+
+**API** (`lib/activities.ts` — single source for priorities/statuses/related-types
++ shared visibility-filter/profile-lookup helpers):
+- `GET/POST /api/activities` — owner sees every non-deleted task; employees see
+  only what they created or are assigned to (`created_by.eq.me OR id.in.(my
+  assignments)`, computed server-side, not trusted from the client). Enriches
+  each row with `assignee_ids`/`assignee_names`/`created_by_name`.
+- `GET/PUT/DELETE /api/activities/[id]` — GET returns full detail + assignees +
+  a `field_corrections`-sourced change history. PUT diffs assignee changes
+  (insert/delete `activity_assignees` rows, logs a summary correction) and
+  tracked-field changes (title/description/status/priority/due_date/related_*)
+  via `logFieldCorrections()` (`lib/field-corrections.ts`, reused as-is — no
+  new audit table). Status→`done` sets `completed_at/by`; leaving `done` clears
+  them. `mark_reviewed: true` is owner-only (403 for employees) and sets
+  `reviewed_at/by`. DELETE (soft) is creator-or-owner only — an assignee who
+  isn't the creator gets 403.
+- `GET /api/activities/assignable-users` (new) — minimal active-user list
+  (`id, full_name, role`) for the assignee picker; deliberately narrower than
+  the owner-only `GET /api/users` (no email/allowed_pages exposure needed here).
+- `GET /api/tags`, `app/actions/reminders.ts` — repointed off the old
+  `user_id`-only filter to the same "created by me or assigned to me"
+  visibility rule (`buildOwnVisibilityFilter()`).
+
+**UI** (`components/ActivityList.tsx` rewritten, `components/ActivityCalendar.tsx`
+patched): all activity fetches now go through `apiFetch` (Bearer token,
+`lib/api-client.ts`) instead of a bare `fetch()`, since the API moved off
+cookie/RLS auth — this was a required change, not optional, or every existing
+call would have started 401ing. Add/Edit forms gained Priority, a multi-select
+assignee picker (checkbox list from `assignable-users`, self excluded), and an
+optional "Link to a record" type+ID pair. The table gained Priority, Assigned
+To, and (owner-only) Created By columns, plus an overdue highlight. Detail view
+now fetches the full single-activity payload and shows assignees, the related
+record (as a clickable deep link where a known detail route exists — asset/
+purchase_order/invoice; plain text otherwise), completion/review state, an
+owner-only "Mark Reviewed" action, and the change-history timeline. Delete is
+only offered to the creator or the owner (matches the API's own check — this
+is UX convenience, the server still enforces it).
+
+**Not done in Phase 1 (explicit, per the approved plan):** comments/@mentions,
+notifications (in-app or email), due-soon/overdue automation, attachments,
+reactions/pins — all Phase 2/3. The related-record picker is a plain type
+dropdown + a pasted ID, not a per-type search widget (customer search, asset
+search, etc.) — a usability follow-up, not a correctness gap, flagged rather
+than built to keep this pass scoped to the approved core.
+
+**Verified live** (disposable script, 32 checks, all passing, real Supabase
+auth users — 1 owner + 3 employees — real HTTP against the running dev
+server, cleaned up and re-queried): pre-existing 15 rows survived the
+migration correctly backfilled and un-deleted; a personal (unassigned) task is
+invisible to other employees but visible to the owner; an assigned task is
+visible to its assignee and invisible to an unrelated employee; status changes
+and reassignment both correctly write `field_corrections` rows; marking
+`done`/undone correctly sets/clears `completed_at/by`; `mark_reviewed` is
+owner-only; soft-delete is creator/owner-only and the row survives with
+`is_deleted=true`; invalid/inactive assignee ids and a `related_type` without
+`related_id` are both rejected with 400; an employee with no `activities` page
+access is blocked with 403. `npx tsc --noEmit` clean throughout. Production
+build passed clean (dev server stopped for the build, `/api/activities`,
+`/api/activities/[id]`, and `/api/activities/assignable-users` all confirmed
+present in the route list; dev server cleanly restarted after).
+
+**Next (Phase 2, not started):** `activity_comments` (+ `@mention` parsing) and
+a generic `notifications` table; in-app notification center (unread count,
+mark-read) + email via the existing Resend wrapper (`lib/email.ts` — no-ops
+safely until `RESEND_API_KEY`/`RESEND_FROM_EMAIL` are configured, same posture
+as invoice email today).
+
+---
+
+Prior update, 2026-07-24 — Data-integrity hardening pass (10-item priority list
+from the architectural review that previously lived in
+`~/.claude/plans/stateless-shimmying-pearl.md`, now recorded in the ADRs in
+`docs/decisions.md`). See `docs/decisions.md` (2026-07-23, "Data-integrity
+hardening pass") for the full per-item rationale. Summary below, then the
+earlier Sales/Invoice/Quotation redesign history.
 
 ## Data-integrity hardening pass — COMPLETE (except deferred items)
 
@@ -626,8 +905,15 @@ support for selling a physically-upgraded unit with cost tracking).
 - **"Date Purchased" added then revoked same session**: a separate `asset_ledger.purchase_date` column/field was briefly added, then removed at the owner's request after confirming "Date Received" alone already covers the need (the owner's initial confusion was from checking production, which didn't yet have this session's changes). Column dropped via migration (backed up first); "Date Received" moved to the top of the Stock Intake form as the single, prominent date field.
 - **Date field added to Service (Repair/Replacement/Return)** (`app/dashboard/entry/service/page.tsx`): a single "Date" (Repair/Replacement) / "Return Date" field, backdatable, max=today. New `repair_jobs.job_date` column (date, nullable) for Repair/Replacement — also used to backdate the replacement unit's `asset_ledger.sold_at` when the job type is `replacement`. Return reuses the existing `asset_rma_events.opened_at` column (previously always DB-default "now"), now overridable via a new `event_date` field on `POST /api/rma`. Verified end-to-end via a disposable script covering all three subtypes (Repair, Replacement, Return), confirming `job_date`, `sold_at`, and `opened_at` all land correctly; cleaned up and re-verified after.
 
+**Four small owner-reported UX/admin fixes (this session)**
+- **Activity Hub tag correction**: owner-only `PATCH /api/tags` renames a tag (with automatic merge-dedup if the new name already exists on a row) or deletes it, across every activity that uses it in one action — previously an owner could only fix a mistyped tag one task at a time. New `components/TagsManager.tsx`, mounted as a new "Activity Tags" category in Settings alongside `DropdownOptionsManager`.
+- **"New Entry" shortcut buttons**: `components/StockView.tsx` (both `/dashboard/stock` and `/dashboard/live-stock`) and `app/dashboard/repair-jobs/page.tsx` gained a header button that jumps directly to the matching entry form — "+ New Stock Intake" / "+ New Sale" (context-sensitive to the active Current/Sold tab) and "+ New Service Entry" respectively — instead of requiring a detour through the sidebar's New Entry hub.
+- **Username-based logins**: new `profiles.username text` (unique, case-insensitive), `profiles.contact_email text`, `profiles.employee_id text` columns (migration `profiles_username_contact_email_employee_id`). User creation (`POST /api/users`) now takes a plain User ID (e.g. "ShishirCH", no `@`/whitespace) instead of a forced email address; internally it's turned into a synthetic, never-shown auth email on a fixed domain (`lib/auth/username.ts`'s `usernameToSyntheticEmail`/`SYNTHETIC_LOGIN_DOMAIN = 'login.internal'`). `app/login/page.tsx`'s single "User ID" field auto-detects: an input containing `@` is treated as a real email (so every pre-existing account keeps logging in exactly as before), anything else is transformed the same way. `contact_email` is a separate, optional field purely for notification delivery — `lib/notifications.ts`'s `emailBestEffort()` now prefers it over the (synthetic, unreachable) auth email, falling back to the auth email only when `contact_email` is blank.
+- **Editable display name / employee ID**: `PATCH /api/users/[id]` now also accepts `full_name`, `contact_email`, `employee_id`. `components/UserManager.tsx` gained a per-user "Edit name / ID" control (including for the owner's own row) — this is also the fix for the Activity Hub assignee picker showing the raw fallback `owner (46252d52)` (`components/ActivityList.tsx`'s `userLabel()`), which only ever triggered because the owner's own `profiles.full_name` was null.
+- Verified via a disposable script (real Supabase auth users signed in as owner + employee, real HTTP against the running dev server): tag rename/merge/delete + non-owner rejection, duplicate/invalid username rejection, login via both a synthetic username-derived email and a pre-existing real email, post-creation name/employee-ID edits persisting, and a task-assignment notification still firing correctly for a username-based user — 21/21 checks passed, all test data cleaned up and re-verified. `npx tsc --noEmit` and `npm run build` both clean; `get_advisors` after the migration showed no new findings (all pre-existing).
+
 ## Currently being worked on
-Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully. The GST-toggle, user-permissions, and backdating work above is type-checked and verified but **not yet committed**.
+Nothing mid-flight. All changes from the bug-fix/upgrade-tracking pass have been committed (commit `957e3a3`), type-checked, and production-build-verified. Dead-table cleanup migration has been applied successfully. The GST-toggle, user-permissions, backdating, and the four UX/admin fixes above are type-checked and verified but **not yet committed**.
 
 ## Remaining / not yet started
 - **Issue E's deeper structural fix** (deferred, flagged during the asset-numbering pass): make PO submission fully atomic via one Postgres RPC (reserve + insert + update, all in one transaction) so the counter can never again drift ahead of the ledger from a mid-submit failure. The `manualOverride` free-text asset-number path in the legacy `purchases` routes also still bypasses the numbering system entirely — a known risk, not yet addressed.

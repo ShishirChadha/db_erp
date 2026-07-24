@@ -6,6 +6,7 @@ import RequireOwner from '@/components/RequireOwner'
 import DropdownOptionsManager from '@/components/DropdownOptionsManager'
 import UserManager from '@/components/UserManager'
 import BusinessProfileManager from '@/components/BusinessProfileManager'
+import TagsManager from '@/components/TagsManager'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface AssetCounter {
@@ -27,6 +28,7 @@ const CATEGORIES = [
   { key: 'dropdown_options', label: 'Dropdown Options' },
   { key: 'business_profiles', label: 'Business Profiles' },
   { key: 'users', label: 'Users & Access' },
+  { key: 'activity_tags', label: 'Activity Tags' },
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']
@@ -214,6 +216,7 @@ function SettingsPage() {
           {activeCategory === 'dropdown_options' && <DropdownOptionsManager />}
           {activeCategory === 'business_profiles' && <BusinessProfileManager />}
           {activeCategory === 'users' && <UserManager />}
+          {activeCategory === 'activity_tags' && <TagsManager />}
         </div>
       </div>
     </div>

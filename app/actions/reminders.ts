@@ -1,17 +1,24 @@
 'use server';
 
-import { createClient } from '@/lib/supabase/server';
+import { supabaseAdmin } from '@/lib/supabase/service';
+import { getCookieSessionUser } from '@/lib/auth/session';
+import { buildOwnVisibilityFilter } from '@/lib/activities';
 
+// Reminders are a personal nudge -- fire for tasks the current user created
+// OR is assigned to, not just tasks they created (owner still only gets
+// their own/assigned reminders here too; "see everything" is the list view).
 export async function getPendingReminders() {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return [];
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return [];
 
   const now = new Date().toISOString();
-  const { data, error } = await supabase
+  const filter = await buildOwnVisibilityFilter(sessionUser.id);
+
+  const { data, error } = await supabaseAdmin
     .from('activities')
     .select('id, title, description')
-    .eq('user_id', user.id)
+    .eq('is_deleted', false)
+    .or(filter)
     .lte('reminder_at', now)
     .is('last_reminder_sent', null);
   if (error) return [];
@@ -19,8 +26,9 @@ export async function getPendingReminders() {
 }
 
 export async function markReminderSent(id: string) {
-  const supabase = await createClient();
-  await supabase
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return;
+  await supabaseAdmin
     .from('activities')
     .update({ last_reminder_sent: new Date().toISOString() })
     .eq('id', id);

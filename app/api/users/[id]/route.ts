@@ -7,7 +7,7 @@ const ALLOWED_PAGE_KEYS = [
   'live_stock', 'invoices', 'customers', 'activities',
 ]
 
-// ---------- PATCH: owner updates role/allowed_pages/is_active, and/or resets a password ----------
+// ---------- PATCH: owner updates role/allowed_pages/is_active/full_name/contact_email/employee_id, and/or resets a password ----------
 // No DELETE -- deactivation (is_active=false) is the only revoke action. A hard delete
 // would orphan sales.entered_by/sold_by-style references, and is_active=false already
 // fully blocks login (see lib/auth/session.ts).
@@ -17,7 +17,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params
   const body = await req.json()
-  const { role, allowed_pages, is_active, password } = body
+  const { role, allowed_pages, is_active, password, full_name, contact_email, employee_id } = body
 
   const profileUpdates: Record<string, unknown> = {}
   if (role !== undefined) {
@@ -30,6 +30,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
   if (is_active !== undefined) {
     profileUpdates.is_active = !!is_active
+  }
+  if (full_name !== undefined) {
+    profileUpdates.full_name = full_name?.trim() || null
+  }
+  if (contact_email !== undefined) {
+    profileUpdates.contact_email = contact_email?.trim() || null
+  }
+  if (employee_id !== undefined) {
+    profileUpdates.employee_id = employee_id?.trim() || null
   }
 
   if (Object.keys(profileUpdates).length > 0) {

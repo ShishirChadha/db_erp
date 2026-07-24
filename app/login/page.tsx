@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import { resolveLoginIdentifier } from '@/lib/auth/username'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ import Image from 'next/image'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
 export default function LoginPage() {
-  const [email, setEmail] = useState('')
+  const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const router = useRouter()
@@ -20,8 +21,11 @@ export default function LoginPage() {
   const { run: handleLogin, pending: loading } = useAsyncAction(async () => {
     setError('')
 
+    // A plain User ID (e.g. "ShishirCH") is transformed to its synthetic login email;
+    // an existing account's real email address passes through unchanged -- see
+    // lib/auth/username.ts.
     const { error } = await supabase.auth.signInWithPassword({
-      email,
+      email: resolveLoginIdentifier(userId),
       password,
     })
 
@@ -67,13 +71,13 @@ export default function LoginPage() {
             </CardHeader>
             <CardContent className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="userId">User ID</Label>
                 <Input
-                  id="email"
-                  type="email"
+                  id="userId"
+                  type="text"
                   placeholder="Enter User ID"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
                 />
               </div>

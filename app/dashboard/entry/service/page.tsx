@@ -123,6 +123,10 @@ function ServicePageInner() {
   const searchParams = useSearchParams()
   const prefillSubtype = searchParams.get('subtype') as 'repair' | 'replacement' | 'return' | null
   const prefillAssetId = searchParams.get('asset_id')
+  // Where to return after Back/Done -- the page this form was opened from (Repair
+  // Jobs, Stock, etc.), falling back to the New Entry hub when opened from there.
+  const returnTo = searchParams.get('return_to')
+  const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/entry'
 
   const [subType, setSubType] = useState<'repair' | 'replacement' | 'return'>(prefillSubtype || 'repair')
   const [error, setError] = useState('')
@@ -222,7 +226,7 @@ function ServicePageInner() {
       const body = await res.json()
       setDone(`Job ${body.job_number} saved.`)
       resetForm()
-      router.replace('/dashboard/entry/service')
+      router.replace(returnTo ? `/dashboard/entry/service?return_to=${encodeURIComponent(returnTo)}` : '/dashboard/entry/service')
     } catch (err: any) {
       setError(err.message)
     }
@@ -249,7 +253,7 @@ function ServicePageInner() {
       }
       setDone('Return recorded. Unit sent back to QC.')
       resetForm()
-      router.replace('/dashboard/entry/service')
+      router.replace(returnTo ? `/dashboard/entry/service?return_to=${encodeURIComponent(returnTo)}` : '/dashboard/entry/service')
     } catch (err: any) {
       setError(err.message)
     }
@@ -257,7 +261,7 @@ function ServicePageInner() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push('/dashboard/entry')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Service</h1>

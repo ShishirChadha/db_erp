@@ -16,6 +16,41 @@ export interface SendEmailResult {
   error?: string
 }
 
+export interface SendPlainEmailInput {
+  to: string
+  subject: string
+  html: string
+}
+
+// No-attachment variant for notification emails (task assigned/commented/mentioned/etc.)
+// -- same config-missing/no-op behavior as sendEmailWithAttachment.
+export async function sendEmail(input: SendPlainEmailInput): Promise<SendEmailResult> {
+  const apiKey = process.env.RESEND_API_KEY
+  const fromEmail = process.env.RESEND_FROM_EMAIL
+  if (!apiKey || !fromEmail) {
+    return { success: false, error: 'Email is not configured yet -- set RESEND_API_KEY and RESEND_FROM_EMAIL (see docs/current-progress.md).' }
+  }
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from: fromEmail, to: input.to, subject: input.subject, html: input.html }),
+    })
+
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      return { success: false, error: data.message || `Resend API error (${res.status})` }
+    }
+    return { success: true, messageId: data.id }
+  } catch (err: any) {
+    return { success: false, error: err.message || 'Failed to reach email provider' }
+  }
+}
+
 export async function sendEmailWithAttachment(input: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY
   const fromEmail = process.env.RESEND_FROM_EMAIL

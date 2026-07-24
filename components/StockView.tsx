@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -70,6 +70,7 @@ export default function StockView({
   showServiceActions?: boolean
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { isOwner } = useRole()
   const [tab, setTab] = useState<Tab>('current')
   const [assets, setAssets] = useState<AssetRow[]>([])
@@ -234,7 +235,15 @@ export default function StockView({
 
   return (
     <div className="p-4">
-      <h1 className="text-2xl font-bold mb-1">{title}</h1>
+      <div className="flex justify-between items-start gap-4 mb-1">
+        <h1 className="text-2xl font-bold">{title}</h1>
+        <Link
+          href={`${tab === 'sold' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(pathname)}`}
+          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
+        >
+          + {tab === 'sold' ? 'New Sale' : 'New Stock Intake'}
+        </Link>
+      </div>
       <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
 
       <div className="flex mb-4 border rounded overflow-hidden w-fit">
@@ -427,12 +436,12 @@ export default function StockView({
                   {tab === 'current' && (
                     <td className="border p-2 space-x-2">
                       {['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}`)} className="text-green-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
                           Sell
                         </button>
                       )}
                       {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}`)} className="text-blue-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-blue-700 underline text-xs">
                           Repair
                         </button>
                       )}
@@ -440,7 +449,7 @@ export default function StockView({
                   )}
                   {tab === 'sold' && showServiceActions && (
                     <td className="border p-2">
-                      <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}`)} className="text-amber-700 underline text-xs">
+                      <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-amber-700 underline text-xs">
                         Return
                       </button>
                     </td>

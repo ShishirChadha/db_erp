@@ -69,6 +69,10 @@ function SellPageInner() {
   const prefillRate = searchParams.get('prefill_rate')
   const prefillGstRate = searchParams.get('prefill_gst_rate')
   const skuSearch = searchParams.get('sku_search')
+  // Where to return after Back/Done -- the page this form was opened from (Live
+  // Stock, Stock, etc.), falling back to the New Entry hub when opened from there.
+  const returnTo = searchParams.get('return_to')
+  const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/entry'
 
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
@@ -267,7 +271,7 @@ function SellPageInner() {
       }
       setDone(true)
       resetForm()
-      router.replace('/dashboard/entry/sell')
+      router.replace(returnTo ? `/dashboard/entry/sell?return_to=${encodeURIComponent(returnTo)}` : '/dashboard/entry/sell')
     } catch (err: any) {
       setError(err.message)
     }
@@ -275,7 +279,7 @@ function SellPageInner() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push('/dashboard/entry')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Sell</h1>
