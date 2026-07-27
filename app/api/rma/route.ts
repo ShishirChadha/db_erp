@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('status')
+    .select('status, sku_id')
     .eq('id', asset_id)
     .single()
 
@@ -104,6 +104,20 @@ export async function POST(req: NextRequest) {
   if (direction === 'from_customer') updates.qc_status = 'pending'
 
   await supabaseAdmin.from('asset_ledger').update(updates).eq('id', asset_id)
+
+  // The original sale wrote a -1 'sale' movement (app/api/sales-entry/route.ts) that
+  // nothing downstream ever offsets -- without this, sku_master.quantity_in_stock
+  // (trigger-maintained off stock_movements) permanently understates stock by 1 every
+  // time a customer returns a unit. Same 'adjustment' idiom used elsewhere in the app.
+  if (direction === 'from_customer' && asset.sku_id) {
+    await supabaseAdmin.from('stock_movements').insert({
+      sku_id: asset.sku_id,
+      movement_type: 'adjustment',
+      quantity_change: 1,
+      notes: `Customer return -- ${reason}`,
+      created_by: user.id,
+    })
+  }
 
   return NextResponse.json(event, { status: 201 })
 }

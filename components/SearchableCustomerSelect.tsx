@@ -2,22 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { AsyncCombobox } from "@/components/AsyncCombobox";
 
 interface Customer {
   id: string;
@@ -68,41 +53,33 @@ export function SearchableCustomerSelect({
     fetchCustomers();
   }, [searchTerm, supabase]);
 
-  const handleSelect = (customerId: string) => {
-    const selected = customers.find((c) => c.id === customerId);
-    onChange(customerId);
-    onCustomerData(selected || null);
+  const handleSelect = (customer: Customer) => {
+    onChange(customer.id);
+    onCustomerData(customer);
     setOpen(false);
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className="w-full justify-between">
-          {value ? customers.find((c) => c.id === value)?.customer_name : "Select customer..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[400px] p-0">
-        <Command>
-          <CommandInput placeholder="Search customers..." value={searchTerm} onValueChange={setSearchTerm} />
-          <CommandList>
-            <CommandEmpty>No customer found.</CommandEmpty>
-            <CommandGroup>
-              {customers.map((customer) => (
-                <CommandItem key={customer.id} value={customer.id} onSelect={() => handleSelect(customer.id)}>
-                  <Check className={cn("mr-2 h-4 w-4", value === customer.id ? "opacity-100" : "opacity-0")} />
-                  <div className="flex flex-col">
-                    <span>{customer.customer_name}</span>
-                    {customer.gst_number && <span className="text-xs text-muted-foreground">GST: {customer.gst_number}</span>}
-                    {customer.place_of_supply && <span className="text-xs text-muted-foreground">Place: {customer.place_of_supply}</span>}
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <AsyncCombobox<Customer>
+      open={open}
+      onOpenChange={setOpen}
+      triggerLabel={value ? customers.find((c) => c.id === value)?.customer_name : "Select customer..."}
+      popoverWidthClassName="w-[400px]"
+      searchPlaceholder="Search customers..."
+      searchTerm={searchTerm}
+      onSearchTermChange={setSearchTerm}
+      items={customers}
+      getItemKey={(c) => c.id}
+      isSelected={(c) => value === c.id}
+      onSelect={handleSelect}
+      emptyMessage="No customer found."
+      renderItem={(customer) => (
+        <div className="flex flex-col">
+          <span>{customer.customer_name}</span>
+          {customer.gst_number && <span className="text-xs text-muted-foreground">GST: {customer.gst_number}</span>}
+          {customer.place_of_supply && <span className="text-xs text-muted-foreground">Place: {customer.place_of_supply}</span>}
+        </div>
+      )}
+    />
   );
 }

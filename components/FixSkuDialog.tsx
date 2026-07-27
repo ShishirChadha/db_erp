@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { SkuFormModal } from '@/components/SkuFormModal'
+import { SimpleModal } from '@/components/SimpleModal'
 
 interface SkuOption {
   id: string
@@ -128,9 +129,8 @@ export function FixSkuDialog({
   }
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
-        <h2 className="text-lg font-bold mb-2">Change SKU</h2>
+    <SimpleModal isOpen onClose={onClose} title="Change SKU">
+      <div>
         <p className="text-sm text-gray-500 mb-3">
           Search for the correct SKU to reassign this unit to, or create a new one.
         </p>
@@ -203,6 +203,6 @@ export function FixSkuDialog({
           <button type="button" onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
         </div>
       </div>
-    </div>
+    </SimpleModal>
   )
 }

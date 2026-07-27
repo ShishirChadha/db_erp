@@ -7,6 +7,8 @@ import RequireOwner from "@/components/RequireOwner";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { StatCardsRow } from "@/components/StatCardsRow";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EditSaleDialog } from "@/components/EditSaleDialog";
 
 interface Sale {
   id: string;
@@ -29,71 +31,22 @@ interface Sale {
   invoice_mode?: "erp" | "external";
 }
 
-const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
-
 function SaleRow({
   sale,
   onDone,
   selected,
   onToggleSelect,
+  index,
 }: {
   sale: Sale;
   onDone: () => void;
   selected: boolean;
   onToggleSelect: (id: string) => void;
+  index: number;
 }) {
-  const [paymentStatus, setPaymentStatus] = useState(sale.payment_status);
-  const [amountPaid, setAmountPaid] = useState(sale.amount_paid);
-  const [paymentAccount, setPaymentAccount] = useState(sale.payment_account || "");
-  const [err, setErr] = useState("");
-  const [editingPrice, setEditingPrice] = useState(false);
-  const [basePrice, setBasePrice] = useState(sale.sale_base_price);
-  const [priceErr, setPriceErr] = useState("");
   const [showZohoDialog, setShowZohoDialog] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const isExternal = sale.invoice_mode === "external";
-
-  const { run: save, pending: saving } = useAsyncAction(async () => {
-    setErr("");
-    try {
-      const res = await apiFetch(`/api/sales/${sale.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ payment_status: paymentStatus, amount_paid: amountPaid, payment_account: paymentAccount || null }),
-      });
-      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to save.");
-      onDone();
-    } catch (e: any) {
-      setErr(e.message);
-    }
-  });
-
-  const { run: savePrice, pending: savingPrice } = useAsyncAction(async () => {
-    setPriceErr("");
-    try {
-      let res = await apiFetch(`/api/sales/${sale.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ sale_base_price: basePrice }),
-      });
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}));
-        // Already invoiced -- confirm the owner understands the invoice won't
-        // reflect this correction before silently letting it drift.
-        if (e.error_code === "already_invoiced") {
-          if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
-          res = await apiFetch(`/api/sales/${sale.id}`, {
-            method: "PATCH",
-            body: JSON.stringify({ sale_base_price: basePrice, confirm_despite_invoice: true }),
-          });
-          if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Failed to save price.");
-        } else {
-          throw new Error(e.error || "Failed to save price.");
-        }
-      }
-      setEditingPrice(false);
-      onDone();
-    } catch (e: any) {
-      setPriceErr(e.message);
-    }
-  });
 
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: "POST", body: "{}" });
@@ -105,61 +58,21 @@ function SaleRow({
     }
   });
 
-  const busy = saving || generating;
-
   return (
     <tr>
-      <td className="border p-2 text-center">
+      <td className="border p-2 w-8 text-center">
         {!sale.finalized && (
-          <input type="checkbox" checked={selected} onChange={() => onToggleSelect(sale.id)} />
+          <Checkbox checked={selected} onCheckedChange={() => onToggleSelect(sale.id)} />
         )}
       </td>
+      <td className="border p-2 text-right tabular-nums text-gray-400">{index + 1}</td>
       <td className="border p-2">{sale.sale_date?.slice(0, 10)}</td>
       <td className="border p-2">{sale.customer_name || "—"}</td>
       <td className="border p-2">{sale.asset_number || (sale.serial_number ? `SN: ${sale.serial_number}` : sale.accessory_id ? "Accessory" : "—")}</td>
-      <td className="border p-2 text-right">
-        {editingPrice ? (
-          <div className="flex flex-col items-end gap-1">
-            {priceErr && <div className="text-red-600 text-xs">{priceErr}</div>}
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                value={basePrice}
-                onChange={(e) => setBasePrice(Number(e.target.value))}
-                className="border p-1 w-24 rounded text-xs text-right"
-              />
-              <button onClick={() => savePrice()} disabled={savingPrice} className="text-blue-600 underline text-xs inline-flex items-center gap-1">
-                {savingPrice && <Loader2 className="size-3 animate-spin" />}
-                Save
-              </button>
-              <button onClick={() => { setEditingPrice(false); setBasePrice(sale.sale_base_price); setPriceErr(""); }} className="text-gray-500 text-xs">
-                Cancel
-              </button>
-            </div>
-            <span className="text-xs text-gray-400">base price (GST recalculated)</span>
-          </div>
-        ) : (
-          <button onClick={() => setEditingPrice(true)} className="hover:underline" title="Edit price">
-            ₹{sale.sale_total?.toFixed(2)}
-          </button>
-        )}
-      </td>
-      <td className="border p-2">
-        <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="border p-1 rounded text-xs">
-          <option value="pending">Pending</option>
-          <option value="partial">Partial</option>
-          <option value="paid">Paid</option>
-        </select>
-      </td>
-      <td className="border p-2">
-        <input type="number" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} className="border p-1 w-20 rounded text-xs" />
-      </td>
-      <td className="border p-2">
-        <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 rounded text-xs">
-          <option value="">—</option>
-          {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
-        </select>
-      </td>
+      <td className="border p-2 text-right tabular-nums">₹{sale.sale_total?.toFixed(2)}</td>
+      <td className="border p-2 capitalize">{sale.payment_status}</td>
+      <td className="border p-2 text-right tabular-nums">₹{sale.amount_paid?.toFixed(2)}</td>
+      <td className="border p-2">{sale.payment_account || "—"}</td>
       <td className="border p-2">{sale.sold_by || "—"}</td>
       <td className="border p-2">
         {sale.finalized ? (
@@ -169,7 +82,7 @@ function SaleRow({
             Record Zoho Invoice #
           </button>
         ) : (
-          <button onClick={() => generateInvoice()} disabled={busy} className="text-amber-700 underline text-xs inline-flex items-center gap-1">
+          <button onClick={() => generateInvoice()} disabled={generating} className="text-amber-700 underline text-xs inline-flex items-center gap-1">
             {generating && <Loader2 className="size-3 animate-spin" />}
             Generate Invoice
           </button>
@@ -179,11 +92,12 @@ function SaleRow({
         )}
       </td>
       <td className="border p-2">
-        {err && <div className="text-red-600 text-xs mb-1">{err}</div>}
-        <button onClick={() => save()} disabled={busy} className="text-blue-600 underline text-xs inline-flex items-center gap-1">
-          {saving && <Loader2 className="size-3 animate-spin" />}
-          Save
+        <button onClick={() => setShowEdit(true)} className="text-blue-600 underline text-xs">
+          Edit
         </button>
+        {showEdit && (
+          <EditSaleDialog saleId={sale.id} onClose={() => setShowEdit(false)} onSaved={onDone} />
+        )}
       </td>
     </tr>
   );
@@ -220,6 +134,12 @@ function SalesLedgerPage() {
   };
 
   const displayedSales = awaitingInvoiceOnly ? sales.filter(s => !s.finalized) : sales;
+  // Only un-finalized sales are ever selectable (SaleRow only renders a checkbox
+  // for those) -- select-all must match that same set, not every visible row.
+  const selectableIds = displayedSales.filter(s => !s.finalized).map(s => s.id);
+  const toggleSelectAll = () => {
+    setSelected(prev => prev.size === selectableIds.length ? new Set() : new Set(selectableIds));
+  };
   const pendingCount = sales.filter(s => s.payment_status === "pending").length;
   const partialCount = sales.filter(s => s.payment_status === "partial").length;
   const awaitingInvoiceCount = sales.filter(s => !s.finalized).length;
@@ -326,11 +246,25 @@ function SalesLedgerPage() {
           <table className="min-w-full border text-sm">
             <thead>
               <tr>
-                <th className="border p-2"></th>
+                <th className="border p-2 w-8 text-center">
+                  {selectableIds.length > 0 && (
+                    <Checkbox
+                      checked={
+                        selected.size === selectableIds.length
+                          ? true
+                          : selected.size > 0
+                          ? "indeterminate"
+                          : false
+                      }
+                      onCheckedChange={toggleSelectAll}
+                    />
+                  )}
+                </th>
+                <th className="border p-2 w-10 text-right">#</th>
                 <th className="border p-2">Date</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Item</th>
-                <th className="border p-2">Total</th>
+                <th className="border p-2 text-right">Total</th>
                 <th className="border p-2">Payment</th>
                 <th className="border p-2">Amount Paid</th>
                 <th className="border p-2">Received Into</th>
@@ -340,17 +274,18 @@ function SalesLedgerPage() {
               </tr>
             </thead>
             <tbody>
-              {displayedSales.map(s => (
+              {displayedSales.map((s, idx) => (
                 <SaleRow
                   key={s.id}
                   sale={s}
                   onDone={fetchSales}
                   selected={selected.has(s.id)}
                   onToggleSelect={toggleSelect}
+                  index={idx}
                 />
               ))}
               {displayedSales.length === 0 && (
-                <tr><td colSpan={11} className="border p-4 text-center text-gray-400">No sales found.</td></tr>
+                <tr><td colSpan={12} className="border p-4 text-center text-gray-400">No sales found.</td></tr>
               )}
             </tbody>
           </table>

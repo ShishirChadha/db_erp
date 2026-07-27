@@ -80,6 +80,15 @@ function AssetQCPage() {
   const [newReason, setNewReason] = useState('')
   const [savingAdjustment, setSavingAdjustment] = useState(false)
 
+  // Owner-only serial/asset number correction. Editing a sold/invoiced/returned unit
+  // requires a typed reason (see PUT /api/stock's confirm_override path).
+  const [editingTag, setEditingTag] = useState(false)
+  const [assetNumberInput, setAssetNumberInput] = useState('')
+  const [serialNumberInput, setSerialNumberInput] = useState('')
+  const [tagReason, setTagReason] = useState('')
+  const [tagErr, setTagErr] = useState('')
+  const [savingTag, setSavingTag] = useState(false)
+
   const fetchCostAdjustments = useCallback(async () => {
     if (!isOwner) return
     const res = await apiFetch(`/api/asset-ledger/${assetId}/cost-adjustments`)
@@ -113,6 +122,50 @@ function AssetQCPage() {
     }
   }
 
+  const lockedStatus = asset ? ['sold', 'invoiced', 'returned'].includes(asset.status) : false
+
+  const saveTag = async () => {
+    setTagErr('')
+    if (lockedStatus && !tagReason.trim()) {
+      setTagErr('A reason is required to edit a sold/invoiced/returned unit.')
+      return
+    }
+    setSavingTag(true)
+    try {
+      const body: Record<string, unknown> = {
+        id: assetId,
+        asset_number: assetNumberInput || null,
+        serial_number: serialNumberInput || null,
+      }
+      if (lockedStatus) {
+        body.confirm_override = true
+        body.reason = tagReason.trim()
+      }
+      let res = await apiFetch('/api/stock', { method: 'PUT', body: JSON.stringify(body) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (err.error_code === 'duplicate_serial' && confirm(`${err.error}\n\nProceed anyway?`)) {
+          res = await apiFetch('/api/stock', { method: 'PUT', body: JSON.stringify({ ...body, confirm_duplicate: true }) })
+          if (!res.ok) {
+            const err2 = await res.json().catch(() => ({}))
+            throw new Error(err2.error || 'Failed to save.')
+          }
+        } else if (err.error_code === 'duplicate_serial') {
+          return
+        } else {
+          throw new Error(err.error || 'Failed to save.')
+        }
+      }
+      setEditingTag(false)
+      setTagReason('')
+      await fetchAsset()
+    } catch (e: any) {
+      setTagErr(e.message)
+    } finally {
+      setSavingTag(false)
+    }
+  }
+
   const fetchAsset = useCallback(async () => {
     setLoading(true)
     try {
@@ -122,6 +175,8 @@ function AssetQCPage() {
       setAsset(data)
       setGrade(data.qc_grade || '')
       setNotes(data.qc_notes || '')
+      setAssetNumberInput(data.asset_number || '')
+      setSerialNumberInput(data.serial_number || '')
 
       // Pre-fill from existing checks if present, else default checklist
       if (data.checks.length > 0) {
@@ -229,6 +284,85 @@ function AssetQCPage() {
           </div>
         )}
       </div>
+
+      {isOwner && (
+        <div className="border rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Serial / Asset Number</h2>
+            {!editingTag && (
+              <button onClick={() => setEditingTag(true)} className="text-blue-600 underline text-sm">Edit</button>
+            )}
+          </div>
+          {editingTag ? (
+            <div className="space-y-2">
+              {tagErr && <div className="text-red-600 text-sm">{tagErr}</div>}
+              {lockedStatus && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  This unit is &apos;{asset.status}&apos; — editing it requires a reason (logged to its correction history).
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Asset Number</label>
+                  <input
+                    type="text"
+                    value={assetNumberInput}
+                    onChange={(e) => setAssetNumberInput(e.target.value)}
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Serial Number</label>
+                  <input
+                    type="text"
+                    value={serialNumberInput}
+                    onChange={(e) => setSerialNumberInput(e.target.value)}
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+              </div>
+              {lockedStatus && (
+                <div>
+                  <label className="block text-xs font-medium mb-1">Reason</label>
+                  <input
+                    type="text"
+                    value={tagReason}
+                    onChange={(e) => setTagReason(e.target.value)}
+                    placeholder="e.g. Typo'd serial number at intake"
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+              )}
+              <div className="flex gap-2">
+                <button
+                  onClick={saveTag}
+                  disabled={savingTag}
+                  className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                >
+                  {savingTag && <Loader2 className="size-4 animate-spin" />}
+                  Save
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingTag(false)
+                    setTagErr('')
+                    setTagReason('')
+                    setAssetNumberInput(asset.asset_number || '')
+                    setSerialNumberInput(asset.serial_number || '')
+                  }}
+                  className="px-3 py-1.5 border rounded text-sm"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-600">
+              {asset.asset_number || '—'} · {asset.serial_number || '—'}
+            </p>
+          )}
+        </div>
+      )}
 
       {asset.status === 'qc_passed' && (
         <div className="mb-6 p-3 bg-green-50 border border-green-200 rounded flex items-center justify-between">

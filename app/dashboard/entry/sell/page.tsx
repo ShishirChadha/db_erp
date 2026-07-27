@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -32,6 +32,21 @@ interface Accessory {
   selling_price: number | null
 }
 
+interface BundledAccessory {
+  accessory_id: string
+  accessory_name: string
+  quantity: number
+  price: number
+}
+
+// A cart line is either a unit (laptop/desktop/monitor), which can carry free/priced
+// bundled accessories folded into its own row, or a standalone accessory. Each line has
+// its own price -- the customer, GST%, sale type, sale date, and payment are entered
+// once for the whole cart (see the shared section below the cart list).
+type CartLine =
+  | { id: string; kind: 'unit'; unit: StockUnit; salePrice: number; bundled: BundledAccessory[] }
+  | { id: string; kind: 'accessory'; accessory: Accessory; quantity: number; salePrice: number }
+
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
 // Accessories are sku_master rows filtered to the non-serialized categories (see
@@ -55,6 +70,10 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+function bundledAddOnsTotal(bundled: BundledAccessory[]) {
+  return bundled.reduce((sum, b) => sum + (b.price || 0) * b.quantity, 0)
+}
+
 function SellPageInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -63,7 +82,8 @@ function SellPageInner() {
   // Prefill from converting one line of a quotation/proforma (see
   // /dashboard/quotations) -- customer + price carried over, owner still
   // picks the specific physical unit (refurb units are qty-1/unique, so a
-  // quote can never lock a specific serial number ahead of time).
+  // quote can never lock a specific serial number ahead of time). The price
+  // applies to whichever unit line the employee adds first.
   const prefillCustomerId = searchParams.get('customer_id')
   const sourceDocumentItemId = searchParams.get('source_document_item_id')
   const prefillRate = searchParams.get('prefill_rate')
@@ -80,13 +100,14 @@ function SellPageInner() {
 
   const [mode, setMode] = useState<'unit' | 'accessory'>(prefillAccessoryId ? 'accessory' : 'unit')
 
-  // Unit mode
+  const [cartItems, setCartItems] = useState<CartLine[]>([])
+  // Consumed once, by whichever unit line gets added first (quotation-line conversion).
+  const pendingPrefillRateRef = useRef<number | undefined>(prefillRate ? Number(prefillRate) : undefined)
+
+  // "Add a unit" search
   const [unitSearch, setUnitSearch] = useState('')
   const [units, setUnits] = useState<StockUnit[]>([])
-  const [selectedUnit, setSelectedUnit] = useState<StockUnit | null>(null)
   const [loadingUnits, setLoadingUnits] = useState(false)
-  const [bundled, setBundled] = useState<{ accessory_id: string; accessory_name: string; quantity: number; price: number }[]>([])
-  const [showChangeSku, setShowChangeSku] = useState(false)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
 
   useEffect(() => {
@@ -97,20 +118,24 @@ function SellPageInner() {
 
   const unitConfigSummary = (u: StockUnit) => buildConfigSummary(u.category, u.specifications, templates) || u.description
 
-  // Accessory mode
-  const [selectedAccessory, setSelectedAccessory] = useState<Accessory | null>(null)
-  const [accessoryQty, setAccessoryQty] = useState<number>(1)
-  const [browsableAccessories, setBrowsableAccessories] = useState<Accessory[]>([])
-
-  // Shared accessory search (used by both bundle-picker and accessory-mode)
+  // "Add an accessory" search (accessory-only mode)
   const [accessorySearch, setAccessorySearch] = useState('')
   const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
+  const [browsableAccessories, setBrowsableAccessories] = useState<Accessory[]>([])
+
+  // Bundled-accessory search, scoped to one unit line at a time (kept separate from the
+  // "add an accessory" search above so the two can't collide when a cart already has
+  // both kinds of lines).
+  const [bundlingForLineId, setBundlingForLineId] = useState<string | null>(null)
+  const [bundleSearch, setBundleSearch] = useState('')
+  const [bundleOptions, setBundleOptions] = useState<Accessory[]>([])
+
+  const [showChangeSkuForLineId, setShowChangeSkuForLineId] = useState<string | null>(null)
 
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [customerData, setCustomerData] = useState<any>(null)
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
 
-  const [salePrice, setSalePrice] = useState<number>(0)
   const [gstPercent, setGstPercent] = useState<number>(18)
   const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
   const [priceMode, setPriceMode] = useState<'pre_gst' | 'post_gst'>('pre_gst')
@@ -132,39 +157,77 @@ function SellPageInner() {
     })
   }, [mode])
 
-  const fetchUnitById = async (id: string) => {
+  const fetchUnit = async (id: string): Promise<StockUnit | null> => {
     const res = await apiFetch(`/api/stock?id=${id}`)
     const data = await res.json()
-    if (Array.isArray(data) && data[0]) {
-      setSelectedUnit(data[0])
-    }
+    return Array.isArray(data) && data[0] ? data[0] : null
   }
 
-  // Prefill from Current/Live Stock's "Sell" link.
+  const addUnitLine = (u: StockUnit) => {
+    const salePrice = pendingPrefillRateRef.current ?? 0
+    pendingPrefillRateRef.current = undefined
+    setCartItems(prev => [...prev, { id: crypto.randomUUID(), kind: 'unit', unit: u, salePrice, bundled: [] }])
+    setUnitSearch(''); setUnits([])
+  }
+
+  const addAccessoryLine = (a: Accessory) => {
+    setCartItems(prev => [...prev, { id: crypto.randomUUID(), kind: 'accessory', accessory: a, quantity: 1, salePrice: 0 }])
+    setAccessorySearch(''); setAccessoryOptions([])
+  }
+
+  const removeLine = (id: string) => setCartItems(prev => prev.filter(l => l.id !== id))
+
+  const updateLinePrice = (id: string, salePrice: number) =>
+    setCartItems(prev => prev.map(l => l.id === id ? { ...l, salePrice } : l))
+
+  const updateAccessoryQty = (id: string, quantity: number) =>
+    setCartItems(prev => prev.map(l => l.id === id && l.kind === 'accessory' ? { ...l, quantity } : l))
+
+  const addBundledAccessory = (lineId: string, a: Accessory) => {
+    setCartItems(prev => prev.map(l => {
+      if (l.id !== lineId || l.kind !== 'unit') return l
+      if (l.bundled.some(b => b.accessory_id === a.id)) return l
+      return { ...l, bundled: [...l.bundled, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1, price: 0 }] }
+    }))
+    setBundleSearch(''); setBundleOptions([])
+  }
+
+  const updateBundled = (lineId: string, idx: number, patch: Partial<BundledAccessory>) =>
+    setCartItems(prev => prev.map(l => l.id === lineId && l.kind === 'unit'
+      ? { ...l, bundled: l.bundled.map((b, i) => i === idx ? { ...b, ...patch } : b) }
+      : l))
+
+  const removeBundled = (lineId: string, idx: number) =>
+    setCartItems(prev => prev.map(l => l.id === lineId && l.kind === 'unit'
+      ? { ...l, bundled: l.bundled.filter((_, i) => i !== idx) }
+      : l))
+
+  // Prefill from Live Stock's "Sell" link.
   useEffect(() => {
     if (!prefillAssetId) return
     setMode('unit')
-    fetchUnitById(prefillAssetId)
+    fetchUnit(prefillAssetId).then(u => { if (u) addUnitLine(u) })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillAssetId])
 
-  // Prefill from Accessories page's "Sell" link.
+  // Prefill from the Accessories page's "Sell" link.
   useEffect(() => {
     if (!prefillAccessoryId) return
     apiFetch(`/api/sku-master?id=${prefillAccessoryId}`).then(res => res.json()).then((data) => {
       if (Array.isArray(data) && data[0]) {
         setMode('accessory')
-        setSelectedAccessory(mapSkuToAccessory(data[0]))
+        addAccessoryLine(mapSkuToAccessory(data[0]))
       }
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillAccessoryId])
 
   // Prefill from converting a quotation/proforma line.
   useEffect(() => {
     if (prefillCustomerId) setCustomerId(prefillCustomerId)
     if (skuSearch) { setMode('unit'); setUnitSearch(skuSearch) }
-    if (prefillRate) { setSalePrice(Number(prefillRate)); setPriceMode('pre_gst') }
     if (prefillGstRate) { setGstPercent(Number(prefillGstRate)); setSaleType(Number(prefillGstRate) > 0 ? 'GST' : 'Cash') }
-  }, [prefillCustomerId, skuSearch, prefillRate, prefillGstRate])
+  }, [prefillCustomerId, skuSearch, prefillGstRate])
 
   useEffect(() => {
     if (mode !== 'unit') return
@@ -189,79 +252,95 @@ function SellPageInner() {
     return () => clearTimeout(timer)
   }, [accessorySearch])
 
-  const bundledAddOnsTotal = bundled.reduce((sum, b) => sum + (b.price || 0) * b.quantity, 0)
-  const unitBaseGstPrice = priceMode === 'pre_gst' ? salePrice : salePrice / (1 + gstPercent / 100)
-  const baseGstPrice = unitBaseGstPrice + bundledAddOnsTotal
-  const gstAmount = saleType === 'GST' ? Math.round(baseGstPrice * gstPercent * 100) / 10000 : 0
-  const total = saleType === 'GST' ? baseGstPrice + gstAmount : baseGstPrice
-  const balanceDue = total - (paymentStatus === 'paid' ? total : amountPaid)
+  useEffect(() => {
+    if (!bundleSearch.trim()) { setBundleOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(bundleSearch)}`)
+      const data = await res.json()
+      setBundleOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [bundleSearch])
 
-  // Switching modes converts the number in the box so the total the customer pays
-  // stays the same -- never just relabels a stale number under the new meaning.
+  // A line's own price, reduced to its pre-GST base (bundled add-on charges are always
+  // treated as already pre-GST and added on top, same as before) -- switching priceMode
+  // never relabels a stale number under a different meaning.
+  const linePreGstBase = (price: number) =>
+    (saleType === 'GST' && priceMode === 'post_gst' && price) ? Math.round((price / (1 + gstPercent / 100)) * 100) / 100 : price
+
+  const lineBaseGstPrice = (line: CartLine) =>
+    linePreGstBase(line.salePrice || 0) + (line.kind === 'unit' ? bundledAddOnsTotal(line.bundled) : 0)
+
+  const cartSubtotal = cartItems.reduce((sum, line) => sum + lineBaseGstPrice(line), 0)
+  const cartGstAmount = saleType === 'GST' ? Math.round(cartSubtotal * gstPercent * 100) / 10000 : 0
+  const cartTotal = cartSubtotal + cartGstAmount
+  const balanceDue = cartTotal - (paymentStatus === 'paid' ? cartTotal : amountPaid)
+
+  // Switching modes converts every line's price so the total the customer pays stays
+  // the same -- never just relabels a stale number under the new meaning.
   const handlePriceModeChange = (newMode: 'pre_gst' | 'post_gst') => {
-    if (saleType === 'GST' && salePrice > 0 && newMode !== priceMode) {
-      if (newMode === 'post_gst') {
-        setSalePrice(Math.round(salePrice * (1 + gstPercent / 100) * 100) / 100)
-      } else {
-        setSalePrice(Math.round((salePrice / (1 + gstPercent / 100)) * 100) / 100)
-      }
+    if (saleType === 'GST' && newMode !== priceMode) {
+      setCartItems(prev => prev.map(line => {
+        if (!line.salePrice) return line
+        const converted = newMode === 'post_gst'
+          ? Math.round(line.salePrice * (1 + gstPercent / 100) * 100) / 100
+          : Math.round((line.salePrice / (1 + gstPercent / 100)) * 100) / 100
+        return { ...line, salePrice: converted }
+      }))
     }
     setPriceMode(newMode)
   }
 
   const resetForm = () => {
-    setSelectedUnit(null); setUnitSearch(''); setUnits([]); setBundled([])
-    setSelectedAccessory(null); setAccessoryQty(1)
+    setCartItems([])
+    setUnitSearch(''); setUnits([])
     setAccessorySearch(''); setAccessoryOptions([])
+    setBundlingForLineId(null); setBundleSearch(''); setBundleOptions([])
     setCustomerId(null); setCustomerData(null)
-    setSalePrice(0); setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
+    setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
     setPaymentStatus('paid'); setAmountPaid(0); setPaymentAccount('Digitalbluez'); setSoldBy('')
     setSaleDate(today())
   }
 
-  const addBundledAccessory = (a: Accessory) => {
-    if (bundled.some(b => b.accessory_id === a.id)) return
-    setBundled(prev => [...prev, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1, price: 0 }])
-    setAccessorySearch(''); setAccessoryOptions([])
+  const validate = () => {
+    if (cartItems.length === 0) { setError('Add at least one item to sell.'); return false }
+    if (cartItems.some(l => !l.salePrice || l.salePrice <= 0)) { setError('Enter a valid selling price for every item.'); return false }
+    if (!customerId) { setError('Select or add a customer.'); return false }
+    return true
   }
 
   const openReview = () => {
     setError('')
-    if (mode === 'unit' && !selectedUnit) { setError('Select a unit to sell.'); return }
-    if (mode === 'accessory' && !selectedAccessory) { setError('Select an accessory to sell.'); return }
-    if (!customerId) { setError('Select or add a customer.'); return }
-    if (!salePrice || salePrice <= 0) { setError('Enter a valid selling price.'); return }
+    if (!validate()) return
     setShowReview(true)
   }
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     setError('')
-    if (mode === 'unit' && !selectedUnit) { setError('Select a unit to sell.'); return }
-    if (mode === 'accessory' && !selectedAccessory) { setError('Select an accessory to sell.'); return }
-    if (!customerId) { setError('Select or add a customer.'); return }
-    if (!salePrice || salePrice <= 0) { setError('Enter a valid selling price.'); return }
+    if (!validate()) return
 
     try {
-      const payload: any = {
+      const payload = {
         customer_id: customerId,
-        sale_base_price: baseGstPrice,
-        gst_percentage: saleType === 'GST' ? gstPercent : 0,
         sale_type: saleType,
+        gst_percentage: saleType === 'GST' ? gstPercent : 0,
         sale_date: saleDate,
         payment_status: paymentStatus,
         amount_paid: paymentStatus === 'partial' ? amountPaid : undefined,
         payment_account: paymentAccount,
         sold_by: soldBy || undefined,
         source_document_item_id: sourceDocumentItemId || undefined,
-      }
-      if (mode === 'unit') {
-        payload.asset_ledger_id = selectedUnit!.id
-        if (bundled.length > 0) {
-          payload.bundled_accessories = bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.price || 0 }))
-        }
-      } else {
-        payload.accessory_id = selectedAccessory!.id
-        payload.accessory_quantity = accessoryQty
+        items: cartItems.map(line => line.kind === 'unit'
+          ? {
+              asset_ledger_id: line.unit.id,
+              sale_base_price: lineBaseGstPrice(line),
+              ...(line.bundled.length > 0 ? { bundled_accessories: line.bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.price || 0 })) } : {}),
+            }
+          : {
+              accessory_id: line.accessory.id,
+              accessory_quantity: line.quantity,
+              sale_base_price: lineBaseGstPrice(line),
+            }),
       }
 
       const res = await apiFetch('/api/sales-entry', { method: 'POST', body: JSON.stringify(payload) })
@@ -277,6 +356,8 @@ function SellPageInner() {
     }
   })
 
+  const changeSkuLine = cartItems.find(l => l.id === showChangeSkuForLineId && l.kind === 'unit') as Extract<CartLine, { kind: 'unit' }> | undefined
+
   return (
     <div className="p-4 max-w-2xl mx-auto">
       <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
@@ -284,7 +365,7 @@ function SellPageInner() {
       </button>
       <h1 className="text-2xl font-bold mb-1">Sell</h1>
       <p className="text-sm text-gray-500 mb-4">
-        This unit/accessory leaves stock immediately. The GST invoice is generated separately by the owner.
+        Everything in the cart leaves stock immediately once submitted. The GST invoice is generated separately by the owner.
       </p>
 
       {sourceDocumentItemId && (
@@ -305,166 +386,213 @@ function SellPageInner() {
           onClick={() => setMode('unit')}
           className={`px-4 py-2 text-sm font-medium ${mode === 'unit' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
         >
-          Laptop / Desktop / Monitor
+          Add Laptop / Desktop / Monitor
         </button>
         <button
           onClick={() => setMode('accessory')}
           className={`px-4 py-2 text-sm font-medium ${mode === 'accessory' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
         >
-          Accessory Only
+          Add Accessory
         </button>
       </div>
 
       <div className="space-y-4 bg-white p-4 rounded shadow">
         {mode === 'unit' ? (
           <div className="relative">
-            <label className="block font-medium text-sm mb-1">Unit *</label>
-            {selectedUnit ? (
-              <div className="border p-2 rounded flex justify-between items-center bg-blue-50">
-                <div>
-                  <div className="font-medium">{unitLabel(selectedUnit)}</div>
-                  <div className="text-xs text-gray-600">{selectedUnit.sku_code} — {unitConfigSummary(selectedUnit)}</div>
-                  <button type="button" onClick={() => setShowChangeSku(true)} className="text-blue-600 underline text-xs mt-1">
-                    Wrong or upgraded spec? Change SKU
-                  </button>
-                </div>
-                <button onClick={() => setSelectedUnit(null)} className="text-red-500 text-sm">✕ Change</button>
-              </div>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500 mb-1">
-                  Search here, or go to <a href="/dashboard/live-stock" className="underline">Live Stock</a> and click "Sell" on a unit.
-                </p>
-                <input
-                  value={unitSearch}
-                  onChange={(e) => setUnitSearch(e.target.value)}
-                  placeholder="Search by asset number, serial, or model..."
-                  className="border p-2 w-full rounded"
-                />
-                {loadingUnits && <div className="text-xs text-gray-400 mt-1">Searching...</div>}
-                {units.length > 0 && (
-                  <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
-                    {units.map(u => (
-                      <li
-                        key={u.id}
-                        onClick={() => { setSelectedUnit(u); setUnitSearch(''); setUnits([]) }}
-                        className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                      >
-                        <div className="font-medium">{unitLabel(u)}</div>
-                        <div className="text-xs text-gray-600">{u.sku_code} — {unitConfigSummary(u)}</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-          </div>
-        ) : (
-          <div className="relative">
-            <label className="block font-medium text-sm mb-1">Accessory *</label>
-            {selectedAccessory ? (
-              <div className="border p-2 rounded flex justify-between items-center bg-blue-50">
-                <div>
-                  <div className="font-medium">{selectedAccessory.accessory_name}</div>
-                  <div className="text-xs text-gray-600">{selectedAccessory.quantity} in stock</div>
-                </div>
-                <button onClick={() => setSelectedAccessory(null)} className="text-red-500 text-sm">✕ Change</button>
-              </div>
-            ) : (
-              <>
-                <p className="text-xs text-gray-500 mb-1">
-                  Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
-                </p>
-                <input
-                  value={accessorySearch}
-                  onChange={(e) => setAccessorySearch(e.target.value)}
-                  placeholder="Search accessory (mouse, bag, keyboard...)"
-                  className="border p-2 w-full rounded"
-                />
-                {accessoryOptions.length > 0 && (
-                  <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
-                    {accessoryOptions.map(a => (
-                      <li
-                        key={a.id}
-                        onClick={() => { setSelectedAccessory(a); setAccessorySearch(''); setAccessoryOptions([]) }}
-                        className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
-                      >
-                        <div className="font-medium">{a.accessory_name}</div>
-                        <div className="text-xs text-gray-600">{a.quantity} in stock</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {!accessorySearch.trim() && browsableAccessories.length > 0 && (
-                  <ul className="border rounded mt-2 max-h-64 overflow-y-auto">
-                    {browsableAccessories.map(a => (
-                      <li
-                        key={a.id}
-                        onClick={() => setSelectedAccessory(a)}
-                        className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 flex justify-between"
-                      >
-                        <span className="font-medium">{a.accessory_name}</span>
-                        <span className="text-xs text-gray-500">{a.quantity} in stock</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </>
-            )}
-            {selectedAccessory && (
-              <div className="mt-2">
-                <label className="block font-medium text-sm mb-1">Quantity</label>
-                <input type="number" min={1} max={selectedAccessory.quantity} value={accessoryQty} onChange={(e) => setAccessoryQty(Number(e.target.value))} className="border p-2 w-32 rounded" />
-              </div>
-            )}
-          </div>
-        )}
-
-        {mode === 'unit' && selectedUnit && (
-          <div>
-            <label className="block font-medium text-sm mb-1">Bundled Accessories (free by default -- set a price if the customer is paying extra, e.g. RAM upgrade, mouse)</label>
+            <label className="block font-medium text-sm mb-1">Search for a unit to add</label>
+            <p className="text-xs text-gray-500 mb-1">
+              Search here, or go to <a href="/dashboard/live-stock" className="underline">Live Stock</a> and click "Sell" on a unit.
+            </p>
             <input
-              value={accessorySearch}
-              onChange={(e) => setAccessorySearch(e.target.value)}
-              placeholder="Search to add..."
+              value={unitSearch}
+              onChange={(e) => setUnitSearch(e.target.value)}
+              placeholder="Search by asset number, serial, or model..."
               className="border p-2 w-full rounded"
             />
-            {accessoryOptions.length > 0 && (
-              <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
-                {accessoryOptions.map(a => (
-                  <li key={a.id} onClick={() => addBundledAccessory(a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
-                    {a.accessory_name} <span className="text-xs text-gray-500">({a.quantity} in stock)</span>
+            {loadingUnits && <div className="text-xs text-gray-400 mt-1">Searching...</div>}
+            {units.length > 0 && (
+              <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
+                {units.map(u => (
+                  <li
+                    key={u.id}
+                    onClick={() => addUnitLine(u)}
+                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                  >
+                    <div className="font-medium">{unitLabel(u)}</div>
+                    <div className="text-xs text-gray-600">{u.sku_code} — {unitConfigSummary(u)}</div>
                   </li>
                 ))}
               </ul>
             )}
-            {bundled.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {bundled.map((b, idx) => (
-                  <span key={b.accessory_id} className="bg-gray-100 text-sm px-2 py-1 rounded flex items-center gap-1">
-                    {b.accessory_name}
-                    <input
-                      type="number"
-                      min={1}
-                      value={b.quantity}
-                      onChange={(e) => setBundled(prev => prev.map((p, i) => i === idx ? { ...p, quantity: Number(e.target.value) } : p))}
-                      className="w-12 border rounded text-center"
-                      title="Quantity"
-                    />
-                    <input
-                      type="number"
-                      min={0}
-                      value={b.price || ''}
-                      onChange={(e) => setBundled(prev => prev.map((p, i) => i === idx ? { ...p, price: Number(e.target.value) } : p))}
-                      placeholder="₹0 (free)"
-                      className="w-20 border rounded text-center"
-                      title="Extra charge per unit"
-                    />
-                    <button onClick={() => setBundled(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
-                  </span>
+          </div>
+        ) : (
+          <div className="relative">
+            <label className="block font-medium text-sm mb-1">Search for an accessory to add</label>
+            <p className="text-xs text-gray-500 mb-1">
+              Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
+            </p>
+            <input
+              value={accessorySearch}
+              onChange={(e) => setAccessorySearch(e.target.value)}
+              placeholder="Search accessory (mouse, bag, keyboard...)"
+              className="border p-2 w-full rounded"
+            />
+            {accessoryOptions.length > 0 && (
+              <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
+                {accessoryOptions.map(a => (
+                  <li
+                    key={a.id}
+                    onClick={() => addAccessoryLine(a)}
+                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                  >
+                    <div className="font-medium">{a.accessory_name}</div>
+                    <div className="text-xs text-gray-600">{a.quantity} in stock</div>
+                  </li>
                 ))}
-              </div>
+              </ul>
             )}
+            {!accessorySearch.trim() && browsableAccessories.length > 0 && (
+              <ul className="border rounded mt-2 max-h-64 overflow-y-auto">
+                {browsableAccessories.map(a => (
+                  <li
+                    key={a.id}
+                    onClick={() => addAccessoryLine(a)}
+                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 flex justify-between"
+                  >
+                    <span className="font-medium">{a.accessory_name}</span>
+                    <span className="text-xs text-gray-500">{a.quantity} in stock</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {cartItems.length > 0 && (
+          <div>
+            <label className="block font-medium text-sm mb-2">
+              Cart ({cartItems.length} item{cartItems.length === 1 ? '' : 's'})
+            </label>
+            <div className="space-y-3">
+              {cartItems.map(line => (
+                <div key={line.id} className="border rounded p-3 bg-gray-50">
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex-1">
+                      {line.kind === 'unit' ? (
+                        <>
+                          <div className="font-medium">{unitLabel(line.unit)}</div>
+                          <div className="text-xs text-gray-600">{line.unit.sku_code} — {unitConfigSummary(line.unit)}</div>
+                          <button
+                            type="button"
+                            onClick={() => setShowChangeSkuForLineId(line.id)}
+                            className="text-blue-600 underline text-xs mt-1"
+                          >
+                            Wrong or upgraded spec? Change SKU
+                          </button>
+                        </>
+                      ) : (
+                        <div className="font-medium">{line.accessory.accessory_name}</div>
+                      )}
+                    </div>
+                    <button onClick={() => removeLine(line.id)} className="text-red-500 text-sm">✕ Remove</button>
+                  </div>
+
+                  <div className="flex gap-3 items-end mt-2">
+                    <div>
+                      <label className="block text-xs text-gray-600 mb-1">
+                        Price {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST)' : '(GST-Incl.)') : ''} (₹)
+                      </label>
+                      <input
+                        type="number"
+                        value={line.salePrice || ''}
+                        onChange={(e) => updateLinePrice(line.id, Number(e.target.value))}
+                        className="border p-2 w-32 rounded"
+                      />
+                    </div>
+                    {line.kind === 'accessory' && (
+                      <div>
+                        <label className="block text-xs text-gray-600 mb-1">Quantity</label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={line.accessory.quantity}
+                          value={line.quantity}
+                          onChange={(e) => updateAccessoryQty(line.id, Number(e.target.value))}
+                          className="border p-2 w-24 rounded"
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  {line.kind === 'unit' && (
+                    <div className="mt-2">
+                      {bundlingForLineId === line.id ? (
+                        <div className="relative">
+                          <input
+                            value={bundleSearch}
+                            onChange={(e) => setBundleSearch(e.target.value)}
+                            placeholder="Search accessory to bundle..."
+                            className="border p-2 w-full rounded text-sm"
+                            autoFocus
+                          />
+                          <button
+                            type="button"
+                            onClick={() => { setBundlingForLineId(null); setBundleSearch(''); setBundleOptions([]) }}
+                            className="text-xs text-gray-500 underline mt-1"
+                          >
+                            Done adding accessories
+                          </button>
+                          {bundleOptions.length > 0 && (
+                            <ul className="border rounded mt-1 max-h-40 overflow-y-auto bg-white">
+                              {bundleOptions.map(a => (
+                                <li key={a.id} onClick={() => addBundledAccessory(line.id, a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 text-sm">
+                                  {a.accessory_name} <span className="text-xs text-gray-500">({a.quantity} in stock)</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setBundlingForLineId(line.id)}
+                          className="text-blue-600 underline text-xs"
+                        >
+                          + Add bundled accessory (free by default, or set a price if the customer pays extra)
+                        </button>
+                      )}
+                      {line.bundled.length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          {line.bundled.map((b, idx) => (
+                            <span key={b.accessory_id} className="bg-white border text-sm px-2 py-1 rounded flex items-center gap-1">
+                              {b.accessory_name}
+                              <input
+                                type="number"
+                                min={1}
+                                value={b.quantity}
+                                onChange={(e) => updateBundled(line.id, idx, { quantity: Number(e.target.value) })}
+                                className="w-12 border rounded text-center"
+                                title="Quantity"
+                              />
+                              <input
+                                type="number"
+                                min={0}
+                                value={b.price || ''}
+                                onChange={(e) => updateBundled(line.id, idx, { price: Number(e.target.value) })}
+                                placeholder="₹0 (free)"
+                                className="w-20 border rounded text-center"
+                                title="Extra charge per unit"
+                              />
+                              <button onClick={() => removeBundled(line.id, idx)} className="text-red-500">✕</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -497,12 +625,6 @@ function SellPageInner() {
               <option value="Cash">Cash</option>
             </select>
           </div>
-          <div>
-            <label className="block font-medium text-sm mb-1">
-              Selling Price {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST) ' : '(GST-Inclusive) ') : ''}(₹) *
-            </label>
-            <input type="number" value={salePrice || ''} onChange={(e) => setSalePrice(Number(e.target.value))} className="border p-2 w-full rounded" />
-          </div>
           {saleType === 'GST' && (
             <div>
               <label className="block font-medium text-sm mb-1">GST %</label>
@@ -513,7 +635,7 @@ function SellPageInner() {
 
         {saleType === 'GST' && (
           <div>
-            <label className="block font-medium text-sm mb-1">Price entered is</label>
+            <label className="block font-medium text-sm mb-1">Prices entered above are</label>
             <div className="flex gap-4 text-sm">
               <label className="flex items-center gap-1">
                 <input type="radio" checked={priceMode === 'pre_gst'} onChange={() => handlePriceModeChange('pre_gst')} />
@@ -551,6 +673,9 @@ function SellPageInner() {
             <div>
               <label className="block font-medium text-sm mb-1">Amount Paid (₹)</label>
               <input type="number" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} className="border p-2 w-full rounded" />
+              {cartItems.length > 1 && (
+                <p className="text-xs text-gray-400 mt-1">Split proportionally across each item by its own price.</p>
+              )}
             </div>
           )}
           <div>
@@ -566,10 +691,9 @@ function SellPageInner() {
         </div>
 
         <div className="text-right text-sm space-y-1">
-          {bundledAddOnsTotal > 0 && <p>Add-ons: ₹{bundledAddOnsTotal.toFixed(2)}</p>}
-          {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{baseGstPrice.toFixed(2)}</p>}
-          {saleType === 'GST' && <p>GST: ₹{gstAmount.toFixed(2)}</p>}
-          <p className="font-bold text-base">Total: ₹{total.toFixed(2)}</p>
+          {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{cartSubtotal.toFixed(2)}</p>}
+          {saleType === 'GST' && <p>GST: ₹{cartGstAmount.toFixed(2)}</p>}
+          <p className="font-bold text-base">Total: ₹{cartTotal.toFixed(2)}</p>
           {paymentStatus !== 'paid' && <p className="text-amber-700">Balance due: ₹{balanceDue.toFixed(2)}</p>}
         </div>
 
@@ -580,16 +704,18 @@ function SellPageInner() {
             className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50"
           >
             {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
-            {submitting ? 'Saving...' : 'Review & Record Sale'}
+            {submitting ? 'Saving...' : `Review & Record Sale (${cartItems.length} item${cartItems.length === 1 ? '' : 's'})`}
           </button>
         </div>
       </div>
 
-      {showChangeSku && selectedUnit && (
+      {changeSkuLine && (
         <FixSkuDialog
-          assetId={selectedUnit.id}
-          onClose={() => setShowChangeSku(false)}
-          onReassigned={() => fetchUnitById(selectedUnit.id)}
+          assetId={changeSkuLine.unit.id}
+          onClose={() => setShowChangeSkuForLineId(null)}
+          onReassigned={() => fetchUnit(changeSkuLine.unit.id).then(u => {
+            if (u) setCartItems(prev => prev.map(l => l.id === changeSkuLine.id ? { ...l, unit: u } : l))
+          })}
         />
       )}
 
@@ -600,14 +726,28 @@ function SellPageInner() {
           onBack={() => setShowReview(false)}
           onConfirm={async () => { await handleSubmit(); setShowReview(false) }}
           rows={[
-            { label: 'Item', value: mode === 'unit'
-              ? (selectedUnit ? `${unitLabel(selectedUnit)} — ${selectedUnit.sku_code}` : '')
-              : (selectedAccessory ? `${selectedAccessory.accessory_name} × ${accessoryQty}` : '') },
+            {
+              label: 'Items',
+              value: (
+                <ul className="space-y-1">
+                  {cartItems.map(line => (
+                    <li key={line.id}>
+                      {line.kind === 'unit'
+                        ? `${unitLabel(line.unit)} — ${line.unit.sku_code} · ₹${line.salePrice.toFixed(2)}`
+                        : `${line.accessory.accessory_name} ×${line.quantity} — ₹${line.salePrice.toFixed(2)}`}
+                      {line.kind === 'unit' && line.bundled.length > 0 && (
+                        <div className="text-xs text-gray-500">
+                          + {line.bundled.map(b => `${b.accessory_name} ×${b.quantity}${b.price ? ` (+₹${b.price})` : ''}`).join(', ')}
+                        </div>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ),
+            },
             { label: 'Customer', value: customerData?.customer_name || '' },
             { label: 'Sale Type', value: saleType },
-            { label: 'Selling Price', value: `₹${salePrice.toFixed(2)}` },
-            ...(bundled.length > 0 ? [{ label: 'Bundled Accessories', value: bundled.map(b => `${b.accessory_name} ×${b.quantity}${b.price ? ` (+₹${b.price})` : ''}`).join(', ') }] : []),
-            { label: 'Total', value: `₹${total.toFixed(2)}` },
+            { label: 'Total', value: `₹${cartTotal.toFixed(2)}` },
             { label: 'Payment', value: paymentStatus === 'partial' ? `Partial — ₹${amountPaid.toFixed(2)} paid` : paymentStatus },
             { label: 'Received Into', value: paymentAccount },
             { label: 'Sold By', value: soldBy },

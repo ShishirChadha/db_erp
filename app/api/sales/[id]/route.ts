@@ -14,7 +14,15 @@ export async function GET(
   const { id } = await params
   const { data, error } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
   if (error || !data) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
-  return NextResponse.json(data)
+
+  const { data: history } = await supabaseAdmin
+    .from('field_corrections')
+    .select('field_name, old_value, new_value, changed_by, changed_at, reason')
+    .eq('table_name', 'sales')
+    .eq('record_id', id)
+    .order('changed_at', { ascending: true })
+
+  return NextResponse.json({ ...data, history: history || [] })
 }
 
 // ---------- PATCH: owner edits a sale after the fact ----------
@@ -64,7 +72,7 @@ export async function PATCH(
     updates.sale_total = basePrice + gstAmount
   }
 
-  for (const key of ['sale_type', 'payment_status', 'amount_paid', 'payment_account', 'sold_by'] as const) {
+  for (const key of ['sale_type', 'payment_status', 'amount_paid', 'payment_account', 'sold_by', 'sale_date'] as const) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
 
@@ -79,7 +87,8 @@ export async function PATCH(
     'sales',
     id,
     Object.keys(updates).map((field) => ({ field, oldValue: existing[field], newValue: updates[field] })),
-    sessionUser.id
+    sessionUser.id,
+    body.reason || null
   )
 
   return NextResponse.json(data)

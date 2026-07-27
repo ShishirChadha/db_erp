@@ -2,12 +2,17 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { SkuFormModal } from '@/components/SkuFormModal'
+import { Pagination } from '@/components/Pagination'
+
+const PAGE_SIZE = 25
 
 // Accessories are sku_master rows like everything else (see docs/decisions.md,
 // 2026-07-23) -- this page is just SKU Master filtered to the non-serialized
@@ -197,8 +202,12 @@ function AttachPoControl({ skuId, backlogQty, onDone }: { skuId: string; backlog
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-amber-700 underline text-xs whitespace-nowrap">
-        Needs PO ({backlogQty}) -- Attach
+      <button
+        onClick={() => setOpen(true)}
+        className="text-amber-700 underline text-xs whitespace-nowrap"
+        title="Units received but not yet on a purchase order -- independent of how many have since sold. This count only ever grows when stock is received, never shrinks when stock sells."
+      >
+        {backlogQty} received, awaiting PO -- Attach
       </button>
     )
   }
@@ -235,26 +244,48 @@ function AccessoriesPage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
+  const [lastVendors, setLastVendors] = useState<Map<string, string>>(new Map())
   const [showArchived, setShowArchived] = useState(false)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams({ category: ACCESSORY_CATEGORIES.join(',') })
     if (search) params.set('search', search)
     if (showArchived) params.set('status', 'all')
+    params.set('page', String(page))
+    params.set('limit', String(PAGE_SIZE))
     const [skuRes, backlogRes] = await Promise.all([
       apiFetch(`/api/sku-master?${params.toString()}`),
       isOwner ? apiFetch('/api/purchase-orders/from-accessory-stock') : Promise.resolve(null),
     ])
-    setSkus(skuRes.ok ? await skuRes.json() : [])
+    let loadedSkus: AccessorySku[] = []
+    if (skuRes.ok) {
+      const json = await skuRes.json()
+      loadedSkus = json.data || []
+      setSkus(loadedSkus)
+      setTotal(json.total || 0)
+    } else {
+      setSkus([])
+    }
     if (backlogRes?.ok) {
       const backlog: PoBacklog[] = await backlogRes.json()
       setPoBacklog(new Map(backlog.map((b) => [b.sku_id, b.quantity])))
     }
+    if (isOwner && loadedSkus.length > 0) {
+      const vendorRes = await apiFetch(`/api/sku-master/last-vendors?ids=${loadedSkus.map((s) => s.id).join(',')}`)
+      if (vendorRes.ok) setLastVendors(new Map(Object.entries(await vendorRes.json())))
+    } else {
+      setLastVendors(new Map())
+    }
     setLoading(false)
-  }, [search, isOwner, showArchived])
+  }, [search, isOwner, showArchived, page])
 
   useEffect(() => { fetchAll() }, [fetchAll])
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [search, showArchived])
 
   useEffect(() => {
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((all) => {
@@ -281,8 +312,8 @@ function AccessoriesPage() {
           className="border p-2 rounded"
         />
         {isOwner && (
-          <label className="flex items-center gap-1 text-sm text-gray-600">
-            <input type="checkbox" checked={showArchived} onChange={(e) => setShowArchived(e.target.checked)} />
+          <label className="flex items-center gap-2 text-sm text-gray-600">
+            <Checkbox checked={showArchived} onCheckedChange={(v) => setShowArchived(!!v)} />
             Show archived
           </label>
         )}
@@ -291,52 +322,63 @@ function AccessoriesPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <table className="min-w-full border text-sm">
-          <thead>
-            <tr>
-              <th className="border p-2">Name</th>
-              <th className="border p-2">Category</th>
-              <th className="border p-2">Brand</th>
-              <th className="border p-2">In Stock</th>
-              <th className="border p-2">Selling Price</th>
-              {isOwner && <th className="border p-2">Cost</th>}
-              <th className="border p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {skus.map(s => (
-              <tr key={s.id} className={s.status !== 'active' ? 'opacity-50' : ''}>
-                <td className="border p-2">
-                  {displayName(s)}
-                  {s.status !== 'active' && <span className="ml-2 text-xs text-gray-400 capitalize">({s.status})</span>}
-                </td>
-                <td className="border p-2">{s.category}</td>
-                <td className="border p-2">{s.brand || '—'}</td>
-                <td className="border p-2">{s.quantity_in_stock}</td>
-                <td className="border p-2">{s.selling_price_default ? `₹${s.selling_price_default.toFixed(2)}` : '—'}</td>
-                {isOwner && <td className="border p-2">{s.base_cost != null ? `₹${s.base_cost.toFixed(2)}` : '—'}</td>}
-                <td className="border p-2">
-                  <div className="flex flex-col gap-1 items-start">
-                    {s.status === 'active' && <ReceiveStockControl skuId={s.id} onDone={fetchAll} />}
-                    {s.status === 'active' && s.quantity_in_stock > 0 && (
-                      <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-green-700 underline text-xs">
-                        Sell
-                      </button>
-                    )}
-                    {isOwner && s.status === 'active' && <AdjustQuantityControl skuId={s.id} onDone={fetchAll} />}
-                    {isOwner && poBacklog.has(s.id) && (
-                      <AttachPoControl skuId={s.id} backlogQty={poBacklog.get(s.id)!} onDone={fetchAll} />
-                    )}
-                    {isOwner && <ArchiveControl sku={s} onDone={fetchAll} />}
-                  </div>
-                </td>
-              </tr>
-            ))}
-            {skus.length === 0 && (
-              <tr><td colSpan={isOwner ? 7 : 6} className="border p-4 text-center text-gray-400">No accessories found.</td></tr>
-            )}
-          </tbody>
-        </table>
+        <>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="min-w-full text-sm">
+              <thead>
+                <tr>
+                  <th className="p-2 w-10 text-right">#</th>
+                  <th className="p-2">Name</th>
+                  <th className="p-2">Category</th>
+                  <th className="p-2">Brand</th>
+                  <th className="p-2 text-right">In Stock</th>
+                  <th className="p-2 text-right">Selling Price</th>
+                  {isOwner && <th className="p-2 text-right">Cost</th>}
+                  {isOwner && <th className="p-2">Last Vendor</th>}
+                  <th className="p-2">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {skus.length === 0 && (
+                  <tr><td colSpan={isOwner ? 9 : 7} className="p-4 text-center text-sm text-gray-400">No accessories found.</td></tr>
+                )}
+                {skus.map((s, idx) => (
+                  <tr key={s.id} className={s.status !== 'active' ? 'opacity-50' : ''}>
+                    <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                    <td className="p-2">
+                      <Link href={`/dashboard/accessories/${s.id}`} className="text-blue-600 underline">
+                        {displayName(s)}
+                      </Link>
+                      {s.status !== 'active' && <span className="ml-2 text-xs text-gray-400 capitalize">({s.status})</span>}
+                    </td>
+                    <td className="p-2">{s.category}</td>
+                    <td className="p-2">{s.brand || '—'}</td>
+                    <td className="p-2 text-right tabular-nums">{s.quantity_in_stock}</td>
+                    <td className="p-2 text-right tabular-nums">{s.selling_price_default ? `₹${s.selling_price_default.toFixed(2)}` : '—'}</td>
+                    {isOwner && <td className="p-2 text-right tabular-nums">{s.base_cost != null ? `₹${s.base_cost.toFixed(2)}` : '—'}</td>}
+                    {isOwner && <td className="p-2">{lastVendors.get(s.id) || '—'}</td>}
+                    <td className="p-2">
+                      <div className="flex flex-col gap-1 items-start">
+                        {s.status === 'active' && <ReceiveStockControl skuId={s.id} onDone={fetchAll} />}
+                        {s.status === 'active' && s.quantity_in_stock > 0 && (
+                          <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-green-700 underline text-xs">
+                            Sell
+                          </button>
+                        )}
+                        {isOwner && s.status === 'active' && <AdjustQuantityControl skuId={s.id} onDone={fetchAll} />}
+                        {isOwner && poBacklog.has(s.id) && (
+                          <AttachPoControl skuId={s.id} backlogQty={poBacklog.get(s.id)!} onDone={fetchAll} />
+                        )}
+                        {isOwner && <ArchiveControl sku={s} onDone={fetchAll} />}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+        </>
       )}
 
       {modalOpen && (

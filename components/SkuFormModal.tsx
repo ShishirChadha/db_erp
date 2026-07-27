@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
+import { Checkbox } from '@/components/ui/checkbox'
 import { getCustomOptionsCategory } from '@/lib/sku-field-options'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
@@ -45,8 +46,15 @@ function CustomOptionSpecField({
   value: string
   onChange: (v: string) => void
 }) {
-  const { values } = useCustomOptions(optionsCategory)
-  return <SearchableSelect options={values} value={value ?? ''} onChange={onChange} />
+  const { values, addOption } = useCustomOptions(optionsCategory)
+  return (
+    <SearchableSelect
+      options={values}
+      value={value ?? ''}
+      onChange={onChange}
+      onOtherCommit={(v) => { if (!values.includes(v)) addOption(v) }}
+    />
+  )
 }
 
 export function SkuFormModal({
@@ -220,10 +228,9 @@ export function SkuFormModal({
                       required={field.required}
                     />
                   ) : field.type === 'checkbox' ? (
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={!!specs[field.name]}
-                      onChange={(e) => handleSpecChange(field.name, e.target.checked)}
+                      onCheckedChange={(v) => handleSpecChange(field.name, !!v)}
                     />
                   ) : field.type === 'select' ? (
                     <select

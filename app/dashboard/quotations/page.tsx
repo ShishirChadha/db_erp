@@ -13,6 +13,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Pagination } from '@/components/Pagination'
+import { StatusBadge } from '@/components/StatusBadge'
+import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+
+const PAGE_SIZE = 25
 
 type DocType = 'quotation' | 'proforma'
 
@@ -38,15 +43,6 @@ interface LineItem {
   quantity: number
   rate: number
   gst_rate: number
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  draft: 'bg-gray-100 text-gray-700',
-  sent: 'bg-blue-100 text-blue-700',
-  accepted: 'bg-green-100 text-green-700',
-  rejected: 'bg-red-100 text-red-700',
-  expired: 'bg-amber-100 text-amber-700',
-  void: 'bg-gray-200 text-gray-500 line-through',
 }
 
 const ENTITY_LABELS: Record<string, string> = { digitalbluez: 'Digitalbluez', techtenth: 'Techtenth', cash: 'Cash' }
@@ -298,7 +294,7 @@ function ViewDocumentDialog({ docId, onClose, onChanged }: { docId: string; onCl
 
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 items-center text-sm">
-            <span className={`px-2 py-1 rounded text-xs ${STATUS_COLORS[doc.status]}`}>{doc.status.toUpperCase()}</span>
+            <StatusBadge tone={toneFor(SALES_DOCUMENT_STATUS_TONES, doc.status)}>{doc.status}</StatusBadge>
             {doc.status === 'draft' && <button onClick={() => changeStatus('sent')} disabled={busy} className="text-blue-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Sent</button>}
             {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('accepted')} disabled={busy} className="text-green-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Accepted</button>}
             {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('rejected')} disabled={busy} className="text-red-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Rejected</button>}
@@ -353,15 +349,26 @@ function QuotationsPage() {
   const [docs, setDocs] = useState<DocSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [viewingId, setViewingId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
 
   const fetchDocs = useCallback(async () => {
     setLoading(true)
-    const res = await apiFetch(`/api/sales-documents?doc_type=${docType}`)
-    setDocs(res.ok ? await res.json() : [])
+    const res = await apiFetch(`/api/sales-documents?doc_type=${docType}&page=${page}&limit=${PAGE_SIZE}`)
+    if (res.ok) {
+      const json = await res.json()
+      setDocs(json.data || [])
+      setTotal(json.total || 0)
+    } else {
+      setDocs([])
+    }
     setLoading(false)
-  }, [docType])
+  }, [docType, page])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
+
+  // Switching between Quotations/Proforma tabs invalidates the current page's meaning.
+  useEffect(() => { setPage(1) }, [docType])
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
@@ -383,40 +390,43 @@ function QuotationsPage() {
           <table className="min-w-full border text-sm">
             <thead>
               <tr>
+                <th className="border p-2 w-10 text-right">#</th>
                 <th className="border p-2">Number</th>
                 <th className="border p-2">Date</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Entity</th>
-                <th className="border p-2">Total</th>
+                <th className="border p-2 text-right">Total</th>
                 <th className="border p-2">Status</th>
-                <th className="border p-2">Conversion</th>
+                <th className="border p-2 text-center">Conversion</th>
                 <th className="border p-2"></th>
               </tr>
             </thead>
             <tbody>
-              {docs.map((d) => {
+              {docs.map((d, idx) => {
                 const total = d.sales_document_items.length
                 const converted = d.sales_document_items.filter((i) => i.converted).length
                 return (
                   <tr key={d.id}>
+                    <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                     <td className="border p-2 font-mono text-xs">{d.document_number}</td>
                     <td className="border p-2">{d.document_date}</td>
                     <td className="border p-2">{d.customer_name}</td>
                     <td className="border p-2">{ENTITY_LABELS[d.entity_key]}</td>
-                    <td className="border p-2 text-right">₹{Number(d.grand_total).toFixed(2)}</td>
-                    <td className="border p-2"><span className={`px-2 py-0.5 rounded text-xs ${STATUS_COLORS[d.status]}`}>{d.status}</span></td>
-                    <td className="border p-2 text-center">{converted}/{total}</td>
+                    <td className="border p-2 text-right tabular-nums">₹{Number(d.grand_total).toFixed(2)}</td>
+                    <td className="border p-2"><StatusBadge tone={toneFor(SALES_DOCUMENT_STATUS_TONES, d.status)}>{d.status}</StatusBadge></td>
+                    <td className="border p-2 text-center tabular-nums">{converted}/{total}</td>
                     <td className="border p-2"><button onClick={() => setViewingId(d.id)} className="text-blue-600 underline text-xs">View</button></td>
                   </tr>
                 )
               })}
               {docs.length === 0 && (
-                <tr><td colSpan={8} className="border p-4 text-center text-gray-400">No {docType}s yet.</td></tr>
+                <tr><td colSpan={9} className="border p-4 text-center text-gray-400">No {docType}s yet.</td></tr>
               )}
             </tbody>
           </table>
         </div>
       )}
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {viewingId && (
         <ViewDocumentDialog docId={viewingId} onClose={() => setViewingId(null)} onChanged={fetchDocs} />

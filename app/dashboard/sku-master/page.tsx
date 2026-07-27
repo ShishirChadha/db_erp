@@ -7,6 +7,11 @@ import { apiFetch } from '@/lib/api-client'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
+import { Pagination } from '@/components/Pagination'
+import { EmptyTableRow } from '@/components/EmptyTableRow'
+import { ErrorBanner } from '@/components/ErrorBanner'
+
+const PAGE_SIZE = 25
 
 interface SKU {
   id: string
@@ -48,6 +53,8 @@ function SkuMasterPage() {
   const [categoryFilter, setCategoryFilter] = useState('')
   const [sortField, setSortField] = useState<SortField>('full_sku_code')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -65,15 +72,19 @@ function SkuMasterPage() {
     try {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
+      if (categoryFilter) params.append('category', categoryFilter)
+      params.set('page', String(page))
+      params.set('limit', String(PAGE_SIZE))
       const res = await apiFetch(`/api/sku-master?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch SKUs')
-      const data = await res.json()
-      setSkus(data)
+      const json = await res.json()
+      setSkus(json.data || [])
+      setTotal(json.total || 0)
     } catch (err: any) {
       console.error(err)
       setError(err.message)
     }
-  }, [search])
+  }, [search, categoryFilter, page])
 
   useEffect(() => {
     fetchTemplates()
@@ -82,6 +93,9 @@ function SkuMasterPage() {
   useEffect(() => {
     fetchSkus().finally(() => setLoading(false))
   }, [fetchSkus])
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [search, categoryFilter])
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -93,8 +107,7 @@ function SkuMasterPage() {
   }
 
   const displayedSkus = useMemo(() => {
-    const filtered = categoryFilter ? skus.filter((s) => s.category === categoryFilter) : skus
-    const sorted = [...filtered].sort((a, b) => {
+    const sorted = [...skus].sort((a, b) => {
       const av = a[sortField]
       const bv = b[sortField]
       if (av == null && bv == null) return 0
@@ -104,7 +117,7 @@ function SkuMasterPage() {
       return String(av).localeCompare(String(bv))
     })
     return sortOrder === 'asc' ? sorted : sorted.reverse()
-  }, [skus, categoryFilter, sortField, sortOrder])
+  }, [skus, sortField, sortOrder])
 
   const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
 
@@ -136,7 +149,6 @@ function SkuMasterPage() {
   }
 
   if (loading) return <div className="p-4">Loading…</div>
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
 
   return (
     <div className="p-4">
@@ -146,6 +158,8 @@ function SkuMasterPage() {
           + New SKU
         </button>
       </div>
+
+      {error && <div className="mb-4"><ErrorBanner message={error} onRetry={() => fetchSkus()} /></div>}
 
       <div className="flex flex-wrap gap-4 mb-4 items-end">
         <div>
@@ -177,44 +191,50 @@ function SkuMasterPage() {
         )}
       </div>
 
-      <table className="min-w-full border">
-        <thead>
-          <tr>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('full_sku_code')}>
-              SKU Code{sortIndicator('full_sku_code')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sku_description')}>
-              Description{sortIndicator('sku_description')}
-            </th>
-            <th className="border p-2">HSN</th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('category')}>
-              Category{sortIndicator('category')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('quantity_in_stock')}>
-              Stock{sortIndicator('quantity_in_stock')}
-            </th>
-            <th className="border p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {displayedSkus.map(sku => (
-            <tr key={sku.id}>
-              <td className="border p-2">{sku.full_sku_code}</td>
-              <td className="border p-2">{buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description}</td>
-              <td className="border p-2">{sku.hsn_code || '—'}</td>
-              <td className="border p-2">{sku.category}</td>
-              <td className="border p-2">{sku.quantity_in_stock ?? '0'}</td>
-              <td className="border p-2 space-x-2">
-                <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
-                <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1">
-                  {deletingId === sku.id && <Loader2 className="size-3 animate-spin" />}
-                  Delete
-                </button>
-              </td>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr>
+              <th className="p-2 w-10 text-right">#</th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('full_sku_code')}>
+                SKU Code{sortIndicator('full_sku_code')}
+              </th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('sku_description')}>
+                Description{sortIndicator('sku_description')}
+              </th>
+              <th className="p-2">HSN</th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('category')}>
+                Category{sortIndicator('category')}
+              </th>
+              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('quantity_in_stock')}>
+                Stock{sortIndicator('quantity_in_stock')}
+              </th>
+              <th className="p-2">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y">
+            {displayedSkus.length === 0 && <EmptyTableRow colSpan={7} message="No SKUs found." />}
+            {displayedSkus.map((sku, idx) => (
+              <tr key={sku.id}>
+                <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                <td className="p-2">{sku.full_sku_code}</td>
+                <td className="p-2">{buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description}</td>
+                <td className="p-2">{sku.hsn_code || '—'}</td>
+                <td className="p-2">{sku.category}</td>
+                <td className="p-2 text-right tabular-nums">{sku.quantity_in_stock ?? '0'}</td>
+                <td className="p-2 space-x-2">
+                  <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
+                  <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1">
+                    {deletingId === sku.id && <Loader2 className="size-3 animate-spin" />}
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {modalOpen && (
         <SkuFormModal

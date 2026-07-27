@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface AppUser {
   id: string
@@ -43,7 +44,7 @@ function PageAccessCheckboxes({ selected, onChange }: { selected: string[]; onCh
     <div className="grid grid-cols-2 gap-1 mt-2">
       {PAGE_OPTIONS.map(opt => (
         <label key={opt.key} className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={selected.includes(opt.key)} onChange={() => toggle(opt.key)} />
+          <Checkbox checked={selected.includes(opt.key)} onCheckedChange={() => toggle(opt.key)} />
           {opt.label}
         </label>
       ))}
@@ -204,23 +205,23 @@ export default function UserManager() {
         <h3 className="font-medium text-sm mb-3">Create User</h3>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">User ID</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">User ID</label>
             <input value={username} onChange={(e) => setUsername(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. ShishirCH, Rohit" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Display Name</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. Rohit Sharma" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Employee ID (optional)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID (optional)</label>
             <input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="border p-2 w-full rounded" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Contact Email (optional, for notifications)</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email (optional, for notifications)</label>
             <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="border p-2 w-full rounded" placeholder="employee@digitalbluez.com" />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Password</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
             <div className="flex gap-2">
               <input value={password} onChange={(e) => setPassword(e.target.value)} className="border p-2 w-full rounded" />
               <button type="button" onClick={() => setPassword(generatePassword())} className="text-xs px-2 py-1 rounded bg-gray-100 whitespace-nowrap">
@@ -229,7 +230,7 @@ export default function UserManager() {
             </div>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Role</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
             <select value={role} onChange={(e) => setRole(e.target.value as 'owner' | 'employee')} className="border p-2 w-full rounded">
               <option value="employee">Employee</option>
               <option value="owner">Owner</option>
@@ -239,7 +240,7 @@ export default function UserManager() {
 
         {role === 'employee' && (
           <div className="mb-3">
-            <label className="block text-xs text-gray-500 mb-1">Page Access</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Page Access</label>
             <PageAccessCheckboxes selected={allowedPages} onChange={setAllowedPages} />
           </div>
         )}
@@ -288,7 +289,7 @@ export default function UserManager() {
               {editingProfileId === u.id && (
                 <div className="mt-2 border-t pt-2 grid grid-cols-3 gap-2">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Display Name</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
                     <input
                       value={editProfile.fullName}
                       onChange={(e) => setEditProfile(prev => ({ ...prev, fullName: e.target.value }))}
@@ -296,7 +297,7 @@ export default function UserManager() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Employee ID</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
                     <input
                       value={editProfile.employeeId}
                       onChange={(e) => setEditProfile(prev => ({ ...prev, employeeId: e.target.value }))}
@@ -304,7 +305,7 @@ export default function UserManager() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Contact Email</label>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
                     <input
                       value={editProfile.contactEmail}
                       onChange={(e) => setEditProfile(prev => ({ ...prev, contactEmail: e.target.value }))}

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { parsePagination } from '@/lib/pagination'
 
 // Purchase Orders carry vendor/cost/GST data end-to-end -- owner-only, no employee access.
 // ---------- GET (list) ----------
@@ -17,9 +18,14 @@ export async function GET(req: NextRequest) {
   const date_from = searchParams.get('date_from')
   const date_to = searchParams.get('date_to')
 
+  // exclude_invoiced filters further in JS below (after the query), which would
+  // make a SQL-level .range() page inconsistent with the reported total -- it's
+  // unused by the current UI, so pagination simply doesn't apply when it's set.
+  const pagination = exclude_invoiced ? null : parsePagination(searchParams)
+
   let query = supabaseAdmin
     .from('purchase_orders')
-    .select('*')
+    .select('*', pagination ? { count: 'exact' } : undefined)
     .eq('is_deleted', false)
     .order('po_date', { ascending: false })
 
@@ -32,8 +38,9 @@ export async function GET(req: NextRequest) {
   if (search) query = query.ilike('po_number', `%${search}%`)
   if (date_from) query = query.gte('po_date', date_from)
   if (date_to) query = query.lte('po_date', date_to)
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  let { data: pos, error } = await query
+  let { data: pos, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // Ensure pos is an array
@@ -49,6 +56,7 @@ export async function GET(req: NextRequest) {
     pos = pos.filter(po => !invoicedIds.has(po.id))
   }
 
+  if (pagination) return NextResponse.json({ data: pos, total: count ?? 0 })
   return NextResponse.json(pos)
 }
 

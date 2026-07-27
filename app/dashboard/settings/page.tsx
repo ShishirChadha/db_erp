@@ -195,13 +195,13 @@ function SettingsPage() {
     <div className="p-4 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-6">Settings</h1>
 
-      <div className="flex gap-6">
-        <div className="w-48 shrink-0 space-y-1">
+      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
+        <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible md:w-48 md:shrink-0 pb-1 md:pb-0">
           {CATEGORIES.map(cat => (
             <button
               key={cat.key}
               onClick={() => setActiveCategory(cat.key)}
-              className={`w-full text-left px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+              className={`shrink-0 md:w-full text-left px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
                 activeCategory === cat.key ? 'bg-blue-600 text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
               }`}
             >

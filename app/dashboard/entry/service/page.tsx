@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { Checkbox } from '@/components/ui/checkbox'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -314,7 +315,7 @@ function ServicePageInner() {
           </div>
 
           <div className="flex items-center gap-2">
-            <input type="checkbox" id="ownStock" checked={isOwnStock} onChange={(e) => setIsOwnStock(e.target.checked)} />
+            <Checkbox id="ownStock" checked={isOwnStock} onCheckedChange={(v) => setIsOwnStock(!!v)} />
             <label htmlFor="ownStock" className="text-sm">This is our own stock (not a customer's personal device)</label>
           </div>
 

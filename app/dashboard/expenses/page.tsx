@@ -6,6 +6,7 @@ import RequireOwner from "@/components/RequireOwner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -187,7 +188,7 @@ function ExpensesPage() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <input type="checkbox" id="showDeleted" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+          <Checkbox id="showDeleted" checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
 

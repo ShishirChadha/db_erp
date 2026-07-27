@@ -32,6 +32,7 @@ export function SearchableSelect({
   placeholder = "Select...",
   allowOther = true,
   otherPosition = "bottom",
+  onOtherCommit,
 }: {
   options: string[];
   value: string;
@@ -39,6 +40,9 @@ export function SearchableSelect({
   placeholder?: string;
   allowOther?: boolean;
   otherPosition?: "top" | "bottom";
+  // Fired when a free-text "Other" value loses focus, so callers backed by a
+  // persisted option list (see useCustomOptions) can feed it back in for next time.
+  onOtherCommit?: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
   const isCustomValue = value !== "" && !options.includes(value);
@@ -50,6 +54,7 @@ export function SearchableSelect({
         <Input
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={() => { if (value.trim()) onOtherCommit?.(value.trim()); }}
           placeholder="Type value..."
           autoFocus
         />

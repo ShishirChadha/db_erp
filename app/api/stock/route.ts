@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { redactManyForRole } from '@/lib/auth/redact'
 import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list all assets ----------
 // Used by Live Stock, Sell/Service unit search, and (owner-only) Stock/Main ERP + RMA.
@@ -19,6 +20,16 @@ export async function GET(req: NextRequest) {
   const id = searchParams.get('id')                    // optional (fetch a single unit by id)
   const source = searchParams.get('source')            // optional exact match, e.g. 'employee_intake'
   const excludeSource = searchParams.get('exclude_source') // optional not-equal, e.g. 'employee_intake'
+  const pagination = parsePagination(searchParams, 20)
+
+  // Sort is opt-in -- callers that don't pass it (Sell/Service pickers, RMA,
+  // SearchableItemSelect, pending-tasks) keep today's exact asset_number-ascending
+  // order, unchanged. Whitelisted to real, single-column, always-populated fields;
+  // sku_code isn't here because it's derived/joined, not reliably orderable.
+  const SORTABLE_FIELDS = new Set(['asset_number', 'status', 'created_at', 'sold_at'])
+  const sortParam = searchParams.get('sort')
+  const sortField = sortParam && SORTABLE_FIELDS.has(sortParam) ? sortParam : 'asset_number'
+  const sortAscending = searchParams.get('order') !== 'desc'
 
   // purchase_order_items is a LEFT (not inner) join: legacy-door rows (source=
   // 'legacy_purchase', created directly in asset_ledger with no PO) have no
@@ -35,6 +46,7 @@ export async function GET(req: NextRequest) {
       reserved_at,
       received_at,
       sold_at,
+      created_at,
       po_id,
       po_item_id,
       sku_id,
@@ -62,22 +74,47 @@ export async function GET(req: NextRequest) {
           specifications
         )
       )
-    `)
-    .order('asset_number')
+    `, pagination ? { count: 'exact' } : undefined)
+    // nullsFirst: false -- rows with no value for the sort field (e.g. legacy sold
+    // units with no recorded sold_at) sink to the bottom regardless of direction,
+    // so they never crowd out real dates from "last entry on top". A secondary
+    // .order('id') is required for pagination to be stable at all: without a
+    // deterministic tiebreaker, Postgres can return tied rows (e.g. many null
+    // sold_at) in a different order per request, causing page 1 and page 2 to
+    // silently overlap or skip rows under .range()-based pagination.
+    .order(sortField, { ascending: sortAscending, nullsFirst: false })
+    .order('id', { ascending: true })
 
   if (statusFilter) {
     const statuses = statusFilter.split(',').map(s => s.trim())
     query = statuses.length > 1 ? query.in('status', statuses) : query.eq('status', statuses[0])
   }
   if (search) {
-    // A search term can match the asset's own tag (asset/serial number) or the
-    // SKU it belongs to (code/brand/model/description, e.g. "Lenovo" or "T450") --
+    // A search term can match the asset's own tag (asset/serial number), the SKU
+    // it belongs to (code/brand/model/description, e.g. "Lenovo" or "T450"), or a
+    // spec value buried in sku_master.specifications (e.g. "16GB" RAM, "i5" CPU) --
     // asset_ledger.sku_id is always populated regardless of PO-link status, so
-    // resolving matching SKUs first and OR-ing on sku_id covers both cases.
+    // resolving matching SKUs first and OR-ing on sku_id covers all three.
+    const { data: specTemplates } = await supabaseAdmin
+      .from('sku_category_templates')
+      .select('field_schema')
+    const specFieldNames = new Set<string>()
+    for (const t of specTemplates || []) {
+      const fields = (t as any).field_schema?.fields
+      if (Array.isArray(fields)) for (const f of fields) if (f?.name) specFieldNames.add(f.name)
+    }
+    const specClauses = [...specFieldNames].map((f) => `specifications->>${f}.ilike.%${search}%`)
+
     const { data: matchingSkus } = await supabaseAdmin
       .from('sku_master')
       .select('id')
-      .or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%,brand.ilike.%${search}%,model_name.ilike.%${search}%`)
+      .or([
+        `full_sku_code.ilike.%${search}%`,
+        `sku_description.ilike.%${search}%`,
+        `brand.ilike.%${search}%`,
+        `model_name.ilike.%${search}%`,
+        ...specClauses,
+      ].join(','))
 
     const skuIds = (matchingSkus || []).map((s) => s.id)
     const orClauses = [`asset_number.ilike.%${search}%`, `serial_number.ilike.%${search}%`]
@@ -98,8 +135,9 @@ export async function GET(req: NextRequest) {
   if (excludeSource) {
     query = query.neq('source', excludeSource)
   }
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data: assets, error } = await query
+  const { data: assets, error, count } = await query
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 })
@@ -182,6 +220,7 @@ export async function GET(req: NextRequest) {
       reserved_at: asset.reserved_at,
       received_at: asset.received_at,
       sold_at: asset.sold_at,
+      created_at: asset.created_at,
       po_id: asset.po_id,
       sku_id: asset.sku_id,
       sku_code: sku?.full_sku_code || '',
@@ -206,7 +245,9 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  return NextResponse.json(redactManyForRole(result, 'stock_list', sessionUser.role))
+  const redacted = redactManyForRole(result, 'stock_list', sessionUser.role)
+  if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
+  return NextResponse.json(redacted)
 }
 
 // ---------- PUT: update asset number or serial ----------
@@ -215,7 +256,7 @@ export async function PUT(req: NextRequest) {
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await req.json()
-  const { id, asset_number, serial_number, confirm_duplicate } = body
+  const { id, asset_number, serial_number, confirm_duplicate, confirm_override, reason } = body
 
   if (!id) {
     return NextResponse.json({ error: 'Asset id is required' }, { status: 400 })
@@ -253,12 +294,22 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
   }
 
-  // Only allow editing if asset is NOT sold or invoiced or returned
+  // Only allow editing if asset is NOT sold or invoiced or returned -- unless the owner
+  // explicitly overrides with a reason (e.g. correcting a typo'd serial on a real sale,
+  // or cleaning up test/debris data that was never a real transaction).
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
-    return NextResponse.json(
-      { error: `Cannot edit asset in '${asset.status}' status. Only unsold assets can be edited.` },
-      { status: 400 }
-    )
+    if (!isOwner(sessionUser) || !confirm_override) {
+      return NextResponse.json(
+        {
+          error: `Cannot edit asset in '${asset.status}' status. Only unsold assets can be edited.`,
+          error_code: isOwner(sessionUser) ? 'sold_edit_requires_override' : undefined,
+        },
+        { status: 400 }
+      )
+    }
+    if (!(reason || '').trim()) {
+      return NextResponse.json({ error: 'A reason is required to edit a sold/invoiced/returned asset.' }, { status: 400 })
+    }
   }
 
   // Prepare update object
@@ -282,7 +333,7 @@ export async function PUT(req: NextRequest) {
   await logFieldCorrections('asset_ledger', id, [
     { field: 'asset_number', oldValue: asset.asset_number, newValue: updates.asset_number ?? asset.asset_number },
     { field: 'serial_number', oldValue: asset.serial_number, newValue: updates.serial_number ?? asset.serial_number },
-  ], sessionUser.id)
+  ], sessionUser.id, reason || null)
 
   return NextResponse.json({ success: true })
 }

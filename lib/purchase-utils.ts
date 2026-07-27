@@ -27,3 +27,26 @@ export async function getVendorName(vendorId: string) {
     .single()
   return data?.company_name || ''
 }
+
+// Most recent vendor a given (fungible/accessory) SKU was bought from, by
+// purchase_order_items.created_at -- used anywhere an accessory needs "who did I last
+// buy this from" without a full purchase-history view (see /api/sku-master/[id]/history
+// for the full list). One query for any number of SKUs, first-seen-wins per sku_id
+// since results are already ordered newest first.
+export async function getLastVendorsBySku(skuIds: string[]): Promise<Map<string, string>> {
+  const lastVendorBySkuId = new Map<string, string>()
+  if (skuIds.length === 0) return lastVendorBySkuId
+
+  const { data: items } = await supabaseAdmin
+    .from('purchase_order_items')
+    .select('sku_id, created_at, purchase_orders(vendor_name)')
+    .in('sku_id', skuIds)
+    .order('created_at', { ascending: false })
+
+  for (const item of (items || []) as any[]) {
+    if (!lastVendorBySkuId.has(item.sku_id) && item.purchase_orders?.vendor_name) {
+      lastVendorBySkuId.set(item.sku_id, item.purchase_orders.vendor_name)
+    }
+  }
+  return lastVendorBySkuId
+}

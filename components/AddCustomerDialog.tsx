@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -111,7 +112,7 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Customer Name *</Label><Input required value={formData.customer_name} onChange={(e) => handleChange("customer_name", e.target.value)} /></div>
             <div><Label>Type</Label><Select value={formData.type} onValueChange={(val) => handleChange("type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Business">Business</SelectItem><SelectItem value="Individual">Individual</SelectItem></SelectContent></Select></div>
-            <div className="flex items-center space-x-2"><input type="checkbox" id="has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} /><Label htmlFor="has_gst">Has GST</Label></div>
+            <div className="flex items-center space-x-2"><Checkbox id="has_gst" checked={formData.has_gst} onCheckedChange={(v) => handleChange("has_gst", !!v)} /><Label htmlFor="has_gst">Has GST</Label></div>
             <div className="col-span-2">
               <Label>GST Number</Label>
               <div className="flex gap-2">
@@ -127,7 +128,7 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
             <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>
             <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
             <div><Label>Source</Label><Input value={formData.source} onChange={(e) => handleChange("source", e.target.value)} /></div>
-            <div className="flex items-center space-x-2"><input type="checkbox" id="google_review" checked={formData.google_review} onChange={(e) => handleChange("google_review", e.target.checked)} /><Label htmlFor="google_review">Google Review</Label></div>
+            <div className="flex items-center space-x-2"><Checkbox id="google_review" checked={formData.google_review} onCheckedChange={(v) => handleChange("google_review", !!v)} /><Label htmlFor="google_review">Google Review</Label></div>
             <div><Label>Social Following</Label><Select value={formData.social_following} onValueChange={(val) => handleChange("social_following", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="FB">FB</SelectItem><SelectItem value="Insta">Insta</SelectItem><SelectItem value="Both">Both</SelectItem><SelectItem value="None">None</SelectItem></SelectContent></Select></div>
           </div>
           <div className="flex justify-end space-x-2">

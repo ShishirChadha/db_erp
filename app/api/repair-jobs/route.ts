@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { generateRepairJobNumber, SELLABLE_STATUSES } from '@/lib/repair-jobs'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list repair jobs ----------
 export async function GET(req: NextRequest) {
@@ -11,16 +12,19 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
+  const pagination = parsePagination(searchParams)
 
   let query = supabaseAdmin
     .from('repair_jobs')
-    .select('*, customers(customer_name, phone)')
+    .select('*, customers(customer_name, phone)', pagination ? { count: 'exact' } : undefined)
     .order('created_at', { ascending: false })
 
   if (status) query = query.in('status', status.split(',').map(s => s.trim()))
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (pagination) return NextResponse.json({ data, total: count ?? 0 })
   return NextResponse.json(data)
 }
 

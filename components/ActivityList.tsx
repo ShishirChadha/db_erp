@@ -4,12 +4,14 @@ import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { format } from 'date-fns';
-import { Edit, Trash2, Copy, X, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
+import { Edit, Trash2, Copy, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { useAsyncAction } from '@/lib/useAsyncAction';
 import { useRole } from '@/lib/auth/useRole';
 import { apiFetch } from '@/lib/api-client';
 import { createClient } from '@/lib/supabase/client';
 import ActivityCommentThread from '@/components/ActivityCommentThread';
+import { Checkbox } from '@/components/ui/checkbox';
+import { SimpleModal } from '@/components/SimpleModal';
 
 // ---------- Type definitions ----------
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
@@ -88,27 +90,6 @@ function getTagColor(tag: string): string {
 }
 
 // ---------- Simple Modal ----------
-function SimpleModal({
-  isOpen, onClose, title, children, wide,
-}: {
-  isOpen: boolean; onClose: () => void; title: string; children: React.ReactNode; wide?: boolean;
-}) {
-  if (!isOpen) return null;
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
-      <div className={`bg-white rounded-lg ${wide ? 'max-w-2xl' : 'max-w-lg'} w-full mx-4 p-6 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-xl font-semibold">{title}</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">
-            <X className="h-5 w-5" />
-          </button>
-        </div>
-        {children}
-      </div>
-    </div>
-  );
-}
-
 // ---------- Shared task form (used by both Add and Edit) ----------
 interface TaskFormState {
   title: string;
@@ -188,7 +169,7 @@ function TaskForm({
           {assignableUsers.length === 0 && <p className="text-xs text-gray-400">No other users found.</p>}
           {assignableUsers.map(u => (
             <label key={u.id} className="flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={form.assignee_ids.includes(u.id)} onChange={() => toggleAssignee(u.id)} />
+              <Checkbox checked={form.assignee_ids.includes(u.id)} onCheckedChange={() => toggleAssignee(u.id)} />
               {userLabel(u)} <span className="text-xs text-gray-400">({u.role})</span>
             </label>
           ))}
@@ -603,7 +584,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
             <div className="flex gap-2">
               {(['pending', 'in_progress', 'done', 'cancelled'] as const).map(status => (
                 <label key={status} className="flex items-center gap-1">
-                  <input type="checkbox" checked={selectedStatuses.includes(status)} onChange={() => toggleStatus(status)} className="rounded" />
+                  <Checkbox checked={selectedStatuses.includes(status)} onCheckedChange={() => toggleStatus(status)} />
                   <span className="capitalize">{status.replace('_', ' ')}</span>
                 </label>
               ))}

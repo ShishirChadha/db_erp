@@ -10,6 +10,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -111,7 +112,7 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
           {formData.type === "Business" && (
             <>
               <div className="flex items-center space-x-2">
-                <input type="checkbox" id="qa_has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
+                <Checkbox id="qa_has_gst" checked={formData.has_gst} onCheckedChange={(v) => handleChange("has_gst", !!v)} />
                 <Label htmlFor="qa_has_gst">Has GST</Label>
               </div>
               <div>

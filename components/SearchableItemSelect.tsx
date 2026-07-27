@@ -2,22 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { apiFetch } from "@/lib/api-client";
-import { Check, ChevronsUpDown } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { AsyncCombobox } from "@/components/AsyncCombobox";
 
 interface Item {
   id: string;
@@ -89,44 +74,27 @@ export function SearchableItemSelect({ onSelect }: { onSelect: (item: Item | nul
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <Button variant="outline" role="combobox" className="w-full justify-between">
-          {loading ? "Loading..." : "Search and select item..."}
-          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-[500px] p-0">
-        <Command>
-          <CommandInput
-            placeholder="Search by asset number, model, or description..."
-            value={searchTerm}
-            onValueChange={setSearchTerm}
-          />
-          <CommandList>
-            {loading && <CommandEmpty>Loading...</CommandEmpty>}
-            {!loading && items.length === 0 && (
-              <CommandEmpty>No assets found. Make sure you have purchases in the database.</CommandEmpty>
-            )}
-            <CommandGroup heading="Assets (Laptops/Desktops)">
-              {items.map((item) => (
-                <CommandItem
-                  key={item.id}
-                  value={item.identifier}
-                  onSelect={() => handleSelect(item)}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-medium">{item.identifier}</span>
-                    <span className="text-sm text-muted-foreground">
-                      {item.description} - ₹{item.price.toFixed(2)}
-                    </span>
-                  </div>
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-        </Command>
-      </PopoverContent>
-    </Popover>
+    <AsyncCombobox<Item>
+      open={open}
+      onOpenChange={setOpen}
+      triggerLabel={loading ? "Loading..." : "Search and select item..."}
+      popoverWidthClassName="w-[500px]"
+      searchPlaceholder="Search by asset number, model, or description..."
+      searchTerm={searchTerm}
+      onSearchTermChange={setSearchTerm}
+      items={items}
+      getItemKey={(item) => item.identifier}
+      onSelect={handleSelect}
+      emptyMessage={loading ? "Loading..." : "No assets found. Make sure you have purchases in the database."}
+      groupHeading="Assets (Laptops/Desktops)"
+      renderItem={(item) => (
+        <div className="flex flex-col">
+          <span className="font-medium">{item.identifier}</span>
+          <span className="text-sm text-muted-foreground">
+            {item.description} - ₹{item.price.toFixed(2)}
+          </span>
+        </div>
+      )}
+    />
   );
 }

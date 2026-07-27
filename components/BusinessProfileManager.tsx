@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { Loader2, Upload, Eye } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 
 interface BusinessProfile {
   key: string
@@ -165,10 +166,9 @@ export default function BusinessProfileManager() {
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-gray-900">{KEY_LABELS[p.key] || p.key}</h3>
               <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={!!e.is_gst_registered}
-                  onChange={(ev) => updateField(p.key, 'is_gst_registered', ev.target.checked)}
+                  onCheckedChange={(v) => updateField(p.key, 'is_gst_registered', !!v)}
                 />
                 GST Registered
               </label>
@@ -176,10 +176,9 @@ export default function BusinessProfileManager() {
 
             <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
               <label className="flex items-center gap-2 text-sm font-medium text-amber-900">
-                <input
-                  type="checkbox"
+                <Checkbox
                   checked={e.invoicing_mode === 'external'}
-                  onChange={(ev) => updateField(p.key, 'invoicing_mode', ev.target.checked ? 'external' : 'erp')}
+                  onCheckedChange={(v) => updateField(p.key, 'invoicing_mode', v ? 'external' : 'erp')}
                 />
                 Invoices still generated in Zoho (transition mode)
               </label>
@@ -214,28 +213,28 @@ export default function BusinessProfileManager() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Legal Name</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Legal Name</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.legal_name || ''} onChange={(ev) => updateField(p.key, 'legal_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Invoice Prefix</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Invoice Prefix</label>
                 <input className="border p-2 w-full rounded text-sm font-mono" value={e.invoice_prefix || ''} onChange={(ev) => updateField(p.key, 'invoice_prefix', ev.target.value.toUpperCase())} />
               </div>
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Address</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.address || ''} onChange={(ev) => updateField(p.key, 'address', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">State</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.state || ''} onChange={(ev) => updateField(p.key, 'state', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">State Code</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">State Code</label>
                 <input className="border p-2 w-full rounded text-sm font-mono" maxLength={2} value={e.state_code || ''} onChange={(ev) => updateField(p.key, 'state_code', ev.target.value)} />
               </div>
               {e.is_gst_registered && (
                 <div className="col-span-2">
-                  <label className="block text-xs text-gray-500 mb-1">GSTIN</label>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">GSTIN</label>
                   <input className="border p-2 w-full rounded text-sm font-mono" value={e.gstin || ''} onChange={(ev) => updateField(p.key, 'gstin', ev.target.value.toUpperCase())} />
                 </div>
               )}
@@ -243,19 +242,19 @@ export default function BusinessProfileManager() {
 
             <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Bank Name</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Name</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.bank_name || ''} onChange={(ev) => updateBankField(p.key, 'bank_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">A/c Holder</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">A/c Holder</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.account_holder_name || ''} onChange={(ev) => updateBankField(p.key, 'account_holder_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Account No.</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">Account No.</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.account_number || ''} onChange={(ev) => updateBankField(p.key, 'account_number', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">IFSC</label>
+                <label className="block text-xs font-medium text-gray-600 mb-1">IFSC</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.ifsc_code || ''} onChange={(ev) => updateBankField(p.key, 'ifsc_code', ev.target.value)} />
               </div>
             </div>

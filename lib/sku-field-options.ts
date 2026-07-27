@@ -23,6 +23,7 @@ export function getCustomOptionsCategory(skuCategory: string, fieldName: string)
   if (fieldName === 'cpu') return 'cpu'
   if (fieldName === 'generation') return 'generation'
   if (fieldName === 'ram') return 'ram'
+  if (fieldName === 'type' && skuCategory === 'RAM') return 'ram_type'
   if (fieldName === 'ssd') return 'storage'
   if (fieldName === 'screen_size' && skuCategory === 'LAP') return 'screen_size_laptop'
   if (fieldName === 'size' && skuCategory === 'MON') return 'screen_size_monitor'

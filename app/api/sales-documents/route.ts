@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { mintSalesDocumentNumber, computeLineGst } from '@/lib/sales-documents'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list quotations/proformas ----------
 export async function GET(req: NextRequest) {
@@ -12,16 +13,19 @@ export async function GET(req: NextRequest) {
   const docType = searchParams.get('doc_type')
   const showDeleted = searchParams.get('show_deleted') === 'true'
 
+  const pagination = parsePagination(searchParams)
   let query = supabaseAdmin
     .from('sales_documents')
-    .select('*, sales_document_items(id, converted)')
+    .select('*, sales_document_items(id, converted)', pagination ? { count: 'exact' } : undefined)
     .order('created_at', { ascending: false })
 
   if (docType) query = query.eq('doc_type', docType)
   if (!showDeleted) query = query.eq('is_deleted', false)
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (pagination) return NextResponse.json({ data, total: count ?? 0 })
   return NextResponse.json(data)
 }
 

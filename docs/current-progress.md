@@ -1,6 +1,172 @@
 # Current Progress
 
-Last updated: 2026-07-24 — Activity Hub → internal task/collaboration system,
+Last updated: 2026-07-27 — Accessories visibility & purchase-history pass, COMPLETE.
+
+## Accessories: visibility, purchase history, and reconciliation clarity — COMPLETE
+
+The accessories purchasing/selling model (`stock_movements` ledger, no per-unit
+`asset_ledger` row, "employee receives now, owner attaches PO/vendor/cost later" via
+`/api/purchase-orders/from-accessory-stock`) was already correct and holds all
+pre-existing data untouched — the gap was **visibility**, not the workflow:
+
+- **New**: `GET /api/sku-master/[id]/history` + `app/dashboard/accessories/[id]/page.tsx`
+  — per-accessory reconciliation summary (received/sold/adjusted/in-stock, all derived
+  live from `stock_movements`, never a stored counter), full purchase history
+  (PO/vendor/cost per purchase, owner-only), and the raw movement ledger. Answers "what
+  did I pay whom, when" — previously only a single overwritten `sku_master.base_cost`.
+- **New**: `GET /api/stock/accessories` + an **"Accessories" tab on the main Stock page**
+  (`components/StockView.tsx`) — accessories were entirely invisible there before (that
+  page is `asset_ledger`-only). Cost + last vendor owner-only, matching
+  `lib/auth/redact.ts` convention elsewhere.
+- **New**: `lib/purchase-utils.ts`'s `getLastVendorsBySku()` + a small
+  `GET /api/sku-master/last-vendors` endpoint — the Accessories management page
+  (`app/dashboard/accessories/page.tsx`) now shows a **Last Vendor** column and links
+  each row to its detail/history page. The "Needs PO" backlog control is relabeled
+  ("N received, awaiting PO", with a tooltip) since "In stock 9 / awaiting PO 10" reads
+  as contradictory even though it's correct (backlog counts purchases, independent of
+  sales — confirmed via full trace this was never actually buggy).
+- **Hardened**: `/api/sales-entry`'s bundled-accessory path (accessories attached to a
+  laptop/desktop sale) now gets the same stock-availability precheck the standalone
+  accessory sale already had — previously it could silently drive an accessory's
+  quantity negative.
+- No schema changes; every new endpoint is read-only except the sales-entry guard,
+  which only rejects previously-unchecked invalid input.
+
+## App-wide responsive UI/UX & design-system pass — Stages 1-6 COMPLETE
+
+Full app-wide audit (3 parallel research passes: global foundations, the 10
+main data-dense table pages, Activity Hub/Settings/Dashboard/Notifications)
+found: only ~50% shadcn-primitive adoption (rest hand-rolled), no shared
+`Checkbox`, zero pagination anywhere, inconsistent currency alignment, 3 pages
+missing `overflow-x-auto`, 3 different modal implementations, 3 near-duplicate
+searchable-combobox components, and status/priority rendered 3 different ways
+app-wide. Two scope decisions confirmed with the owner before building: real
+server-side pagination (not client-side-only), and card-per-row mobile layouts
+specifically for Live Stock + Repair Jobs (the two pages most likely checked
+from a phone), horizontal-scroll+hidden-columns everywhere else.
+
+**Stage 1 (global layout/typography)**: `app/dashboard/layout.tsx` gained a
+`max-w-screen-2xl mx-auto` container and `pt-14 md:pt-0` (fixes real content
+hidden under the sidebar's mobile top bar, previously uncompensated). Settings
+page's category-sidebar+content layout gained `flex-col md:flex-row` (was
+unconditionally side-by-side, unusable on mobile).
+
+**Stage 2 (shared components)**: `components/ui/checkbox.tsx` (new Radix
+primitive — no `Checkbox` existed before); `components/Pagination.tsx`,
+`components/EmptyTableRow.tsx`, `components/ErrorBanner.tsx`; `components/StatusBadge.tsx`
++ `lib/status-styles.ts` (one `Tone`→color map system replacing 3 ad-hoc status-color
+patterns); `components/AsyncCombobox.tsx` (shared scaffold behind
+`SearchableCustomerSelect`/`SearchableItemSelect`, zero call-site changes to
+either's public API — `SearchableSelect.tsx` stayed separate, genuinely
+different sync-list+free-text-fallback behavior).
+
+**Stage 3 (checkboxes)**: every raw `<input type="checkbox">` app-wide (31+
+sites across ~20 files — bulk-select in Stock/Sales, filter toggles, form
+checkboxes in `AddCustomerDialog`/`AddPurchaseDialog`/`EditPurchaseDialog`/
+`BusinessProfileManager`/`SkuFormModal`/`EditCustomerDialog`/`UserManager`/
+`ActivityList`, etc.) migrated to the shared `Checkbox`. Fixed a real
+asymmetry: Sales Ledger had row checkboxes but no header "select all" (Stock
+did) — added, with proper indeterminate state on both.
+
+**Stage 4 (navigation/notifications)**: `NotificationBell` dropdown width is
+now `w-80 max-w-[calc(100vw-2rem)]` (was a fixed 320px, real off-screen risk on
+narrow phones); notification body text gained `line-clamp-3` (was unbounded,
+could expand a row's height unpredictably for a long comment). Two arbitrary
+sub-xs font sizes (`text-[10px]`/`text-[11px]`) bumped to the `text-xs` floor.
+
+**Stage 5 (forms/dialogs)**: extracted Activity Hub's local `SimpleModal` into
+a shared `components/SimpleModal.tsx`; migrated `FixSkuDialog` off its
+hand-rolled `fixed inset-0` overlay (was missing both the `mx-4` edge gutter
+and the `max-h`/scroll cap — real overflow risk on short mobile viewports) onto
+it. Unified `UserManager`/`BusinessProfileManager` form-label styling to the
+one documented convention (`text-xs font-medium text-gray-600`, was
+`text-xs text-gray-500` in those two, `text-sm font-medium` elsewhere).
+
+**Stage 6 (tables, indexing, pagination, mobile)** — the largest stage, across
+all 10 audited table pages:
+- **Pagination**: added `lib/pagination.ts`'s opt-in `parsePagination()` to 6
+  API routes (`/api/stock`, `/api/sales`, `/api/repair-jobs`, `/api/sku-master`,
+  `/api/purchase-orders`, `/api/sales-documents`) — a `page` param switches the
+  response to `{ data, total }` via `.range()` + `{ count: 'exact' }`; omitting
+  it keeps the old unbounded array, so every existing non-list-page caller
+  (`SearchableItemSelect`'s `/api/stock` search, RMA's picker, etc.) is
+  unaffected. Wired into Stock/Live Stock (`components/StockView.tsx`, one
+  shared component for both routes), Repair Jobs, SKU Master, Accessories
+  (shares `/api/sku-master`), Purchase Orders list, Quotations. The 3
+  client-direct-Supabase pages (Customers, Vendors, Invoices) got the same
+  treatment via `.range()` on their own queries — **Vendors was the worst case
+  found in the audit** (search/sort/filter all client-side over one unfiltered
+  full-table fetch on mount) and is now fully server-side.
+  **Sales Ledger deliberately stays unpaginated** — its StatCardsRow computes
+  aggregate counts (payment-pending/partial/awaiting-invoice) from the full
+  fetched list; paginating the table without first moving those counts to a
+  server-side aggregate query would have silently made them wrong, so this was
+  scoped out rather than rushed. It still got its `#` column and alignment
+  fixes.
+  **Known interaction, not a bug**: pages with client-side column-header sort
+  (Purchase Orders, SKU Master, Sales Ledger) now only sort within the current
+  page post-pagination — a real, minor, documented scope reduction, not
+  something this pass fixed (would need sort to become a server param too).
+- **Alignment/indexing**: currency/numeric columns are now consistently
+  `text-right tabular-nums` everywhere (previously only the PO wizard did this
+  correctly); every table has an `overflow-x-auto` wrapper (3 pages — Purchase
+  Orders list, SKU Master, Accessories — were missing it entirely, a real
+  mobile page-level-overflow risk, not just a table one); every list-page table
+  has a `#` row-index column (`(page-1)*pageSize + rowIndex + 1`, never
+  conflated with `asset_number`/`invoice_number`/PO/job numbers, which stay
+  their own column).
+- **Status rendering**: Stock, Repair Jobs, Purchase Orders, Quotations,
+  Invoices all switched to `StatusBadge` + a per-domain tone map instead of
+  hand-rolled spans or plain unstyled text (Quotations' and Invoices' own local
+  `STATUS_COLORS`/`statusColors` maps retired in favor of the shared one).
+- **Empty/error states**: Purchase Orders list and SKU Master (previously
+  silently rendered nothing when empty) now show a proper empty row; SKU
+  Master's full-page error replacement became an inline `ErrorBanner` so the
+  header/filters/Add button stay usable during a transient fetch failure.
+- **Mobile card views**: `components/StockView.tsx` and
+  `app/dashboard/repair-jobs/page.tsx` gained a real `md:hidden` card-per-row
+  layout alongside the existing `hidden md:block` table. Repair Jobs' `JobRow`
+  took a `variant: 'row' | 'card'` prop so the owner's inline payment-editing
+  state/handlers are shared, not duplicated, between the two render paths.
+
+**Verification**: `npx tsc --noEmit -p .` and `npm run build` both run clean
+after every stage (7 checkpoints total across this pass); dev server stopped
+for each build and cleanly restarted after. No business-logic, schema, or
+workflow changes anywhere in this pass — pagination is the only
+backend-touching item, and it's query-params + `.range()` only, no migration.
+
+**Not done — deliberately scoped out, tracked here rather than silently
+dropped:**
+1. **Stage 7, the full-app raw-input/button sweep**: the audit found roughly
+   150+ remaining hand-rolled `<input>`/`<button>`/`<select>` elements (ad-hoc
+   Tailwind classes) across forms this pass didn't touch — `AddPurchaseDialog`/
+   `EditPurchaseDialog` (the two biggest concentrations), `InvoiceForm`,
+   Repair/Sell/Service entry forms, most filter-row inputs across the 10 table
+   pages, etc. Migrating every one onto `components/ui/{Input,Button,Select}`
+   is real, valuable, mechanical work, but at this volume (~150+ individual
+   elements across 20+ files) it needs its own careful pass rather than being
+   rushed at the end of this one. Not started.
+2. **Redundant page-container padding**: ~24 pages/components (`components/StockView.tsx`,
+   `components/ActivityList.tsx`, `app/dashboard/{accessories,entry/*,invoices/*,
+   purchase-orders/*,purchase-invoices/*,quotations,repair-jobs,rma,sales,
+   settings,sku-master,stock/[id]}/page.tsx`) already set their own `p-4`/`p-6`
+   root-container padding, which now doubles up with `app/dashboard/layout.tsx`'s
+   new centralized `p-4 md:p-6`. Not a visible bug (just somewhat more outer
+   whitespace on those pages than pages without their own padding), but not
+   the single source of truth the design system calls for. Flagged during
+   Stage 1, deliberately deferred rather than rushing a 24-file sweep with less
+   care than it deserves — natural to fold into the Stage 7 pass above, since
+   both touch the same files.
+3. Manual/visual verification at the 5 target viewport sizes (mobile portrait/
+   landscape, tablet, laptop, desktop) was reasoned through against the actual
+   CSS/breakpoints applied, not captured via live browser screenshots — there's
+   no browser automation tool available in this environment. If anything looks
+   off in practice, it's a fast, targeted fix against a now-consistent system
+   rather than a from-scratch audit.
+
+---
+
+Prior update, 2026-07-24 — Activity Hub → internal task/collaboration system,
 **Phases 1, 2 & 3 COMPLETE**. The full plan from the original architectural
 review is now built: assignment/shared visibility, comments/@mentions, in-app
 + email notifications, and due-soon/overdue reminders (pg_cron) + attachments

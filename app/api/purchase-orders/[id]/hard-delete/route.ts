@@ -26,6 +26,31 @@ export async function DELETE(
     )
   }
 
+  // 1b. Sold-unit check -- deleting an asset_ledger row that a real (non-voided) sale
+  // still points at would orphan that sale's asset_ledger_id (the FK is NO ACTION, so
+  // this would otherwise fail as a raw DB error instead of a friendly message). Void
+  // the sale first (POST /api/sales/[id]/void), then delete.
+  const { data: poAssets } = await supabaseAdmin
+    .from('asset_ledger')
+    .select('id, asset_number, serial_number')
+    .eq('po_id', id)
+  const poAssetIds = (poAssets || []).map(a => a.id)
+  if (poAssetIds.length > 0) {
+    const { data: activeSales } = await supabaseAdmin
+      .from('sales')
+      .select('asset_ledger_id')
+      .in('asset_ledger_id', poAssetIds)
+      .eq('is_deleted', false)
+    if (activeSales && activeSales.length > 0) {
+      const soldIds = new Set(activeSales.map(s => s.asset_ledger_id))
+      const soldUnit = poAssets!.find(a => soldIds.has(a.id))
+      return NextResponse.json(
+        { error: `This PO has a sold unit (${soldUnit?.asset_number || soldUnit?.serial_number || soldUnit?.id}) with an active sale -- void that sale first, then delete.` },
+        { status: 400 }
+      )
+    }
+  }
+
   // 2. Fetch the PO header and all items with their received quantities
   const { data: po } = await supabaseAdmin
     .from('purchase_orders')

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -25,6 +26,9 @@ import BulkAddDialog from "@/components/BulkAddDialog";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { Pagination } from "@/components/Pagination";
+
+const PAGE_SIZE = 25
 
 type SortField = "customer_name" | "type" | "phone" | "email";
 
@@ -43,10 +47,12 @@ function CustomersPage() {
   const [nameFilter, setNameFilter] = useState<string>("");
   const [sortField, setSortField] = useState<SortField>("customer_name");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from("customers").select("*");
+    let query = supabase.from("customers").select("*", { count: "exact" });
 
     if (showDeleted) query = query.eq("is_deleted", true);
     else query = query.eq("is_deleted", false);
@@ -69,14 +75,18 @@ function CustomersPage() {
     if (nameFilter) query = query.ilike("customer_name", `%${nameFilter}%`);
 
     query = query.order(sortField, { ascending: sortOrder === "asc" });
+    query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-    const { data, error } = await query;
+    const { data, error, count } = await query;
     if (error) console.error(error);
-    else setCustomers(data || []);
+    else { setCustomers(data || []); setTotal(count || 0); }
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, supabase]);
+  }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [showDeleted, searchTerm, typeFilter, nameFilter]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
@@ -154,7 +164,7 @@ function CustomersPage() {
         </div>
 
         <div className="flex items-center space-x-2">
-          <input type="checkbox" id="showDeleted" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+          <Checkbox id="showDeleted" checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
 
@@ -166,6 +176,7 @@ function CustomersPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-10 text-right">#</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("customer_name")}>Name {sortField === "customer_name" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("type")}>Type {sortField === "type" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
               <TableHead>GST</TableHead>
@@ -178,8 +189,9 @@ function CustomersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? <TableRow><TableCell colSpan={9} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={9} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c) => (
+            {loading ? <TableRow><TableCell colSpan={10} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
               <TableRow key={c.id}>
+                <TableCell className="text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                 <TableCell>{c.customer_name}</TableCell>
                 <TableCell>{c.type}</TableCell>
                 <TableCell>{c.has_gst ? (c.gst_number || "Yes") : "No"}</TableCell>
@@ -206,6 +218,7 @@ function CustomersPage() {
           </TableBody>
         </Table>
       </div>
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {editingCustomer && <EditCustomerDialog customer={editingCustomer} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchCustomers} />}
       {customerToDelete && <DeleteRecordDialog title="Delete Customer" identifier={customerToDelete.customer_name} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}

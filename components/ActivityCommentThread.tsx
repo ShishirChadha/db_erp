@@ -159,7 +159,7 @@ export default function ActivityCommentThread({
         {comments.map(c => (
           <div key={c.id} className={`text-sm rounded p-2 ${c.pinned ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
             {c.pinned && (
-              <p className="text-[11px] text-amber-700 flex items-center gap-1 mb-1">
+              <p className="text-xs text-amber-700 flex items-center gap-1 mb-1">
                 <Pin className="h-3 w-3" /> Pinned by {c.pinned_by_name || 'someone'}
               </p>
             )}

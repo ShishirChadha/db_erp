@@ -12,6 +12,77 @@ The system replaces manual Excel/Google Sheets tracking (Current Stock, Sold Sto
 - **Roles**: `owner` and `employee`, stored in `public.profiles(id, full_name, role, is_active)`, one row per `auth.users` row. No `middleware.ts` exists — page-level redirects (`components/RequireOwner.tsx`) are UX convenience only; every sensitive route re-checks role itself.
 - **Redaction**: `lib/auth/redact.ts` has a `SENSITIVE_FIELDS` map per "shape" (`sku_master`, `stock_list`, `accessories`) and strips those keys from arrays/objects before an `employee`-role response goes out. New employee-facing routes are written to never `.select()` sensitive columns in the first place rather than fetch-then-strip.
 
+## UI / design system architecture
+
+Established during a full app-wide responsive/typography/consistency audit
+(2026-07-24 — see `docs/decisions.md` for the audit findings and phased build
+record). Tailwind v4 (`app/globals.css`, no config file — tokens live in a CSS
+`@theme` block + `:root`/`.dark` custom properties) already had a real
+color/radius token system; the audit's gap was typography/spacing conventions
+and — the bigger issue — only ~50% adoption of the existing shadcn primitives
+in `components/ui/` (raw hand-rolled `<input>`/`<button>` elsewhere), which was
+the root cause of most visible inconsistency across pages.
+
+**Layout shell**: `app/dashboard/layout.tsx` is the single place page container
+spacing (`p-4 md:p-6 max-w-screen-2xl mx-auto`) and the mobile top-bar
+clearance (`pt-14 md:pt-0`, compensating for `components/sidebar.tsx`'s fixed
+`md:hidden` mobile header) live — individual pages don't re-add page-level
+padding (a narrower `max-w-*` for an intentionally-narrow form is fine and
+separate from that).
+
+**Typography**: page title `text-2xl font-bold`, section/modal title
+`text-lg font-semibold`, body/table text `text-sm`, secondary/meta text
+`text-xs text-gray-500`, form labels `text-xs font-medium text-gray-600`. Floor
+is `text-xs` (12px) — no arbitrary sub-xs sizes.
+
+**Shared components** (all new, this pass): `components/ui/checkbox.tsx`
+(Radix, replaces every raw `<input type="checkbox">` app-wide — supports
+`checked="indeterminate"` for header select-all rows), `components/Pagination.tsx`,
+`components/EmptyTableRow.tsx`, `components/ErrorBanner.tsx`,
+`components/StatusBadge.tsx` + `lib/status-styles.ts` (a `Tone` enum + one
+status/priority→tone map per domain — Activity Hub, `asset_ledger`,
+`repair_jobs`, `sales`/`repair_jobs.payment_status`, `sales_documents`,
+`invoices`, `purchase_orders` — replacing 3 different ad-hoc "what color is
+this status" patterns that had grown up independently), `components/SimpleModal.tsx`
+(extracted from Activity Hub's own local modal, now shared — `mx-4` edge gutter
++ `max-h-[85vh] overflow-y-auto`; the other acceptable modal pattern is shadcn
+`Dialog` with `max-w-* max-h-[90vh] overflow-y-auto`), `components/AsyncCombobox.tsx`
+(shared Popover+Command scaffold behind `SearchableCustomerSelect` and
+`SearchableItemSelect`, which kept their own distinct public APIs/data-fetching
+— `SearchableSelect.tsx`, the sync-local-list-plus-free-text-fallback combobox,
+stayed separate since its behavior genuinely differs).
+
+**Pagination** (`lib/pagination.ts`'s `parsePagination()`): opt-in via a `page`
+query param on list API routes (`/api/stock`, `/api/sales`, `/api/repair-jobs`,
+`/api/sku-master`, `/api/purchase-orders`, `/api/sales-documents`) — passing
+`page`/`limit` gets back `{ data, total }` (via Supabase `.range()` +
+`{ count: 'exact' }`); omitting `page` returns the old plain array, so every
+non-paginated existing caller (search widgets, RMA's unit picker, etc.) is
+unaffected. The 3 pages that query Supabase directly client-side
+(Customers/Vendors/Invoices) use `.range()` the same way. A page's own `#`
+row-index column, where present, is `(page-1)*pageSize + rowIndex + 1` and is
+never the same thing as a business identifier (asset/invoice/PO/job number).
+**Known interaction, not a bug**: a few pages (Purchase Orders list, SKU
+Master/Accessories, Sales Ledger) also have client-side column-header sort —
+sorting now only reorders within the current page, a real but minor scope
+reduction from pagination, not something that was fixed this pass. Sales
+Ledger's own list intentionally stays unpaginated (`/api/sales` still supports
+`page`, just isn't called with it from that page) because its StatCardsRow
+computes aggregate counts (pending/partial/awaiting-invoice) from the full
+fetched list via a separate `fetchCounts()`-style call — paginating the main
+list without first moving those counts server-side would have silently made
+them wrong.
+
+**Mobile**: default table treatment is `overflow-x-auto` + hiding 2-3
+lowest-priority columns below `md`. Live Stock and Repair Jobs — the two pages
+most likely checked from a phone in the field — additionally get a real
+`md:hidden` card-per-row layout alongside the `hidden md:block` table, sharing
+the same row component/state rather than a second, separately-maintained
+mobile component (see `JobRow`'s `variant: 'row' | 'card'` prop in
+`app/dashboard/repair-jobs/page.tsx`, and `components/StockView.tsx`'s inline
+card block reusing the same `displayedAssets`/`toggleSelectOne`/action
+handlers as its table).
+
 ## Major modules and relationships
 
 ```
@@ -88,6 +159,17 @@ detail page (`/dashboard/stock/[id]`) alongside the original `cost_price`.
 
 ### Accessories (`sku_master` + `stock_movements` — no separate table)
 Accessories (RAM, SSD, CPU, GPU, keyboard, mouse, and anything else via the generic `ACC` category) are `sku_master` rows like a laptop, not a separate catalog — see `docs/decisions.md` (2026-07-23) for why the earlier `accessories`/`accessory_movements` table pair was retired. They're tracked purely via `stock_movements` (trigger-maintained `sku_master.quantity_in_stock`) with **no `asset_ledger` row** — fungible/quantity-only items don't need per-unit serial/QC/warranty tracking. A newly employee-created accessory SKU is immediately live and sellable, same as a new laptop SKU (`/dashboard/accessories`); the owner attaches a real vendor/PO/cost later via a deferred-PO-attach step (one `purchase_order_items` line, `quantity = N`, no per-unit asset number), mirroring `/api/purchase-orders/from-intake`'s "employee stock-in now, owner paperwork later" pattern.
+
+The reconciliation invariant (surfaced explicitly in the UI, not just implicit in the
+ledger): `in_stock = Σreceipts + Σadjustments − Σsales`, while the "needs PO" backlog on
+`/dashboard/accessories` is `Σ unattached receipts` — **independent of sales**. Selling 1
+of 10 received units doesn't shrink the backlog to 9; it still correctly says 10 need a
+PO (that's what was bought), while in-stock correctly shows 9. Full per-accessory
+purchase history (vendor/cost per PO) and the raw movement ledger live at
+`/dashboard/accessories/[id]` (`GET /api/sku-master/[id]/history`); the main Stock page
+(`components/StockView.tsx`) also has a read-only "Accessories" tab (`GET
+/api/stock/accessories`) alongside its existing "Sold Accessories" tab, since that page
+is otherwise `asset_ledger`-only and accessories would be invisible there.
 
 ### Activity Hub (`activities`, `activity_assignees`) — shared task/collaboration model
 

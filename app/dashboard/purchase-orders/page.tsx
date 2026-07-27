@@ -5,6 +5,13 @@ import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { ErrorBanner } from '@/components/ErrorBanner'
+import { Pagination } from '@/components/Pagination'
+import { EmptyTableRow } from '@/components/EmptyTableRow'
+import { StatusBadge } from '@/components/StatusBadge'
+import { PO_STATUS_TONES, toneFor } from '@/lib/status-styles'
+
+const PAGE_SIZE = 25
 
 interface PurchaseOrder {
   id: string
@@ -36,27 +43,39 @@ function PurchaseOrdersPage() {
   const [search, setSearch] = useState('')
   const [sortField, setSortField] = useState<SortField>('po_date')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const [error, setError] = useState('')
 
   const fetchOrders = async () => {
     setLoading(true)
+    setError('')
     const params = new URLSearchParams()
     if (statusFilter) params.append('status', statusFilter)
     if (vendorFilter) params.append('vendor_id', vendorFilter)
     if (dateFrom) params.append('date_from', dateFrom)
     if (dateTo) params.append('date_to', dateTo)
     if (search) params.append('search', search)
+    params.set('page', String(page))
+    params.set('limit', String(PAGE_SIZE))
 
     const res = await apiFetch(`/api/purchase-orders?${params.toString()}`)
     if (res.ok) {
-      const data = await res.json()
-      setOrders(data)
+      const json = await res.json()
+      setOrders(json.data || [])
+      setTotal(json.total || 0)
+    } else {
+      setError('Failed to load purchase orders.')
     }
     setLoading(false)
   }
 
   useEffect(() => {
     fetchOrders()
-  }, [statusFilter, vendorFilter, dateFrom, dateTo, search])
+  }, [statusFilter, vendorFilter, dateFrom, dateTo, search, page])
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [statusFilter, vendorFilter, dateFrom, dateTo, search])
 
   useEffect(() => {
     apiFetch('/api/vendors').then(async (res) => {
@@ -181,55 +200,63 @@ function PurchaseOrdersPage() {
         )}
       </div>
 
-      <table className="min-w-full border">
-        <thead>
-          <tr>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('po_number')}>
-              PO Number{sortIndicator('po_number')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('po_date')}>
-              Date{sortIndicator('po_date')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
-              Vendor{sortIndicator('vendor_name')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('po_status')}>
-              Status{sortIndicator('po_status')}
-            </th>
-            <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('total_amount')}>
-              Total{sortIndicator('total_amount')}
-            </th>
-            <th className="border p-2">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {sortedOrders.map(po => (
-            <tr key={po.id} className="hover:bg-gray-50">
-              <td className="border p-2">{po.po_number}</td>
-              <td className="border p-2">{po.po_date}</td>
-              <td className="border p-2">{po.vendor_name}</td>
-              <td className="border p-2 capitalize">{po.po_status.replace(/_/g, ' ')}</td>
-              <td className="border p-2">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>
-              <td className="border p-2 space-x-2">
-                <button
-                  onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}
-                  className="text-blue-600 underline"
-                >
-                  View
-                </button>
-                <button
-                  onClick={() => handleDelete(po)}
-                  disabled={deletingId === po.id}
-                  className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1"
-                >
-                  {deletingId === po.id && <Loader2 className="size-3 animate-spin" />}
-                  Delete
-                </button>
-              </td>
+      {error && <div className="mb-4"><ErrorBanner message={error} onRetry={fetchOrders} /></div>}
+
+      <div className="overflow-x-auto rounded-md border">
+        <table className="min-w-full text-sm">
+          <thead>
+            <tr>
+              <th className="p-2 w-10 text-right">#</th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_number')}>
+                PO Number{sortIndicator('po_number')}
+              </th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_date')}>
+                Date{sortIndicator('po_date')}
+              </th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
+                Vendor{sortIndicator('vendor_name')}
+              </th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_status')}>
+                Status{sortIndicator('po_status')}
+              </th>
+              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('total_amount')}>
+                Total{sortIndicator('total_amount')}
+              </th>
+              <th className="p-2">Actions</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody className="divide-y">
+            {sortedOrders.length === 0 && <EmptyTableRow colSpan={7} message="No purchase orders found." />}
+            {sortedOrders.map((po, idx) => (
+              <tr key={po.id} className="hover:bg-gray-50">
+                <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                <td className="p-2">{po.po_number}</td>
+                <td className="p-2">{po.po_date}</td>
+                <td className="p-2">{po.vendor_name}</td>
+                <td className="p-2"><StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge></td>
+                <td className="p-2 text-right tabular-nums">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>
+                <td className="p-2 space-x-2">
+                  <button
+                    onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}
+                    className="text-blue-600 underline"
+                  >
+                    View
+                  </button>
+                  <button
+                    onClick={() => handleDelete(po)}
+                    disabled={deletingId === po.id}
+                    className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1"
+                  >
+                    {deletingId === po.id && <Loader2 className="size-3 animate-spin" />}
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
     </div>
   )
 }

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { resolveOrCreateSku } from '@/lib/sku-resolver'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { redactForRole, redactManyForRole } from '@/lib/auth/redact'
+import { parsePagination } from '@/lib/pagination'
 
 // Used by SKU Master, PO wizard's inline SKU search (owner-only page), Sell's
 // Fix-SKU/Change-SKU picker, and the Accessories page/Sell's accessory picker (which
@@ -40,9 +41,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(latest?.[0]?.specifications || null)
   }
 
+  const pagination = parsePagination(searchParams)
   let query = supabaseAdmin
     .from('sku_master')
-    .select('*')
+    .select('*', pagination ? { count: 'exact' } : undefined)
     .order('full_sku_code')
   if (statusFilter && statusFilter !== 'all') {
     query = query.eq('status', statusFilter)
@@ -69,11 +71,14 @@ export async function GET(req: NextRequest) {
   if (id) {
     query = query.eq('id', id)
   }
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json(redactManyForRole(data || [], 'sku_master', sessionUser.role))
+  const redacted = redactManyForRole(data || [], 'sku_master', sessionUser.role)
+  if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
+  return NextResponse.json(redacted)
 }
 
 export async function POST(req: NextRequest) {

@@ -6,6 +6,7 @@ import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
@@ -25,6 +26,9 @@ import { toast } from 'sonner'
 import DeleteRecordDialog from '@/components/DeleteRecordDialog'
 import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { Pagination } from '@/components/Pagination'
+
+const PAGE_SIZE = 25
 
 type Vendor = {
   id: string
@@ -147,35 +151,35 @@ function VendorsPage() {
   const [fetchingGst, setFetchingGst] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null)
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
 
   const supabase = createClient()
 
   // Initial column widths
   const [colWidths, setColWidths] = useState([200, 120, 100, 120, 80, 120, 100])
 
-  // Fetch vendors on mount
-  useEffect(() => {
-    const fetchVendors = async () => {
-      const { data } = await supabase.from('vendors').select('*').order('company_name')
-      if (data) setVendors(data)
+  // Search/sort/showDeleted/pagination all happen server-side now -- this used to
+  // fetch the entire table once on mount and filter/sort the full array in the
+  // browser, which doesn't scale and made pagination meaningless.
+  const fetchVendors = async () => {
+    let query = supabase.from('vendors').select('*', { count: 'exact' })
+    query = showDeleted ? query.eq('is_deleted', true) : query.eq('is_deleted', false)
+    if (search) {
+      const s = `%${search}%`
+      query = query.or(`company_name.ilike.${s},spoc_name.ilike.${s},owner_name.ilike.${s},phone.ilike.${s},gst_number.ilike.${s},email.ilike.${s}`)
     }
-    fetchVendors()
-  }, [])
+    query = query.order(sortField || 'company_name', { ascending: sortOrder === 'asc' })
+    query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
+    const { data, count } = await query
+    setVendors(data || [])
+    setTotal(count || 0)
+  }
 
-  // Filter vendors based on search and deleted toggle
-  const filteredUnsorted = vendors.filter(v => {
-    if (!showDeleted && v.is_deleted) return false
-    if (!search) return true
-    const searchLower = search.toLowerCase()
-    return (
-      v.company_name?.toLowerCase().includes(searchLower) ||
-      v.spoc_name?.toLowerCase().includes(searchLower) ||
-      v.owner_name?.toLowerCase().includes(searchLower) ||
-      v.phone?.includes(search) ||
-      v.gst_number?.toLowerCase().includes(searchLower) ||
-      v.email?.toLowerCase().includes(searchLower)
-    )
-  })
+  useEffect(() => { fetchVendors() }, [showDeleted, search, sortField, sortOrder, page])
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [showDeleted, search])
 
   const toggleSort = (field: VendorSortField) => {
     if (sortField === field) {
@@ -185,15 +189,6 @@ function VendorsPage() {
       setSortOrder('asc')
     }
   }
-
-  const filtered = sortField
-    ? [...filteredUnsorted].sort((a, b) => {
-        const av = (a[sortField] || '') as string
-        const bv = (b[sortField] || '') as string
-        const cmp = av.localeCompare(bv)
-        return sortOrder === 'asc' ? cmp : -cmp
-      })
-    : filteredUnsorted
 
   const sortIndicatorFor = (field: VendorSortField) =>
     sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''
@@ -295,12 +290,11 @@ function VendorsPage() {
     }
 
     if (editingVendor) {
-      setVendors(vendors.map(v => v.id === editingVendor.id ? data : v))
       toast.success('Vendor updated successfully')
     } else {
-      setVendors([data, ...vendors])
       toast.success('Vendor added successfully')
     }
+    await fetchVendors()
     resetForm()
   })
 
@@ -317,12 +311,8 @@ function VendorsPage() {
     if (error) {
       toast.error('Failed to delete vendor')
     } else {
-      setVendors(vendors.map(v =>
-        v.id === vendorToDelete.id
-          ? { ...v, is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() }
-          : v
-      ))
       toast.success('Vendor moved to trash')
+      await fetchVendors()
     }
     setVendorToDelete(null)
     setDeleteDialogOpen(false)
@@ -340,10 +330,8 @@ function VendorsPage() {
       if (error) {
         toast.error('Failed to restore vendor')
       } else {
-        setVendors(vendors.map(v =>
-          v.id === vendor.id ? { ...v, is_deleted: false, deleted_remarks: null, deleted_at: null } : v
-        ))
         toast.success('Vendor restored')
+        await fetchVendors()
       }
     } finally {
       setRestoringId(null)
@@ -355,7 +343,7 @@ function VendorsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Vendors</h1>
-          <p className="text-sm text-gray-500 mt-1">{vendors.filter(v => !v.is_deleted).length} active vendors</p>
+          <p className="text-sm text-gray-500 mt-1">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
         </div>
         <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { resetForm(); setShowForm(true) }}>
           <Plus className="h-4 w-4 mr-2" />Add Vendor
@@ -373,13 +361,7 @@ function VendorsPage() {
           />
         </div>
         <div className="flex items-center space-x-2">
-          <input
-            type="checkbox"
-            id="showDeleted"
-            checked={showDeleted}
-            onChange={(e) => setShowDeleted(e.target.checked)}
-            className="h-4 w-4"
-          />
+          <Checkbox id="showDeleted" checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
       </div>
@@ -390,6 +372,7 @@ function VendorsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="text-right px-4 py-3 font-medium text-gray-600 w-10">#</th>
                   {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Actions'] as const).map((label, i) => {
                     const sortableField: Partial<Record<typeof label, VendorSortField>> = {
                       Company: 'company_name',
@@ -417,15 +400,16 @@ function VendorsPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.length === 0 ? (
+                {vendors.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-12 text-gray-400">
+                    <td colSpan={8} className="text-center py-12 text-gray-400">
                       No vendors found. Add your first vendor.
                     </td>
                   </tr>
                 ) : (
-                  filtered.map((v) => (
+                  vendors.map((v, idx) => (
                     <tr key={v.id} className={`border-b hover:bg-gray-50 ${v.is_deleted ? 'opacity-50' : ''}`}>
+  <td className="px-4 py-3 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
   <td className="px-4 py-3 font-medium text-gray-900">{v.company_name}</td>
   <td className="px-4 py-3 text-gray-700">{v.spoc_name || '—'}</td>
   <td className="px-4 py-3 text-gray-700">
@@ -449,6 +433,7 @@ function VendorsPage() {
           </div>
         </CardContent>
       </Card>
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {/* Add/Edit Vendor Dialog */}
       <Dialog open={showForm} onOpenChange={(open) => !open && resetForm()}>

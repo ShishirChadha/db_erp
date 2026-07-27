@@ -8,6 +8,13 @@ import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
 import { StatCardsRow } from '@/components/StatCardsRow'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Pagination } from '@/components/Pagination'
+import { StatusBadge } from '@/components/StatusBadge'
+import { ASSET_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { EmptyTableRow } from '@/components/EmptyTableRow'
+import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
+import { ColumnToggle } from '@/components/ColumnToggle'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 interface AssetRow {
@@ -18,6 +25,7 @@ interface AssetRow {
   qc_grade: string | null
   qc_status: string
   sold_at: string | null
+  created_at?: string | null
   po_id: string | null
   sku_id?: string
   sku_code: string
@@ -44,11 +52,68 @@ interface Vendor {
   company_name: string
 }
 
+// Standalone accessory sale (sales.accessory_id set, no asset_ledger row -- accessories
+// are fungible sku_master rows, never per-unit tracked). Entirely different shape from
+// AssetRow: no serial/asset number, no QC/warranty/PO fields.
+interface SoldAccessoryRow {
+  id: string
+  sale_date: string
+  customer_name: string | null
+  full_sku_code: string
+  sku_description: string | null
+  accessory_quantity: number
+  sale_total: number
+  payment_status: string
+  amount_paid: number
+  payment_account: string | null
+  sold_by: string | null
+  finalized: boolean
+  invoice_number: string | null
+}
+
+// Current (in-stock) accessories -- also no asset_ledger row, quantity-only.
+interface AccessoryStockRow {
+  id: string
+  full_sku_code: string
+  sku_description: string | null
+  category: string
+  brand: string | null
+  model_name: string | null
+  quantity_in_stock: number
+  selling_price_default: number | null
+  base_cost?: number
+  needs_po_qty?: number
+  last_vendor?: string | null
+}
+
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
 
-type Tab = 'current' | 'sold'
-type SortField = 'asset_number' | 'sku_code' | 'status' | 'sold_at'
+type Tab = 'current' | 'sold' | 'accessories' | 'sold_accessories'
+type SortField = 'asset_number' | 'status' | 'sold_at' | 'created_at'
 type SortOrder = 'asc' | 'desc'
+
+// "Last entry on top" by default -- most-recently-added unit for Current, most-
+// recently-sold for Sold. Server-driven (see /api/stock's opt-in sort/order params).
+// Sold Accessories has no client-side sort control (its own route always orders by
+// sale_date desc), so it's deliberately not a key here.
+const TAB_DEFAULT_SORT: Record<'current' | 'sold', { field: SortField; order: SortOrder }> = {
+  current: { field: 'created_at', order: 'desc' },
+  sold: { field: 'sold_at', order: 'desc' },
+}
+
+const OPTIONAL_COLUMNS = [
+  { key: 'sku', label: 'SKU' },
+  { key: 'grade', label: 'Grade' },
+  { key: 'po', label: 'PO' },
+  { key: 'vendorCost', label: 'Vendor / Cost' },
+  { key: 'entryDate', label: 'Entry Date' },
+  { key: 'purchaseDate', label: 'Purchase Date' },
+  { key: 'soldDate', label: 'Sold Date' },
+  { key: 'customer', label: 'Customer' },
+  { key: 'saleTotal', label: 'Sale Total' },
+  { key: 'invoice', label: 'Invoice' },
+] as const
+type ColumnKey = typeof OPTIONAL_COLUMNS[number]['key']
 
 function identifier(asset: AssetRow) {
   return asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')
@@ -74,17 +139,35 @@ export default function StockView({
   const { isOwner } = useRole()
   const [tab, setTab] = useState<Tab>('current')
   const [assets, setAssets] = useState<AssetRow[]>([])
+  const [soldAccessories, setSoldAccessories] = useState<SoldAccessoryRow[]>([])
+  const [accessoryStock, setAccessoryStock] = useState<AccessoryStockRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [sortField, setSortField] = useState<SortField>('asset_number')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
+  const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT.current.field)
+  const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT.current.order)
+
+  const columnsStorageKey = `stock-columns:${sourceMode}`
+  const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(() => {
+    if (typeof window === 'undefined') return Object.fromEntries(OPTIONAL_COLUMNS.map(c => [c.key, true])) as Record<ColumnKey, boolean>
+    try {
+      const stored = window.localStorage.getItem(`stock-columns:${sourceMode}`)
+      if (stored) return { ...Object.fromEntries(OPTIONAL_COLUMNS.map(c => [c.key, true])), ...JSON.parse(stored) }
+    } catch { /* ignore malformed localStorage value */ }
+    return Object.fromEntries(OPTIONAL_COLUMNS.map(c => [c.key, true])) as Record<ColumnKey, boolean>
+  })
+  useEffect(() => {
+    window.localStorage.setItem(columnsStorageKey, JSON.stringify(visibleColumns))
+  }, [visibleColumns, columnsStorageKey])
 
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showPoForm, setShowPoForm] = useState(false)
   const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
+  const [page, setPage] = useState(1)
+  const [total, setTotal] = useState(0)
+  const PAGE_SIZE = 20
 
   useEffect(() => {
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
@@ -102,6 +185,7 @@ export default function StockView({
   const sourceParam = sourceMode === 'employee_intake' ? 'source=employee_intake' : 'exclude_source=employee_intake'
 
   const fetchAssets = useCallback(async () => {
+    if (tab === 'sold_accessories' || tab === 'accessories') return
     setLoading(true)
     setError(null)
     try {
@@ -112,20 +196,86 @@ export default function StockView({
         params.append('status', statusFilter || CURRENT_STATUSES.join(','))
       }
       if (searchTerm) params.append('search', searchTerm)
+      params.set('sort', sortField)
+      params.set('order', sortOrder)
+      params.set('page', String(page))
+      params.set('limit', String(PAGE_SIZE))
 
       const res = await apiFetch(`/api/stock?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch assets')
-      const data = await res.json()
-      setAssets(data)
+      const json = await res.json()
+      setAssets(json.data || [])
+      setTotal(json.total || 0)
       setSelected(new Set())
     } catch (err: any) {
       setError(err.message)
     } finally {
       setLoading(false)
     }
-  }, [tab, statusFilter, searchTerm, sourceParam])
+  }, [tab, statusFilter, searchTerm, sourceParam, sortField, sortOrder, page])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
+
+  const fetchSoldAccessories = useCallback(async () => {
+    if (tab !== 'sold_accessories') return
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (searchTerm) params.append('search', searchTerm)
+      params.set('page', String(page))
+      params.set('limit', String(PAGE_SIZE))
+
+      const res = await apiFetch(`/api/stock/sold-accessories?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to fetch sold accessories')
+      const json = await res.json()
+      setSoldAccessories(json.data || [])
+      setTotal(json.total || 0)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [tab, searchTerm, page])
+
+  useEffect(() => { fetchSoldAccessories() }, [fetchSoldAccessories])
+
+  const fetchAccessoryStock = useCallback(async () => {
+    if (tab !== 'accessories') return
+    setLoading(true)
+    setError(null)
+    try {
+      const params = new URLSearchParams()
+      if (searchTerm) params.append('search', searchTerm)
+      params.set('page', String(page))
+      params.set('limit', String(PAGE_SIZE))
+
+      const res = await apiFetch(`/api/stock/accessories?${params.toString()}`)
+      if (!res.ok) throw new Error('Failed to fetch accessories')
+      const json = await res.json()
+      setAccessoryStock(json.data || [])
+      setTotal(json.total || 0)
+    } catch (err: any) {
+      setError(err.message)
+    } finally {
+      setLoading(false)
+    }
+  }, [tab, searchTerm, page])
+
+  useEffect(() => { fetchAccessoryStock() }, [fetchAccessoryStock])
+
+  // Any filter/tab change invalidates the current page's meaning -- reset to page 1.
+  useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, sourceParam])
+
+  // Switching tabs switches what "last entry on top" means -- reset to that tab's
+  // own default sort rather than carrying over a sort field the other tab doesn't use.
+  // Sold Accessories has no sort control, so it's excluded from TAB_DEFAULT_SORT.
+  useEffect(() => {
+    if (tab === 'current' || tab === 'sold') {
+      setSortField(TAB_DEFAULT_SORT[tab].field)
+      setSortOrder(TAB_DEFAULT_SORT[tab].order)
+    }
+  }, [tab])
 
   const fetchCounts = useCallback(async () => {
     const [currentRes, soldRes] = await Promise.all([
@@ -153,17 +303,9 @@ export default function StockView({
     else { setSortField(field); setSortOrder('asc') }
   }
 
-  const displayedAssets = useMemo(() => {
-    const sorted = [...assets].sort((a, b) => {
-      const av = (a as any)[sortField]
-      const bv = (b as any)[sortField]
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      return String(av).localeCompare(String(bv))
-    })
-    return sortOrder === 'asc' ? sorted : sorted.reverse()
-  }, [assets, sortField, sortOrder])
+  // Sorting is server-driven (see fetchAssets' sort/order params) so it stays correct
+  // across pages -- `assets` already arrives in the right order.
+  const displayedAssets = assets
 
   const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
 
@@ -184,6 +326,8 @@ export default function StockView({
   }
 
   const [pendingRowKey, setPendingRowKey] = useState<string | null>(null)
+  const [forceDeleteAsset, setForceDeleteAsset] = useState<{ id: string; label: string } | null>(null)
+  const [forceDeleteErr, setForceDeleteErr] = useState('')
 
   const generateInvoice = async (saleAssetId: string) => {
     if (pendingRowKey) return
@@ -231,18 +375,44 @@ export default function StockView({
     }
   }
 
+  const handleForceDelete = async (reason: string) => {
+    if (!forceDeleteAsset) return
+    setForceDeleteErr('')
+    const res = await apiFetch(`/api/asset-ledger/${forceDeleteAsset.id}/force-delete`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    })
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      setForceDeleteErr(err.error || 'Failed to delete.')
+      throw new Error(err.error || 'Failed to delete.')
+    }
+    setForceDeleteAsset(null)
+    fetchAssets()
+    fetchCounts()
+  }
+
   if (error) return <div className="p-4 text-red-600">Error: {error}</div>
 
   return (
     <div className="p-4">
       <div className="flex justify-between items-start gap-4 mb-1">
         <h1 className="text-2xl font-bold">{title}</h1>
-        <Link
-          href={`${tab === 'sold' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(pathname)}`}
-          className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
-        >
-          + {tab === 'sold' ? 'New Sale' : 'New Stock Intake'}
-        </Link>
+        {tab === 'accessories' ? (
+          <Link
+            href="/dashboard/accessories"
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
+          >
+            Manage Accessories →
+          </Link>
+        ) : (
+          <Link
+            href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(pathname)}`}
+            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
+          >
+            + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
+          </Link>
+        )}
       </div>
       <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
 
@@ -252,6 +422,12 @@ export default function StockView({
         </button>
         <button onClick={() => setTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
           Sold Stock
+        </button>
+        <button onClick={() => setTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+          Accessories
+        </button>
+        <button onClick={() => setTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+          Sold Accessories
         </button>
       </div>
 
@@ -300,7 +476,11 @@ export default function StockView({
         )}
         <input
           type="text"
-          placeholder="Search asset or serial..."
+          placeholder={
+            tab === 'sold_accessories' ? 'Search item, customer, or invoice...' :
+            tab === 'accessories' ? 'Search accessories...' :
+            'Search asset, serial, SKU, or spec (e.g. 16GB, i5)...'
+          }
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
           className="border p-2 rounded"
@@ -314,6 +494,11 @@ export default function StockView({
           <button onClick={() => setShowPoForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
             Create PO from Selected ({selected.size})
           </button>
+        )}
+        {tab !== 'sold_accessories' && tab !== 'accessories' && (
+          <div className="hidden md:block ml-auto">
+            <ColumnToggle columns={OPTIONAL_COLUMNS} visible={visibleColumns} onChange={setVisibleColumns} />
+          </div>
         )}
       </div>
 
@@ -334,49 +519,168 @@ export default function StockView({
         />
       )}
 
+      {forceDeleteAsset && (
+        <ReasonConfirmDialog
+          open
+          onOpenChange={(o) => !o && setForceDeleteAsset(null)}
+          title={`Delete ${forceDeleteAsset.label}?`}
+          description="Permanently deletes this unit. Only allowed when it has no active sale, PO, or repair job attached -- if it does, resolve that first."
+          confirmLabel="Delete"
+          error={forceDeleteErr}
+          onConfirm={handleForceDelete}
+        />
+      )}
+
       {loading ? (
-        <div>Loading assets…</div>
+        <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
+      ) : tab === 'accessories' ? (
+        <div className="hidden md:block overflow-x-auto">
+          <table className="min-w-full border text-sm">
+            <thead>
+              <tr>
+                <th className="border p-2 w-10 text-right">#</th>
+                <th className="border p-2">Name</th>
+                <th className="border p-2">Category</th>
+                <th className="border p-2">Brand</th>
+                <th className="border p-2 text-right">In Stock</th>
+                <th className="border p-2 text-right">Selling Price</th>
+                {isOwner && <th className="border p-2 text-right">Cost</th>}
+                {isOwner && <th className="border p-2">Last Vendor</th>}
+                {isOwner && <th className="border p-2">Awaiting PO</th>}
+                <th className="border p-2">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {accessoryStock.length === 0 && <EmptyTableRow colSpan={10} message="No accessories in stock." />}
+              {accessoryStock.map((sku, idx) => (
+                <tr key={sku.id}>
+                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="border p-2">
+                    <Link href={`/dashboard/accessories/${sku.id}`} className="text-blue-600 underline">
+                      {sku.sku_description || sku.model_name || sku.full_sku_code}
+                    </Link>
+                  </td>
+                  <td className="border p-2">{sku.category}</td>
+                  <td className="border p-2">{sku.brand || '—'}</td>
+                  <td className="border p-2 text-right tabular-nums">{sku.quantity_in_stock}</td>
+                  <td className="border p-2 text-right tabular-nums">{sku.selling_price_default ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}</td>
+                  {isOwner && <td className="border p-2 text-right tabular-nums">{sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}</td>}
+                  {isOwner && <td className="border p-2">{sku.last_vendor || '—'}</td>}
+                  {isOwner && (
+                    <td className="border p-2 text-center">
+                      {sku.needs_po_qty ? <span className="text-amber-600">{sku.needs_po_qty} received, no PO</span> : <span className="text-green-600">✓</span>}
+                    </td>
+                  )}
+                  <td className="border p-2">
+                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
+                      Sell
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : tab === 'sold_accessories' ? (
+        <div className="hidden md:block overflow-x-auto">
+          <table className="min-w-full border text-sm">
+            <thead>
+              <tr>
+                <th className="border p-2 w-10 text-right">#</th>
+                <th className="border p-2">Date</th>
+                <th className="border p-2">Item</th>
+                <th className="border p-2 text-right">Qty</th>
+                <th className="border p-2 text-right">Sale Total</th>
+                <th className="border p-2">Payment</th>
+                <th className="border p-2 text-right">Amount Paid</th>
+                <th className="border p-2">Received Into</th>
+                <th className="border p-2">Customer</th>
+                <th className="border p-2">Sold By</th>
+                <th className="border p-2">Invoice</th>
+              </tr>
+            </thead>
+            <tbody>
+              {soldAccessories.length === 0 && <EmptyTableRow colSpan={11} message="No accessory sales found." />}
+              {soldAccessories.map((sale, idx) => (
+                <tr key={sale.id}>
+                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="border p-2">{sale.sale_date?.slice(0, 10)}</td>
+                  <td className="border p-2">
+                    {sale.sku_description || sale.full_sku_code}
+                    {sale.sku_description && sale.full_sku_code && (
+                      <span className="text-gray-400"> · {sale.full_sku_code}</span>
+                    )}
+                  </td>
+                  <td className="border p-2 text-right tabular-nums">{sale.accessory_quantity}</td>
+                  <td className="border p-2 text-right tabular-nums">₹{sale.sale_total?.toFixed(2)}</td>
+                  <td className="border p-2 capitalize">{sale.payment_status}</td>
+                  <td className="border p-2 text-right tabular-nums">₹{sale.amount_paid?.toFixed(2)}</td>
+                  <td className="border p-2">{sale.payment_account || '—'}</td>
+                  <td className="border p-2">{sale.customer_name || '—'}</td>
+                  <td className="border p-2">{sale.sold_by || '—'}</td>
+                  <td className="border p-2">
+                    {sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="hidden md:block overflow-x-auto">
           <table className="min-w-full border text-sm">
             <thead>
               <tr>
                 {isOwner && tab === 'current' && (
-                  <th className="border p-2">
-                    <input type="checkbox" checked={selectableIds.length > 0 && selected.size === selectableIds.length} onChange={toggleSelectAll} />
+                  <th className="border p-2 w-8 text-center">
+                    <Checkbox
+                      checked={
+                        selectableIds.length === 0
+                          ? false
+                          : selected.size === selectableIds.length
+                          ? true
+                          : selected.size > 0
+                          ? 'indeterminate'
+                          : false
+                      }
+                      onCheckedChange={toggleSelectAll}
+                    />
                   </th>
                 )}
+                <th className="border p-2 w-10 text-right">#</th>
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('asset_number')}>
                   Asset / Serial{sortIndicator('asset_number')}
                 </th>
-                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sku_code')}>
-                  SKU{sortIndicator('sku_code')}
-                </th>
+                {visibleColumns.sku && <th className="border p-2">SKU</th>}
                 <th className="border p-2">Description</th>
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('status')}>
                   Status{sortIndicator('status')}
                 </th>
-                <th className="border p-2">Grade</th>
-                {isOwner && tab === 'current' && <th className="border p-2">PO</th>}
-                {isOwner && tab === 'current' && <th className="border p-2">Vendor / Cost</th>}
-                {tab === 'sold' && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
-                {tab === 'sold' && <th className="border p-2">Customer</th>}
-                {tab === 'sold' && <th className="border p-2">Sale Total</th>}
-                {isOwner && tab === 'sold' && <th className="border p-2">Invoice</th>}
+                {visibleColumns.grade && <th className="border p-2">Grade</th>}
+                {tab === 'current' && visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
+                {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
+                {isOwner && tab === 'current' && visibleColumns.po && <th className="border p-2">PO</th>}
+                {isOwner && tab === 'current' && visibleColumns.vendorCost && <th className="border p-2">Vendor / Cost</th>}
+                {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
+                {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
+                {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
+                {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
                 {isOwner && <th className="border p-2">Fix SKU</th>}
                 {(tab === 'current' || (tab === 'sold' && showServiceActions)) && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {displayedAssets.map((asset) => (
+              {displayedAssets.length === 0 && <EmptyTableRow colSpan={20} message="No assets found." />}
+              {displayedAssets.map((asset, idx) => (
                 <tr key={asset.id}>
                   {isOwner && tab === 'current' && (
-                    <td className="border p-2 text-center">
+                    <td className="border p-2 w-8 text-center">
                       {!asset.po_id && (
-                        <input type="checkbox" checked={selected.has(asset.id)} onChange={() => toggleSelectOne(asset.id)} />
+                        <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
                       )}
                     </td>
                   )}
+                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                   <td className="border p-2">
                     <Link href={`/dashboard/stock/${asset.id}`} className="text-blue-600 underline">
                       {identifier(asset)}
@@ -387,24 +691,31 @@ export default function StockView({
                       </span>
                     )}
                   </td>
-                  <td className="border p-2">{asset.sku_code}</td>
-                  <td className="border p-2">{buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}</td>
-                  <td className="border p-2 capitalize">{asset.status.replace(/_/g, ' ')}</td>
-                  <td className="border p-2">{asset.qc_grade || '—'}</td>
-                  {isOwner && tab === 'current' && (
+                  {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
+                  <td className="border p-2">
+                    {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
+                    {asset.asset_number && asset.serial_number && (
+                      <span className="text-gray-400"> · SN: {asset.serial_number}</span>
+                    )}
+                  </td>
+                  <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
+                  {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
+                  {tab === 'current' && visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
+                  {visibleColumns.purchaseDate && <td className="border p-2">{asset.po_date?.slice(0, 10) || '—'}</td>}
+                  {isOwner && tab === 'current' && visibleColumns.po && (
                     <td className="border p-2 text-center">
                       {asset.po_id ? <span className="text-green-600">✓ {asset.po_number}</span> : <span className="text-amber-600">✗ missing</span>}
                     </td>
                   )}
-                  {isOwner && tab === 'current' && (
-                    <td className="border p-2">
+                  {isOwner && tab === 'current' && visibleColumns.vendorCost && (
+                    <td className="border p-2 text-right tabular-nums">
                       {asset.vendor_name ? `${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}` : '—'}
                     </td>
                   )}
-                  {tab === 'sold' && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
-                  {tab === 'sold' && <td className="border p-2">{asset.customer_name || '—'}</td>}
-                  {tab === 'sold' && <td className="border p-2">₹{asset.sale_total?.toFixed(2)}</td>}
-                  {isOwner && tab === 'sold' && (
+                  {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
+                  {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
+                  {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
+                  {isOwner && tab === 'sold' && visibleColumns.invoice && (
                     <td className="border p-2 text-center">
                       {asset.invoice_finalized ? (
                         <span className="text-green-600">✓ {asset.invoice_number}</span>
@@ -428,6 +739,14 @@ export default function StockView({
                           className="text-red-600 underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
                         >
                           {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
+                          Delete
+                        </button>
+                      )}
+                      {tab === 'sold' && (
+                        <button
+                          onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }}
+                          className="text-red-600 underline text-xs"
+                        >
                           Delete
                         </button>
                       )}
@@ -460,6 +779,137 @@ export default function StockView({
           </table>
         </div>
       )}
+
+      {/* Mobile card list -- this page is checked from a phone often enough (Live
+          Stock especially) that a 14-column table's horizontal scroll isn't a good
+          enough answer below md; same data as the table, one card per unit. */}
+      {!loading && tab === 'sold_accessories' && (
+        <div className="md:hidden space-y-2">
+          {soldAccessories.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">No accessory sales found.</p>
+          )}
+          {soldAccessories.map((sale) => (
+            <div key={sale.id} className="border rounded-lg p-3 space-y-2">
+              <div className="min-w-0">
+                <div className="font-medium break-words">{sale.sku_description || sale.full_sku_code}</div>
+                <div className="text-xs text-gray-500">{sale.full_sku_code} · Qty {sale.accessory_quantity}</div>
+              </div>
+              <div className="text-xs text-gray-600 space-y-0.5">
+                <div>Sold {sale.sale_date?.slice(0, 10)} to {sale.customer_name || '—'}</div>
+                <div className="tabular-nums">₹{sale.sale_total?.toFixed(2)} · {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} paid</div>
+                {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
+                <div>{sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && tab === 'accessories' && (
+        <div className="md:hidden space-y-2">
+          {accessoryStock.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">No accessories in stock.</p>
+          )}
+          {accessoryStock.map((sku) => (
+            <div key={sku.id} className="border rounded-lg p-3 space-y-2">
+              <div className="min-w-0">
+                <Link href={`/dashboard/accessories/${sku.id}`} className="text-blue-600 underline font-medium break-words">
+                  {sku.sku_description || sku.model_name || sku.full_sku_code}
+                </Link>
+                <div className="text-xs text-gray-500">{sku.category}{sku.brand ? ` · ${sku.brand}` : ''}</div>
+              </div>
+              <div className="text-sm tabular-nums">
+                In stock: {sku.quantity_in_stock}
+                {sku.selling_price_default != null && ` · ₹${sku.selling_price_default.toFixed(2)}`}
+              </div>
+              {isOwner && (
+                <div className="text-xs text-gray-600 space-y-0.5">
+                  <div>Cost: {sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}{sku.last_vendor ? ` · ${sku.last_vendor}` : ''}</div>
+                  {!!sku.needs_po_qty && <div className="text-amber-600">{sku.needs_po_qty} received, no PO yet</div>}
+                </div>
+              )}
+              <div className="pt-1 border-t">
+                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
+                  Sell
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {!loading && tab !== 'sold_accessories' && tab !== 'accessories' && (
+        <div className="md:hidden space-y-2">
+          {displayedAssets.length === 0 && (
+            <p className="text-sm text-gray-400 text-center py-6">No assets found.</p>
+          )}
+          {displayedAssets.map((asset) => (
+            <div key={asset.id} className="border rounded-lg p-3 space-y-2">
+              <div className="flex justify-between items-start gap-2">
+                <div className="min-w-0">
+                  <Link href={`/dashboard/stock/${asset.id}`} className="text-blue-600 underline font-medium break-all">
+                    {identifier(asset)}
+                  </Link>
+                  <div className="text-xs text-gray-500">{asset.sku_code}</div>
+                </div>
+                {isOwner && tab === 'current' && !asset.po_id && (
+                  <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
+                )}
+              </div>
+              <div className="text-sm">
+                {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
+                {asset.asset_number && asset.serial_number && (
+                  <span className="text-gray-400"> · SN: {asset.serial_number}</span>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
+                {asset.qc_grade && <span className="text-xs text-gray-500">Grade {asset.qc_grade}</span>}
+                {tab === 'current' && asset.created_at && <span className="text-xs text-gray-500">Added {asset.created_at.slice(0, 10)}</span>}
+                {asset.po_date && <span className="text-xs text-gray-500">Purchased {asset.po_date.slice(0, 10)}</span>}
+                {asset.under_repair_job_number && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs">Under Repair</span>
+                )}
+              </div>
+              {tab === 'sold' && (
+                <div className="text-xs text-gray-600 space-y-0.5">
+                  <div>Sold {asset.sold_at?.slice(0, 10)} to {asset.customer_name || '—'}</div>
+                  <div className="tabular-nums">₹{asset.sale_total?.toFixed(2)}</div>
+                  {isOwner && (
+                    <div>{asset.invoice_finalized ? <span className="text-green-600">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
+                  )}
+                </div>
+              )}
+              {isOwner && tab === 'current' && (
+                <div className="text-xs text-gray-600">
+                  {asset.po_id ? <span className="text-green-600">✓ PO {asset.po_number}</span> : <span className="text-amber-600">✗ missing PO</span>}
+                  {asset.vendor_name && ` · ${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}`}
+                </div>
+              )}
+              <div className="flex flex-wrap gap-3 pt-1 border-t">
+                {isOwner && (
+                  <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">Fix SKU</button>
+                )}
+                {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
+                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">Sell</button>
+                )}
+                {tab === 'current' && showServiceActions && (
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-blue-700 underline text-xs">Repair</button>
+                )}
+                {tab === 'sold' && showServiceActions && (
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-amber-700 underline text-xs">Return</button>
+                )}
+                {isOwner && tab === 'current' && !asset.po_id && (
+                  <button onClick={() => deleteAsset(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-red-600 underline text-xs disabled:opacity-50">Delete</button>
+                )}
+                {isOwner && tab === 'sold' && (
+                  <button onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }} className="text-red-600 underline text-xs">Delete</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />}
     </div>
   )
 }

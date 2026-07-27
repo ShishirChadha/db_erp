@@ -96,14 +96,14 @@ export default function NotificationBell() {
       <button onClick={openPanel} className="relative p-2 rounded-lg hover:bg-gray-100 text-gray-600" aria-label="Notifications">
         <Bell className="h-5 w-5" />
         {unreadCount > 0 && (
-          <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-[10px] font-medium rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
+          <span className="absolute -top-0.5 -right-0.5 bg-red-600 text-white text-xs leading-none font-medium rounded-full min-w-[16px] h-4 px-1 flex items-center justify-center">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-50">
+        <div className="absolute left-0 mt-2 w-80 max-w-[calc(100vw-2rem)] max-h-96 overflow-y-auto bg-white border border-gray-200 rounded-xl shadow-lg z-50">
           <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 sticky top-0 bg-white">
             <span className="text-sm font-semibold">Notifications</span>
             {unreadCount > 0 && (
@@ -118,7 +118,7 @@ export default function NotificationBell() {
               onClick={() => handleClick(n)}
               className={`block w-full text-left px-3 py-2.5 text-sm border-b border-gray-50 hover:bg-gray-50 ${!n.read_at ? 'bg-blue-50/50' : ''}`}
             >
-              <p className="text-gray-800">{composeMessage(n)}</p>
+              <p className="text-gray-800 line-clamp-3">{composeMessage(n)}</p>
               <p className="text-xs text-gray-400 mt-0.5">{formatDistanceToNow(new Date(n.created_at), { addSuffix: true })}</p>
             </button>
           ))}

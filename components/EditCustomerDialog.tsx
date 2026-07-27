@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -132,12 +133,10 @@ export default function EditCustomerDialog({
               </Select>
             </div>
             <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 id="has_gst"
                 checked={formData.has_gst || false}
-                onChange={(e) => handleChange("has_gst", e.target.checked)}
-                className="h-4 w-4"
+                onCheckedChange={(v) => handleChange("has_gst", !!v)}
               />
               <Label htmlFor="has_gst">Has GST</Label>
             </div>
@@ -185,12 +184,10 @@ export default function EditCustomerDialog({
               />
             </div>
             <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
+              <Checkbox
                 id="google_review"
                 checked={formData.google_review || false}
-                onChange={(e) => handleChange("google_review", e.target.checked)}
-                className="h-4 w-4"
+                onCheckedChange={(v) => handleChange("google_review", !!v)}
               />
               <Label htmlFor="google_review">Google Review</Label>
             </div>

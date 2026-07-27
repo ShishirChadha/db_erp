@@ -18,6 +18,7 @@ DialogDescription,
 DialogTrigger,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -132,7 +133,7 @@ return (
 <div><Label>State</Label><Input value={formData.state} onChange={(e) => handleChange("state", e.target.value)} /></div>
 <div><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} /></div>
 <div className="flex items-center space-x-2">
-<input type="checkbox" id="has_gst" checked={formData.has_gst} onChange={(e) => handleChange("has_gst", e.target.checked)} />
+<Checkbox id="has_gst" checked={formData.has_gst} onCheckedChange={(v) => handleChange("has_gst", !!v)} />
 <Label htmlFor="has_gst">Has GST</Label>
 </div>
 {formData.has_gst && (
@@ -430,11 +431,11 @@ placeholder="e.g., DBAS582"
 {isDesktop && (
 <>
 <div><Label>Monitor Size (inches)</Label><Input type="number" step="0.1" value={formData.monitor_size ?? ""} onChange={(e) => handleChange("monitor_size", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-<div className="flex items-center space-x-2"><input type="checkbox" id="has_keyboard" checked={formData.has_keyboard || false} onChange={(e) => handleChange("has_keyboard", e.target.checked)} /><Label htmlFor="has_keyboard">Keyboard Included?</Label></div>
-<div className="flex items-center space-x-2"><input type="checkbox" id="has_mouse" checked={formData.has_mouse || false} onChange={(e) => handleChange("has_mouse", e.target.checked)} /><Label htmlFor="has_mouse">Mouse Included?</Label></div>
+<div className="flex items-center space-x-2"><Checkbox id="has_keyboard" checked={formData.has_keyboard || false} onCheckedChange={(v) => handleChange("has_keyboard", !!v)} /><Label htmlFor="has_keyboard">Keyboard Included?</Label></div>
+<div className="flex items-center space-x-2"><Checkbox id="has_mouse" checked={formData.has_mouse || false} onCheckedChange={(v) => handleChange("has_mouse", !!v)} /><Label htmlFor="has_mouse">Mouse Included?</Label></div>
 </>
 )}
-<div className="flex items-center space-x-2"><input type="checkbox" id="charger" checked={formData.charger || false} onChange={(e) => handleChange("charger", e.target.checked)} /><Label htmlFor="charger">Charger Included?</Label></div>
+<div className="flex items-center space-x-2"><Checkbox id="charger" checked={formData.charger || false} onCheckedChange={(v) => handleChange("charger", !!v)} /><Label htmlFor="charger">Charger Included?</Label></div>
 <div className="md:col-span-2 lg:col-span-3"><Label>Asset Description</Label><Input value={formData.asset_description || ""} onChange={(e) => handleChange("asset_description", e.target.value)} /></div>
 </div>
 </div>
@@ -471,7 +472,7 @@ className="bg-gray-100"
 
 {/* Expense Section */}
 <div className="border rounded-lg p-4 space-y-4">
-<div className="flex items-center space-x-2"><input type="checkbox" id="expense" checked={formData.expense || false} onChange={(e) => handleChange("expense", e.target.checked)} /><Label htmlFor="expense">Any extra expense incurred?</Label></div>
+<div className="flex items-center space-x-2"><Checkbox id="expense" checked={formData.expense || false} onCheckedChange={(v) => handleChange("expense", !!v)} /><Label htmlFor="expense">Any extra expense incurred?</Label></div>
 {formData.expense && (
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 <div><Label>Expense Amount</Label><Input type="number" step="0.01" value={formData.expense_amount ?? ""} onChange={(e) => handleChange("expense_amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>

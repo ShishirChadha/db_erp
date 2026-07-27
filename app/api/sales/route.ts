@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
 // Owner-only -- this is the transactional/financial view (payment state, incentive
@@ -14,19 +15,24 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const paymentStatus = searchParams.get('payment_status')
   const search = searchParams.get('search')
+  const finalized = searchParams.get('finalized') // optional 'true'/'false' -- e.g. "Awaiting Invoice" filter
+  const pagination = parsePagination(searchParams)
 
   let query = supabaseAdmin
     .from('sales')
-    .select('*')
+    .select('*', pagination ? { count: 'exact' } : undefined)
     .eq('is_deleted', false)
     .order('created_at', { ascending: false })
 
   if (paymentStatus) query = query.eq('payment_status', paymentStatus)
+  if (finalized === 'true') query = query.eq('finalized', true)
+  if (finalized === 'false') query = query.eq('finalized', false)
   if (search) {
     query = query.or(`customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%`)
   }
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // customer_name is a snapshot frozen at sale creation. For sales not yet finalized
@@ -57,5 +63,6 @@ export async function GET(req: NextRequest) {
   })
 
   // sold_by is already a plain name (see custom_options 'staff_names') -- no join needed.
+  if (pagination) return NextResponse.json({ data: result, total: count ?? 0 })
   return NextResponse.json(result)
 }
