@@ -125,5 +125,8 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     )
   }
-  return NextResponse.json({ sku, message: 'New variant created' }, { status: 201 })
+  return NextResponse.json(
+    { sku, message: 'New variant created', possible_duplicates: result.possibleDuplicates },
+    { status: 201 }
+  )
 }

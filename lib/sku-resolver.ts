@@ -1,6 +1,7 @@
 import { supabaseAdmin } from './supabase/service'
 import { normalizeSpecifications } from './sku-normalizer'
 import { generateBaseSkuCode } from './sku-code-generator'
+import { findPossibleDuplicateSkus, type DuplicateCandidate } from './sku-duplicate-detector'
 
 // JSON.stringify is key-order-sensitive, but Postgres JSONB does not preserve
 // insertion order on round-trip -- so comparing raw stringify output against a value
@@ -42,7 +43,7 @@ interface ResolveSkuInput {
  */
 export async function resolveOrCreateSku(
   input: ResolveSkuInput
-): Promise<{ sku: any; created: boolean }> {
+): Promise<{ sku: any; created: boolean; possibleDuplicates?: DuplicateCandidate[] }> {
   // Defense in depth: the UI now only ever supplies brand/model as owner-curated
   // dropdown values, but trim/case-fold here too so a non-UI caller (a script, a
   // future API consumer) can't reintroduce spelling-variant duplicates.
@@ -56,6 +57,12 @@ export async function resolveOrCreateSku(
     .from('sku_master')
     .select('variant_number, specifications, full_sku_code')
     .eq('base_sku_code', baseSkuCode)
+    // A merged-away SKU keeps its original variant rows archived rather than
+    // deleted (see merge_sku_master RPC), and has its base_sku_code rewritten
+    // with an ARCHIVED- prefix specifically so it can't collide with a fresh
+    // base_sku_code again -- this filter is defense in depth for any archived
+    // row that predates that rewrite.
+    .neq('status', 'archived')
     .order('variant_number', { ascending: true })
 
   if (existing && existing.length > 0) {
@@ -112,7 +119,19 @@ export async function resolveOrCreateSku(
       .select()
       .single()
 
-    if (!insertErr) return { sku: newSku, created: true }
+    if (!insertErr) {
+      // Non-blocking: this runs after the insert already succeeded, so it never
+      // delays or refuses SKU creation -- it only lets the caller surface a
+      // "did you mean X?" warning for a genuinely new row that looks like it
+      // might be the same product under a different spelling.
+      const possibleDuplicates = await findPossibleDuplicateSkus({
+        category: input.category,
+        brand,
+        modelName,
+        excludeId: newSku.id,
+      })
+      return { sku: newSku, created: true, possibleDuplicates: possibleDuplicates.length > 0 ? possibleDuplicates : undefined }
+    }
 
     // 23505 = unique_violation. Only retry on that; anything else is a real error.
     if (insertErr.code !== '23505') throw insertErr

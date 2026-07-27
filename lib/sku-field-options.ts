@@ -14,6 +14,7 @@ export function getCustomOptionsCategory(skuCategory: string, fieldName: string)
     if (skuCategory === 'LAP') return 'model_laptop'
     if (skuCategory === 'DES') return 'model_desktop'
     if (skuCategory === 'TAB') return 'model_tablet'
+    if (skuCategory === 'MON') return 'model_monitor'
     return null
   }
   if (fieldName === 'series' && skuCategory === 'CPU') return 'cpu_series'

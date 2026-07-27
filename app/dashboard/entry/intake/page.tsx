@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
@@ -75,7 +76,7 @@ function StockIntakePage() {
   const { values: brandOptions } = useCustomOptions('brand')
   const { values: modelYearOptions } = useCustomOptions('apple_model_year')
   const modelCategory = getCustomOptionsCategory(TYPE_TO_CATEGORY[type] || 'OTHER', 'model')
-  const { values: modelOptions } = useCustomOptions(modelCategory || 'model_laptop')
+  const { values: modelOptions, addOption: addModelOption } = useCustomOptions(modelCategory || 'model_laptop')
   const screenOptions = type === 'Monitor' ? monitorScreenOptions : laptopScreenOptions
 
   // Prefill CPU/Generation/RAM/SSD/Screen Size/Model Year from whatever was last
@@ -155,6 +156,16 @@ function StockIntakePage() {
       bundled_accessories: bundled.length > 0 ? bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity })) : undefined,
     }
 
+    // Informational only -- never blocks this submission. Employees can't reach
+    // the owner-only merge tool, so this is just a heads-up that the model they
+    // typed looks similar to something already in the catalog.
+    const notifyPossibleDuplicates = (data: any) => {
+      const match = data?.possible_duplicates?.[0]
+      if (match) {
+        toast(`Heads up: this looks similar to an existing SKU (${match.full_sku_code}, ${match.quantity_in_stock ?? 0} in stock). The owner may merge these later.`)
+      }
+    }
+
     try {
       const res = await apiFetch('/api/stock-intake', { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
@@ -171,12 +182,14 @@ function StockIntakePage() {
             const err2 = await res2.json().catch(() => ({}))
             throw new Error(err2.error || 'Failed to save entry.')
           }
+          notifyPossibleDuplicates(await res2.json().catch(() => ({})))
           setDone(true)
           resetForm()
           return
         }
         throw new Error(err.error || 'Failed to save entry.')
       }
+      notifyPossibleDuplicates(await res.json().catch(() => ({})))
       setDone(true)
       resetForm()
     } catch (err: any) {
@@ -234,7 +247,14 @@ function StockIntakePage() {
         <div>
           <label className="block font-medium text-sm mb-1">Model *</label>
           {modelCategory ? (
-            <SearchableSelect options={modelOptions} value={model} onChange={setModel} placeholder="Select model..." otherPosition="top" />
+            <SearchableSelect
+              options={modelOptions}
+              value={model}
+              onChange={setModel}
+              placeholder="Select model..."
+              otherPosition="top"
+              onOtherCommit={(v) => { if (!modelOptions.includes(v)) addModelOption(v) }}
+            />
           ) : (
             <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Latitude E5450" className="border p-2 w-full rounded" />
           )}

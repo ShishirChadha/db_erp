@@ -1,7 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
@@ -68,6 +70,7 @@ export function SkuFormModal({
   onClose: () => void
   onSaved: (sku: SKU) => void
 }) {
+  const router = useRouter()
   const defaultCategory =
     existingSku?.category ??
     (templates.some(t => t.category === 'LAP') ? 'LAP' : templates[0]?.category) ??
@@ -180,6 +183,14 @@ export function SkuFormModal({
       return
     }
     const data = await res.json()
+    if (!existingSku && data.possible_duplicates?.length > 0) {
+      const match = data.possible_duplicates[0]
+      toast(`This looks similar to an existing SKU: ${match.full_sku_code} (${match.quantity_in_stock ?? 0} in stock)`, {
+        description: 'Consider merging these on the SKU Master page instead of keeping both.',
+        duration: 10000,
+        action: { label: 'Review', onClick: () => router.push('/dashboard/sku-master') },
+      })
+    }
     onSaved(existingSku ? data : data.sku)
     onClose()
   })

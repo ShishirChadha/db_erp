@@ -2,16 +2,25 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Loader2, AlertTriangle } from 'lucide-react'
+import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { SkuFormModal } from '@/components/SkuFormModal'
+import { MergeSkuDialog } from '@/components/MergeSkuDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { useRole } from '@/lib/auth/useRole'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
 import { Pagination } from '@/components/Pagination'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ErrorBanner } from '@/components/ErrorBanner'
 
 const PAGE_SIZE = 25
+
+interface DuplicateCluster {
+  category: string
+  brand: string
+  skus: { id: string; full_sku_code: string; category: string; brand: string; model_name: string; quantity_in_stock: number | null }[]
+}
 
 interface SKU {
   id: string
@@ -42,6 +51,7 @@ type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in
 type SortOrder = 'asc' | 'desc'
 
 function SkuMasterPage() {
+  const { isOwner } = useRole()
   const [skus, setSkus] = useState<SKU[]>([])
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -55,6 +65,21 @@ function SkuMasterPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+
+  const [duplicateClusters, setDuplicateClusters] = useState<DuplicateCluster[]>([])
+  const [showDuplicates, setShowDuplicates] = useState(false)
+  const [mergeCluster, setMergeCluster] = useState<DuplicateCluster | null>(null)
+
+  const fetchDuplicateCandidates = useCallback(async () => {
+    if (!isOwner) return
+    try {
+      const res = await apiFetch('/api/sku-master/duplicate-candidates')
+      if (!res.ok) return
+      setDuplicateClusters(await res.json())
+    } catch {
+      // Non-critical -- the banner just stays empty if this fails.
+    }
+  }, [isOwner])
 
   const fetchTemplates = useCallback(async () => {
     try {
@@ -93,6 +118,10 @@ function SkuMasterPage() {
   useEffect(() => {
     fetchSkus().finally(() => setLoading(false))
   }, [fetchSkus])
+
+  useEffect(() => {
+    fetchDuplicateCandidates()
+  }, [fetchDuplicateCandidates])
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   useEffect(() => { setPage(1) }, [search, categoryFilter])
@@ -160,6 +189,42 @@ function SkuMasterPage() {
       </div>
 
       {error && <div className="mb-4"><ErrorBanner message={error} onRetry={() => fetchSkus()} /></div>}
+
+      {duplicateClusters.length > 0 && (
+        <div className="mb-4 border border-amber-300 bg-amber-50 rounded-md">
+          <button
+            type="button"
+            onClick={() => setShowDuplicates((v) => !v)}
+            className="w-full flex items-center gap-2 p-3 text-left text-sm font-medium text-amber-800"
+          >
+            <AlertTriangle className="size-4 shrink-0" />
+            {duplicateClusters.length} possible duplicate group{duplicateClusters.length !== 1 ? 's' : ''} found
+            <span className="ml-auto text-xs underline">{showDuplicates ? 'Hide' : 'Review'}</span>
+          </button>
+          {showDuplicates && (
+            <div className="border-t border-amber-300 divide-y divide-amber-200">
+              {duplicateClusters.map((cluster, idx) => (
+                <div key={idx} className="p-3 flex flex-wrap items-center gap-3 text-sm">
+                  <div className="flex-1 min-w-0">
+                    {cluster.skus.map((s) => (
+                      <div key={s.id} className="text-gray-700">
+                        {s.full_sku_code} -- {s.brand} {s.model_name} ({s.quantity_in_stock ?? 0} in stock)
+                      </div>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setMergeCluster(cluster)}
+                    className="px-3 py-1.5 border border-amber-400 rounded text-amber-800 hover:bg-amber-100 shrink-0"
+                  >
+                    Merge...
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-4 mb-4 items-end">
         <div>
@@ -242,6 +307,18 @@ function SkuMasterPage() {
           existingSku={editingSku}
           onClose={() => setModalOpen(false)}
           onSaved={() => fetchSkus()}
+        />
+      )}
+
+      {mergeCluster && (
+        <MergeSkuDialog
+          candidates={mergeCluster.skus}
+          onClose={() => setMergeCluster(null)}
+          onMerged={() => {
+            toast.success('SKUs merged')
+            fetchSkus()
+            fetchDuplicateCandidates()
+          }}
         />
       )}
     </div>

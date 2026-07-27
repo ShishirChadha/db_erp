@@ -42,6 +42,7 @@ export async function PATCH(
   const brand = resolveBrand(body)
 
   let sku
+  let possibleDuplicates
   try {
     const result = await resolveOrCreateSku({
       category,
@@ -52,6 +53,7 @@ export async function PATCH(
       sku_description: `${brand} ${body.model}`.trim(),
     })
     sku = result.sku
+    possibleDuplicates = result.possibleDuplicates
   } catch (err: any) {
     return NextResponse.json({ error: `Failed to resolve SKU: ${err.message}` }, { status: 500 })
   }
@@ -88,5 +90,5 @@ export async function PATCH(
     ])
   }
 
-  return NextResponse.json({ success: true, sku_id: sku.id })
+  return NextResponse.json({ success: true, sku_id: sku.id, possible_duplicates: possibleDuplicates })
 }

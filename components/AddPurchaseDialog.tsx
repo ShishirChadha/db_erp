@@ -2,6 +2,8 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/api-client";
 import { useCustomOptions } from "@/lib/useCustomOptions";
@@ -161,6 +163,7 @@ interface AddPurchaseDialogProps {
 }
 
 export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialData }: AddPurchaseDialogProps) {
+  const router = useRouter();
   const [skuGenerated, setSkuGenerated] = useState(false);
   const [vendors, setVendors] = useState<{ id: string; company_name: string }[]>([]);
   const [loadingVendors, setLoadingVendors] = useState(false);
@@ -395,6 +398,16 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error || "Failed to save purchase.");
+      }
+
+      const data = await res.json().catch(() => ({}));
+      if (data.possible_duplicates?.length > 0) {
+        const match = data.possible_duplicates[0];
+        toast(`This looks similar to an existing SKU: ${match.full_sku_code} (${match.quantity_in_stock ?? 0} in stock)`, {
+          description: "Consider merging these on the SKU Master page instead of keeping both.",
+          duration: 10000,
+          action: { label: "Review", onClick: () => router.push("/dashboard/sku-master") },
+        });
       }
 
       onOpenChange(false);

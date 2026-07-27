@@ -68,6 +68,7 @@ export async function POST(req: NextRequest) {
   const brand = resolveBrand(body)
 
   let sku
+  let possibleDuplicates
   try {
     const result = await resolveOrCreateSku({
       category,
@@ -78,6 +79,7 @@ export async function POST(req: NextRequest) {
       sku_description: `${brand} ${body.model}`.trim(),
     })
     sku = result.sku
+    possibleDuplicates = result.possibleDuplicates
   } catch (err: any) {
     return NextResponse.json({ error: `Failed to resolve SKU: ${err.message}` }, { status: 500 })
   }
@@ -121,5 +123,8 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({ success: true, id: inserted.id, sku_id: sku.id }, { status: 201 })
+  return NextResponse.json(
+    { success: true, id: inserted.id, sku_id: sku.id, possible_duplicates: possibleDuplicates },
+    { status: 201 }
+  )
 }
