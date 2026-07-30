@@ -28,5 +28,6 @@ export function getCustomOptionsCategory(skuCategory: string, fieldName: string)
   if (fieldName === 'ssd') return 'storage'
   if (fieldName === 'screen_size' && skuCategory === 'LAP') return 'screen_size_laptop'
   if (fieldName === 'size' && skuCategory === 'MON') return 'screen_size_monitor'
+  if (fieldName === 'connector_type' && skuCategory === 'ADP') return 'connector_type'
   return null
 }
