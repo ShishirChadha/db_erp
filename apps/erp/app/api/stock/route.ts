@@ -180,7 +180,7 @@ export async function GET(req: NextRequest) {
   const { data: salesRows } = soldIds.length
     ? await supabaseAdmin
         .from('sales')
-        .select('asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by')
+        .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by')
         .in('asset_ledger_id', soldIds)
     : { data: [] as any[] }
 
@@ -236,6 +236,7 @@ export async function GET(req: NextRequest) {
       po_date: po?.po_date,
       vendor_name: po?.vendor_name || fallbackVendor?.company_name,
       purchased_by_type: po?.purchased_by_type || asset.purchased_by_type,
+      sale_id: sale?.id,
       customer_name: sale?.customer_name,
       sale_total: sale?.sale_total,
       invoice_finalized: sale?.finalized,
@@ -245,7 +246,7 @@ export async function GET(req: NextRequest) {
     }
   })
 
-  const redacted = redactManyForRole(result, 'stock_list', sessionUser.role)
+  const redacted = await redactManyForRole(result, 'stock_list', sessionUser.role)
   if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
   return NextResponse.json(redacted)
 }

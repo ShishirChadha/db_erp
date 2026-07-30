@@ -1,13 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser } from '@/lib/auth/session'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -16,12 +9,21 @@ export async function GET(
 ) {
   const { id } = await params
 
+  // This route uses supabaseAdmin (service role, bypasses RLS), so it must
+  // enforce staff-only access itself -- getSessionUser() resolves to null for
+  // anyone without an active `profiles` row, which is exactly a staff check
+  // (web customers only ever have a `customer_profiles` row).
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
   const { data: asset, error: assetErr } = await supabaseAdmin
     .from('asset_ledger')
     .select(`
       id, asset_number, serial_number, status,
       qc_grade, qc_status, qc_notes, qc_by, qc_at,
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
+      battery_health_percent, estimated_backup_hours,
+      screen_condition, keyboard_condition, body_condition, included_accessories,
       po_id, po_item_id, sku_id,
       purchase_order_items (
         sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications )
@@ -61,12 +63,12 @@ export async function PUT(
 ) {
   const { id } = await params
 
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('status')
+    .select('status, warranty_type, warranty_start_date')
     .eq('id', id)
     .single()
 
@@ -78,10 +80,22 @@ export async function PUT(
   }
 
   const body = await req.json()
-  const { checks, qc_grade, qc_notes } = body as {
+  const {
+    checks, qc_grade, qc_notes,
+    battery_health_percent, estimated_backup_hours,
+    screen_condition, keyboard_condition, body_condition, included_accessories,
+    warranty_duration_months,
+  } = body as {
     checks: { check_item: string; result: 'pass' | 'fail' | 'na'; notes?: string }[]
     qc_grade: string | null
     qc_notes: string | null
+    battery_health_percent?: number | null
+    estimated_backup_hours?: number | null
+    screen_condition?: string | null
+    keyboard_condition?: string | null
+    body_condition?: string | null
+    included_accessories?: string | null
+    warranty_duration_months?: number | null
   }
 
   if (!checks || checks.length === 0) {
@@ -97,7 +111,7 @@ export async function PUT(
       check_item: c.check_item,
       result: c.result,
       notes: c.notes || null,
-      checked_by: user.id,
+      checked_by: sessionUser.id,
     }))
   )
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
@@ -106,15 +120,35 @@ export async function PUT(
   const qcStatus = anyFail ? 'failed' : 'passed'
   const newStatus = anyFail ? 'faulty' : 'qc_passed'
 
+  // The compute_warranty_expiry trigger only fires off warranty_start_date +
+  // warranty_duration_months -- set a start date (today, if none already on
+  // file) whenever a duration is being recorded, so warranty_expiry_date
+  // actually gets computed rather than silently staying NULL.
+  const warrantyUpdate: Record<string, unknown> = {}
+  if (warranty_duration_months !== undefined) {
+    warrantyUpdate.warranty_duration_months = warranty_duration_months
+    if (warranty_duration_months != null) {
+      warrantyUpdate.warranty_start_date = asset.warranty_start_date || new Date().toISOString().slice(0, 10)
+      if (!asset.warranty_type) warrantyUpdate.warranty_type = 'in_house'
+    }
+  }
+
   const { error: updateErr } = await supabaseAdmin
     .from('asset_ledger')
     .update({
       qc_grade: qc_grade || null,
       qc_status: qcStatus,
       qc_notes: qc_notes || null,
-      qc_by: user.id,
+      qc_by: sessionUser.id,
       qc_at: new Date().toISOString(),
       status: newStatus,
+      battery_health_percent: battery_health_percent ?? null,
+      estimated_backup_hours: estimated_backup_hours ?? null,
+      screen_condition: screen_condition || null,
+      keyboard_condition: keyboard_condition || null,
+      body_condition: body_condition || null,
+      included_accessories: included_accessories || null,
+      ...warrantyUpdate,
     })
     .eq('id', id)
 

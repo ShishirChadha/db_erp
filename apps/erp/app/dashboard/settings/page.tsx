@@ -7,6 +7,8 @@ import DropdownOptionsManager from '@/components/DropdownOptionsManager'
 import UserManager from '@/components/UserManager'
 import BusinessProfileManager from '@/components/BusinessProfileManager'
 import TagsManager from '@/components/TagsManager'
+import WebsiteAdminManager from '@/components/WebsiteAdminManager'
+import FieldRedactionManager from '@/components/FieldRedactionManager'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface AssetCounter {
@@ -29,6 +31,8 @@ const CATEGORIES = [
   { key: 'business_profiles', label: 'Business Profiles' },
   { key: 'users', label: 'Users & Access' },
   { key: 'activity_tags', label: 'Activity Tags' },
+  { key: 'website_admin', label: 'Website Admin' },
+  { key: 'field_redaction', label: 'Field Redaction' },
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']
@@ -217,6 +221,8 @@ function SettingsPage() {
           {activeCategory === 'business_profiles' && <BusinessProfileManager />}
           {activeCategory === 'users' && <UserManager />}
           {activeCategory === 'activity_tags' && <TagsManager />}
+          {activeCategory === 'website_admin' && <WebsiteAdminManager />}
+          {activeCategory === 'field_redaction' && <FieldRedactionManager />}
         </div>
       </div>
     </div>

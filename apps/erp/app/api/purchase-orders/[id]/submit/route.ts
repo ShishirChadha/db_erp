@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isManagerOrAbove } from '@/lib/auth/session'
 import { isSerializedCategory } from '@/lib/sku-categories'
 
+// Submitting a draft PO is the "approval" step -- it reserves asset numbers and locks in
+// the vendor/cost commitment, so managers may do this (per the manager-role requirements)
+// even though every other PO action (create/list/edit) stays owner-only.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -10,7 +13,7 @@ export async function POST(
   const { id: poId } = await params
 
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!isManagerOrAbove(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   const user = { id: sessionUser.id }
 
   const { data: po } = await supabaseAdmin

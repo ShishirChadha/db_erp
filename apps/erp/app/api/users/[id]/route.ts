@@ -7,6 +7,14 @@ const ALLOWED_PAGE_KEYS = [
   'live_stock', 'invoices', 'customers', 'activities',
 ]
 
+// Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches
+// profile_page_actions.page_key's CHECK constraint exactly. 'dashboard'/'pending_tasks'
+// are nav/landing keys with no mutable resource behind them, so they're valid for
+// allowed_pages (visibility) but must never be written to profile_page_actions.
+const EDITABLE_PAGE_KEYS = [
+  'new_entry', 'accessories', 'repair_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities',
+]
+
 // ---------- PATCH: owner updates role/allowed_pages/is_active/full_name/contact_email/employee_id, and/or resets a password ----------
 // No DELETE -- deactivation (is_active=false) is the only revoke action. A hard delete
 // would orphan sales.entered_by/sold_by-style references, and is_active=false already
@@ -17,11 +25,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params
   const body = await req.json()
-  const { role, allowed_pages, is_active, password, full_name, contact_email, employee_id } = body
+  const { role, allowed_pages, page_edit_keys, is_active, password, full_name, contact_email, employee_id } = body
 
   const profileUpdates: Record<string, unknown> = {}
   if (role !== undefined) {
-    if (!['owner', 'employee'].includes(role)) return NextResponse.json({ error: "Role must be 'owner' or 'employee'." }, { status: 400 })
+    if (!['owner', 'manager', 'employee'].includes(role)) return NextResponse.json({ error: "Role must be 'owner', 'manager', or 'employee'." }, { status: 400 })
     profileUpdates.role = role
   }
   if (allowed_pages !== undefined) {
@@ -47,6 +55,21 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       .update(profileUpdates)
       .eq('id', id)
     if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 })
+  }
+
+  // page_edit_keys is a full-replace of this user's edit grants (delete-then-insert,
+  // scoped to the keys submitted), independent of whether allowed_pages was also sent.
+  if (page_edit_keys !== undefined) {
+    if (!Array.isArray(page_edit_keys)) return NextResponse.json({ error: 'page_edit_keys must be an array.' }, { status: 400 })
+    const keys = page_edit_keys.filter((k: string) => EDITABLE_PAGE_KEYS.includes(k))
+    const { error: delErr } = await supabaseAdmin.from('profile_page_actions').delete().eq('profile_id', id)
+    if (delErr) return NextResponse.json({ error: delErr.message }, { status: 500 })
+    if (keys.length > 0) {
+      const { error: insErr } = await supabaseAdmin
+        .from('profile_page_actions')
+        .insert(keys.map((page_key) => ({ profile_id: id, page_key, can_edit: true })))
+      if (insErr) return NextResponse.json({ error: insErr.message }, { status: 500 })
+    }
   }
 
   if (password) {

@@ -7,6 +7,8 @@ import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
+import { SearchableSelect } from '@/components/SearchableSelect'
+import { useCustomOptions } from '@/lib/useCustomOptions'
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -16,6 +18,14 @@ const DEFAULT_CHECK_ITEMS = [
   'Ports / Connectivity',
   'Body / Cosmetic Condition',
   'Boot / OS',
+  // Added for the storefront Technical Test Report (2026-07-30 architecture,
+  // §A) -- asset_qc_checks.check_item is free text with no server-side enum,
+  // so these are the only change needed to start capturing them.
+  'Camera',
+  'Audio',
+  'WiFi',
+  'Charging',
+  'Stress Test',
 ]
 
 interface CheckResult {
@@ -44,6 +54,12 @@ interface AssetDetail {
   warranty_start_date: string | null
   warranty_duration_months: number | null
   warranty_expiry_date: string | null
+  battery_health_percent: number | null
+  estimated_backup_hours: number | null
+  screen_condition: string | null
+  keyboard_condition: string | null
+  body_condition: string | null
+  included_accessories: string | null
   purchase_order_items: {
     sku_master: {
       full_sku_code: string
@@ -71,6 +87,16 @@ function AssetQCPage() {
   const [checkResults, setCheckResults] = useState<CheckResult[]>([])
   const [grade, setGrade] = useState('')
   const [notes, setNotes] = useState('')
+
+  // Condition/battery/warranty facts for the storefront Test Report.
+  const [batteryHealthPercent, setBatteryHealthPercent] = useState('')
+  const [estimatedBackupHours, setEstimatedBackupHours] = useState('')
+  const [screenCondition, setScreenCondition] = useState('')
+  const [keyboardCondition, setKeyboardCondition] = useState('')
+  const [bodyCondition, setBodyCondition] = useState('')
+  const [includedAccessories, setIncludedAccessories] = useState('')
+  const [warrantyDurationMonths, setWarrantyDurationMonths] = useState('')
+  const { values: conditionGradeOptions } = useCustomOptions('condition_grade')
 
   // Owner-only cost tracking (original cost + any upgrade/refurb adjustments).
   const [costPrice, setCostPrice] = useState<number | null>(null)
@@ -177,6 +203,13 @@ function AssetQCPage() {
       setNotes(data.qc_notes || '')
       setAssetNumberInput(data.asset_number || '')
       setSerialNumberInput(data.serial_number || '')
+      setBatteryHealthPercent(data.battery_health_percent != null ? String(data.battery_health_percent) : '')
+      setEstimatedBackupHours(data.estimated_backup_hours != null ? String(data.estimated_backup_hours) : '')
+      setScreenCondition(data.screen_condition || '')
+      setKeyboardCondition(data.keyboard_condition || '')
+      setBodyCondition(data.body_condition || '')
+      setIncludedAccessories(data.included_accessories || '')
+      setWarrantyDurationMonths(data.warranty_duration_months != null ? String(data.warranty_duration_months) : '')
 
       // Pre-fill from existing checks if present, else default checklist
       if (data.checks.length > 0) {
@@ -218,7 +251,18 @@ function AssetQCPage() {
     try {
       const res = await apiFetch(`/api/asset-ledger/${assetId}/qc`, {
         method: 'PUT',
-        body: JSON.stringify({ checks: checkResults, qc_grade: grade || null, qc_notes: notes || null }),
+        body: JSON.stringify({
+          checks: checkResults,
+          qc_grade: grade || null,
+          qc_notes: notes || null,
+          battery_health_percent: batteryHealthPercent !== '' ? Number(batteryHealthPercent) : null,
+          estimated_backup_hours: estimatedBackupHours !== '' ? Number(estimatedBackupHours) : null,
+          screen_condition: screenCondition || null,
+          keyboard_condition: keyboardCondition || null,
+          body_condition: bodyCondition || null,
+          included_accessories: includedAccessories || null,
+          warranty_duration_months: warrantyDurationMonths !== '' ? Number(warrantyDurationMonths) : null,
+        }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
@@ -437,6 +481,62 @@ function AssetQCPage() {
                 type="text"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
+                className="border p-2 w-full rounded"
+              />
+            </div>
+          </div>
+
+          <h3 className="text-sm font-semibold mb-2 mt-4">Condition &amp; Battery (shown on the website)</h3>
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className="block text-xs font-medium mb-1">Battery Health (%)</label>
+              <input
+                type="number" min={0} max={100}
+                value={batteryHealthPercent}
+                onChange={(e) => setBatteryHealthPercent(e.target.value)}
+                placeholder="e.g. 87"
+                className="border p-2 w-full rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Estimated Backup (hours)</label>
+              <input
+                type="number" min={0} step={0.5}
+                value={estimatedBackupHours}
+                onChange={(e) => setEstimatedBackupHours(e.target.value)}
+                placeholder="e.g. 4.5"
+                className="border p-2 w-full rounded"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Screen Condition</label>
+              <SearchableSelect options={conditionGradeOptions} value={screenCondition} onChange={setScreenCondition} placeholder="Select..." />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Keyboard Condition</label>
+              <SearchableSelect options={conditionGradeOptions} value={keyboardCondition} onChange={setKeyboardCondition} placeholder="Select..." />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Body Condition</label>
+              <SearchableSelect options={conditionGradeOptions} value={bodyCondition} onChange={setBodyCondition} placeholder="Select..." />
+            </div>
+            <div>
+              <label className="block text-xs font-medium mb-1">Warranty (months)</label>
+              <input
+                type="number" min={0}
+                value={warrantyDurationMonths}
+                onChange={(e) => setWarrantyDurationMonths(e.target.value)}
+                placeholder="e.g. 6"
+                className="border p-2 w-full rounded"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-xs font-medium mb-1">Included Accessories</label>
+              <input
+                type="text"
+                value={includedAccessories}
+                onChange={(e) => setIncludedAccessories(e.target.value)}
+                placeholder="e.g. Charger only"
                 className="border p-2 w-full rounded"
               />
             </div>

@@ -194,7 +194,7 @@ function SidebarContent({
     <div className="flex flex-col h-full">
       {/* Logo */}
       <div className="flex items-center justify-between gap-3 px-4 py-5 border-b border-gray-200">
-        <div className="flex items-center gap-3">
+        <Link href="/dashboard" className="flex items-center gap-3">
           <div className="bg-blue-600 p-2 rounded-xl">
             <Laptop className="h-5 w-5 text-white" />
           </div>
@@ -202,7 +202,7 @@ function SidebarContent({
             <p className="font-semibold text-gray-900 text-sm">DigitalBluez</p>
             <p className="text-xs text-gray-400">ERP System</p>
           </div>
-        </div>
+        </Link>
         <NotificationBell />
       </div>
 
@@ -349,12 +349,12 @@ export default function Sidebar() {
 
       {/* Mobile top bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 z-40 bg-white border-b border-gray-200 px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <Link href="/dashboard" className="flex items-center gap-2" onClick={closeMobile}>
           <div className="bg-blue-600 p-1.5 rounded-lg">
             <Laptop className="h-4 w-4 text-white" />
           </div>
           <span className="font-semibold text-gray-900 text-sm">DigitalBluez ERP</span>
-        </div>
+        </Link>
         <button onClick={toggleMobile}>
           {mobileOpen ? (
             <X className="h-5 w-5 text-gray-600" />

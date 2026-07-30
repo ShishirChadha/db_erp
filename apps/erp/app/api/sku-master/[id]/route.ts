@@ -23,7 +23,7 @@ export async function GET(
     .single()
 
   if (error || !sku) return NextResponse.json({ error: 'SKU not found' }, { status: 404 })
-  return NextResponse.json(redactForRole(sku, 'sku_master', sessionUser.role))
+  return NextResponse.json(await redactForRole(sku, 'sku_master', sessionUser.role))
 }
 
 // ---------- PUT (update) ----------

@@ -8,13 +8,16 @@ interface AppUser {
   id: string
   email: string
   full_name: string | null
-  role: 'owner' | 'employee'
+  role: 'owner' | 'manager' | 'employee'
   is_active: boolean
   allowed_pages: string[]
+  page_edit_keys: string[]
   username: string | null
   contact_email: string | null
   employee_id: string | null
 }
+
+const ROLE_LABELS: Record<AppUser['role'], string> = { owner: 'Owner', manager: 'Manager', employee: 'Employee' }
 
 const PAGE_OPTIONS = [
   { key: 'dashboard', label: 'Dashboard' },
@@ -29,6 +32,11 @@ const PAGE_OPTIONS = [
   { key: 'activities', label: 'Activity Hub' },
 ]
 
+// Dashboard/Pending Tasks are nav landing pages, not mutable resources -- they have no
+// "Can edit" concept and profile_page_actions.page_key's DB constraint rejects them.
+// Must match EDITABLE_PAGE_KEYS in app/api/users/route.ts and app/api/users/[id]/route.ts.
+const EDITABLE_PAGE_KEYS = ['new_entry', 'accessories', 'repair_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities']
+
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
   let pw = ''
@@ -36,17 +44,38 @@ function generatePassword() {
   return pw
 }
 
-function PageAccessCheckboxes({ selected, onChange }: { selected: string[]; onChange: (next: string[]) => void }) {
+function PageAccessCheckboxes({
+  selected, onChange, editKeys, onEditChange,
+}: {
+  selected: string[]
+  onChange: (next: string[]) => void
+  editKeys: string[]
+  onEditChange: (next: string[]) => void
+}) {
   const toggle = (key: string) => {
-    onChange(selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key])
+    const next = selected.includes(key) ? selected.filter(k => k !== key) : [...selected, key]
+    onChange(next)
+    // Dropping view access for a page drops its edit grant too -- edit implies view.
+    if (!next.includes(key) && editKeys.includes(key)) onEditChange(editKeys.filter(k => k !== key))
+  }
+  const toggleEdit = (key: string) => {
+    onEditChange(editKeys.includes(key) ? editKeys.filter(k => k !== key) : [...editKeys, key])
   }
   return (
     <div className="grid grid-cols-2 gap-1 mt-2">
       {PAGE_OPTIONS.map(opt => (
-        <label key={opt.key} className="flex items-center gap-2 text-sm">
-          <Checkbox checked={selected.includes(opt.key)} onCheckedChange={() => toggle(opt.key)} />
-          {opt.label}
-        </label>
+        <div key={opt.key} className="flex items-center gap-3 text-sm">
+          <label className="flex items-center gap-2">
+            <Checkbox checked={selected.includes(opt.key)} onCheckedChange={() => toggle(opt.key)} />
+            {opt.label}
+          </label>
+          {selected.includes(opt.key) && EDITABLE_PAGE_KEYS.includes(opt.key) && (
+            <label className="flex items-center gap-1 text-xs text-gray-500">
+              <Checkbox checked={editKeys.includes(opt.key)} onCheckedChange={() => toggleEdit(opt.key)} />
+              Can edit
+            </label>
+          )}
+        </div>
       ))}
     </div>
   )
@@ -65,12 +94,14 @@ export default function UserManager() {
   const [contactEmail, setContactEmail] = useState('')
   const [employeeId, setEmployeeId] = useState('')
   const [password, setPassword] = useState('')
-  const [role, setRole] = useState<'owner' | 'employee'>('employee')
+  const [role, setRole] = useState<AppUser['role']>('employee')
   const [allowedPages, setAllowedPages] = useState<string[]>([])
+  const [editKeysNew, setEditKeysNew] = useState<string[]>([])
 
   // Which existing user row has its access editor / profile editor open
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editPages, setEditPages] = useState<string[]>([])
+  const [editKeys, setEditKeys] = useState<string[]>([])
   const [newPasswordById, setNewPasswordById] = useState<Record<string, string>>({})
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
   const [editProfile, setEditProfile] = useState({ fullName: '', employeeId: '', contactEmail: '' })
@@ -107,10 +138,11 @@ export default function UserManager() {
           employee_id: employeeId.trim() || undefined,
           role,
           allowed_pages: allowedPages,
+          page_edit_keys: editKeysNew,
         }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to create user.')
-      setUsername(''); setFullName(''); setContactEmail(''); setEmployeeId(''); setPassword(''); setRole('employee'); setAllowedPages([])
+      setUsername(''); setFullName(''); setContactEmail(''); setEmployeeId(''); setPassword(''); setRole('employee'); setAllowedPages([]); setEditKeysNew([])
       await fetchUsers()
     } catch (e: any) {
       setError(e.message)
@@ -136,14 +168,21 @@ export default function UserManager() {
   const openEditAccess = (u: AppUser) => {
     setEditingId(u.id)
     setEditPages(u.allowed_pages)
+    setEditKeys(u.page_edit_keys)
   }
 
   const saveAccess = async (id: string) => {
     if (busyRef.current) return
+    setError('')
     busyRef.current = true
     setBusy(true)
     try {
-      await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ allowed_pages: editPages }) })
+      const res = await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ allowed_pages: editPages, page_edit_keys: editKeys }) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.error || 'Failed to save access. Changes were not saved.')
+        return
+      }
       setEditingId(null)
       await fetchUsers()
     } finally {
@@ -231,17 +270,18 @@ export default function UserManager() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
-            <select value={role} onChange={(e) => setRole(e.target.value as 'owner' | 'employee')} className="border p-2 w-full rounded">
+            <select value={role} onChange={(e) => setRole(e.target.value as AppUser['role'])} className="border p-2 w-full rounded">
               <option value="employee">Employee</option>
+              <option value="manager">Manager</option>
               <option value="owner">Owner</option>
             </select>
           </div>
         </div>
 
-        {role === 'employee' && (
+        {role !== 'owner' && (
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-600 mb-1">Page Access</label>
-            <PageAccessCheckboxes selected={allowedPages} onChange={setAllowedPages} />
+            <PageAccessCheckboxes selected={allowedPages} onChange={setAllowedPages} editKeys={editKeysNew} onEditChange={setEditKeysNew} />
           </div>
         )}
 
@@ -262,7 +302,7 @@ export default function UserManager() {
                 <div>
                   <div className="text-sm font-medium">{u.full_name || u.username || u.email}</div>
                   <div className="text-xs text-gray-500">
-                    {u.username ? `ID: ${u.username}` : u.email} · {u.role === 'owner' ? 'Owner' : 'Employee'}
+                    {u.username ? `ID: ${u.username}` : u.email} · {ROLE_LABELS[u.role]}
                     {u.employee_id && <> · Emp #{u.employee_id}</>}
                     {!u.is_active && <span className="text-red-500"> · Inactive</span>}
                   </div>
@@ -271,7 +311,7 @@ export default function UserManager() {
                   <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
                     Edit name / ID
                   </button>
-                  {u.role === 'employee' && (
+                  {u.role !== 'owner' && (
                     <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
                       Edit access
                     </button>
@@ -325,7 +365,7 @@ export default function UserManager() {
 
               {editingId === u.id && (
                 <div className="mt-2 border-t pt-2">
-                  <PageAccessCheckboxes selected={editPages} onChange={setEditPages} />
+                  <PageAccessCheckboxes selected={editPages} onChange={setEditPages} editKeys={editKeys} onEditChange={setEditKeys} />
                   <div className="flex gap-2 mt-2">
                     <button onClick={() => saveAccess(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
                       Save Access

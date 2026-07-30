@@ -1,14 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 
-// Purchase Orders carry vendor/cost/GST data end-to-end -- owner-only, no employee access.
+// Purchase Orders carry vendor/cost/GST data end-to-end -- no employee access. Managers
+// may view (needed to approve/submit) but only owners can create/edit.
 // ---------- GET (list) ----------
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!isManagerOrAbove(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const statusRaw = searchParams.get('status')

@@ -8,6 +8,13 @@ const ALLOWED_PAGE_KEYS = [
   'live_stock', 'invoices', 'customers', 'activities',
 ]
 
+// Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches
+// profile_page_actions.page_key's CHECK constraint exactly. See app/api/users/[id]/route.ts
+// for why 'dashboard'/'pending_tasks' are excluded here but not from ALLOWED_PAGE_KEYS.
+const EDITABLE_PAGE_KEYS = [
+  'new_entry', 'accessories', 'repair_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities',
+]
+
 // ---------- GET: owner lists every user (auth + profile info combined) ----------
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -22,6 +29,17 @@ export async function GET(req: NextRequest) {
 
   if (profileErr) return NextResponse.json({ error: profileErr.message }, { status: 500 })
 
+  const { data: editRows } = await supabaseAdmin
+    .from('profile_page_actions')
+    .select('profile_id, page_key')
+    .eq('can_edit', true)
+  const editKeysByProfile = new Map<string, string[]>()
+  for (const row of editRows || []) {
+    const list = editKeysByProfile.get(row.profile_id) || []
+    list.push(row.page_key)
+    editKeysByProfile.set(row.profile_id, list)
+  }
+
   const profileById = new Map(profiles.map(p => [p.id, p]))
   const users = authList.users
     .map(u => {
@@ -34,6 +52,7 @@ export async function GET(req: NextRequest) {
         role: profile.role,
         is_active: profile.is_active,
         allowed_pages: profile.allowed_pages || [],
+        page_edit_keys: editKeysByProfile.get(u.id) || [],
         username: profile.username,
         contact_email: profile.contact_email,
         employee_id: profile.employee_id,
@@ -55,7 +74,7 @@ export async function POST(req: NextRequest) {
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
-  const { username, password, full_name, role, allowed_pages, contact_email, employee_id } = body
+  const { username, password, full_name, role, allowed_pages, page_edit_keys, contact_email, employee_id } = body
 
   const trimmedUsername = username?.trim() || ''
   if (!trimmedUsername) return NextResponse.json({ error: 'User ID is required.' }, { status: 400 })
@@ -63,9 +82,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'User ID cannot contain spaces or "@" — use a plain name like ShishirCH.' }, { status: 400 })
   }
   if (!password || password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })
-  if (!['owner', 'employee'].includes(role)) return NextResponse.json({ error: "Role must be 'owner' or 'employee'." }, { status: 400 })
+  if (!['owner', 'manager', 'employee'].includes(role)) return NextResponse.json({ error: "Role must be 'owner', 'manager', or 'employee'." }, { status: 400 })
 
   const pages: string[] = role === 'owner' ? [] : (Array.isArray(allowed_pages) ? allowed_pages.filter((k: string) => ALLOWED_PAGE_KEYS.includes(k)) : [])
+  const editKeys: string[] = role === 'owner' ? [] : (Array.isArray(page_edit_keys) ? page_edit_keys.filter((k: string) => EDITABLE_PAGE_KEYS.includes(k) && pages.includes(k)) : [])
 
   const { data: created, error: createErr } = await supabaseAdmin.auth.admin.createUser({
     email: usernameToSyntheticEmail(trimmedUsername),
@@ -95,6 +115,12 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.auth.admin.deleteUser(created.user.id)
     const message = profileErr.message.includes('profiles_username_unique_idx') ? 'That User ID is already taken.' : profileErr.message
     return NextResponse.json({ error: message }, { status: 500 })
+  }
+
+  if (editKeys.length > 0) {
+    await supabaseAdmin
+      .from('profile_page_actions')
+      .insert(editKeys.map((page_key) => ({ profile_id: created.user.id, page_key, can_edit: true })))
   }
 
   return NextResponse.json({ success: true, id: created.user.id }, { status: 201 })

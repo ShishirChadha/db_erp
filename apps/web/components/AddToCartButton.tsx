@@ -3,8 +3,17 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserSupabaseClient } from '@db/db/browser'
+import { sortSelectedUpgrades, type SelectedUpgrade } from '@/lib/upgrades'
 
-export function AddToCartButton({ skuId, disabled }: { skuId: string; disabled?: boolean }) {
+export function AddToCartButton({
+  skuId,
+  disabled,
+  selectedUpgrades = [],
+}: {
+  skuId: string
+  disabled?: boolean
+  selectedUpgrades?: SelectedUpgrade[]
+}) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [added, setAdded] = useState(false)
@@ -21,17 +30,23 @@ export function AddToCartButton({ skuId, disabled }: { skuId: string; disabled?:
         return
       }
 
+      const upgrades = sortSelectedUpgrades(selectedUpgrades)
+
+      // Must also match on selected_upgrades -- two cart lines for the same
+      // SKU with different upgrade choices are distinct lines, not the same
+      // one with a bumped quantity.
       const { data: existing } = await supabase
         .from('cart_items')
         .select('id, quantity')
         .eq('customer_id', user.id)
         .eq('sku_id', skuId)
+        .eq('selected_upgrades', upgrades)
         .maybeSingle()
 
       if (existing) {
         await supabase.from('cart_items').update({ quantity: existing.quantity + 1 }).eq('id', existing.id)
       } else {
-        await supabase.from('cart_items').insert({ customer_id: user.id, sku_id: skuId, quantity: 1 })
+        await supabase.from('cart_items').insert({ customer_id: user.id, sku_id: skuId, quantity: 1, selected_upgrades: upgrades })
       }
 
       setAdded(true)

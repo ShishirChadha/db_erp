@@ -18,6 +18,55 @@ const MONTHS = [
   'July', 'August', 'September', 'October', 'November', 'December',
 ]
 
+// A RAM/SSD upgrade is a real paid physical-modification service performed
+// by staff before shipping -- reserve_order_items reserves by sku_id alone
+// with no spec-awareness, so there's no automatic mechanism that could ever
+// hand the customer an already-upgraded physical unit. The honest way to
+// close that gap is a visible fulfillment task in the existing `activities`
+// system (never a new task table, per this project's convention), not
+// silence. A warranty_months upgrade needs no physical action -- it's just
+// the first real writer of asset_ledger's dormant warranty_* columns.
+async function fulfillSelectedUpgrades(
+  selectedUpgrades: any[],
+  assetId: string,
+  saleId: string,
+  assetLabel: string
+) {
+  const physicalUpgrades = selectedUpgrades.filter((u) => u?.field_name === 'ram' || u?.field_name === 'ssd')
+  const warrantyUpgrade = selectedUpgrades.find((u) => u?.field_name === 'warranty_months')
+
+  if (physicalUpgrades.length > 0) {
+    const { data: owner } = await supabaseAdmin.from('profiles').select('id').eq('role', 'owner').limit(1).maybeSingle()
+    if (owner) {
+      const summary = physicalUpgrades.map((u) => `${u.field_name.toUpperCase()} ${u.from_value} → ${u.to_value}`).join(', ')
+      await supabaseAdmin.from('activities').insert({
+        user_id: owner.id,
+        created_by: owner.id,
+        title: `Upgrade before shipping: ${summary} — ${assetLabel}`,
+        description: `Paid upgrade purchased on a website order (sale ${saleId}). Perform the physical upgrade before this unit ships.`,
+        priority: 'high',
+        related_type: 'sale',
+        related_id: saleId,
+      })
+    }
+  }
+
+  if (warrantyUpgrade) {
+    const months = parseInt(warrantyUpgrade.to_value, 10)
+    if (!isNaN(months)) {
+      const { data: currentAsset } = await supabaseAdmin.from('asset_ledger').select('warranty_type').eq('id', assetId).single()
+      await supabaseAdmin
+        .from('asset_ledger')
+        .update({
+          warranty_duration_months: months,
+          warranty_start_date: new Date().toISOString().slice(0, 10),
+          warranty_type: currentAsset?.warranty_type || 'in_house',
+        })
+        .eq('id', assetId)
+    }
+  }
+}
+
 export async function convertOrderToSales(orderId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: order } = await supabaseAdmin.from('orders').select('*').eq('id', orderId).single()
   if (!order) return { ok: false, error: 'Order not found' }
@@ -38,7 +87,7 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
 
   const { data: orderItems } = await supabaseAdmin
     .from('order_items')
-    .select('id, sku_id, quantity, unit_price, erp_sale_id')
+    .select('id, sku_id, quantity, unit_price, erp_sale_id, selected_upgrades')
     .eq('order_id', orderId)
   if (!orderItems || orderItems.length === 0) return { ok: false, error: 'No order items on this order' }
 
@@ -127,6 +176,10 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
 
       await supabaseAdmin.from('order_items').update({ erp_sale_id: sale.id }).eq('id', item.id)
       await supabaseAdmin.from('web_reservations').update({ released_at: now.toISOString() }).eq('id', reservation.id)
+
+      if (Array.isArray(item.selected_upgrades) && item.selected_upgrades.length > 0) {
+        await fulfillSelectedUpgrades(item.selected_upgrades, asset.id, sale.id, asset.asset_number || asset.serial_number || asset.id)
+      }
     } else {
       const { data: sale, error: saleErr } = await supabaseAdmin
         .from('sales')

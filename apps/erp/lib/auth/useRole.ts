@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
-export type Role = 'owner' | 'employee'
+export type Role = 'owner' | 'manager' | 'employee'
 
 export function useRole() {
   const [role, setRole] = useState<Role | null>(null)
@@ -38,11 +38,12 @@ export function useRole() {
   }, [])
 
   const isOwner = role === 'owner'
+  const isManagerOrAbove = role === 'owner' || role === 'manager'
   const hasPageAccess = (key: string | string[]) => {
     if (isOwner) return true
     const keys = Array.isArray(key) ? key : [key]
     return keys.some(k => allowedPages.includes(k))
   }
 
-  return { role, loading, isOwner, allowedPages, hasPageAccess }
+  return { role, loading, isOwner, isManagerOrAbove, allowedPages, hasPageAccess }
 }

@@ -1,23 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 
 // ---------- PATCH: update workflow/payment state on a repair job ----------
-// Operational fields (status/problem/solution) can be updated by whoever's doing the
-// work. Financial fields (payment status/amount/account/charge) are owner-only, same
-// restriction as everywhere else money is involved.
+// Operational fields (status/problem/solution) require the repair_jobs page-edit grant
+// (View-only staff can see the job but not change it -- see profile_page_actions /
+// canEditPage). Financial fields (payment status/amount/account/charge) are owner-only,
+// same restriction as everywhere else money is involved.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, 'repair_jobs')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
   const body = await req.json()
 
   const operationalFields = ['status', 'solution_description', 'problem_description']
   const financialFields = ['payment_status', 'amount_paid', 'amount_charged', 'payment_account']
+
+  const hasOperationalEdit = operationalFields.some((key) => body[key] !== undefined)
+  if (hasOperationalEdit && !canEditPage(sessionUser, 'repair_jobs')) {
+    return NextResponse.json({ error: 'View-only access.' }, { status: 403 })
+  }
 
   const updates: Record<string, any> = {}
   for (const key of operationalFields) {

@@ -121,6 +121,9 @@ export function SiteFooter() {
                 <Link href="/blog" className="hover:text-brand-orange">Blog</Link>
               </li>
               <li>
+                <Link href="/faq" className="hover:text-brand-orange">FAQ</Link>
+              </li>
+              <li>
                 <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="hover:text-brand-orange">
                   Bulk / business orders
                 </a>

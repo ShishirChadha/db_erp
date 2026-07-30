@@ -6,6 +6,7 @@ import { productImageUrl } from '@/lib/image-url'
 import { PriceTag } from './PriceTag'
 import { AvailabilityBadge } from './AvailabilityBadge'
 import { ConditionBadge } from './ConditionBadge'
+import { WishlistButton } from './WishlistButton'
 
 export function ProductCard({
   product,
@@ -51,6 +52,7 @@ export function ProductCard({
             <ConditionBadge grade={product.web_condition_grade} />
           </span>
         )}
+        <WishlistButton skuId={product.id} className="absolute bottom-2 right-2" />
       </div>
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         <p className="line-clamp-2 text-sm font-medium text-foreground">{title}</p>

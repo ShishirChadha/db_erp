@@ -72,7 +72,11 @@ export async function PATCH(
     updates.sale_total = basePrice + gstAmount
   }
 
-  for (const key of ['sale_type', 'payment_status', 'amount_paid', 'payment_account', 'sold_by', 'sale_date'] as const) {
+  // payment_status/amount_paid are no longer directly editable here -- they're
+  // trigger-derived from the sum of sale_payments (see POST/DELETE
+  // /api/sales/[id]/payments). Record an installment or delete an erroneous one
+  // there instead of overwriting these fields directly.
+  for (const key of ['sale_type', 'payment_account', 'sold_by', 'sale_date'] as const) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
 

@@ -26,6 +26,7 @@ import { useCustomOptions } from "@/lib/useCustomOptions";
 import { SearchableSelect } from "@/components/SearchableSelect";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
+import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
@@ -51,6 +52,15 @@ interface SaleDetail {
   history: { field_name: string; old_value: string | null; new_value: string | null; changed_at: string; reason: string | null }[];
 }
 
+interface SalePayment {
+  id: string;
+  amount: number;
+  payment_account: string | null;
+  note: string | null;
+  recorded_at: string;
+  recorded_by_name: string | null;
+}
+
 export function EditSaleDialog({
   saleId,
   onClose,
@@ -73,11 +83,17 @@ export function EditSaleDialog({
   const [saleDate, setSaleDate] = useState("");
   const [basePrice, setBasePrice] = useState(0);
   const [gstPercent, setGstPercent] = useState(18);
-  const [paymentStatus, setPaymentStatus] = useState("pending");
-  const [amountPaid, setAmountPaid] = useState(0);
   const [paymentAccount, setPaymentAccount] = useState("");
+  const [payments, setPayments] = useState<SalePayment[]>([]);
+  const [showAddPayment, setShowAddPayment] = useState(false);
 
   const { values: staffNames } = useCustomOptions("staff_names");
+
+  const loadPayments = () => {
+    apiFetch(`/api/sales/${saleId}/payments`).then(async (res) => {
+      if (res.ok) setPayments(await res.json());
+    });
+  };
 
   useEffect(() => {
     apiFetch(`/api/sales/${saleId}`).then(async (res) => {
@@ -90,15 +106,27 @@ export function EditSaleDialog({
         setSaleDate(data.sale_date?.slice(0, 10) || "");
         setBasePrice(data.sale_base_price);
         setGstPercent(data.sale_base_price ? Math.round((data.sale_gst / data.sale_base_price) * 10000) / 100 : 18);
-        setPaymentStatus(data.payment_status);
-        setAmountPaid(data.amount_paid);
         setPaymentAccount(data.payment_account || "");
       } else {
         setErr("Failed to load sale.");
       }
       setLoading(false);
     });
+    loadPayments();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleId]);
+
+  const deletePayment = async (paymentId: string) => {
+    if (!confirm("Remove this payment entry? This cannot be undone.")) return;
+    const res = await apiFetch(`/api/sales/${saleId}/payments/${paymentId}`, { method: "DELETE" });
+    if (res.ok) {
+      loadPayments();
+      apiFetch(`/api/sales/${saleId}`).then(async (r) => { if (r.ok) setSale(await r.json()); });
+    } else {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || "Failed to remove payment.");
+    }
+  };
 
   const { run: save, pending: saving } = useAsyncAction(async () => {
     setErr("");
@@ -109,8 +137,6 @@ export function EditSaleDialog({
       sale_date: saleDate,
       sale_base_price: basePrice,
       gst_percentage: saleType === "GST" ? gstPercent : 0,
-      payment_status: paymentStatus,
-      amount_paid: amountPaid,
       payment_account: paymentAccount || null,
     };
     let res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(body) });
@@ -207,24 +233,9 @@ export function EditSaleDialog({
               </div>
             )}
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>Payment Status</Label>
-                <Select value={paymentStatus} onValueChange={setPaymentStatus}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pending">Pending</SelectItem>
-                    <SelectItem value="partial">Partial</SelectItem>
-                    <SelectItem value="paid">Paid</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>Amount Paid</Label>
-                <Input type="number" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} className="text-right" />
-              </div>
-              <div>
-                <Label>Received Into</Label>
+                <Label>Received Into (default)</Label>
                 <Select value={paymentAccount} onValueChange={setPaymentAccount}>
                   <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
                   <SelectContent>
@@ -232,6 +243,40 @@ export function EditSaleDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div className="border rounded p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div>
+                  <Label>Payment</Label>
+                  <div className="text-sm capitalize">
+                    {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} of ₹{sale.sale_total?.toFixed(2)}
+                  </div>
+                </div>
+                {sale.payment_status !== "paid" && (
+                  <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPayment(true)}>
+                    Add Payment
+                  </Button>
+                )}
+              </div>
+              {payments.length > 0 && (
+                <ul className="text-xs border-t pt-2 divide-y max-h-32 overflow-y-auto">
+                  {payments.map((p) => (
+                    <li key={p.id} className="py-1 flex items-center justify-between gap-2">
+                      <div>
+                        ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ""}
+                        {p.note ? ` · ${p.note}` : ""}
+                        <div className="text-gray-400">
+                          {new Date(p.recorded_at).toLocaleString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ""}
+                        </div>
+                      </div>
+                      <button type="button" onClick={() => deletePayment(p.id)} className="text-red-600 underline shrink-0">
+                        Remove
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             {sale.history.length > 0 && (
@@ -282,6 +327,19 @@ export function EditSaleDialog({
           confirmLabel="Void Sale"
           error={voidErr}
           onConfirm={handleVoid}
+        />
+      )}
+
+      {showAddPayment && sale && (
+        <AddPaymentDialog
+          saleId={saleId}
+          balanceDue={sale.sale_total - sale.amount_paid}
+          onClose={() => setShowAddPayment(false)}
+          onSaved={() => {
+            loadPayments();
+            apiFetch(`/api/sales/${saleId}`).then(async (r) => { if (r.ok) setSale(await r.json()); });
+            onSaved();
+          }}
         />
       )}
     </Dialog>

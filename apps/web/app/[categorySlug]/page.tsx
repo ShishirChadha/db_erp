@@ -52,6 +52,17 @@ export default async function CategoryPage({
     ],
   };
 
+  const itemListJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: products.map((product, i) => ({
+      "@type": "ListItem",
+      position: i + 1,
+      url: `/product/${product.web_slug}`,
+      name: product.web_title || [product.brand, product.model_name].filter(Boolean).join(" "),
+    })),
+  };
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
       <script
@@ -59,6 +70,13 @@ export default async function CategoryPage({
         // eslint-disable-next-line react/no-danger
         dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }}
       />
+      {products.length > 0 && (
+        <script
+          type="application/ld+json"
+          // eslint-disable-next-line react/no-danger
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(itemListJsonLd) }}
+        />
+      )}
       <nav className="mb-4 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-brand-orange">Home</Link>
         <span className="mx-1.5">/</span>

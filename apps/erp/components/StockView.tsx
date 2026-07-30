@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
-import { useRouter, usePathname } from 'next/navigation'
+import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -15,6 +15,7 @@ import { ASSET_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
 import { ColumnToggle } from '@/components/ColumnToggle'
+import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 interface AssetRow {
@@ -40,6 +41,7 @@ interface AssetRow {
   vendor_name?: string
   purchased_by_type?: string
   customer_name?: string
+  sale_id?: string
   sale_total?: number
   invoice_finalized?: boolean
   invoice_number?: string
@@ -136,8 +138,16 @@ export default function StockView({
 }) {
   const router = useRouter()
   const pathname = usePathname()
+  const searchParams = useSearchParams()
   const { isOwner } = useRole()
-  const [tab, setTab] = useState<Tab>('current')
+  // Restores whichever tab was active before navigating away (Sell/Service/Intake's
+  // Back button lands on `${pathname}?tab=<tab>` -- see returnToPath below), instead of
+  // always defaulting back to Current.
+  const [tab, setTab] = useState<Tab>(() => {
+    const t = searchParams.get('tab')
+    return t === 'sold' || t === 'accessories' || t === 'sold_accessories' ? t : 'current'
+  })
+  const returnToPath = `${pathname}?tab=${tab}`
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [soldAccessories, setSoldAccessories] = useState<SoldAccessoryRow[]>([])
   const [accessoryStock, setAccessoryStock] = useState<AccessoryStockRow[]>([])
@@ -328,6 +338,7 @@ export default function StockView({
   const [pendingRowKey, setPendingRowKey] = useState<string | null>(null)
   const [forceDeleteAsset, setForceDeleteAsset] = useState<{ id: string; label: string } | null>(null)
   const [forceDeleteErr, setForceDeleteErr] = useState('')
+  const [addPaymentAsset, setAddPaymentAsset] = useState<{ saleId: string; balanceDue: number } | null>(null)
 
   const generateInvoice = async (saleAssetId: string) => {
     if (pendingRowKey) return
@@ -407,7 +418,7 @@ export default function StockView({
           </Link>
         ) : (
           <Link
-            href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(pathname)}`}
+            href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(returnToPath)}`}
             className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
           >
             + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
@@ -531,6 +542,15 @@ export default function StockView({
         />
       )}
 
+      {addPaymentAsset && (
+        <AddPaymentDialog
+          saleId={addPaymentAsset.saleId}
+          balanceDue={addPaymentAsset.balanceDue}
+          onClose={() => setAddPaymentAsset(null)}
+          onSaved={() => { fetchAssets(); fetchCounts() }}
+        />
+      )}
+
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
@@ -572,7 +592,7 @@ export default function StockView({
                     </td>
                   )}
                   <td className="border p-2">
-                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
+                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
                       Sell
                     </button>
                   </td>
@@ -664,9 +684,10 @@ export default function StockView({
                 {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
                 {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
                 {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
+                {tab === 'sold' && <th className="border p-2">Payment</th>}
                 {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
                 {isOwner && <th className="border p-2">Fix SKU</th>}
-                {(tab === 'current' || (tab === 'sold' && showServiceActions)) && <th className="border p-2">Actions</th>}
+                {(tab === 'current' || tab === 'sold') && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -715,6 +736,14 @@ export default function StockView({
                   {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
                   {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
                   {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
+                  {tab === 'sold' && (
+                    <td className="border p-2">
+                      <div className="capitalize">{asset.payment_status || '—'}</div>
+                      {typeof asset.amount_paid === 'number' && (
+                        <div className="text-xs text-gray-500 tabular-nums">₹{asset.amount_paid.toFixed(2)} of ₹{(asset.sale_total || 0).toFixed(2)}</div>
+                      )}
+                    </td>
+                  )}
                   {isOwner && tab === 'sold' && visibleColumns.invoice && (
                     <td className="border p-2 text-center">
                       {asset.invoice_finalized ? (
@@ -755,22 +784,32 @@ export default function StockView({
                   {tab === 'current' && (
                     <td className="border p-2 space-x-2">
                       {['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
                           Sell
                         </button>
                       )}
                       {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-blue-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">
                           Repair
                         </button>
                       )}
                     </td>
                   )}
-                  {tab === 'sold' && showServiceActions && (
-                    <td className="border p-2">
-                      <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-amber-700 underline text-xs">
-                        Return
-                      </button>
+                  {tab === 'sold' && (
+                    <td className="border p-2 space-x-2">
+                      {asset.sale_id && asset.payment_status !== 'paid' && (
+                        <button
+                          onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
+                          className="text-green-700 underline text-xs"
+                        >
+                          Add Payment
+                        </button>
+                      )}
+                      {showServiceActions && (
+                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-amber-700 underline text-xs">
+                          Return
+                        </button>
+                      )}
                     </td>
                   )}
                 </tr>
@@ -828,7 +867,7 @@ export default function StockView({
                 </div>
               )}
               <div className="pt-1 border-t">
-                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">
+                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
                   Sell
                 </button>
               </div>
@@ -873,6 +912,10 @@ export default function StockView({
                 <div className="text-xs text-gray-600 space-y-0.5">
                   <div>Sold {asset.sold_at?.slice(0, 10)} to {asset.customer_name || '—'}</div>
                   <div className="tabular-nums">₹{asset.sale_total?.toFixed(2)}</div>
+                  <div className="capitalize">
+                    {asset.payment_status || '—'}
+                    {typeof asset.amount_paid === 'number' && ` · ₹${asset.amount_paid.toFixed(2)} of ₹${(asset.sale_total || 0).toFixed(2)}`}
+                  </div>
                   {isOwner && (
                     <div>{asset.invoice_finalized ? <span className="text-green-600">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
                   )}
@@ -889,13 +932,21 @@ export default function StockView({
                   <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">Fix SKU</button>
                 )}
                 {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-green-700 underline text-xs">Sell</button>
+                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">Sell</button>
                 )}
                 {tab === 'current' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-blue-700 underline text-xs">Repair</button>
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">Repair</button>
+                )}
+                {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
+                  <button
+                    onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
+                    className="text-green-700 underline text-xs"
+                  >
+                    Add Payment
+                  </button>
                 )}
                 {tab === 'sold' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(pathname)}`)} className="text-amber-700 underline text-xs">Return</button>
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-amber-700 underline text-xs">Return</button>
                 )}
                 {isOwner && tab === 'current' && !asset.po_id && (
                   <button onClick={() => deleteAsset(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-red-600 underline text-xs disabled:opacity-50">Delete</button>

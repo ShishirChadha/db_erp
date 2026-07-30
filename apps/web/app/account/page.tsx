@@ -15,9 +15,14 @@ export default async function AccountPage() {
         <p className="mt-1"><span className="text-muted-foreground">Email:</span> {session.email}</p>
       </div>
       <div className="mt-6 flex items-center justify-between">
-        <Link href="/account/orders" className="text-sm font-medium text-foreground underline">
-          Order history
-        </Link>
+        <div className="flex gap-4">
+          <Link href="/account/orders" className="text-sm font-medium text-foreground underline">
+            Order history
+          </Link>
+          <Link href="/account/wishlist" className="text-sm font-medium text-foreground underline">
+            Wishlist
+          </Link>
+        </div>
         <LogoutButton />
       </div>
     </main>

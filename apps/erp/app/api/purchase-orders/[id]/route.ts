@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals } from '@/lib/purchase-utils'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { isSerializedCategory } from '@/lib/sku-categories'
 
 export async function GET(
@@ -9,7 +9,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!isManagerOrAbove(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
 

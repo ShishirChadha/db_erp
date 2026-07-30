@@ -76,7 +76,7 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  const redacted = redactManyForRole(data || [], 'sku_master', sessionUser.role)
+  const redacted = await redactManyForRole(data || [], 'sku_master', sessionUser.role)
   if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
   return NextResponse.json(redacted)
 }
@@ -118,7 +118,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 })
   }
 
-  const sku = redactForRole(result.sku, 'sku_master', sessionUser.role)
+  const sku = await redactForRole(result.sku, 'sku_master', sessionUser.role)
   if (!result.created) {
     return NextResponse.json(
       { sku, message: 'Exact match found, returning existing variant' },
