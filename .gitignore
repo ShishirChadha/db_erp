@@ -1,8 +1,9 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
-# dependencies
-/node_modules
-/.pnp
+# dependencies -- unanchored so this also covers apps/*/node_modules and packages/*/node_modules
+# in the npm-workspaces monorepo layout, not just the workspace root's
+node_modules
+.pnp
 .pnp.*
 .yarn/*
 !.yarn/patches
@@ -11,14 +12,17 @@
 !.yarn/versions
 
 # testing
-/coverage
+coverage
 
-# next.js
-/.next/
-/out/
+# next.js -- unanchored for the same reason (each app under apps/* has its own .next/out)
+.next/
+out/
 
 # production
-/build
+build
+
+# turborepo
+.turbo
 
 # misc
 .DS_Store

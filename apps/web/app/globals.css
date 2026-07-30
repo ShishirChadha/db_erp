@@ -1,0 +1,127 @@
+@import "tailwindcss";
+@import "@db/ui/tokens.css";
+@source "../../../packages/ui/src/**/*.{ts,tsx}";
+
+/*
+ * Storefront identity layer -- overrides the neutral admin-tool tokens
+ * inherited from @db/ui (shared with the internal ERP dashboard) with
+ * DigitalBluez's actual brand colors, sampled directly from the logo
+ * (dbz-logo.png: orange ~#f57e2b, blue ~#37a3dc) rather than the paler
+ * approximation used on the WordPress marketing site. This file is the
+ * only place that should ever reference these hexes -- components consume
+ * them via the CSS variables / Tailwind utilities below.
+ */
+
+@theme inline {
+  --color-brand-orange: var(--brand-orange);
+  --color-brand-orange-dark: var(--brand-orange-dark);
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-blue-dark: var(--brand-blue-dark);
+  --font-sans: var(--font-body);
+  --font-heading: var(--font-display);
+}
+
+:root {
+  --brand-orange: #f2672a;
+  --brand-orange-dark: #d8551f;
+  --brand-blue: #2b93d1;
+  --brand-blue-dark: #1f7cb3;
+
+  --background: #fcfaf7;
+  --foreground: #1c1c1e;
+  --card: #ffffff;
+  --card-foreground: #1c1c1e;
+  --popover: #ffffff;
+  --popover-foreground: #1c1c1e;
+
+  --primary: var(--brand-orange);
+  --primary-foreground: #ffffff;
+  --secondary: #f3efe9;
+  --secondary-foreground: #1c1c1e;
+  --muted: #f1ede6;
+  --muted-foreground: #5b5750;
+  --accent: #eaf4fb;
+  --accent-foreground: var(--brand-blue-dark);
+  --destructive: oklch(0.577 0.245 27.325);
+
+  --border: #e8e4dd;
+  --input: #e8e4dd;
+  --ring: var(--brand-blue);
+  --radius: 0.85rem;
+}
+
+.dark {
+  --brand-orange: #ff8a45;
+  --brand-orange-dark: #f2672a;
+  --brand-blue: #4db2e8;
+  --brand-blue-dark: #2b93d1;
+
+  --background: #16171a;
+  --foreground: #f2f1ee;
+  --card: #1f2023;
+  --card-foreground: #f2f1ee;
+  --popover: #1f2023;
+  --popover-foreground: #f2f1ee;
+
+  --primary: var(--brand-orange);
+  --primary-foreground: #16171a;
+  --secondary: #26272b;
+  --secondary-foreground: #f2f1ee;
+  --muted: #202124;
+  --muted-foreground: #a9a6a0;
+  --accent: #16232b;
+  --accent-foreground: var(--brand-blue);
+  --destructive: oklch(0.704 0.191 22.216);
+
+  --border: #313236;
+  --input: #313236;
+  --ring: var(--brand-blue);
+}
+
+@layer base {
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.7s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Staggered reveal for grids -- each direct child fades up in sequence
+   rather than popping in all at once. Capped at 12 children; anything
+   beyond that shares the last delay, which reads fine in practice. */
+.stagger > * {
+  animation: fade-up 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+.stagger > *:nth-child(1) { animation-delay: 0ms; }
+.stagger > *:nth-child(2) { animation-delay: 45ms; }
+.stagger > *:nth-child(3) { animation-delay: 90ms; }
+.stagger > *:nth-child(4) { animation-delay: 135ms; }
+.stagger > *:nth-child(5) { animation-delay: 180ms; }
+.stagger > *:nth-child(6) { animation-delay: 225ms; }
+.stagger > *:nth-child(7) { animation-delay: 270ms; }
+.stagger > *:nth-child(8) { animation-delay: 315ms; }
+.stagger > *:nth-child(n + 9) { animation-delay: 360ms; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-up,
+  .stagger > * {
+    animation: none;
+  }
+}
