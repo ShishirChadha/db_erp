@@ -13,6 +13,7 @@ export default function LiveStockPage() {
         title="Live Stock"
         subtitle="Stock entered through Stock Intake and Sell. Always up to date for checking what's available or confirming a sale/warranty."
         sourceMode="employee_intake"
+        pageKey="live_stock"
         showServiceActions
       />
     </RequirePageAccess>

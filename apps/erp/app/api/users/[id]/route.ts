@@ -3,8 +3,8 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 const ALLOWED_PAGE_KEYS = [
-  'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'sku_master',
-  'live_stock', 'invoices', 'customers', 'activities', 'sales',
+  'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
+  'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock',
 ]
 
 // Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches
@@ -12,7 +12,7 @@ const ALLOWED_PAGE_KEYS = [
 // are nav/landing keys with no mutable resource behind them, so they're valid for
 // allowed_pages (visibility) but must never be written to profile_page_actions.
 const EDITABLE_PAGE_KEYS = [
-  'new_entry', 'accessories', 'repair_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales',
+  'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock',
 ]
 
 // ---------- PATCH: owner updates role/allowed_pages/is_active/full_name/contact_email/employee_id, and/or resets a password ----------

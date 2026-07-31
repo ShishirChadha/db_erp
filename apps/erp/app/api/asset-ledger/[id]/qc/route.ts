@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -15,11 +15,12 @@ export async function GET(
   // (web customers only ever have a `customer_profiles` row).
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['live_stock', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { data: asset, error: assetErr } = await supabaseAdmin
     .from('asset_ledger')
     .select(`
-      id, asset_number, serial_number, status,
+      id, asset_number, serial_number, status, created_at, notes,
       qc_grade, qc_status, qc_notes, qc_by, qc_at,
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
       battery_health_percent, estimated_backup_hours,
@@ -78,6 +79,7 @@ export async function PUT(
 
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['live_stock', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')

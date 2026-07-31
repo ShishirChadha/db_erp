@@ -76,8 +76,16 @@ const menuGroups = [
     icon: Barcode,
     children: [
       { href: '/dashboard/sku-master', label: 'SKU Master', pageKey: 'sku_master' },
+      { href: '/dashboard/stock', label: 'Stock / Assets (Main ERP)', pageKey: 'stock' },
+    ],
+  },
+  {
+    label: 'Live Stock',
+    icon: Laptop,
+    children: [
       { href: '/dashboard/live-stock', label: 'Live Stock', pageKey: 'live_stock' },
-      { href: '/dashboard/stock', label: 'Stock / Assets (Main ERP)', ownerOnly: true },
+      { href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
+      { href: '/dashboard/replacement-jobs', label: 'Replacement Jobs', pageKey: 'replacement_jobs' },
     ],
   },
   {
@@ -101,7 +109,6 @@ const menuGroups = [
     label: 'Service',
     icon: Wrench,
     children: [
-      { href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
       { href: '/dashboard/rma', label: 'RMA (Vendor Returns)', ownerOnly: true },
     ],
   },
@@ -147,6 +154,11 @@ function SidebarContent({
   const canSee = (item: { ownerOnly?: boolean; pageKey?: string }) =>
     (isOwner || !item.ownerOnly) && (isOwner || !item.pageKey || allowedPages.includes(item.pageKey))
 
+  // Some child links carry a query string (e.g. Replacement/Return deep-linking into
+  // the Service form) -- usePathname() never includes it, so active-state matching
+  // compares against just the path portion of a child's href.
+  const childPath = (href: string) => href.split('?')[0]
+
   const visibleGroups = useMemo(
     () => menuGroups
       .filter(canSee)
@@ -166,7 +178,7 @@ function SidebarContent({
     const initial: Record<string, boolean> = {}
     menuGroups.forEach(group => {
       if (group.children) {
-        initial[group.label] = group.children.some(child => pathname.startsWith(child.href))
+        initial[group.label] = group.children.some(child => pathname.startsWith(childPath(child.href)))
       }
     })
     return initial
@@ -178,7 +190,7 @@ function SidebarContent({
       const next = { ...prev }
       menuGroups.forEach(group => {
         if (group.children) {
-          const isActive = group.children.some(child => pathname.startsWith(child.href))
+          const isActive = group.children.some(child => pathname.startsWith(childPath(child.href)))
           if (isActive) next[group.label] = true
         }
       })

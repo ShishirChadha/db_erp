@@ -12,7 +12,7 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUser = await getSessionUser(req)
-  if (!hasPageAccess(sessionUser, ['live_stock', 'sales'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, ['live_stock', 'sales', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
   const { data, error } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
@@ -51,7 +51,7 @@ export async function PATCH(
 ) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock') && !canEditPage(sessionUser, 'sales')) {
+  if (!isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock') && !canEditPage(sessionUser, 'sales') && !canEditPage(sessionUser, 'stock')) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 

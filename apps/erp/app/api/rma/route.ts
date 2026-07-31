@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { processCustomerReturn } from '@/lib/rma'
 
 // ---------- GET: list RMA events ----------
 // Owner-only -- to_vendor rows join vendor company names, which employees never see.
@@ -53,6 +54,30 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Only the owner can send a unit back to a vendor.' }, { status: 403 })
   }
 
+  // from_customer shares its unit-reversion + bundled-accessory-reversal logic with
+  // Replacement's old-unit leg (see lib/rma.ts) -- to_vendor (faulty stock, never sold)
+  // has no linked sale to reverse against, so it keeps its own simpler inline path below.
+  if (direction === 'from_customer') {
+    const result = await processCustomerReturn(asset_id, {
+      reason,
+      notes,
+      userId: user.id,
+      eventDate: event_date,
+    })
+    if (result.error) return NextResponse.json({ error: result.error }, { status: result.status || 500 })
+
+    const { data: event } = await supabaseAdmin
+      .from('asset_rma_events')
+      .select('*')
+      .eq('asset_id', asset_id)
+      .eq('direction', 'from_customer')
+      .order('opened_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    return NextResponse.json(event, { status: 201 })
+  }
+
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
     .select('status, sku_id')
@@ -61,17 +86,10 @@ export async function POST(req: NextRequest) {
 
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
 
-  // A vendor return is for stock that failed QC and never reached a customer; a
-  // customer return is for a unit that was actually sold.
-  if (direction === 'to_vendor' && asset.status !== 'faulty') {
+  // A vendor return is for stock that failed QC and never reached a customer.
+  if (asset.status !== 'faulty') {
     return NextResponse.json(
       { error: `Only 'faulty' assets can be sent back to a vendor (current status: ${asset.status})` },
-      { status: 400 }
-    )
-  }
-  if (direction === 'from_customer' && asset.status !== 'sold') {
-    return NextResponse.json(
-      { error: `Only 'sold' assets can have a customer return (current status: ${asset.status})` },
       { status: 400 }
     )
   }
@@ -86,7 +104,7 @@ export async function POST(req: NextRequest) {
       asset_id,
       direction,
       reason,
-      vendor_id: direction === 'to_vendor' ? vendor_id || null : null,
+      vendor_id: vendor_id || null,
       notes: notes || null,
       created_by: user.id,
       ...(openedAt ? { opened_at: openedAt } : {}),
@@ -97,27 +115,7 @@ export async function POST(req: NextRequest) {
   if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
 
   // to_vendor: unit leaves the building, pending vendor resolution.
-  // from_customer: unit re-enters the QC funnel exactly like a fresh receipt, since it
-  // needs to be re-inspected before it can be resold or sent back to the vendor itself.
-  const newAssetStatus = direction === 'to_vendor' ? 'rma_sent' : 'qc_pending'
-  const updates: Record<string, any> = { status: newAssetStatus }
-  if (direction === 'from_customer') updates.qc_status = 'pending'
-
-  await supabaseAdmin.from('asset_ledger').update(updates).eq('id', asset_id)
-
-  // The original sale wrote a -1 'sale' movement (app/api/sales-entry/route.ts) that
-  // nothing downstream ever offsets -- without this, sku_master.quantity_in_stock
-  // (trigger-maintained off stock_movements) permanently understates stock by 1 every
-  // time a customer returns a unit. Same 'adjustment' idiom used elsewhere in the app.
-  if (direction === 'from_customer' && asset.sku_id) {
-    await supabaseAdmin.from('stock_movements').insert({
-      sku_id: asset.sku_id,
-      movement_type: 'adjustment',
-      quantity_change: 1,
-      notes: `Customer return -- ${reason}`,
-      created_by: user.id,
-    })
-  }
+  await supabaseAdmin.from('asset_ledger').update({ status: 'rma_sent' }).eq('id', asset_id)
 
   return NextResponse.json(event, { status: 201 })
 }

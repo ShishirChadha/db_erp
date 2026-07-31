@@ -11,12 +11,14 @@ const FALLBACK_ORDER: { key: string; path: string }[] = [
   { key: 'new_entry', path: '/dashboard/entry' },
   { key: 'accessories', path: '/dashboard/accessories' },
   { key: 'repair_jobs', path: '/dashboard/repair-jobs' },
+  { key: 'replacement_jobs', path: '/dashboard/replacement-jobs' },
   { key: 'live_stock', path: '/dashboard/live-stock' },
   { key: 'sku_master', path: '/dashboard/sku-master' },
   { key: 'invoices', path: '/dashboard/invoices' },
   { key: 'customers', path: '/dashboard/customers' },
   { key: 'activities', path: '/dashboard/activities' },
   { key: 'sales', path: '/dashboard/sales' },
+  { key: 'stock', path: '/dashboard/stock' },
 ]
 
 // Page-level guard for pages gated by a specific page-key in profiles.allowed_pages

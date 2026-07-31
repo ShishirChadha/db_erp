@@ -16,6 +16,7 @@ import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
 import { ColumnToggle } from '@/components/ColumnToggle'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
+import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
 interface AssetRow {
@@ -129,17 +130,25 @@ export default function StockView({
   title,
   subtitle,
   sourceMode,
+  pageKey,
   showServiceActions = false,
 }: {
   title: string
   subtitle: string
   sourceMode: 'employee_intake' | 'exclude_employee_intake'
+  pageKey: 'live_stock' | 'stock'
   showServiceActions?: boolean
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { isOwner } = useRole()
+  const { isOwner, canEditPage } = useRole()
+  // "Fix SKU" is the one action here that's already open to any authenticated staff at
+  // the API level (app/api/asset-ledger/[id]/reassign-sku has no owner-gating) -- gate it
+  // by this page's edit grant instead of isOwner. Cost/vendor/PO visibility and
+  // destructive/financial actions (delete, PO creation, invoice generation) stay
+  // isOwner-only below, untouched.
+  const canEdit = isOwner || canEditPage(pageKey)
   // Restores whichever tab was active before navigating away (Sell/Service/Intake's
   // Back button lands on `${pathname}?tab=<tab>` -- see returnToPath below), instead of
   // always defaulting back to Current.
@@ -174,6 +183,7 @@ export default function StockView({
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [showPoForm, setShowPoForm] = useState(false)
   const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
+  const [editSaleId, setEditSaleId] = useState<string | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -551,6 +561,14 @@ export default function StockView({
         />
       )}
 
+      {editSaleId && (
+        <EditSaleDialog
+          saleId={editSaleId}
+          onClose={() => setEditSaleId(null)}
+          onSaved={() => { fetchSoldAccessories(); fetchCounts() }}
+        />
+      )}
+
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
@@ -617,10 +635,11 @@ export default function StockView({
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Sold By</th>
                 <th className="border p-2">Invoice</th>
+                {canEdit && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {soldAccessories.length === 0 && <EmptyTableRow colSpan={11} message="No accessory sales found." />}
+              {soldAccessories.length === 0 && <EmptyTableRow colSpan={12} message="No accessory sales found." />}
               {soldAccessories.map((sale, idx) => (
                 <tr key={sale.id}>
                   <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -641,6 +660,11 @@ export default function StockView({
                   <td className="border p-2">
                     {sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : '—'}
                   </td>
+                  {canEdit && (
+                    <td className="border p-2">
+                      <button onClick={() => setEditSaleId(sale.id)} className="text-blue-600 underline text-xs">Edit</button>
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -686,7 +710,7 @@ export default function StockView({
                 {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
                 {tab === 'sold' && <th className="border p-2">Payment</th>}
                 {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
-                {isOwner && <th className="border p-2">Fix SKU</th>}
+                {canEdit && <th className="border p-2">Fix SKU</th>}
                 {(tab === 'current' || tab === 'sold') && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
@@ -703,7 +727,7 @@ export default function StockView({
                   )}
                   <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                   <td className="border p-2">
-                    <Link href={`/dashboard/stock/${asset.id}`} className="text-blue-600 underline">
+                    <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-blue-600 underline">
                       {identifier(asset)}
                     </Link>
                     {asset.under_repair_job_number && (
@@ -756,12 +780,12 @@ export default function StockView({
                       )}
                     </td>
                   )}
-                  {isOwner && (
+                  {canEdit && (
                     <td className="border p-2 space-x-2">
                       <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">
                         Fix SKU
                       </button>
-                      {tab === 'current' && !asset.po_id && (
+                      {isOwner && tab === 'current' && !asset.po_id && (
                         <button
                           onClick={() => deleteAsset(asset, identifier(asset))}
                           disabled={!!pendingRowKey}
@@ -771,7 +795,7 @@ export default function StockView({
                           Delete
                         </button>
                       )}
-                      {tab === 'sold' && (
+                      {isOwner && tab === 'sold' && (
                         <button
                           onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }}
                           className="text-red-600 underline text-xs"
@@ -839,6 +863,11 @@ export default function StockView({
                 {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
                 <div>{sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
               </div>
+              {canEdit && (
+                <div className="pt-1 border-t">
+                  <button onClick={() => setEditSaleId(sale.id)} className="text-blue-600 underline text-xs">Edit</button>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -884,7 +913,7 @@ export default function StockView({
             <div key={asset.id} className="border rounded-lg p-3 space-y-2">
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <Link href={`/dashboard/stock/${asset.id}`} className="text-blue-600 underline font-medium break-all">
+                  <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-blue-600 underline font-medium break-all">
                     {identifier(asset)}
                   </Link>
                   <div className="text-xs text-gray-500">{asset.sku_code}</div>
@@ -928,7 +957,7 @@ export default function StockView({
                 </div>
               )}
               <div className="flex flex-wrap gap-3 pt-1 border-t">
-                {isOwner && (
+                {canEdit && (
                   <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">Fix SKU</button>
                 )}
                 {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (

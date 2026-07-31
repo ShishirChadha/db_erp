@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { useParams, useRouter } from 'next/navigation'
+import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -47,6 +47,8 @@ interface AssetDetail {
   asset_number: string
   serial_number: string | null
   status: string
+  created_at: string | null
+  notes: string | null
   qc_grade: string | null
   qc_status: string
   qc_notes: string | null
@@ -78,9 +80,17 @@ interface AssetDetail {
 function AssetQCPage() {
   const params = useParams()
   const router = useRouter()
+  const searchParams = useSearchParams()
   const assetId = params.id as string
   const { isOwner, canEditPage } = useRole()
-  const canEditLiveStock = isOwner || canEditPage('live_stock')
+  // Reachable from both Live Stock and the main-ERP Stock page (same route), so either
+  // page's edit grant unlocks correcting an asset's serial/asset number here.
+  const canEditLiveStock = isOwner || canEditPage('live_stock') || canEditPage('stock')
+  // Preserves which tab (current/sold/accessories/sold_accessories) the user came from --
+  // plain browser-history back() would land on the bare list URL and lose that, same
+  // pattern already used by app/dashboard/entry/sell/page.tsx.
+  const returnTo = searchParams.get('return_to')
+  const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/live-stock'
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
@@ -109,11 +119,14 @@ function AssetQCPage() {
   const [newReason, setNewReason] = useState('')
   const [savingAdjustment, setSavingAdjustment] = useState(false)
 
-  // Owner-only serial/asset number correction. Editing a sold/invoiced/returned unit
-  // requires a typed reason (see PUT /api/stock's confirm_override path).
+  // Edit-grant-gated unit correction (serial/asset number, entry date, notes). Editing a
+  // sold/invoiced/returned unit additionally requires a typed reason (see PUT /api/stock's
+  // confirm_override path).
   const [editingTag, setEditingTag] = useState(false)
   const [assetNumberInput, setAssetNumberInput] = useState('')
   const [serialNumberInput, setSerialNumberInput] = useState('')
+  const [entryDateInput, setEntryDateInput] = useState('')
+  const [notesInput, setNotesInput] = useState('')
   const [tagReason, setTagReason] = useState('')
   const [tagErr, setTagErr] = useState('')
   const [savingTag, setSavingTag] = useState(false)
@@ -170,6 +183,8 @@ function AssetQCPage() {
         id: assetId,
         asset_number: assetNumberInput || null,
         serial_number: serialNumberInput || null,
+        created_at: entryDateInput || null,
+        notes: notesInput || null,
       }
       if (lockedStatus) {
         body.confirm_override = true
@@ -211,6 +226,8 @@ function AssetQCPage() {
       setNotes(data.qc_notes || '')
       setAssetNumberInput(data.asset_number || '')
       setSerialNumberInput(data.serial_number || '')
+      setEntryDateInput(data.created_at ? data.created_at.slice(0, 10) : '')
+      setNotesInput(data.notes || '')
       setBatteryHealthPercent(data.battery_health_percent != null ? String(data.battery_health_percent) : '')
       setEstimatedBackupHours(data.estimated_backup_hours != null ? String(data.estimated_backup_hours) : '')
       setScreenCondition(data.screen_condition || '')
@@ -307,7 +324,7 @@ function AssetQCPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.back()} className="text-sm text-gray-500 mb-2">&larr; Back</button>
+      <button onClick={() => router.push(backHref)} className="text-sm text-gray-500 mb-2">&larr; Back</button>
       <h1 className="text-2xl font-bold mb-1">{asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}</h1>
       <p className="text-gray-600 mb-1">
         {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
@@ -340,7 +357,7 @@ function AssetQCPage() {
       {canEditLiveStock && (
         <div className="border rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold">Serial / Asset Number</h2>
+            <h2 className="font-semibold">Unit Details</h2>
             {!editingTag && (
               <button onClick={() => setEditingTag(true)} className="text-blue-600 underline text-sm">Edit</button>
             )}
@@ -372,6 +389,24 @@ function AssetQCPage() {
                     className="border p-2 w-full rounded"
                   />
                 </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Entry Date</label>
+                  <input
+                    type="date"
+                    value={entryDateInput}
+                    onChange={(e) => setEntryDateInput(e.target.value)}
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium mb-1">Notes</label>
+                  <textarea
+                    value={notesInput}
+                    onChange={(e) => setNotesInput(e.target.value)}
+                    className="border p-2 w-full rounded"
+                    rows={2}
+                  />
+                </div>
               </div>
               {lockedStatus && (
                 <div>
@@ -401,6 +436,8 @@ function AssetQCPage() {
                     setTagReason('')
                     setAssetNumberInput(asset.asset_number || '')
                     setSerialNumberInput(asset.serial_number || '')
+                    setEntryDateInput(asset.created_at ? asset.created_at.slice(0, 10) : '')
+                    setNotesInput(asset.notes || '')
                   }}
                   className="px-3 py-1.5 border rounded text-sm"
                 >
@@ -409,14 +446,18 @@ function AssetQCPage() {
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-600">
-              {asset.asset_number || '—'} · {asset.serial_number || '—'}
-            </p>
+            <div className="text-sm text-gray-600 space-y-1">
+              <p>{asset.asset_number || '—'} · {asset.serial_number || '—'}</p>
+              <p className="text-xs text-gray-500">
+                Entry: {asset.created_at?.slice(0, 10) || '—'}
+                {asset.notes && <> · {asset.notes}</>}
+              </p>
+            </div>
           )}
         </div>
       )}
 
-      {asset.sale_id && (isOwner || canEditPage('live_stock') || canEditPage('sales')) && (
+      {asset.sale_id && (isOwner || canEditPage('live_stock') || canEditPage('stock') || canEditPage('sales')) && (
         <div className="border rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Sale Details</h2>
@@ -631,7 +672,7 @@ function AssetQCPage() {
 
 export default function AssetQCPageGuarded() {
   return (
-    <RequirePageAccess pageKey="live_stock">
+    <RequirePageAccess pageKey={['live_stock', 'stock']}>
       <AssetQCPage />
     </RequirePageAccess>
   )

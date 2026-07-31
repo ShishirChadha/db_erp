@@ -7,11 +7,11 @@ import { logFieldCorrections } from '@/lib/field-corrections'
 import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list all assets ----------
-// Used by Live Stock, Sell/Service unit search, and (owner-only) Stock/Main ERP + RMA.
+// Used by Live Stock, Sell/Service unit search, and the main-ERP Stock page + RMA.
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry', 'invoices'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry', 'invoices', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const statusFilter = searchParams.get('status')      // optional
@@ -180,7 +180,7 @@ export async function GET(req: NextRequest) {
   const { data: salesRows } = soldIds.length
     ? await supabaseAdmin
         .from('sales')
-        .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by')
+        .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories')
         .in('asset_ledger_id', soldIds)
     : { data: [] as any[] }
 
@@ -243,6 +243,7 @@ export async function GET(req: NextRequest) {
       invoice_number: sale?.invoice_number,
       payment_status: sale?.payment_status,
       amount_paid: sale?.amount_paid,
+      bundled_accessories: sale?.bundled_accessories,
     }
   })
 
@@ -255,9 +256,17 @@ export async function GET(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, ['live_stock', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  // Editing (any status) requires the edit grant on whichever page reached this asset --
+  // view-only access to Live Stock/Main ERP Stock is not enough, closing a prior gap
+  // where a current (unsold) unit's tag/date/notes could be edited by anyone with mere
+  // view access.
+  if (!isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock') && !canEditPage(sessionUser, 'stock')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
 
   const body = await req.json()
-  const { id, asset_number, serial_number, confirm_duplicate, confirm_override, reason } = body
+  const { id, asset_number, serial_number, created_at, notes, confirm_duplicate, confirm_override, reason } = body
 
   if (!id) {
     return NextResponse.json({ error: 'Asset id is required' }, { status: 400 })
@@ -268,7 +277,7 @@ export async function PUT(req: NextRequest) {
   if (serial_number) {
     const dup = await findDuplicateSerial(serial_number, id)
     if (dup) {
-      if (dup.status === 'sold' && !isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock')) {
+      if (dup.status === 'sold' && !isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock') && !canEditPage(sessionUser, 'stock')) {
         return NextResponse.json({
           error: `Serial "${serial_number}" already exists as a SOLD unit (${dup.asset_number || dup.id}). Please check with the owner before making this change.`,
           error_code: 'duplicate_serial_sold',
@@ -287,7 +296,7 @@ export async function PUT(req: NextRequest) {
   // Check current asset status
   const { data: asset, error: fetchErr } = await supabaseAdmin
     .from('asset_ledger')
-    .select('status, asset_number, serial_number')
+    .select('status, asset_number, serial_number, created_at, notes')
     .eq('id', id)
     .single()
 
@@ -299,7 +308,7 @@ export async function PUT(req: NextRequest) {
   // explicitly overrides with a reason (e.g. correcting a typo'd serial on a real sale,
   // or cleaning up test/debris data that was never a real transaction).
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
-    const canOverride = isOwner(sessionUser) || canEditPage(sessionUser, 'live_stock')
+    const canOverride = isOwner(sessionUser) || canEditPage(sessionUser, 'live_stock') || canEditPage(sessionUser, 'stock')
     if (!canOverride || !confirm_override) {
       return NextResponse.json(
         {
@@ -318,6 +327,8 @@ export async function PUT(req: NextRequest) {
   const updates: any = {}
   if (asset_number !== undefined) updates.asset_number = asset_number
   if (serial_number !== undefined) updates.serial_number = serial_number
+  if (created_at !== undefined) updates.created_at = created_at
+  if (notes !== undefined) updates.notes = notes
 
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
@@ -335,6 +346,8 @@ export async function PUT(req: NextRequest) {
   await logFieldCorrections('asset_ledger', id, [
     { field: 'asset_number', oldValue: asset.asset_number, newValue: updates.asset_number ?? asset.asset_number },
     { field: 'serial_number', oldValue: asset.serial_number, newValue: updates.serial_number ?? asset.serial_number },
+    ...(created_at !== undefined ? [{ field: 'created_at', oldValue: asset.created_at, newValue: updates.created_at }] : []),
+    ...(notes !== undefined ? [{ field: 'notes', oldValue: asset.notes, newValue: updates.notes }] : []),
   ], sessionUser.id, reason || null)
 
   return NextResponse.json({ success: true })

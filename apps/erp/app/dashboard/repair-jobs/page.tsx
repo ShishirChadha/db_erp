@@ -16,7 +16,6 @@ const PAGE_SIZE = 25
 interface RepairJob {
   id: string
   job_number: string
-  job_type: 'repair' | 'replacement'
   is_own_stock: boolean
   customer_device_description: string | null
   problem_description: string | null
@@ -97,7 +96,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
         <div className="flex justify-between items-start gap-2">
           <div>
             <div className="font-medium">{job.job_number}</div>
-            <div className="text-xs text-gray-500 capitalize">{job.job_type}{job.is_own_stock ? ' (our stock)' : ''}</div>
+            {job.is_own_stock && <div className="text-xs text-gray-500">Our stock</div>}
           </div>
           <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
         </div>
@@ -118,8 +117,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
   return (
     <tr>
       <td className="border p-2 text-right tabular-nums text-gray-400">{index + 1}</td>
-      <td className="border p-2">{job.job_number}</td>
-      <td className="border p-2 capitalize">{job.job_type}{job.is_own_stock ? ' (our stock)' : ''}</td>
+      <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
       <td className="border p-2">{job.customers?.customer_name || '—'}</td>
       <td className="border p-2 max-w-xs truncate">{job.problem_description || job.customer_device_description || '—'}</td>
       <td className="border p-2"><StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge></td>
@@ -219,7 +217,6 @@ function RepairJobsPage() {
               <tr>
                 <th className="border p-2 w-10 text-right">#</th>
                 <th className="border p-2">Job #</th>
-                <th className="border p-2">Type</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Problem / Device</th>
                 <th className="border p-2">Status</th>
@@ -232,7 +229,7 @@ function RepairJobsPage() {
             <tbody>
               {jobs.map((job, idx) => <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
               {jobs.length === 0 && (
-                <tr><td colSpan={isOwner ? 10 : 9} className="border p-4 text-center text-gray-400">No repair jobs found.</td></tr>
+                <tr><td colSpan={isOwner ? 9 : 8} className="border p-4 text-center text-gray-400">No repair jobs found.</td></tr>
               )}
             </tbody>
           </table>

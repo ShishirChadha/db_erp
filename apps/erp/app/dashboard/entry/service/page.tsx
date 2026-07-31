@@ -7,6 +7,8 @@ import { apiFetch } from '@/lib/api-client'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
+import { SearchableSelect } from '@/components/SearchableSelect'
+import { useCustomOptions } from '@/lib/useCustomOptions'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
@@ -19,6 +21,33 @@ interface StockUnit {
   sku_code: string
   description: string
   status: string
+}
+
+// The unit being swapped out was already sold via the normal Sell flow -- when it's
+// selected on the Replacement tab, this is what that original sale looked like, so the
+// form can show what's carrying over and prefill the new unit's bundled accessories.
+interface OldSaleInfo {
+  customer_name: string | null
+  amount_paid: number
+  sale_total: number | null
+  bundled_accessories: Array<{ accessory_id: string; quantity: number; unit_price?: number }>
+}
+
+interface Accessory {
+  id: string
+  accessory_name: string
+}
+
+interface BundledAccessory {
+  accessory_id: string
+  accessory_name: string
+  quantity: number
+  price: number
+}
+
+const ACCESSORY_CATEGORIES = 'RAM,SSD,CPU,GPU,KBD,MOUSE,ACC,ADP'
+function mapSkuToAccessory(s: any): Accessory {
+  return { id: s.id, accessory_name: s.sku_description || s.model_name || s.full_sku_code }
 }
 
 const RETURN_REASONS = ['Defective on arrival', 'Not as described', 'Changed mind', 'Wrong item', 'Other']
@@ -149,6 +178,71 @@ function ServicePageInner() {
   const [partsSearch, setPartsSearch] = useState('')
   const [partsOptions, setPartsOptions] = useState<PartOption[]>([])
 
+  // Replacement-only: what's carrying over from the old unit's original sale, the new
+  // unit's bundled accessories (defaulted from that old sale), and the sale-specific
+  // fields needed to create a real `sales` row for the new unit (see POST /api/repair-jobs).
+  const [oldSaleInfo, setOldSaleInfo] = useState<OldSaleInfo | null>(null)
+  const [bundled, setBundled] = useState<BundledAccessory[]>([])
+  const [bundleSearch, setBundleSearch] = useState('')
+  const [bundleOptions, setBundleOptions] = useState<Accessory[]>([])
+  const [additionalAmountPaid, setAdditionalAmountPaid] = useState<number | ''>('')
+  const [soldBy, setSoldBy] = useState('')
+  const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
+  const [gstPercent, setGstPercent] = useState(18)
+  const { values: staffNameOptions } = useCustomOptions('staff_names')
+
+  useEffect(() => {
+    if (subType !== 'replacement' || !isOwnStock || !ownUnit) { setOldSaleInfo(null); return }
+    let cancelled = false
+    apiFetch(`/api/stock?id=${ownUnit.id}`).then(res => res.json()).then(async (data) => {
+      if (cancelled) return
+      const unit = Array.isArray(data) && data[0] ? data[0] : null
+      if (!unit) return
+      const oldBundled: Array<{ accessory_id: string; quantity: number; unit_price?: number }> =
+        Array.isArray(unit.bundled_accessories) ? unit.bundled_accessories : []
+      setOldSaleInfo({
+        customer_name: unit.customer_name ?? null,
+        amount_paid: unit.amount_paid ?? 0,
+        sale_total: unit.sale_total ?? null,
+        bundled_accessories: oldBundled,
+      })
+      const resolved: BundledAccessory[] = []
+      for (const b of oldBundled) {
+        if (!b?.accessory_id) continue
+        const skuRes = await apiFetch(`/api/sku-master?id=${b.accessory_id}`)
+        const skuData = await skuRes.json()
+        const sku = Array.isArray(skuData) && skuData[0] ? skuData[0] : null
+        resolved.push({
+          accessory_id: b.accessory_id,
+          accessory_name: sku ? mapSkuToAccessory(sku).accessory_name : 'Accessory',
+          quantity: b.quantity || 1,
+          price: b.unit_price || 0,
+        })
+      }
+      if (!cancelled) setBundled(resolved)
+    })
+    return () => { cancelled = true }
+  }, [ownUnit, isOwnStock, subType])
+
+  useEffect(() => {
+    if (!bundleSearch.trim()) { setBundleOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(bundleSearch)}`)
+      const data = await res.json()
+      setBundleOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [bundleSearch])
+
+  const addBundled = (a: Accessory) => {
+    if (bundled.some(b => b.accessory_id === a.id)) return
+    setBundled(prev => [...prev, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1, price: 0 }])
+    setBundleSearch(''); setBundleOptions([])
+  }
+  const updateBundled = (idx: number, patch: Partial<BundledAccessory>) =>
+    setBundled(prev => prev.map((b, i) => i === idx ? { ...b, ...patch } : b))
+  const removeBundled = (idx: number) => setBundled(prev => prev.filter((_, i) => i !== idx))
+
   useEffect(() => {
     if (!partsSearch.trim()) { setPartsOptions([]); return }
     const timer = setTimeout(async () => {
@@ -193,6 +287,8 @@ function ServicePageInner() {
     setReplacementUnit(null); setReturnUnit(null); setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
     setServiceDate(today())
     setPartsUsed([]); setPartsSearch(''); setPartsOptions([])
+    setOldSaleInfo(null); setBundled([]); setBundleSearch(''); setBundleOptions([])
+    setAdditionalAmountPaid(''); setSoldBy(''); setSaleType('GST'); setGstPercent(18)
   }
 
   const { run: handleSubmitRepairOrReplacement, pending: submittingRepair } = useAsyncAction(async () => {
@@ -203,23 +299,39 @@ function ServicePageInner() {
     if (subType === 'replacement' && !replacementUnit) { setError('Select the replacement unit.'); return }
 
     try {
-      const res = await apiFetch('/api/repair-jobs', {
-        method: 'POST',
-        body: JSON.stringify({
-          customer_id: customerId,
-          is_own_stock: isOwnStock,
-          asset_id: isOwnStock ? ownUnit!.id : null,
-          customer_device_description: deviceDescription,
-          customer_device_serial: deviceSerial,
-          job_type: subType,
-          replacement_asset_id: subType === 'replacement' ? replacementUnit!.id : null,
-          problem_description: problem,
-          amount_charged: amountCharged === '' ? null : amountCharged,
-          payment_account: paymentAccount,
-          job_date: serviceDate,
-          parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
-        }),
-      })
+      const endpoint = subType === 'replacement' ? '/api/replacement-jobs' : '/api/repair-jobs'
+      const payload = subType === 'replacement'
+        ? {
+            customer_id: customerId,
+            is_own_stock: isOwnStock,
+            asset_id: isOwnStock ? ownUnit!.id : null,
+            customer_device_description: deviceDescription,
+            customer_device_serial: deviceSerial,
+            replacement_asset_id: replacementUnit!.id,
+            problem_description: problem,
+            amount_charged: amountCharged === '' ? null : amountCharged,
+            payment_account: paymentAccount,
+            job_date: serviceDate,
+            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
+            bundled_accessories: bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.price || 0 })),
+            sold_by: soldBy || undefined,
+            sale_type: saleType,
+            gst_percentage: saleType === 'GST' ? gstPercent : 0,
+            additional_amount_paid: additionalAmountPaid === '' ? 0 : additionalAmountPaid,
+          }
+        : {
+            customer_id: customerId,
+            is_own_stock: isOwnStock,
+            asset_id: isOwnStock ? ownUnit!.id : null,
+            customer_device_description: deviceDescription,
+            customer_device_serial: deviceSerial,
+            problem_description: problem,
+            amount_charged: amountCharged === '' ? null : amountCharged,
+            payment_account: paymentAccount,
+            job_date: serviceDate,
+            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
+          }
+      const res = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Failed to save job.')
@@ -323,13 +435,20 @@ function ServicePageInner() {
             <div>
               <label className="block font-medium text-sm mb-1">Unit *</label>
               <UnitPicker
-                statusFilter="ready_for_sale,qc_passed,qc_pending,sold,faulty"
+                statusFilter={subType === 'replacement' ? 'sold' : 'ready_for_sale,qc_passed,qc_pending,sold,faulty'}
                 selected={ownUnit}
                 onSelect={setOwnUnit}
                 onClear={() => setOwnUnit(null)}
-                placeholder="Search our stock by asset number or serial..."
+                placeholder={subType === 'replacement' ? 'Search sold units by asset number or serial...' : 'Search our stock by asset number or serial...'}
                 browsable
               />
+              {subType === 'replacement' && oldSaleInfo && (
+                <p className="text-xs text-gray-600 mt-1">
+                  Sold to {oldSaleInfo.customer_name || 'unknown customer'}
+                  {oldSaleInfo.sale_total != null && ` for ₹${oldSaleInfo.sale_total}`}
+                  , ₹{oldSaleInfo.amount_paid} already paid — this will carry over automatically, and the unit returns to QC.
+                </p>
+              )}
             </div>
           ) : (
             <div className="grid grid-cols-2 gap-4">
@@ -399,9 +518,58 @@ function ServicePageInner() {
             </div>
           )}
 
+          {subType === 'replacement' && (
+            <div>
+              <label className="block font-medium text-sm mb-1">Bundled Accessories (given with the new unit)</label>
+              <input
+                value={bundleSearch}
+                onChange={(e) => setBundleSearch(e.target.value)}
+                placeholder="Search to add..."
+                className="border p-2 w-full rounded"
+              />
+              {bundleOptions.length > 0 && (
+                <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
+                  {bundleOptions.map(a => (
+                    <li key={a.id} onClick={() => addBundled(a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 text-sm">
+                      {a.accessory_name}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {bundled.length > 0 && (
+                <div className="mt-2 space-y-1">
+                  {bundled.map((b, idx) => (
+                    <div key={b.accessory_id} className="flex items-center gap-2 text-sm bg-gray-50 border rounded p-2">
+                      <span className="flex-1">{b.accessory_name}</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={b.quantity}
+                        onChange={(e) => updateBundled(idx, { quantity: Number(e.target.value) })}
+                        className="w-14 border rounded text-center"
+                      />
+                      <input
+                        type="number"
+                        min={0}
+                        value={b.price}
+                        onChange={(e) => updateBundled(idx, { price: Number(e.target.value) })}
+                        placeholder="₹"
+                        className="w-20 border rounded text-center"
+                      />
+                      <button onClick={() => removeBundled(idx)} className="text-red-500">✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-gray-400 mt-1">Prefilled from the old sale, if any — add, remove, or adjust as needed.</p>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block font-medium text-sm mb-1">Amount Charged (₹)</label>
+              <label className="block font-medium text-sm mb-1">
+                {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : 'Amount Charged (₹)'}
+              </label>
               <input type="number" value={amountCharged} onChange={(e) => setAmountCharged(e.target.value === '' ? '' : Number(e.target.value))} className="border p-2 w-full rounded" />
             </div>
             <div>
@@ -411,6 +579,48 @@ function ServicePageInner() {
               </select>
             </div>
           </div>
+
+          {subType === 'replacement' && (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium text-sm mb-1">Sale Type</label>
+                <div className="flex gap-2">
+                  <select value={saleType} onChange={(e) => setSaleType(e.target.value as 'GST' | 'Cash')} className="border p-2 w-full rounded">
+                    <option value="GST">GST</option>
+                    <option value="Cash">Cash</option>
+                  </select>
+                  {saleType === 'GST' && (
+                    <input
+                      type="number"
+                      value={gstPercent}
+                      onChange={(e) => setGstPercent(Number(e.target.value))}
+                      className="w-20 border rounded text-center"
+                      title="GST %"
+                    />
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="block font-medium text-sm mb-1">Additional Amount Paid Now (₹)</label>
+                <input
+                  type="number"
+                  value={additionalAmountPaid}
+                  onChange={(e) => setAdditionalAmountPaid(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="border p-2 w-full rounded"
+                />
+                {oldSaleInfo && (oldSaleInfo.amount_paid || 0) > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">On top of the ₹{oldSaleInfo.amount_paid} already carried over from the old sale.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {subType === 'replacement' && (
+            <div>
+              <label className="block font-medium text-sm mb-1">Sold By</label>
+              <SearchableSelect options={staffNameOptions} value={soldBy} onChange={setSoldBy} placeholder="Myself / select..." />
+            </div>
+          )}
 
           <div className="flex justify-end">
             <button onClick={() => handleSubmitRepairOrReplacement()} disabled={submittingRepair} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
