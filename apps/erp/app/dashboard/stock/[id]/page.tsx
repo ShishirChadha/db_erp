@@ -9,6 +9,7 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
+import { EditSaleDialog } from '@/components/EditSaleDialog'
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -60,6 +61,7 @@ interface AssetDetail {
   keyboard_condition: string | null
   body_condition: string | null
   included_accessories: string | null
+  sale_id: string | null
   purchase_order_items: {
     sku_master: {
       full_sku_code: string
@@ -77,7 +79,8 @@ function AssetQCPage() {
   const params = useParams()
   const router = useRouter()
   const assetId = params.id as string
-  const { isOwner } = useRole()
+  const { isOwner, canEditPage } = useRole()
+  const canEditLiveStock = isOwner || canEditPage('live_stock')
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
@@ -114,6 +117,11 @@ function AssetQCPage() {
   const [tagReason, setTagReason] = useState('')
   const [tagErr, setTagErr] = useState('')
   const [savingTag, setSavingTag] = useState(false)
+
+  // Full sold-entry edit (customer, amount, SKU, bundled accessories) -- reuses the
+  // existing EditSaleDialog (same one the Sales ledger page uses), reachable here once
+  // the linked sales row's id is known (asset.sale_id, from GET .../qc).
+  const [showEditSale, setShowEditSale] = useState(false)
 
   const fetchCostAdjustments = useCallback(async () => {
     if (!isOwner) return
@@ -329,7 +337,7 @@ function AssetQCPage() {
         )}
       </div>
 
-      {isOwner && (
+      {canEditLiveStock && (
         <div className="border rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between mb-2">
             <h2 className="font-semibold">Serial / Asset Number</h2>
@@ -406,6 +414,20 @@ function AssetQCPage() {
             </p>
           )}
         </div>
+      )}
+
+      {asset.sale_id && (isOwner || canEditPage('live_stock') || canEditPage('sales')) && (
+        <div className="border rounded-lg p-4 mb-6">
+          <div className="flex items-center justify-between">
+            <h2 className="font-semibold">Sale Details</h2>
+            <button onClick={() => setShowEditSale(true)} className="text-blue-600 underline text-sm">Edit Sale</button>
+          </div>
+          <p className="text-sm text-gray-500 mt-1">Customer, amount, SKU/laptop, and bundled accessories for this sale.</p>
+        </div>
+      )}
+
+      {showEditSale && asset.sale_id && (
+        <EditSaleDialog saleId={asset.sale_id} onClose={() => setShowEditSale(false)} onSaved={fetchAsset} />
       )}
 
       {asset.status === 'qc_passed' && (

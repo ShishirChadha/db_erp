@@ -1,16 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
-// Owner-only -- this is the transactional/financial view (payment state, incentive
-// attribution), distinct from the Sold Stock tab on the Stock page (inventory/warranty
-// view, employee-visible). Both read from the same `sales` table.
+// This is the transactional/financial view (payment state, incentive attribution),
+// distinct from the Sold Stock tab on the Stock page (inventory/warranty view). Both
+// read from the same `sales` table. View requires the 'sales' page grant; finalize/void
+// stay owner-only (see [id]/finalize, [id]/void, finalize-batch, record-external-invoice).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'sales')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const paymentStatus = searchParams.get('payment_status')

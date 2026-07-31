@@ -53,7 +53,20 @@ export async function GET(
     .eq('asset_id', id)
     .order('checked_at', { ascending: true })
 
-  return NextResponse.json({ ...asset, checks: checks || [] })
+  // Surfaced so the asset detail page can offer a "Sale Details" edit panel for
+  // sold/invoiced/returned units without a second round trip.
+  let saleId: string | null = null
+  if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
+    const { data: saleRow } = await supabaseAdmin
+      .from('sales')
+      .select('id')
+      .eq('asset_ledger_id', id)
+      .eq('is_deleted', false)
+      .maybeSingle()
+    saleId = saleRow?.id ?? null
+  }
+
+  return NextResponse.json({ ...asset, checks: checks || [], sale_id: saleId })
 }
 
 // ---------- PUT: submit QC checklist + grade, transition status ----------

@@ -27,8 +27,17 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 import { AddPaymentDialog } from "@/components/AddPaymentDialog";
+import { FixSkuDialog } from "@/components/FixSkuDialog";
+import { useRole } from "@/lib/auth/useRole";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
+const ACCESSORY_CATEGORIES = "RAM,SSD,CPU,GPU,KBD,MOUSE,ACC,ADP";
+
+interface BundledAccessory {
+  accessory_id: string;
+  quantity: number;
+  accessory_name?: string;
+}
 
 interface SaleDetail {
   id: string;
@@ -38,6 +47,8 @@ interface SaleDetail {
   asset_number: string | null;
   serial_number: string | null;
   accessory_id: string | null;
+  asset_ledger_id: string | null;
+  bundled_accessories: BundledAccessory[] | null;
   sale_base_price: number;
   sale_gst: number;
   sale_total: number;
@@ -70,6 +81,7 @@ export function EditSaleDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { isOwner } = useRole();
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -87,7 +99,21 @@ export function EditSaleDialog({
   const [payments, setPayments] = useState<SalePayment[]>([]);
   const [showAddPayment, setShowAddPayment] = useState(false);
 
+  const [bundled, setBundled] = useState<BundledAccessory[]>([]);
+  const [bundleSearch, setBundleSearch] = useState("");
+  const [bundleOptions, setBundleOptions] = useState<{ id: string; full_sku_code: string; sku_description: string }[]>([]);
+  const [showChangeSku, setShowChangeSku] = useState(false);
+
   const { values: staffNames } = useCustomOptions("staff_names");
+
+  useEffect(() => {
+    if (!bundleSearch.trim()) { setBundleOptions([]); return; }
+    const t = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(bundleSearch)}`);
+      setBundleOptions(res.ok ? await res.json() : []);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [bundleSearch]);
 
   const loadPayments = () => {
     apiFetch(`/api/sales/${saleId}/payments`).then(async (res) => {
@@ -107,6 +133,7 @@ export function EditSaleDialog({
         setBasePrice(data.sale_base_price);
         setGstPercent(data.sale_base_price ? Math.round((data.sale_gst / data.sale_base_price) * 10000) / 100 : 18);
         setPaymentAccount(data.payment_account || "");
+        setBundled(data.bundled_accessories || []);
       } else {
         setErr("Failed to load sale.");
       }
@@ -138,6 +165,9 @@ export function EditSaleDialog({
       sale_base_price: basePrice,
       gst_percentage: saleType === "GST" ? gstPercent : 0,
       payment_account: paymentAccount || null,
+      ...(sale?.asset_ledger_id
+        ? { bundled_accessories: bundled.map(({ accessory_id, quantity }) => ({ accessory_id, quantity })) }
+        : {}),
     };
     let res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(body) });
     if (!res.ok) {
@@ -245,6 +275,71 @@ export function EditSaleDialog({
               </div>
             </div>
 
+            {sale.asset_ledger_id && (
+              <div className="border rounded p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Laptop / SKU</Label>
+                  <Button type="button" size="sm" variant="outline" onClick={() => setShowChangeSku(true)}>Change SKU</Button>
+                </div>
+                <Label>Bundled Accessories</Label>
+                <input
+                  value={bundleSearch}
+                  onChange={(e) => setBundleSearch(e.target.value)}
+                  placeholder="Search accessory to add..."
+                  className="border p-2 w-full rounded text-sm"
+                />
+                {bundleOptions.length > 0 && (
+                  <ul className="border rounded divide-y max-h-32 overflow-y-auto text-sm">
+                    {bundleOptions.map((a) => (
+                      <li
+                        key={a.id}
+                        className="p-2 hover:bg-gray-50 cursor-pointer"
+                        onClick={() => {
+                          if (bundled.some((b) => b.accessory_id === a.id)) return;
+                          setBundled((prev) => [...prev, { accessory_id: a.id, quantity: 1, accessory_name: a.sku_description }]);
+                          setBundleSearch("");
+                          setBundleOptions([]);
+                        }}
+                      >
+                        {a.full_sku_code} — {a.sku_description}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {bundled.length > 0 && (
+                  <ul className="text-sm divide-y border rounded">
+                    {bundled.map((b, idx) => (
+                      <li key={b.accessory_id} className="p-2 flex items-center justify-between gap-2">
+                        <span>{b.accessory_name || b.accessory_id}</span>
+                        <div className="flex items-center gap-2">
+                          <Input
+                            type="number"
+                            min={1}
+                            value={b.quantity}
+                            className="w-16 text-right"
+                            onChange={(e) =>
+                              setBundled((prev) => prev.map((x, i) => (i === idx ? { ...x, quantity: Number(e.target.value) || 1 } : x)))
+                            }
+                          />
+                          <button type="button" className="text-red-600 underline text-xs" onClick={() => setBundled((prev) => prev.filter((_, i) => i !== idx))}>
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+
+            {showChangeSku && sale.asset_ledger_id && (
+              <FixSkuDialog
+                assetId={sale.asset_ledger_id}
+                onClose={() => setShowChangeSku(false)}
+                onReassigned={() => { setShowChangeSku(false); onSaved(); }}
+              />
+            )}
+
             <div className="border rounded p-3 space-y-2">
               <div className="flex items-center justify-between">
                 <div>
@@ -298,14 +393,16 @@ export function EditSaleDialog({
               </div>
             )}
 
-            <div className="border-t pt-3">
-              <Button variant="destructive" size="sm" onClick={() => setVoidOpen(true)}>
-                Void this sale
-              </Button>
-              <p className="text-xs text-gray-500 mt-1">
-                Reverses stock and marks this sale voided. Does not touch an already-generated invoice.
-              </p>
-            </div>
+            {isOwner && (
+              <div className="border-t pt-3">
+                <Button variant="destructive" size="sm" onClick={() => setVoidOpen(true)}>
+                  Void this sale
+                </Button>
+                <p className="text-xs text-gray-500 mt-1">
+                  Reverses stock and marks this sale voided. Does not touch an already-generated invoice.
+                </p>
+              </div>
+            )}
           </div>
         )}
 

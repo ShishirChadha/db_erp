@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isOwner, canEditPage } from '@/lib/auth/session'
 import { redactManyForRole } from '@/lib/auth/redact'
 import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
 import { logFieldCorrections } from '@/lib/field-corrections'
@@ -268,7 +268,7 @@ export async function PUT(req: NextRequest) {
   if (serial_number) {
     const dup = await findDuplicateSerial(serial_number, id)
     if (dup) {
-      if (dup.status === 'sold' && !isOwner(sessionUser)) {
+      if (dup.status === 'sold' && !isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock')) {
         return NextResponse.json({
           error: `Serial "${serial_number}" already exists as a SOLD unit (${dup.asset_number || dup.id}). Please check with the owner before making this change.`,
           error_code: 'duplicate_serial_sold',
@@ -299,11 +299,12 @@ export async function PUT(req: NextRequest) {
   // explicitly overrides with a reason (e.g. correcting a typo'd serial on a real sale,
   // or cleaning up test/debris data that was never a real transaction).
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
-    if (!isOwner(sessionUser) || !confirm_override) {
+    const canOverride = isOwner(sessionUser) || canEditPage(sessionUser, 'live_stock')
+    if (!canOverride || !confirm_override) {
       return NextResponse.json(
         {
           error: `Cannot edit asset in '${asset.status}' status. Only unsold assets can be edited.`,
-          error_code: isOwner(sessionUser) ? 'sold_edit_requires_override' : undefined,
+          error_code: canOverride ? 'sold_edit_requires_override' : undefined,
         },
         { status: 400 }
       )

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
-import RequireOwner from "@/components/RequireOwner";
+import RequirePageAccess from "@/components/RequirePageAccess";
+import { useRole } from "@/lib/auth/useRole";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { StatCardsRow } from "@/components/StatCardsRow";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
@@ -37,12 +38,16 @@ function SaleRow({
   selected,
   onToggleSelect,
   index,
+  isOwner,
+  canEditSale,
 }: {
   sale: Sale;
   onDone: () => void;
   selected: boolean;
   onToggleSelect: (id: string) => void;
   index: number;
+  isOwner: boolean;
+  canEditSale: boolean;
 }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -61,7 +66,7 @@ function SaleRow({
   return (
     <tr>
       <td className="border p-2 w-8 text-center">
-        {!sale.finalized && (
+        {!sale.finalized && isOwner && (
           <Checkbox checked={selected} onCheckedChange={() => onToggleSelect(sale.id)} />
         )}
       </td>
@@ -77,6 +82,8 @@ function SaleRow({
       <td className="border p-2">
         {sale.finalized ? (
           <span className="text-green-600">✓ {sale.invoice_number}</span>
+        ) : !isOwner ? (
+          <span className="text-gray-400 text-xs">Awaiting invoice</span>
         ) : isExternal ? (
           <button onClick={() => setShowZohoDialog(true)} className="text-amber-700 underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
             Record Zoho Invoice #
@@ -92,9 +99,11 @@ function SaleRow({
         )}
       </td>
       <td className="border p-2">
-        <button onClick={() => setShowEdit(true)} className="text-blue-600 underline text-xs">
-          Edit
-        </button>
+        {canEditSale && (
+          <button onClick={() => setShowEdit(true)} className="text-blue-600 underline text-xs">
+            Edit
+          </button>
+        )}
         {showEdit && (
           <EditSaleDialog saleId={sale.id} onClose={() => setShowEdit(false)} onSaved={onDone} />
         )}
@@ -104,6 +113,8 @@ function SaleRow({
 }
 
 function SalesLedgerPage() {
+  const { isOwner, canEditPage } = useRole();
+  const canEditSale = isOwner || canEditPage("sales") || canEditPage("live_stock");
   const [sales, setSales] = useState<Sale[]>([]);
   const [search, setSearch] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
@@ -210,7 +221,7 @@ function SalesLedgerPage() {
           <option value="partial">Partial</option>
           <option value="paid">Paid</option>
         </select>
-        {selected.size >= 2 && (
+        {isOwner && selected.size >= 2 && (
           allSelectedExternal ? (
             <button
               onClick={() => setShowBatchZoho(true)}
@@ -247,7 +258,7 @@ function SalesLedgerPage() {
             <thead>
               <tr>
                 <th className="border p-2 w-8 text-center">
-                  {selectableIds.length > 0 && (
+                  {isOwner && selectableIds.length > 0 && (
                     <Checkbox
                       checked={
                         selected.size === selectableIds.length
@@ -282,6 +293,8 @@ function SalesLedgerPage() {
                   selected={selected.has(s.id)}
                   onToggleSelect={toggleSelect}
                   index={idx}
+                  isOwner={isOwner}
+                  canEditSale={canEditSale}
                 />
               ))}
               {displayedSales.length === 0 && (
@@ -297,8 +310,8 @@ function SalesLedgerPage() {
 
 export default function SalesPageGuarded() {
   return (
-    <RequireOwner>
+    <RequirePageAccess pageKey="sales">
       <SalesLedgerPage />
-    </RequireOwner>
+    </RequirePageAccess>
   );
 }

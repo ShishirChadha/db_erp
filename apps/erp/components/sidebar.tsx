@@ -84,7 +84,7 @@ const menuGroups = [
     label: 'Sales',
     icon: TrendingUp,
     children: [
-      { href: '/dashboard/sales', label: 'Sales', ownerOnly: true },
+      { href: '/dashboard/sales', label: 'Sales', pageKey: 'sales' },
       { href: '/dashboard/invoices', label: 'Invoices', pageKey: 'invoices' },
       { href: '/dashboard/quotations', label: 'Quotations', ownerOnly: true },
     ],

@@ -13,7 +13,7 @@ export async function GET(
 ) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry', 'invoices'])) {
+  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry', 'invoices', 'sales'])) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
@@ -47,7 +47,7 @@ export async function POST(
 ) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry'])) {
+  if (!hasPageAccess(sessionUser, ['live_stock', 'new_entry', 'sales'])) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
