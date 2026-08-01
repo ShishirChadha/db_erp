@@ -1,5 +1,6 @@
 import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/service';
+import { getCookieSessionUser, canEditPage } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
 
 // Path segments here come from client input (assetNumber, folder, fileType) and are
@@ -27,11 +28,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid bucket' }, { status: 400 });
   }
 
-  // product-images is website-publishing content, part of editing SKU master
-  // data -- owner-only, same as every other SKU-master write.
+  // product-images is website-publishing content -- gated by the 'website' edit
+  // grant (owner always passes canEditPage), same access level as the SKU
+  // Website dialog's image-management endpoints.
   if (bucket === 'product-images') {
-    const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', user.id).single();
-    if (profile?.role !== 'owner') return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    const sessionUser = await getCookieSessionUser();
+    if (!canEditPage(sessionUser, 'website')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   const timestamp = Date.now();
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
   const key = `${prefix}/${sanitizeSegment(fileType)}-${timestamp}.${ext}`;
 
   // product-images has no storage.objects RLS policy for writes (only a public
-  // read path) -- the owner-only check above is the real gate, so the signed
+  // read path) -- the canEditPage check above is the real gate, so the signed
   // URL itself is minted via the service-role client for that bucket.
   // purchase-files keeps using the cookie-session client unchanged.
   const storageClient = bucket === 'product-images' ? supabaseAdmin.storage : supabase.storage;

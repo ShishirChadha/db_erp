@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { normalizeSpecifications } from '@/lib/sku-normalizer'
 import { canonicalJson } from '@/lib/sku-resolver'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, canEditPage } from '@/lib/auth/session'
 import { redactForRole } from '@/lib/auth/redact'
 import { logFieldCorrections } from '@/lib/field-corrections'
 
@@ -32,10 +32,30 @@ export async function PUT(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { id } = await params
   const body = await req.json()
+
+  // Web-publishing fields (see docs/decisions.md, 2026-07-28) -- a non-owner with
+  // only the 'website' edit grant may update these and nothing else. Any other key
+  // in the request body still requires isOwner, so a 'website'-granted employee
+  // can never smuggle in a base_cost/brand/etc. edit through this shared route.
+  const WEB_FIELD_KEYS = [
+    'is_published',
+    'web_price',
+    'market_price',
+    'web_slug',
+    'web_title',
+    'web_description',
+    'web_highlights',
+    'web_condition_grade',
+  ]
+  const bodyKeys = Object.keys(body)
+  const onlyWebFields = bodyKeys.length > 0 && bodyKeys.every((k) => WEB_FIELD_KEYS.includes(k))
+  if (!isOwner(sessionUser) && !(onlyWebFields && canEditPage(sessionUser, 'website'))) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
 
   // Allowed fields for update
   const allowedKeys = [
@@ -51,15 +71,7 @@ export async function PUT(
     'hsn_code',
     'category',
     'status',
-    // Web-publishing fields (see docs/decisions.md, 2026-07-28)
-    'is_published',
-    'web_price',
-    'market_price',
-    'web_slug',
-    'web_title',
-    'web_description',
-    'web_highlights',
-    'web_condition_grade',
+    ...WEB_FIELD_KEYS,
   ]
   const updatable: any = {}
   for (const key of allowedKeys) {

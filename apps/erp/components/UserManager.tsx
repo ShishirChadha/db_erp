@@ -33,12 +33,13 @@ const PAGE_OPTIONS = [
   { key: 'activities', label: 'Activity Hub' },
   { key: 'sales', label: 'Sales' },
   { key: 'stock', label: 'Stock (Main ERP)' },
+  { key: 'website', label: 'Website' },
 ]
 
 // Dashboard/Pending Tasks are nav landing pages, not mutable resources -- they have no
 // "Can edit" concept and profile_page_actions.page_key's DB constraint rejects them.
 // Must match EDITABLE_PAGE_KEYS in app/api/users/route.ts and app/api/users/[id]/route.ts.
-const EDITABLE_PAGE_KEYS = ['new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock']
+const EDITABLE_PAGE_KEYS = ['new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website']
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'

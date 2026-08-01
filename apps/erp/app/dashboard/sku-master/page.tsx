@@ -52,7 +52,7 @@ type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in
 type SortOrder = 'asc' | 'desc'
 
 function SkuMasterPage() {
-  const { isOwner } = useRole()
+  const { isOwner, hasPageAccess } = useRole()
   const [skus, setSkus] = useState<SKU[]>([])
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -291,7 +291,7 @@ function SkuMasterPage() {
                 <td className="p-2 text-right tabular-nums">{sku.quantity_in_stock ?? '0'}</td>
                 <td className="p-2 space-x-2">
                   <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
-                  {isOwner && (
+                  {(isOwner || hasPageAccess('website')) && (
                     <button onClick={() => setWebPublishSku(sku)} className="text-emerald-600 underline">Website</button>
                   )}
                   <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1">
