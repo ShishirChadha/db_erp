@@ -7,6 +7,7 @@ import {
   canSeeActivity, getProfileMap, areValidAssignees,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: single activity, its assignees, and its change history ----------
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -127,7 +128,18 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const changes = trackedFields
     .filter((f) => body[f] !== undefined)
     .map((f) => ({ field: f, oldValue: existing[f], newValue: updated[f] }))
-  await logFieldCorrections('activities', id, changes, sessionUser.id)
+  const fieldCorrectionIds = await logFieldCorrections('activities', id, changes, sessionUser.id)
+
+  const statusChanged = body.status !== undefined && body.status !== existing.status
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: statusChanged ? 'status_change' : 'update',
+    module: 'activities',
+    tableName: 'activities',
+    recordId: id,
+    recordLabel: updated.title,
+    fieldCorrectionIds,
+  })
 
   if (body.status !== undefined && body.status !== existing.status) {
     const audience = [...new Set([...currentIds, existing.created_by])]
@@ -179,7 +191,7 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { data: existing } = await supabaseAdmin
-    .from('activities').select('id, created_by, is_deleted').eq('id', id).maybeSingle()
+    .from('activities').select('id, title, created_by, is_deleted').eq('id', id).maybeSingle()
   if (!existing || existing.is_deleted) return NextResponse.json({ error: 'Activity not found.' }, { status: 404 })
   if (!isOwner(sessionUser) && existing.created_by !== sessionUser.id) {
     return NextResponse.json({ error: 'Only the task creator or the owner can delete a task.' }, { status: 403 })
@@ -190,6 +202,16 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   await logFieldCorrections('activities', id, [{ field: 'is_deleted', oldValue: false, newValue: true }], sessionUser.id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'soft_delete',
+    module: 'activities',
+    tableName: 'activities',
+    recordId: id,
+    recordLabel: existing.title,
+    restoreStatus: 'restorable',
+  })
 
   return NextResponse.json({ success: true })
 }

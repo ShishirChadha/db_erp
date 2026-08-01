@@ -10,6 +10,7 @@ import {
   updateVendorInvoiceTotal,
   buildPurchaseRecord,
 } from '@/lib/purchases-legacy'
+import { logAuditEvent } from '@/lib/audit-log'
 
 async function getUser(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -178,6 +179,14 @@ export async function PATCH(
   if (body.purchased_invoice_number) {
     await updateVendorInvoiceTotal(body.vendor_id, body.purchased_invoice_number)
   }
+
+  await logAuditEvent({
+    actor: { id: user.id, email: user.email, role: null },
+    actionType: 'update',
+    module: 'purchase_orders',
+    tableName: 'purchases',
+    recordId: id,
+  })
 
   return NextResponse.json({ success: true, asset_number: finalAssetNumber, possible_duplicates: possibleDuplicates })
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Append-only ledger of individual payment installments against a sale (docs/decisions.md,
 // "sale_payments ledger"). sales.amount_paid/payment_status are trigger-derived from the
@@ -98,6 +99,15 @@ export async function POST(
     .select('amount_paid, payment_status')
     .eq('id', id)
     .single()
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sales',
+    tableName: 'sale_payments',
+    recordId: payment?.id || null,
+    recordLabel: `Payment of ₹${amount} on sale ${id}`,
+  })
 
   return NextResponse.json({ payment, sale: updatedSale })
 }

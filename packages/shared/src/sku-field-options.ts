@@ -22,6 +22,7 @@ export function getCustomOptionsCategory(skuCategory: string, fieldName: string)
   if (fieldName === 'resolution' && skuCategory === 'MON') return 'monitor_resolution'
   if (fieldName === 'storage' && skuCategory === 'TAB') return 'storage' // same GB-capacity concept as SSD
   if (fieldName === 'cpu') return 'cpu'
+  if (fieldName === 'gpu' && (skuCategory === 'LAP' || skuCategory === 'DES')) return 'gpu'
   if (fieldName === 'generation') return 'generation'
   if (fieldName === 'ram') return 'ram'
   if (fieldName === 'type' && skuCategory === 'RAM') return 'ram_type'

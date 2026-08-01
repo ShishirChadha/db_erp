@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: how many assets would be affected by a reassignment ----------
 // A PO-linked asset's SKU is governed by its purchase_order_items.sku_id, shared
@@ -116,6 +117,15 @@ export async function PATCH(
     ])
     if (movementErr) return NextResponse.json({ error: movementErr.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    metadata: { old_sku_id: oldSkuId, new_sku_id, po_item_id: asset.po_item_id || null },
+  })
 
   return NextResponse.json({ success: true })
 }

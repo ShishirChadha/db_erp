@@ -10,6 +10,7 @@ import {
   updateVendorInvoiceTotal,
   buildPurchaseRecord,
 } from '@/lib/purchases-legacy'
+import { logAuditEvent } from '@/lib/audit-log'
 
 async function getUser(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -130,6 +131,19 @@ export async function POST(req: NextRequest) {
 
   if (body.purchased_invoice_number) {
     await updateVendorInvoiceTotal(body.vendor_id, body.purchased_invoice_number)
+  }
+
+  // This route's session comes from a raw Supabase auth user (getUser above), not the
+  // role-resolved sessionUser used elsewhere -- role is left null here rather than
+  // guessed.
+  for (const purchaseId of createdIds) {
+    await logAuditEvent({
+      actor: { id: user.id, email: user.email, role: null },
+      actionType: 'create',
+      module: 'purchase_orders',
+      tableName: 'purchases',
+      recordId: purchaseId,
+    })
   }
 
   return NextResponse.json(

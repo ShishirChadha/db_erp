@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -88,7 +89,7 @@ export async function DELETE(
   // 1. Get invoice to know its PO
   const { data: invoice } = await supabaseAdmin
     .from('invoices')
-    .select('po_id')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -124,6 +125,21 @@ export async function DELETE(
       .update({ po_status: revertedStatus })
       .eq('id', invoice.po_id)
   }
+
+  // This is a genuine hard delete (no is_deleted flag on `invoices` for this route,
+  // unlike the PO soft-delete above) -- no restore handler exists for it yet in
+  // lib/audit-log-restore.ts, so restoreStatus stays 'not_applicable'; the snapshot
+  // is still captured for audit-trail visibility.
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'hard_delete',
+    module: 'purchase_orders',
+    tableName: 'invoices',
+    recordId: id,
+    recordLabel: invoice?.invoice_number || id,
+    snapshot: { kind: 'row', table: 'invoices', row: invoice },
+    restoreStatus: 'not_applicable',
+  })
 
   return NextResponse.json({ success: true })
 }

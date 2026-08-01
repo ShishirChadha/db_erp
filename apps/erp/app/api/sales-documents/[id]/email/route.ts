@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { renderSalesDocumentPdf } from '@/lib/documents/renderSalesDocumentPdf'
 import { sendEmailWithAttachment } from '@/lib/email'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const DOC_LABELS: Record<string, string> = { quotation: 'Quotation', proforma: 'Proforma Invoice' }
 
@@ -29,15 +30,29 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     attachmentBuffer: rendered.buffer,
   })
 
-  await supabaseAdmin.from('document_sends').insert({
-    document_type: 'sales_document',
-    document_id: id,
-    channel: 'email',
-    sent_to: to,
-    status: result.success ? 'sent' : 'failed',
-    provider_message_id: result.messageId || null,
-    error_message: result.error || null,
-    sent_by: sessionUser.id,
+  const { data: sendRow } = await supabaseAdmin
+    .from('document_sends')
+    .insert({
+      document_type: 'sales_document',
+      document_id: id,
+      channel: 'email',
+      sent_to: to,
+      status: result.success ? 'sent' : 'failed',
+      provider_message_id: result.messageId || null,
+      error_message: result.error || null,
+      sent_by: sessionUser.id,
+    })
+    .select('id')
+    .single()
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sales_documents',
+    tableName: 'document_sends',
+    recordId: sendRow?.id ?? null,
+    recordLabel: `${label} ${rendered.document.document_number} emailed to ${to}`,
+    metadata: { sales_document_id: id, status: result.success ? 'sent' : 'failed' },
   })
 
   if (!result.success) return NextResponse.json({ error: result.error }, { status: 502 })

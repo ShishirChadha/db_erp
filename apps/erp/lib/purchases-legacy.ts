@@ -20,6 +20,11 @@ export function buildSpecifications(category: string, body: any): Record<string,
         generation: body.generation,
         ram: body.ram,
         ssd: body.ssd,
+        // Omitted (not just empty) when blank -- most existing laptop SKUs predate this
+        // field and have no `gpu` key at all; a blank submission must canonically match
+        // them (see canonicalJson in lib/sku-resolver.ts) rather than spawn a spurious
+        // duplicate variant the first time someone logs that model again.
+        ...(body.gpu ? { gpu: body.gpu } : {}),
         screen_size: body.screen_size,
         model_year: body.model_year,
       }
@@ -35,7 +40,7 @@ export function buildSpecifications(category: string, body: any): Record<string,
       }
     case 'DES':
     default:
-      return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd, model_year: body.model_year }
+      return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd, ...(body.gpu ? { gpu: body.gpu } : {}), model_year: body.model_year }
   }
 }
 

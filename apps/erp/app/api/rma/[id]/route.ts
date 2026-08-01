@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { logAuditEvent } from '@/lib/audit-log'
 
 async function getUser(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -89,6 +90,15 @@ export async function PATCH(
       .update({ status: TO_VENDOR_OUTCOME_ASSET_STATUS[status] })
       .eq('id', event.asset_id)
   }
+
+  await logAuditEvent({
+    actor: { id: user.id, email: user.email, role: null },
+    actionType: 'status_change',
+    module: 'rma',
+    tableName: 'asset_rma_events',
+    recordId: id,
+    recordLabel: status,
+  })
 
   return NextResponse.json({ success: true, status })
 }

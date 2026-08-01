@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const VALID_KEYS = ['digitalbluez', 'techtenth', 'cash']
 
@@ -54,5 +55,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'business_profiles',
+    recordId: data?.id ?? key,
+    recordLabel: data?.legal_name ?? key,
+    metadata: { key, updated_fields: Object.keys(updates).filter((f) => f !== 'updated_at') },
+  })
+
   return NextResponse.json(data)
 }

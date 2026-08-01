@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Merging/archiving sku_master rows is data-integrity surgery, not ordinary catalog
 // editing -- gated on isOwner() directly (like PATCH /api/tags) rather than the
@@ -89,5 +90,21 @@ export async function POST(req: NextRequest) {
   })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  // The RPC archives (not hard-deletes) each source row -- one-way by design, no
+  // restore handler is built for this, hence restoreStatus 'not_applicable' rather
+  // than the soft_delete/restorable treatment a manual archive edit would get.
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'sku_master',
+    tableName: 'sku_master',
+    recordId: target_id,
+    recordLabel: data?.target_full_sku_code || target_id,
+    restoreStatus: 'not_applicable',
+    reason: reason || null,
+    metadata: { source_ids, merged: data?.merged },
+  })
+
   return NextResponse.json(data)
 }

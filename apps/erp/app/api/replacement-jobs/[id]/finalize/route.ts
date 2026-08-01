@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: owner marks a replacement job done ----------
 // Inventory for a replacement -- both the swapped-in unit's sale and the swapped-out unit's
@@ -17,7 +18,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('replacement_jobs')
-    .select('id, status')
+    .select('id, status, job_number')
     .eq('id', id)
     .single()
 
@@ -30,5 +31,15 @@ export async function POST(
     .eq('id', id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'replacement_jobs',
+    tableName: 'replacement_jobs',
+    recordId: id,
+    recordLabel: job.job_number,
+  })
+
   return NextResponse.json({ success: true })
 }

@@ -26,10 +26,12 @@ import {
   Wrench,
   Loader2,
   ListChecks,
+  History,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { apiFetch } from '@/lib/api-client'
 import NotificationBell from '@/components/NotificationBell'
 
 
@@ -126,6 +128,13 @@ const menuGroups = [
     icon: CalendarDays,
     href: '/dashboard/activities',
     pageKey: 'activities',
+  },
+  {
+    label: 'Audit Log',
+    icon: History,
+    href: '/dashboard/settings/audit-log',
+    // Deliberately no ownerOnly / pageKey: every active user is entitled to see
+    // their own trail here; the API itself restricts non-owners to their own rows.
   },
   {
     label: 'Settings',
@@ -322,6 +331,8 @@ export default function Sidebar() {
   }, [pathname])
 
   const { run: handleLogout, pending: loggingOut } = useAsyncAction(async () => {
+    // Must fire before signOut() -- the token is still valid here, dead after.
+    await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'logout' }) }).catch(() => {})
     await supabase.auth.signOut()
     router.push('/login')
     router.refresh()

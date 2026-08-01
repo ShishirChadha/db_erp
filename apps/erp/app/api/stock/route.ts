@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess, isOwner, canEditPage } from '@/lib/auth/
 import { redactManyForRole } from '@/lib/auth/redact'
 import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list all assets ----------
@@ -30,6 +31,16 @@ export async function GET(req: NextRequest) {
   const sortParam = searchParams.get('sort')
   const sortField = sortParam && SORTABLE_FIELDS.has(sortParam) ? sortParam : 'asset_number'
   const sortAscending = searchParams.get('order') !== 'desc'
+
+  // Month/Year filter -- year anchors the filter (a bare month with no year is
+  // ignored), month optionally narrows it to one calendar month within that year.
+  // date_field picks which column it applies to: Current tab filters by when the unit
+  // was entered (created_at), Sold tab by when it was sold (sold_at).
+  const DATE_FILTER_FIELDS = new Set(['created_at', 'sold_at'])
+  const dateFieldParam = searchParams.get('date_field')
+  const dateField = dateFieldParam && DATE_FILTER_FIELDS.has(dateFieldParam) ? dateFieldParam : 'created_at'
+  const monthParam = searchParams.get('month')
+  const yearParam = searchParams.get('year')
 
   // purchase_order_items is a LEFT (not inner) join: legacy-door rows (source=
   // 'legacy_purchase', created directly in asset_ledger with no PO) have no
@@ -134,6 +145,15 @@ export async function GET(req: NextRequest) {
   }
   if (excludeSource) {
     query = query.neq('source', excludeSource)
+  }
+  const year = yearParam ? parseInt(yearParam, 10) : NaN
+  if (!Number.isNaN(year)) {
+    const month = monthParam ? parseInt(monthParam, 10) : null
+    const from = month ? `${year}-${String(month).padStart(2, '0')}-01` : `${year}-01-01`
+    const toYear = month ? (month === 12 ? year + 1 : year) : year + 1
+    const toMonth = month ? (month === 12 ? 1 : month + 1) : 1
+    const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`
+    query = query.gte(dateField, from).lt(dateField, to)
   }
   if (pagination) query = query.range(pagination.from, pagination.to)
 
@@ -343,12 +363,23 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: updateErr.message }, { status: 500 })
   }
 
-  await logFieldCorrections('asset_ledger', id, [
+  const fieldCorrectionIds = await logFieldCorrections('asset_ledger', id, [
     { field: 'asset_number', oldValue: asset.asset_number, newValue: updates.asset_number ?? asset.asset_number },
     { field: 'serial_number', oldValue: asset.serial_number, newValue: updates.serial_number ?? asset.serial_number },
     ...(created_at !== undefined ? [{ field: 'created_at', oldValue: asset.created_at, newValue: updates.created_at }] : []),
     ...(notes !== undefined ? [{ field: 'notes', oldValue: asset.notes, newValue: updates.notes }] : []),
   ], sessionUser.id, reason || null)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    recordLabel: updates.asset_number ?? asset.asset_number ?? asset.serial_number ?? id,
+    fieldCorrectionIds,
+    reason: reason || null,
+  })
 
   return NextResponse.json({ success: true })
 }

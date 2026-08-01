@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isManagerOrAbove } from '@/lib/auth/session'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Submitting a draft PO is the "approval" step -- it reserves asset numbers and locks in
 // the vendor/cost commitment, so managers may do this (per the manager-role requirements)
@@ -96,6 +97,15 @@ export async function POST(
       updated_by: user.id
     })
     .eq('id', poId)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: poId,
+    metadata: { from: 'draft', to: 'submitted' },
+  })
 
   return NextResponse.json({ success: true })
 }

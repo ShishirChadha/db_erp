@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { mintSalesInvoiceNumber } from '@/lib/sales-entry'
 import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales } from '@/lib/invoice-finalize'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: owner generates the GST invoice for an already-completed sale ----------
 // The sale itself already happened (unit/accessory left stock at POST /api/sales-entry
@@ -48,5 +49,16 @@ export async function POST(
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'sales',
+    tableName: 'sales',
+    recordId: id,
+    recordLabel: result.invoice_number || sale.invoice_number || id,
+    reason: 'Sale finalized -- invoice generated',
+  })
+
   return NextResponse.json({ success: true, invoice_id: result.invoice_id, invoice_number: result.invoice_number })
 }

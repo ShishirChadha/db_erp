@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: edit own comment body (author/owner) and/or pin (owner/task creator) ----------
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string; commentId: string }> }) {
@@ -44,6 +45,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { error } = await supabaseAdmin.from('activity_comments').update(updates).eq('id', commentId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'activities',
+    tableName: 'activity_comments',
+    recordId: commentId,
+    metadata: { pinned: updates.pinned, edited: updates.body !== undefined },
+  })
+
   return NextResponse.json({ success: true })
 }
 
@@ -63,6 +73,15 @@ export async function DELETE(req: NextRequest, { params }: { params: Promise<{ i
   const { error } = await supabaseAdmin
     .from('activity_comments').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', commentId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'soft_delete',
+    module: 'activities',
+    tableName: 'activity_comments',
+    recordId: commentId,
+    restoreStatus: 'restorable',
+  })
 
   return NextResponse.json({ success: true })
 }

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { mintSalesDocumentNumber, computeLineGst } from '@/lib/sales-documents'
 import { parsePagination } from '@/lib/pagination'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list quotations/proformas ----------
 export async function GET(req: NextRequest) {
@@ -133,6 +134,16 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('sales_documents').delete().eq('id', document.id)
     return NextResponse.json({ error: itemsErr.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sales_documents',
+    tableName: 'sales_documents',
+    recordId: document.id,
+    recordLabel: document.document_number,
+    metadata: { doc_type, entity_key },
+  })
 
   return NextResponse.json(document, { status: 201 })
 }

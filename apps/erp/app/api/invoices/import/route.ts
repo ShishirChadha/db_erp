@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { calculateGST } from '@/lib/gstCalculation'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: backfill an invoice already issued by Zoho (or another prior ----------
 // ---------- system) with its real, already-legal invoice number ----------
@@ -127,6 +128,16 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('invoices').delete().eq('id', invoice.id)
     return NextResponse.json({ error: itemsErr.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'invoices',
+    tableName: 'invoices',
+    recordId: invoice.id,
+    recordLabel: invoice_number.trim(),
+    metadata: { source: 'imported_zoho', entity_key },
+  })
 
   return NextResponse.json({ success: true, id: invoice.id, invoice_number: invoice_number.trim() }, { status: 201 })
 }

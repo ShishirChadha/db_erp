@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { logAuditEvent } from '@/lib/audit-log'
 
 export async function GET(
   req: NextRequest,
@@ -117,6 +118,16 @@ export async function PUT(
       .from('purchase_orders')
       .update({ po_status: 'cancelled' })
       .eq('id', id)
+
+    await logAuditEvent({
+      actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+      actionType: 'status_change',
+      module: 'purchase_orders',
+      tableName: 'purchase_orders',
+      recordId: id,
+      metadata: { from: po.po_status, to: 'cancelled' },
+    })
+
     return NextResponse.json({ success: true })
   }
 
@@ -184,6 +195,14 @@ export async function PUT(
     await recalcPOTotals(id)
   }
 
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: id,
+  })
+
   return NextResponse.json({ success: true })
 }
 
@@ -197,11 +216,27 @@ export async function DELETE(
 
   const { id } = await params
 
+  const { data: po } = await supabaseAdmin
+    .from('purchase_orders')
+    .select('po_number')
+    .eq('id', id)
+    .single()
+
   // Soft delete
   await supabaseAdmin
     .from('purchase_orders')
     .update({ is_deleted: true })
     .eq('id', id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'soft_delete',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: id,
+    recordLabel: po?.po_number || id,
+    restoreStatus: 'restorable',
+  })
 
   return NextResponse.json({ success: true })
 }

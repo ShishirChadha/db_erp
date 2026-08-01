@@ -57,6 +57,7 @@ function StockIntakePage() {
   const [generation, setGeneration] = useState('')
   const [ram, setRam] = useState('')
   const [ssd, setSsd] = useState('')
+  const [gpu, setGpu] = useState('')
   const [screenSize, setScreenSize] = useState('')
   const [modelYear, setModelYear] = useState('')
   const [serialNumber, setSerialNumber] = useState('')
@@ -71,6 +72,7 @@ function StockIntakePage() {
   const { values: generationOptions } = useCustomOptions('generation')
   const { values: ramOptions } = useCustomOptions('ram')
   const { values: storageOptions } = useCustomOptions('storage')
+  const { values: gpuOptions } = useCustomOptions('gpu')
   const { values: laptopScreenOptions } = useCustomOptions('screen_size_laptop')
   const { values: monitorScreenOptions } = useCustomOptions('screen_size_monitor')
   const { values: brandOptions } = useCustomOptions('brand')
@@ -96,6 +98,7 @@ function StockIntakePage() {
         if (!generation && specs.generation) setGeneration(specs.generation)
         if (!ram && specs.ram) setRam(specs.ram)
         if (!ssd && specs.ssd) setSsd(specs.ssd)
+        if (!gpu && specs.gpu) setGpu(specs.gpu)
         if (!screenSize && specs.screen_size) setScreenSize(specs.screen_size)
         if (!modelYear && specs.model_year) setModelYear(specs.model_year)
       })
@@ -122,7 +125,7 @@ function StockIntakePage() {
 
   const resetForm = () => {
     setType('Laptop'); setBrand(''); setBrandOther(''); setModel('')
-    setCpu(''); setGeneration(''); setRam(''); setSsd(''); setScreenSize('')
+    setCpu(''); setGeneration(''); setRam(''); setSsd(''); setGpu(''); setScreenSize('')
     setModelYear(''); setBundled([]); setAccessorySearch(''); setAccessoryOptions([])
     setSerialNumber(''); setPurchasedByType('Digitalbluez'); setConditionNotes('')
     setReceivedDate(today())
@@ -147,6 +150,7 @@ function StockIntakePage() {
       generation,
       ram,
       ssd,
+      gpu,
       screen_size: screenSize,
       model_year: modelYear,
       serial_number: serialNumber,
@@ -278,6 +282,10 @@ function StockIntakePage() {
               <label className="block font-medium text-sm mb-1">SSD / Storage</label>
               <SearchableSelect options={storageOptions} value={ssd} onChange={setSsd} placeholder="Select storage..." />
             </div>
+            <div>
+              <label className="block font-medium text-sm mb-1">GPU</label>
+              <SearchableSelect options={gpuOptions} value={gpu} onChange={setGpu} placeholder="Select GPU (if dedicated)..." />
+            </div>
             {brand === 'Apple' && (
               <div>
                 <label className="block font-medium text-sm mb-1">Model Year</label>
@@ -380,6 +388,7 @@ function StockIntakePage() {
             { label: 'Generation', value: generation },
             { label: 'RAM', value: ram },
             { label: 'SSD / Storage', value: ssd },
+            { label: 'GPU', value: gpu },
             { label: 'Screen Size', value: screenSize },
             { label: 'Model Year', value: modelYear },
             { label: 'Serial Number', value: serialNumber },

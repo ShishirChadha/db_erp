@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { processCustomerReturn } from '@/lib/rma'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list RMA events ----------
 // Owner-only -- to_vendor rows join vendor company names, which employees never see.
@@ -68,19 +69,30 @@ export async function POST(req: NextRequest) {
 
     const { data: event } = await supabaseAdmin
       .from('asset_rma_events')
-      .select('*')
+      .select('*, asset_ledger(asset_number, serial_number)')
       .eq('asset_id', asset_id)
       .eq('direction', 'from_customer')
       .order('opened_at', { ascending: false })
       .limit(1)
       .maybeSingle()
 
+    if (event) {
+      await logAuditEvent({
+        actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+        actionType: 'create',
+        module: 'rma',
+        tableName: 'asset_rma_events',
+        recordId: event.id,
+        recordLabel: event.asset_ledger?.asset_number || event.asset_ledger?.serial_number || asset_id,
+      })
+    }
+
     return NextResponse.json(event, { status: 201 })
   }
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('status, sku_id')
+    .select('status, sku_id, asset_number, serial_number')
     .eq('id', asset_id)
     .single()
 
@@ -116,6 +128,15 @@ export async function POST(req: NextRequest) {
 
   // to_vendor: unit leaves the building, pending vendor resolution.
   await supabaseAdmin.from('asset_ledger').update({ status: 'rma_sent' }).eq('id', asset_id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'rma',
+    tableName: 'asset_rma_events',
+    recordId: event.id,
+    recordLabel: asset.asset_number || asset.serial_number || asset_id,
+  })
 
   return NextResponse.json(event, { status: 201 })
 }

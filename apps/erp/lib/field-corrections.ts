@@ -10,7 +10,7 @@ export async function logFieldCorrections(
   changes: Array<{ field: string; oldValue: unknown; newValue: unknown }>,
   changedBy: string | null,
   reason?: string | null
-) {
+): Promise<string[]> {
   const rows = changes
     .filter((c) => String(c.oldValue ?? '') !== String(c.newValue ?? ''))
     .map((c) => ({
@@ -22,6 +22,7 @@ export async function logFieldCorrections(
       changed_by: changedBy,
       reason: reason || null,
     }))
-  if (rows.length === 0) return
-  await supabaseAdmin.from('field_corrections').insert(rows)
+  if (rows.length === 0) return []
+  const { data } = await supabaseAdmin.from('field_corrections').insert(rows).select('id')
+  return (data || []).map((r) => r.id as string)
 }

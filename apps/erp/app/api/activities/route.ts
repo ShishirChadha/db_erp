@@ -6,6 +6,7 @@ import {
   buildOwnVisibilityFilter, getAssigneesForActivities, getProfileMap, areValidAssignees,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
+import { logAuditEvent } from '@/lib/audit-log'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -125,6 +126,15 @@ export async function POST(req: NextRequest) {
       title: created.title, link: `/dashboard/activities?open=${created.id}`,
     })))
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'activities',
+    tableName: 'activities',
+    recordId: created.id,
+    recordLabel: created.title,
+  })
 
   return NextResponse.json({ success: true, id: created.id }, { status: 201 })
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -168,6 +169,15 @@ export async function PUT(
     .eq('id', id)
 
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    metadata: { from: asset.status, to: newStatus, qc_status: qcStatus, qc_grade: qc_grade || null },
+  })
 
   return NextResponse.json({ success: true, qc_status: qcStatus, status: newStatus })
 }

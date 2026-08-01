@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { resolveOrCreateSku } from '@/lib/sku-resolver'
 import { getSessionUser } from '@/lib/auth/session'
 import { TYPE_TO_CATEGORY, resolveBrand, buildSpecifications } from '@/lib/stock-intake'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: edit an intake entry before QC has moved it past qc_pending ----------
 // The unit is already live stock (see POST /api/stock-intake), so if the corrected specs
@@ -89,6 +90,16 @@ export async function PATCH(
       },
     ])
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    recordLabel: body.serial_number || existing.asset_number || existing.serial_number || id,
+    metadata: { old_sku_id: existing.sku_id, new_sku_id: sku.id },
+  })
 
   return NextResponse.json({ success: true, sku_id: sku.id, possible_duplicates: possibleDuplicates })
 }

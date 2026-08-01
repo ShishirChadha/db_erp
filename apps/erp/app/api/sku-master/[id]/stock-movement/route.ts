@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: record a stock-in or correction for a quantity-only SKU ----------
 // Laptops/desktops/etc. get quantity changes from asset_ledger-linked movements
@@ -37,5 +38,15 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'sku_master',
+    tableName: 'stock_movements',
+    recordId: id,
+    metadata: { movement_type, quantity_change, notes: notes || null },
+  })
+
   return NextResponse.json({ success: true }, { status: 201 })
 }

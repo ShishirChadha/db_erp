@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 export async function DELETE(
   req: NextRequest,
@@ -54,14 +55,18 @@ export async function DELETE(
   // 2. Fetch the PO header and all items with their received quantities
   const { data: po } = await supabaseAdmin
     .from('purchase_orders')
-    .select('po_number')
+    .select('*')
     .eq('id', id)
     .single()
 
   const { data: items } = await supabaseAdmin
     .from('purchase_order_items')
-    .select('id, sku_id, quantity, serial_numbers')
+    .select('*')
     .eq('po_id', id)
+
+  // Full snapshot for restore, captured before any delete runs below.
+  const { data: fullAssetRows } = await supabaseAdmin.from('asset_ledger').select('*').eq('po_id', id)
+  const stockReversals: Array<{ sku_id: string; quantity_change: number }> = []
 
   // Received quantity per line: serialized lines count their serials; fungible lines
   // (accessories, no serials) count their summed 'receipt' movements. Both must be
@@ -92,6 +97,7 @@ export async function DELETE(
           po_id: id,
           notes: `Stock reduced due to PO deletion (${po?.po_number})`,
         })
+        stockReversals.push({ sku_id: item.sku_id, quantity_change: -receivedQty })
       }
     }
   }
@@ -106,6 +112,25 @@ export async function DELETE(
   if (poErr) {
     return NextResponse.json({ error: poErr.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'hard_delete',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: id,
+    recordLabel: po?.po_number || id,
+    restoreStatus: 'restorable',
+    snapshot: {
+      kind: 'cascade',
+      primary: { table: 'purchase_orders', row: po },
+      children: [
+        { table: 'purchase_order_items', rows: items || [] },
+        { table: 'asset_ledger', rows: fullAssetRows || [] },
+        { table: 'stock_movements', reversals: stockReversals },
+      ],
+    },
+  })
 
   // 6. Reset PO counter for the year
   //

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { usernameToSyntheticEmail } from '@/lib/auth/username'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
@@ -122,6 +123,15 @@ export async function POST(req: NextRequest) {
       .from('profile_page_actions')
       .insert(editKeys.map((page_key) => ({ profile_id: created.user.id, page_key, can_edit: true })))
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'settings',
+    tableName: 'profiles',
+    recordId: created.user.id,
+    recordLabel: full_name?.trim() || trimmedUsername,
+  })
 
   return NextResponse.json({ success: true, id: created.user.id }, { status: 201 })
 }

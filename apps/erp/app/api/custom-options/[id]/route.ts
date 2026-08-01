@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: owner edits or activates/deactivates a dropdown value ----------
 export async function PATCH(
@@ -30,6 +31,17 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'custom_options',
+    recordId: id,
+    recordLabel: data?.value ?? id,
+    metadata: updates,
+  })
+
   return NextResponse.json(data)
 }
 
@@ -44,7 +56,20 @@ export async function DELETE(
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
+  const { data: existing } = await supabaseAdmin.from('custom_options').select('*').eq('id', id).maybeSingle()
   const { error } = await supabaseAdmin.from('custom_options').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'hard_delete',
+    module: 'settings',
+    tableName: 'custom_options',
+    recordId: id,
+    recordLabel: existing?.value ?? id,
+    snapshot: existing ? { kind: 'row', table: 'custom_options', row: existing } : null,
+    restoreStatus: 'not_applicable',
+  })
+
   return NextResponse.json({ success: true })
 }

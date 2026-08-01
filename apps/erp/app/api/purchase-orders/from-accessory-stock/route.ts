@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: owner's backlog of accessory SKUs with stock received but no PO yet ----------
 // Same "needs paperwork" concept as /api/stock-intake's GET, just for quantity-only
@@ -148,6 +149,15 @@ export async function POST(req: NextRequest) {
     .eq('id', sku_id)
 
   await recalcPOTotals(po.id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: po.id,
+    recordLabel: poNumber,
+  })
 
   return NextResponse.json({ success: true, po_id: po.id, po_number: poNumber }, { status: 201 })
 }

@@ -4,6 +4,7 @@ import { resolveOrCreateSku } from '@/lib/sku-resolver'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { redactForRole, redactManyForRole } from '@/lib/auth/redact'
 import { parsePagination } from '@/lib/pagination'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Used by SKU Master, PO wizard's inline SKU search (owner-only page), Sell's
 // Fix-SKU/Change-SKU picker, and the Accessories page/Sell's accessory picker (which
@@ -189,6 +190,16 @@ export async function POST(req: NextRequest) {
       { status: 200 }
     )
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sku_master',
+    tableName: 'sku_master',
+    recordId: result.sku.id,
+    recordLabel: result.sku.full_sku_code,
+  })
+
   return NextResponse.json(
     { sku, message: 'New variant created', possible_duplicates: result.possibleDuplicates },
     { status: 201 }

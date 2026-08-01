@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { getAssetPrefix } from '@/lib/stock-intake'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: owner attaches existing employee-intake units to a new PO ----------
 // This is the only place these units ever get a real asset number -- intake
@@ -156,6 +157,15 @@ export async function POST(req: NextRequest) {
   }
 
   await recalcPOTotals(po.id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: po.id,
+    recordLabel: poNumber,
+  })
 
   return NextResponse.json({ success: true, po_id: po.id, po_number: poNumber }, { status: 201 })
 }

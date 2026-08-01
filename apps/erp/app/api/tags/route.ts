@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Tag names aren't sensitive, so the suggestion list is global across all
 // non-deleted activities rather than scoped to what the caller can see.
@@ -53,6 +54,15 @@ export async function PATCH(req: NextRequest) {
     const { error: updateError } = await supabaseAdmin.from('activities').update({ tags: updated }).eq('id', row.id)
     if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'activities',
+    tableName: 'activities',
+    recordLabel: trimmedNew ? `Rename/merge tag "${trimmedOld}" -> "${trimmedNew}"` : `Remove tag "${trimmedOld}"`,
+    metadata: { bulk: true, oldTag: trimmedOld, newTag: trimmedNew, affected_count: rows?.length || 0 },
+  })
 
   return NextResponse.json({ updated: rows?.length || 0 })
 }

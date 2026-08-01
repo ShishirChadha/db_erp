@@ -91,6 +91,13 @@ interface AccessoryStockRow {
 
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
 
+const MONTH_OPTIONS = [
+  { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
+  { value: '4', label: 'April' }, { value: '5', label: 'May' }, { value: '6', label: 'June' },
+  { value: '7', label: 'July' }, { value: '8', label: 'August' }, { value: '9', label: 'September' },
+  { value: '10', label: 'October' }, { value: '11', label: 'November' }, { value: '12', label: 'December' },
+]
+
 type Tab = 'current' | 'sold' | 'accessories' | 'sold_accessories'
 type SortField = 'asset_number' | 'status' | 'sold_at' | 'created_at'
 type SortOrder = 'asc' | 'desc'
@@ -105,13 +112,13 @@ const TAB_DEFAULT_SORT: Record<'current' | 'sold', { field: SortField; order: So
 }
 
 const OPTIONAL_COLUMNS = [
+  { key: 'entryDate', label: 'Entry Date' },
+  { key: 'purchaseDate', label: 'Purchase Date' },
+  { key: 'soldDate', label: 'Sold Date' },
   { key: 'sku', label: 'SKU' },
   { key: 'grade', label: 'Grade' },
   { key: 'po', label: 'PO' },
   { key: 'vendorCost', label: 'Vendor / Cost' },
-  { key: 'entryDate', label: 'Entry Date' },
-  { key: 'purchaseDate', label: 'Purchase Date' },
-  { key: 'soldDate', label: 'Sold Date' },
   { key: 'customer', label: 'Customer' },
   { key: 'saleTotal', label: 'Sale Total' },
   { key: 'invoice', label: 'Invoice' },
@@ -164,6 +171,12 @@ export default function StockView({
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  const [monthFilter, setMonthFilter] = useState('')
+  const [yearFilter, setYearFilter] = useState('')
+  const yearOptions = useMemo(() => {
+    const currentYear = new Date().getFullYear()
+    return Array.from({ length: 8 }, (_, i) => currentYear - i)
+  }, [])
   const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT.current.field)
   const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT.current.order)
 
@@ -216,6 +229,11 @@ export default function StockView({
         params.append('status', statusFilter || CURRENT_STATUSES.join(','))
       }
       if (searchTerm) params.append('search', searchTerm)
+      if (yearFilter) {
+        params.set('year', yearFilter)
+        if (monthFilter) params.set('month', monthFilter)
+        params.set('date_field', tab === 'sold' ? 'sold_at' : 'created_at')
+      }
       params.set('sort', sortField)
       params.set('order', sortOrder)
       params.set('page', String(page))
@@ -232,7 +250,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, statusFilter, searchTerm, sourceParam, sortField, sortOrder, page])
+  }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
 
@@ -243,6 +261,10 @@ export default function StockView({
     try {
       const params = new URLSearchParams()
       if (searchTerm) params.append('search', searchTerm)
+      if (yearFilter) {
+        params.set('year', yearFilter)
+        if (monthFilter) params.set('month', monthFilter)
+      }
       params.set('page', String(page))
       params.set('limit', String(PAGE_SIZE))
 
@@ -256,7 +278,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, searchTerm, page])
+  }, [tab, searchTerm, monthFilter, yearFilter, page])
 
   useEffect(() => { fetchSoldAccessories() }, [fetchSoldAccessories])
 
@@ -285,7 +307,7 @@ export default function StockView({
   useEffect(() => { fetchAccessoryStock() }, [fetchAccessoryStock])
 
   // Any filter/tab change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, sourceParam])
+  useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
 
   // Switching tabs switches what "last entry on top" means -- reset to that tab's
   // own default sort rather than carrying over a sort field the other tab doesn't use.
@@ -506,8 +528,20 @@ export default function StockView({
           onChange={(e) => setSearchTerm(e.target.value)}
           className="border p-2 rounded"
         />
-        {(statusFilter || searchTerm) && (
-          <button onClick={() => { setStatusFilter(''); setSearchTerm('') }} className="text-sm text-gray-500 underline self-center">
+        {(tab === 'current' || tab === 'sold' || tab === 'sold_accessories') && (
+          <>
+            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="border p-2 rounded">
+              <option value="">All Months</option>
+              {MONTH_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+            </select>
+            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="border p-2 rounded">
+              <option value="">All Years</option>
+              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </>
+        )}
+        {(statusFilter || searchTerm || monthFilter || yearFilter) && (
+          <button onClick={() => { setStatusFilter(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-gray-500 underline self-center">
             Clear filters
           </button>
         )}
@@ -695,17 +729,17 @@ export default function StockView({
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('asset_number')}>
                   Asset / Serial{sortIndicator('asset_number')}
                 </th>
+                {tab === 'current' && visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
+                {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
+                {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
                 {visibleColumns.sku && <th className="border p-2">SKU</th>}
                 <th className="border p-2">Description</th>
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('status')}>
                   Status{sortIndicator('status')}
                 </th>
                 {visibleColumns.grade && <th className="border p-2">Grade</th>}
-                {tab === 'current' && visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
-                {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
                 {isOwner && tab === 'current' && visibleColumns.po && <th className="border p-2">PO</th>}
                 {isOwner && tab === 'current' && visibleColumns.vendorCost && <th className="border p-2">Vendor / Cost</th>}
-                {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
                 {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
                 {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
                 {tab === 'sold' && <th className="border p-2">Payment</th>}
@@ -736,6 +770,9 @@ export default function StockView({
                       </span>
                     )}
                   </td>
+                  {tab === 'current' && visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
+                  {visibleColumns.purchaseDate && <td className="border p-2">{asset.po_date?.slice(0, 10) || '—'}</td>}
+                  {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
                   {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
                   <td className="border p-2">
                     {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
@@ -745,8 +782,6 @@ export default function StockView({
                   </td>
                   <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
                   {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
-                  {tab === 'current' && visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
-                  {visibleColumns.purchaseDate && <td className="border p-2">{asset.po_date?.slice(0, 10) || '—'}</td>}
                   {isOwner && tab === 'current' && visibleColumns.po && (
                     <td className="border p-2 text-center">
                       {asset.po_id ? <span className="text-green-600">✓ {asset.po_number}</span> : <span className="text-amber-600">✗ missing</span>}
@@ -757,7 +792,6 @@ export default function StockView({
                       {asset.vendor_name ? `${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}` : '—'}
                     </td>
                   )}
-                  {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
                   {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
                   {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
                   {tab === 'sold' && (
@@ -928,11 +962,15 @@ export default function StockView({
                   <span className="text-gray-400"> · SN: {asset.serial_number}</span>
                 )}
               </div>
+              {(tab === 'current' && asset.created_at) || asset.po_date ? (
+                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                  {tab === 'current' && asset.created_at && <span>Added {asset.created_at.slice(0, 10)}</span>}
+                  {asset.po_date && <span>Purchased {asset.po_date.slice(0, 10)}</span>}
+                </div>
+              ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
                 {asset.qc_grade && <span className="text-xs text-gray-500">Grade {asset.qc_grade}</span>}
-                {tab === 'current' && asset.created_at && <span className="text-xs text-gray-500">Added {asset.created_at.slice(0, 10)}</span>}
-                {asset.po_date && <span className="text-xs text-gray-500">Purchased {asset.po_date.slice(0, 10)}</span>}
                 {asset.under_repair_job_number && (
                   <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs">Under Repair</span>
                 )}

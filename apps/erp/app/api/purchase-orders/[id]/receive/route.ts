@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Sums 'receipt' stock_movements already booked against a given fungible PO line,
 // so partial receipts of an accessory line can't cumulatively exceed the ordered
@@ -151,6 +152,16 @@ export async function POST(
       updated_by: user.id
     })
     .eq('id', poId)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: poId,
+    recordLabel: po.po_number,
+    metadata: { from: po.po_status, to: newStatus },
+  })
 
   return NextResponse.json({ success: true, new_status: newStatus })
 }

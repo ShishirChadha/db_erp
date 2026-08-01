@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const ALLOWED_TIERS = ['standard', 'vip', 'wholesale'] as const
 
@@ -32,6 +33,16 @@ export async function PATCH(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   if (!data) return NextResponse.json({ error: 'No website account linked to this customer.' }, { status: 404 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'customers',
+    tableName: 'customers',
+    recordId: customerId,
+    recordLabel: customerId,
+    metadata: { tier },
+  })
 
   return NextResponse.json(data)
 }

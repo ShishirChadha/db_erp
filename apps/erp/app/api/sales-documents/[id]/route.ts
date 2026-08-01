@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const VALID_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'void']
 
@@ -51,5 +52,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  // status -> 'void' is a distinct, higher-severity action from a plain field
+  // edit or any other status transition; audit-log.ts already models both.
+  const actionType = status === 'void' ? 'void' : status !== undefined ? 'status_change' : 'update'
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType,
+    module: 'sales_documents',
+    tableName: 'sales_documents',
+    recordId: id,
+    recordLabel: data.document_number,
+    metadata: { updated_fields: Object.keys(updates).filter((k) => k !== 'updated_at') },
+  })
+
   return NextResponse.json(data)
 }

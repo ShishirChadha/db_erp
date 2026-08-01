@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
-import { CartItemInput, BaseSaleFields, ProcessedSaleRow, validateCartItems, processSingleSaleItem, splitAmountPaid } from '@/lib/sales-cart'
+import { CartItemInput, BaseSaleFields, PaymentLeg, ProcessedSaleRow, validateCartItems, processSingleSaleItem, allocatePaymentLegs } from '@/lib/sales-cart'
+import { logAuditEvent } from '@/lib/audit-log'
+
+const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
 // Best-effort: if this sale converts one line of a quotation/proforma, mark
 // that line converted so it stops showing as open. Never blocks the sale
@@ -15,6 +18,17 @@ async function markSourceDocumentItemConverted(sourceDocumentItemId: string | un
     .update({ converted: true, sale_id: saleId })
     .eq('id', sourceDocumentItemId)
     .eq('converted', false)
+}
+
+// Maps the legacy single-payment shape (payment_status/amount_paid/payment_account) onto
+// one synthetic payment leg, so that path is properly ledgered through sale_payments too
+// instead of writing amount_paid directly -- the same fix new callers get for free.
+function legacyLegsFromPaymentStatus(body: any, cartTotal: number): PaymentLeg[] {
+  const status = body.payment_status || 'pending'
+  const account = body.payment_account || 'Digitalbluez'
+  if (status === 'paid') return [{ amount: cartTotal, payment_account: account }]
+  if (status === 'partial') return [{ amount: Number(body.amount_paid) || 0, payment_account: account }]
+  return []
 }
 
 const MONTHS = [
@@ -40,12 +54,22 @@ export async function GET(req: NextRequest) {
 }
 
 // ---------- POST: employee (or owner) records one or more sales for one customer ----------
-// Body is a cart: shared customer_id/sale_type/gst_percentage/sale_date/payment fields,
-// plus items[], each either a unit line (asset_ledger_id, optionally with free/priced
-// bundled_accessories) or a standalone accessory line (accessory_id + accessory_quantity),
-// each with its own sale_base_price. The legacy single-item shape (top-level
-// asset_ledger_id/accessory_id/sale_base_price/etc., no items[]) still works -- it's
-// normalized into a 1-item cart below.
+// Body is a cart: shared customer_id/sale_type/gst_percentage/sale_date/payment_account
+// (the single "invoicing entity" -- GST classification, invoice numbering, finalize-batch
+// grouping) fields, plus items[], each either a unit line (asset_ledger_id, optionally
+// with free/priced bundled_accessories) or a standalone accessory line (accessory_id +
+// accessory_quantity), each with its own sale_base_price. The legacy single-item shape
+// (top-level asset_ledger_id/accessory_id/sale_base_price/etc., no items[]) still works --
+// it's normalized into a 1-item cart below.
+//
+// Payment is a list of payment_legs -- amount + which account it was actually received
+// into (independent of the invoicing entity above: a sale invoiced under "Digitalbluez"
+// can still have part of its payment recorded as received in "Cash", see
+// lib/sales-cart.ts's PaymentLeg). Every leg is ledgered via sale_payments (never written
+// directly to sales.amount_paid/payment_status) so the existing sync_sale_payment_totals
+// trigger derives those summary fields the same way a later top-up via
+// POST /api/sales/[id]/payments already does -- this is what keeps an installment added
+// after the fact from silently wiping out the payment recorded at sale time.
 //
 // This is final the moment it's submitted -- every item leaves stock right now (so the
 // Sold Stock list and warranty lookups are always accurate). The GST invoice is separate,
@@ -53,14 +77,16 @@ export async function GET(req: NextRequest) {
 // sharing the same customer + payment account (which every line in one cart already
 // does), POST /api/sales/finalize-batch.
 //
-// Multi-item commits are sequential, not a single DB transaction (this codebase doesn't
-// use Postgres transactions anywhere else for multi-step writes -- see the manual
-// rollback idiom already used for the single-item case). Validation runs upfront across
-// every item first (see validateCartItems) so the common failure case (stale search
-// result, archived SKU, insufficient stock) never needs a rollback at all; the residual
-// race (someone else sells the same unit between validation and commit) is caught by the
-// atomic status-guarded update inside processSingleSaleItem, and rolled back via
-// reverseSaleInventoryEffects for any earlier items already committed in this request.
+// Commits are sequential across three phases, not a single DB transaction (this codebase
+// doesn't use Postgres transactions anywhere else for multi-step writes -- see the manual
+// rollback idiom already used elsewhere): Phase A validates every item and payment leg
+// upfront (so the common failure case never needs a rollback at all); Phase B commits
+// each item's sale/asset/stock effects, rolling back any already-committed items in this
+// request if a later one fails (residual stock race, caught by the atomic status-guarded
+// update inside processSingleSaleItem); Phase C ledgers the allocated payment legs for
+// every committed item, and if that fails partway, rolls back the WHOLE cart the same way
+// (sale_payments.sale_id is ON DELETE CASCADE, so hard-deleting a sales row also removes
+// any of its already-inserted sale_payments rows -- no separate cleanup needed).
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -69,7 +95,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     customer_id, sale_type, gst_percentage, sale_date,
-    payment_status, amount_paid, payment_account, sold_by,
+    payment_account, sold_by, notes,
     source_document_item_id,
   } = body
 
@@ -113,8 +139,6 @@ export async function POST(req: NextRequest) {
     .eq('id', customer_id)
     .single()
 
-  const resolvedPaymentStatus = payment_status || 'pending'
-
   // sold_by is a plain staff name (owner-curated list, see custom_options 'staff_names')
   // rather than a login account -- so someone without their own account can still be
   // credited. Falls back to the entering user's own email if left blank.
@@ -143,25 +167,36 @@ export async function POST(req: NextRequest) {
     sale_type: sale_type || 'GST',
     entered_by: sessionUser.id,
     sold_by: resolvedSoldBy,
-    payment_status: resolvedPaymentStatus,
     payment_account: payment_account || null,
+    notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
     finalized: false,
   }
 
-  // Each item's own total, so a partial payment entered once for the whole cart can be
-  // split proportionally by each line's share of the cart total (see splitAmountPaid) --
-  // a ₹25,000 laptop and a ₹15,000 laptop paid ₹20,000 partial split ₹12,500/₹7,500, not
-  // evenly. When fully paid, each row's amount_paid is simply its own total (matches the
-  // single-item behavior this replaces); when pending, 0.
   const itemTotals = items.map((item) => {
     const gstAmount = Math.round(item.sale_base_price * gstPct) / 100
     return item.sale_base_price + gstAmount
   })
-  const amountsPaidByItem: number[] = resolvedPaymentStatus === 'paid'
-    ? itemTotals
-    : resolvedPaymentStatus === 'partial'
-      ? splitAmountPaid(amount_paid ?? 0, itemTotals)
-      : items.map(() => 0)
+  const cartTotal = itemTotals.reduce((sum, t) => sum + t, 0)
+
+  // "New shape given" is detected by the PRESENCE of payment_legs, not its length -- an
+  // explicit payment_legs: [] legitimately means "nothing paid yet" and must not be
+  // reinterpreted from the legacy fields.
+  const legs: PaymentLeg[] = Array.isArray(body.payment_legs)
+    ? body.payment_legs
+    : legacyLegsFromPaymentStatus(body, cartTotal)
+
+  for (const leg of legs) {
+    if (!leg.amount || leg.amount <= 0) {
+      return NextResponse.json({ error: 'Every payment leg needs a valid amount.' }, { status: 400 })
+    }
+    if (!PAYMENT_ACCOUNTS.includes(leg.payment_account)) {
+      return NextResponse.json({ error: `Payment account must be one of: ${PAYMENT_ACCOUNTS.join(', ')}.` }, { status: 400 })
+    }
+  }
+  const legsTotal = legs.reduce((sum, l) => sum + l.amount, 0)
+  if (legsTotal > cartTotal + 0.01) {
+    return NextResponse.json({ error: `Payment total (₹${legsTotal.toFixed(2)}) cannot exceed the cart total (₹${cartTotal.toFixed(2)}).` }, { status: 400 })
+  }
 
   // ---------- Phase A: validate every item before writing anything ----------
   const validation = await validateCartItems(items)
@@ -174,7 +209,7 @@ export async function POST(req: NextRequest) {
   const committed: Array<{ id: string; saleRow: ProcessedSaleRow }> = []
 
   for (let index = 0; index < items.length; index++) {
-    const result = await processSingleSaleItem(items[index], baseSaleFields, gstPct, amountsPaidByItem[index], sessionUser.id)
+    const result = await processSingleSaleItem(items[index], baseSaleFields, gstPct, sessionUser.id)
     if (!result.ok) {
       for (const c of committed.reverse()) {
         await reverseSaleInventoryEffects(c.saleRow, {
@@ -193,8 +228,52 @@ export async function POST(req: NextRequest) {
     committed.push({ id: result.saleRow.id, saleRow: result.saleRow })
   }
 
+  // ---------- Phase C: ledger the allocated payment legs; roll back the WHOLE cart on
+  // failure (sale_payments.sale_id is ON DELETE CASCADE, so hard-deleting a sales row
+  // also removes any sale_payments rows already inserted for it this request) ----------
+  const perItemLegs = allocatePaymentLegs(legs, itemTotals)
+  let phaseCFailure: string | null = null
+
+  outer: for (let i = 0; i < committed.length; i++) {
+    for (const entry of perItemLegs[i]) {
+      const leg = legs[entry.legIndex]
+      const { error } = await supabaseAdmin.from('sale_payments').insert({
+        sale_id: committed[i].id,
+        amount: entry.amount,
+        payment_account: leg.payment_account,
+        note: leg.note || null,
+        recorded_by: sessionUser.id,
+      })
+      if (error) { phaseCFailure = error.message; break outer }
+    }
+  }
+
+  if (phaseCFailure) {
+    for (const c of committed.reverse()) {
+      await reverseSaleInventoryEffects(c.saleRow, {
+        reason: 'Cart checkout rolled back -- payment ledger insert failed',
+        userId: sessionUser.id,
+        assetRevertStatus: c.saleRow.priorAssetStatus,
+      })
+      await supabaseAdmin.from('sales').delete().eq('id', c.id)
+    }
+    return NextResponse.json({ error: `Sale(s) were created but recording payment failed: ${phaseCFailure}. The whole cart was rolled back.` }, { status: 500 })
+  }
+
   await markSourceDocumentItemConverted(source_document_item_id, committed[0].id)
 
   const saleIds = committed.map((c) => c.id)
+
+  for (const c of committed) {
+    await logAuditEvent({
+      actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+      actionType: 'create',
+      module: 'sales',
+      tableName: 'sales',
+      recordId: c.id,
+      recordLabel: baseSaleFields.customer_name || c.saleRow.asset_ledger_id || c.saleRow.accessory_id || c.id,
+    })
+  }
+
   return NextResponse.json({ success: true, id: saleIds[0], sale_ids: saleIds }, { status: 201 })
 }

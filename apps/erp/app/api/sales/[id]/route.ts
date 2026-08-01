@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent } from '@/lib/audit-log'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
 
 // ---------- GET: fetch one sale ----------
@@ -92,7 +93,7 @@ export async function PATCH(
   // trigger-derived from the sum of sale_payments (see POST/DELETE
   // /api/sales/[id]/payments). Record an installment or delete an erroneous one
   // there instead of overwriting these fields directly.
-  for (const key of ['sale_type', 'payment_account', 'sold_by', 'sale_date'] as const) {
+  for (const key of ['sale_type', 'payment_account', 'sold_by', 'sale_date', 'notes'] as const) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
 
@@ -149,7 +150,7 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin.from('sales').update(updates).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  await logFieldCorrections(
+  const fieldCorrectionIds = await logFieldCorrections(
     'sales',
     id,
     Object.keys(updates).map((field) => ({
@@ -160,6 +161,17 @@ export async function PATCH(
     sessionUser.id,
     body.reason || null
   )
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'sales',
+    tableName: 'sales',
+    recordId: id,
+    recordLabel: data?.invoice_number || existing.invoice_number || id,
+    fieldCorrectionIds,
+    reason: body.reason || null,
+  })
 
   return NextResponse.json(data)
 }

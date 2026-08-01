@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { normalizeForComparison } from '@/lib/text-normalize'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list dropdown values for a category (active only, unless owner asks for all) ----------
 export async function GET(req: NextRequest) {
@@ -67,5 +68,15 @@ export async function POST(req: NextRequest) {
     if (error.code === '23505') return NextResponse.json({ error: 'That value already exists in this category.' }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'settings',
+    tableName: 'custom_options',
+    recordId: data.id,
+    recordLabel: `${trimmedCategory}: ${trimmedValue}`,
+  })
+
   return NextResponse.json(data, { status: 201 })
 }

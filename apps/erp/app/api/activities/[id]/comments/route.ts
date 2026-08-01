@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser } from '@/lib/auth/session'
 import { canSeeActivity, getProfileMap } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: comment thread for an activity ----------
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -115,6 +116,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     recipientId, type, actorId: sessionUser.id, activityId: id, commentId: comment.id,
     title: activity.title, body: excerpt, link: `/dashboard/activities?open=${id}`,
   })))
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'activities',
+    tableName: 'activity_comments',
+    recordId: comment.id,
+    recordLabel: excerpt,
+    metadata: { activity_id: id },
+  })
 
   return NextResponse.json({ success: true, id: comment.id }, { status: 201 })
 }

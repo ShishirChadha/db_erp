@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: owner permanently deletes an asset_ledger row, including a sold one ----------
 // Unlike DELETE /api/asset-ledger/[id] (which unconditionally refuses anything 'sold'),
@@ -24,7 +25,7 @@ export async function POST(
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, asset_number, serial_number, status, po_id')
+    .select('*')
     .eq('id', id)
     .single()
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
@@ -64,6 +65,18 @@ export async function POST(
 
   const { error } = await supabaseAdmin.from('asset_ledger').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'hard_delete',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    recordLabel: asset.asset_number || asset.serial_number || id,
+    snapshot: { kind: 'row', table: 'asset_ledger', row: asset },
+    restoreStatus: 'restorable',
+    reason,
+  })
 
   return NextResponse.json({ success: true })
 }

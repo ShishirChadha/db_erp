@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const ALLOWED_FIELDS = ['ram', 'ssd', 'warranty_months'] as const
 
@@ -47,13 +48,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'price_delta cannot be negative' }, { status: 400 })
   }
 
-  const { error } = await supabaseAdmin.from('sku_upgrade_rules').insert({
+  const { data, error } = await supabaseAdmin.from('sku_upgrade_rules').insert({
     category, field_name, from_value, to_value, price_delta: Number(price_delta), created_by: sessionUser!.id,
-  })
+  }).select().single()
   if (error) {
     if (error.code === '23505') return NextResponse.json({ error: 'A rule for this exact category/field/from/to already exists' }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'create',
+    module: 'settings',
+    tableName: 'sku_upgrade_rules',
+    recordId: data?.id ?? null,
+    recordLabel: `${category}/${field_name}: ${from_value} -> ${to_value}`,
+  })
 
   return NextResponse.json({ success: true })
 }

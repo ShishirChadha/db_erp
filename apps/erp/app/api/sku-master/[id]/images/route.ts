@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET (list images for a SKU) ----------
 export async function GET(
@@ -62,5 +63,16 @@ export async function POST(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sku_master',
+    tableName: 'product_images',
+    recordId: data.id,
+    recordLabel: storage_path,
+    metadata: { sku_id: id },
+  })
+
   return NextResponse.json(data, { status: 201 })
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
@@ -26,6 +27,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const body = await req.json()
   const { role, allowed_pages, page_edit_keys, is_active, password, full_name, contact_email, employee_id } = body
+
+  const { data: existingProfile } = await supabaseAdmin
+    .from('profiles').select('full_name, username, is_active').eq('id', id).maybeSingle()
 
   const profileUpdates: Record<string, unknown> = {}
   if (role !== undefined) {
@@ -77,6 +81,19 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(id, { password })
     if (pwErr) return NextResponse.json({ error: pwErr.message }, { status: 500 })
   }
+
+  const deactivated = is_active !== undefined && !is_active && existingProfile?.is_active !== false
+  const recordLabel = existingProfile?.full_name || existingProfile?.username || id
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: deactivated ? 'soft_delete' : 'update',
+    module: 'settings',
+    tableName: 'profiles',
+    recordId: id,
+    recordLabel,
+    restoreStatus: deactivated ? 'restorable' : 'not_applicable',
+    metadata: { fields_changed: Object.keys(body) },
+  })
 
   return NextResponse.json({ success: true })
 }

@@ -41,6 +41,19 @@ export async function GET(req: NextRequest) {
     query = query.or(orClauses.join(','))
   }
 
+  // Month/Year filter on sale_date -- same year-anchors-month convention as /api/stock.
+  const yearParam = searchParams.get('year')
+  const year = yearParam ? parseInt(yearParam, 10) : NaN
+  if (!Number.isNaN(year)) {
+    const monthParam = searchParams.get('month')
+    const month = monthParam ? parseInt(monthParam, 10) : null
+    const from = month ? `${year}-${String(month).padStart(2, '0')}-01` : `${year}-01-01`
+    const toYear = month ? (month === 12 ? year + 1 : year) : year + 1
+    const toMonth = month ? (month === 12 ? 1 : month + 1) : 1
+    const to = `${toYear}-${String(toMonth).padStart(2, '0')}-01`
+    query = query.gte('sale_date', from).lt('sale_date', to)
+  }
+
   if (pagination) query = query.range(pagination.from, pagination.to)
 
   const { data: sales, error, count } = await query

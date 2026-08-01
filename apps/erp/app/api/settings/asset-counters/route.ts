@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { getSessionUser } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const PREFIXES = ['DBAS', 'TTAS', 'CSAS', 'OTHR']
 
@@ -52,6 +54,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function PUT(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
   const body = await req.json()
   const { prefix, last_number, year_suffix } = body
 
@@ -91,10 +94,21 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  await logAuditEvent({
+    actor: { id: sessionUser?.id ?? null, email: sessionUser?.email, role: sessionUser?.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'asset_counters',
+    recordId: `${prefix}-${currentYear}`,
+    recordLabel: `${prefix} ${currentYear}`,
+    metadata: { prefix, year: currentYear, last_number, year_suffix: year_suffix || null, previous_max: currentMax },
+  })
+
   return NextResponse.json({ success: true })
 }
 
 export async function POST(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
   const currentYear = new Date().getFullYear().toString()
 
   const { data: existingCounters } = await supabaseAdmin
@@ -103,10 +117,12 @@ export async function POST(req: NextRequest) {
     .eq('year', currentYear)
     .in('prefix', PREFIXES)
   const suffixByPrefix = new Map((existingCounters ?? []).map(c => [c.prefix, c.year_suffix]))
+  const recalculated: Record<string, number> = {}
 
   for (const prefix of PREFIXES) {
     const effectiveSuffix = suffixByPrefix.get(prefix) || currentYear.slice(-2)
     const maxNum = await findMaxForYear(prefix, effectiveSuffix)
+    recalculated[prefix] = maxNum
 
     // Upsert the counter with the recalculated value (only new-format assets for
     // this exact year/suffix count -- old-format legacy numbers never influence it).
@@ -122,6 +138,16 @@ export async function POST(req: NextRequest) {
         { onConflict: 'prefix,year' }
       )
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser?.id ?? null, email: sessionUser?.email, role: sessionUser?.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'asset_counters',
+    recordId: currentYear,
+    recordLabel: `Recalculate all counters (${currentYear})`,
+    metadata: { year: currentYear, recalculated },
+  })
 
   return NextResponse.json({ success: true })
 }

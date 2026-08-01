@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveLoginIdentifier } from '@/lib/auth/username'
+import { apiFetch } from '@/lib/api-client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -33,6 +34,8 @@ export default function LoginPage() {
       setError('Invalid email or password. Please try again.')
       return
     }
+
+    apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
 
     router.push('/dashboard')
     router.refresh()

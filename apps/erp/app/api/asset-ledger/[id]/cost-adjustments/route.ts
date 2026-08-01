@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Cost data is owner-only everywhere in this app -- this route only ever serves
 // owners, so (per project convention) it's written to never select/return
@@ -59,13 +60,24 @@ export async function POST(
   const { data: asset } = await supabaseAdmin.from('asset_ledger').select('id').eq('id', id).single()
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
 
-  const { error } = await supabaseAdmin.from('asset_cost_adjustments').insert({
+  const { data: inserted, error } = await supabaseAdmin.from('asset_cost_adjustments').insert({
     asset_id: id,
     amount: Number(amount),
     reason: reason || null,
     added_by: sessionUser.id,
-  })
+  }).select('id').single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'stock',
+    tableName: 'asset_cost_adjustments',
+    recordId: inserted?.id ?? null,
+    recordLabel: id,
+    reason: reason || null,
+    metadata: { asset_id: id, amount: Number(amount) },
+  })
 
   return NextResponse.json({ success: true })
 }

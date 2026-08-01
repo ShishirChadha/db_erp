@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const PROMO_TYPES = ['percent_off', 'flat_off', 'free_gift', 'coupon_code'] as const
 const SCOPE_TYPES = ['product', 'brand', 'category', 'sitewide'] as const
@@ -39,7 +40,7 @@ export async function POST(req: NextRequest) {
   if (promo_type === 'free_gift' && !free_gift_sku_id) return NextResponse.json({ error: 'free_gift_sku_id is required for free_gift' }, { status: 400 })
   if (scope_type !== 'sitewide' && !scope_value) return NextResponse.json({ error: 'scope_value is required unless scope_type is sitewide' }, { status: 400 })
 
-  const { error } = await supabaseAdmin.from('promotions').insert({
+  const { data, error } = await supabaseAdmin.from('promotions').insert({
     name, promo_type, code: code || null,
     discount_percent: discount_percent != null ? Number(discount_percent) : null,
     discount_flat: discount_flat != null ? Number(discount_flat) : null,
@@ -49,11 +50,20 @@ export async function POST(req: NextRequest) {
     is_stackable: !!is_stackable,
     min_order_value: min_order_value != null ? Number(min_order_value) : null,
     created_by: sessionUser!.id,
-  })
+  }).select().single()
   if (error) {
     if (error.code === '23505') return NextResponse.json({ error: 'That coupon code is already in use' }, { status: 409 })
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'create',
+    module: 'settings',
+    tableName: 'promotions',
+    recordId: data?.id ?? null,
+    recordLabel: name,
+  })
 
   return NextResponse.json({ success: true })
 }

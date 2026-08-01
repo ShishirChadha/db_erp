@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Purchase Orders carry vendor/cost/GST data end-to-end -- no employee access. Managers
 // may view (needed to approve/submit) but only owners can create/edit.
@@ -153,6 +154,15 @@ export async function POST(req: NextRequest) {
   if (itemsErr) return NextResponse.json({ error: itemsErr.message }, { status: 500 })
 
   await recalcPOTotals(po.id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: po.id,
+    recordLabel: poNumber,
+  })
 
   return NextResponse.json({ po_id: po.id, po_number: poNumber }, { status: 201 })
 }

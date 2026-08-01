@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { logAuditEvent } from '@/lib/audit-log'
 
 async function getUser(req: NextRequest) {
   const authHeader = req.headers.get('authorization')
@@ -38,6 +39,15 @@ export async function POST(
     .eq('id', id)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: user.id, email: user.email, role: null },
+    actionType: 'status_change',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    metadata: { from: 'qc_passed', to: 'ready_for_sale' },
+  })
 
   return NextResponse.json({ success: true, status: 'ready_for_sale' })
 }

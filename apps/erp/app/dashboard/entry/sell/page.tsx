@@ -140,9 +140,17 @@ function SellPageInner() {
   const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
   const [priceMode, setPriceMode] = useState<'pre_gst' | 'post_gst'>('pre_gst')
 
-  const [paymentStatus, setPaymentStatus] = useState<'paid' | 'partial' | 'pending'>('paid')
-  const [amountPaid, setAmountPaid] = useState<number>(0)
+  // Payment is a list of legs -- amount + which account it was actually received into
+  // (independent of paymentAccount below, the single "invoice under" entity). The first
+  // leg defaults to the full cart total (so a simple one-method full payment stays
+  // zero-click, matching the old single-field behavior) until the employee edits it.
+  const [paymentLegs, setPaymentLegs] = useState<{ id: string; amount: number; account: string; note: string }[]>([
+    { id: crypto.randomUUID(), amount: 0, account: 'Digitalbluez', note: '' },
+  ])
+  const [firstLegAmountTouched, setFirstLegAmountTouched] = useState(false)
+  const [invoicingEntityTouched, setInvoicingEntityTouched] = useState(false)
   const [paymentAccount, setPaymentAccount] = useState('Digitalbluez')
+  const [notes, setNotes] = useState('')
   const [saleDate, setSaleDate] = useState(today())
 
   const { values: staffNames } = useCustomOptions('staff_names')
@@ -274,7 +282,43 @@ function SellPageInner() {
   const cartSubtotal = cartItems.reduce((sum, line) => sum + lineBaseGstPrice(line), 0)
   const cartGstAmount = saleType === 'GST' ? Math.round(cartSubtotal * gstPercent * 100) / 10000 : 0
   const cartTotal = cartSubtotal + cartGstAmount
-  const balanceDue = cartTotal - (paymentStatus === 'paid' ? cartTotal : amountPaid)
+
+  const legsTotal = paymentLegs.reduce((sum, l) => sum + (l.amount || 0), 0)
+  const balanceDue = cartTotal - legsTotal
+  // Cart-level preview only -- mirrors the same threshold the DB trigger
+  // (sync_sale_payment_totals) uses so this label never disagrees with what actually
+  // lands. The real per-item payment_status (Sales Ledger / EditSaleDialog) is computed
+  // per-row after server-side allocation, so one item can legitimately end up 'paid'
+  // while another is 'partial' even under one "Paid in full"-looking cart total here --
+  // that's allocatePaymentLegs doing its job correctly, not a bug.
+  const derivedPaymentStatus: 'paid' | 'partial' | 'pending' =
+    legsTotal <= 0 ? 'pending' : legsTotal >= cartTotal - 0.5 ? 'paid' : 'partial'
+
+  // First leg defaults to the full cart total until manually edited -- keeps the common
+  // "paid in full, one method" case a zero-typing default like the old single field was.
+  useEffect(() => {
+    if (paymentLegs.length === 1 && !firstLegAmountTouched && paymentLegs[0].amount !== cartTotal) {
+      setPaymentLegs([{ ...paymentLegs[0], amount: cartTotal }])
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cartTotal, firstLegAmountTouched, paymentLegs.length])
+
+  // "Invoice under" mirrors the sole leg's account as long as there's exactly one leg
+  // and the employee hasn't manually overridden it -- stops once a 2nd leg is added or
+  // the dropdown is touched directly.
+  useEffect(() => {
+    if (paymentLegs.length === 1 && !invoicingEntityTouched && paymentLegs[0].account !== paymentAccount) {
+      setPaymentAccount(paymentLegs[0].account)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentLegs.length, paymentLegs[0]?.account, invoicingEntityTouched])
+
+  const addPaymentLeg = () => setPaymentLegs(prev => [...prev, { id: crypto.randomUUID(), amount: 0, account: 'Digitalbluez', note: '' }])
+  const removePaymentLeg = (id: string) => setPaymentLegs(prev => prev.length > 1 ? prev.filter(l => l.id !== id) : prev)
+  const updatePaymentLeg = (id: string, patch: Partial<{ amount: number; account: string; note: string }>) => {
+    setPaymentLegs(prev => prev.map(l => l.id === id ? { ...l, ...patch } : l))
+    if (patch.amount !== undefined) setFirstLegAmountTouched(true)
+  }
 
   // Switching modes converts every line's price so the total the customer pays stays
   // the same -- never just relabels a stale number under the new meaning.
@@ -298,7 +342,9 @@ function SellPageInner() {
     setBundlingForLineId(null); setBundleSearch(''); setBundleOptions([])
     setCustomerId(null); setCustomerData(null)
     setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
-    setPaymentStatus('paid'); setAmountPaid(0); setPaymentAccount('Digitalbluez'); setSoldBy('')
+    setPaymentLegs([{ id: crypto.randomUUID(), amount: 0, account: 'Digitalbluez', note: '' }])
+    setFirstLegAmountTouched(false); setInvoicingEntityTouched(false)
+    setPaymentAccount('Digitalbluez'); setNotes(''); setSoldBy('')
     setSaleDate(today())
   }
 
@@ -306,6 +352,7 @@ function SellPageInner() {
     if (cartItems.length === 0) { setError('Add at least one item to sell.'); return false }
     if (cartItems.some(l => !l.salePrice || l.salePrice <= 0)) { setError('Enter a valid selling price for every item.'); return false }
     if (!customerId) { setError('Select or add a customer.'); return false }
+    if (legsTotal > cartTotal + 0.01) { setError('Payment total cannot exceed the cart total.'); return false }
     return true
   }
 
@@ -325,9 +372,11 @@ function SellPageInner() {
         sale_type: saleType,
         gst_percentage: saleType === 'GST' ? gstPercent : 0,
         sale_date: saleDate,
-        payment_status: paymentStatus,
-        amount_paid: paymentStatus === 'partial' ? amountPaid : undefined,
+        payment_legs: paymentLegs
+          .filter(l => l.amount > 0)
+          .map(l => ({ amount: l.amount, payment_account: l.account, note: l.note || undefined })),
         payment_account: paymentAccount,
+        notes: notes || undefined,
         sold_by: soldBy || undefined,
         source_document_item_id: sourceDocumentItemId || undefined,
         items: cartItems.map(line => line.kind === 'unit'
@@ -662,27 +711,15 @@ function SellPageInner() {
             <p className="text-xs text-gray-400 mt-1">Backdate if this sale actually happened earlier.</p>
           </div>
           <div>
-            <label className="block font-medium text-sm mb-1">Payment</label>
-            <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value as any)} className="border p-2 w-full rounded">
-              <option value="paid">Paid in full</option>
-              <option value="partial">Partial</option>
-              <option value="pending">Payment Pending</option>
-            </select>
-          </div>
-          {paymentStatus === 'partial' && (
-            <div>
-              <label className="block font-medium text-sm mb-1">Amount Paid (₹)</label>
-              <input type="number" value={amountPaid} onChange={(e) => setAmountPaid(Number(e.target.value))} className="border p-2 w-full rounded" />
-              {cartItems.length > 1 && (
-                <p className="text-xs text-gray-400 mt-1">Split proportionally across each item by its own price.</p>
-              )}
-            </div>
-          )}
-          <div>
-            <label className="block font-medium text-sm mb-1">Received Into</label>
-            <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-2 w-full rounded">
+            <label className="block font-medium text-sm mb-1">Invoice Entity</label>
+            <select
+              value={paymentAccount}
+              onChange={(e) => { setPaymentAccount(e.target.value); setInvoicingEntityTouched(true) }}
+              className="border p-2 w-full rounded"
+            >
               {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
+            <p className="text-xs text-gray-400 mt-1">Drives the GST invoice this sale is issued under.</p>
           </div>
           <div>
             <label className="block font-medium text-sm mb-1">Sold By</label>
@@ -690,11 +727,67 @@ function SellPageInner() {
           </div>
         </div>
 
+        <div>
+          <label className="block font-medium text-sm mb-1">
+            Payment received as{' '}
+            <span className="font-normal text-gray-500">
+              — {derivedPaymentStatus === 'paid' ? 'Paid in full' : derivedPaymentStatus === 'partial' ? `Partial — ₹${legsTotal.toFixed(2)} of ₹${cartTotal.toFixed(2)}` : 'Payment Pending'}
+            </span>
+          </label>
+          <div className="space-y-2">
+            {paymentLegs.map((leg) => (
+              <div key={leg.id} className="flex gap-2 items-center">
+                <input
+                  type="number"
+                  value={leg.amount || ''}
+                  onChange={(e) => updatePaymentLeg(leg.id, { amount: Number(e.target.value) })}
+                  placeholder="Amount (₹)"
+                  className="border p-2 w-32 rounded"
+                />
+                <select
+                  value={leg.account}
+                  onChange={(e) => updatePaymentLeg(leg.id, { account: e.target.value })}
+                  className="border p-2 rounded"
+                >
+                  {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+                <input
+                  value={leg.note}
+                  onChange={(e) => updatePaymentLeg(leg.id, { note: e.target.value })}
+                  placeholder="Note (optional)"
+                  className="border p-2 flex-1 rounded"
+                />
+                {paymentLegs.length > 1 && (
+                  <button type="button" onClick={() => removePaymentLeg(leg.id)} className="text-red-500">✕</button>
+                )}
+              </div>
+            ))}
+          </div>
+          <button type="button" onClick={addPaymentLeg} className="text-blue-600 underline text-xs mt-2">
+            + Add another payment method
+          </button>
+          {legsTotal > cartTotal + 0.01 && (
+            <p className="text-red-600 text-xs mt-1">
+              Payment total (₹{legsTotal.toFixed(2)}) exceeds the cart total (₹{cartTotal.toFixed(2)}).
+            </p>
+          )}
+        </div>
+
+        <div>
+          <label className="block font-medium text-sm mb-1">Notes</label>
+          <textarea
+            rows={2}
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className="border p-2 w-full rounded"
+          />
+        </div>
+
         <div className="text-right text-sm space-y-1">
           {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{cartSubtotal.toFixed(2)}</p>}
           {saleType === 'GST' && <p>GST: ₹{cartGstAmount.toFixed(2)}</p>}
           <p className="font-bold text-base">Total: ₹{cartTotal.toFixed(2)}</p>
-          {paymentStatus !== 'paid' && <p className="text-amber-700">Balance due: ₹{balanceDue.toFixed(2)}</p>}
+          {derivedPaymentStatus !== 'paid' && <p className="text-amber-700">Balance due: ₹{balanceDue.toFixed(2)}</p>}
         </div>
 
         <div className="flex justify-end">
@@ -748,8 +841,19 @@ function SellPageInner() {
             { label: 'Customer', value: customerData?.customer_name || '' },
             { label: 'Sale Type', value: saleType },
             { label: 'Total', value: `₹${cartTotal.toFixed(2)}` },
-            { label: 'Payment', value: paymentStatus === 'partial' ? `Partial — ₹${amountPaid.toFixed(2)} paid` : paymentStatus },
-            { label: 'Received Into', value: paymentAccount },
+            {
+              label: 'Payment',
+              value: (
+                <div>
+                  <div>{derivedPaymentStatus === 'paid' ? 'Paid in full' : derivedPaymentStatus === 'partial' ? `Partial — ₹${legsTotal.toFixed(2)} of ₹${cartTotal.toFixed(2)}` : 'Payment Pending'}</div>
+                  {paymentLegs.filter(l => l.amount > 0).map(l => (
+                    <div key={l.id} className="text-xs text-gray-500">₹{l.amount.toFixed(2)} — {l.account}</div>
+                  ))}
+                </div>
+              ),
+            },
+            { label: 'Invoice Entity', value: paymentAccount },
+            { label: 'Notes', value: notes },
             { label: 'Sold By', value: soldBy },
             { label: 'Sale Date', value: saleDate },
           ]}

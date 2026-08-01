@@ -4,7 +4,9 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { generateReplacementJobNumber, SELLABLE_STATUSES } from '@/lib/replacement-jobs'
 import { parsePagination } from '@/lib/pagination'
 import { processCustomerReturn } from '@/lib/rma'
+import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
 import { BaseSaleFields, CartItemInput, processSingleSaleItem } from '@/lib/sales-cart'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -178,8 +180,8 @@ export async function POST(req: NextRequest) {
     sale_type: resolvedSaleType,
     entered_by: sessionUser.id,
     sold_by: sold_by || null,
-    payment_status: amountPaidForItem >= saleTotal ? 'paid' : (amountPaidForItem > 0 ? 'partial' : 'pending'),
     payment_account: payment_account || null,
+    notes: null,
     finalized: false,
   }
   const item: CartItemInput = {
@@ -188,10 +190,35 @@ export async function POST(req: NextRequest) {
     bundled_accessories: Array.isArray(bundled_accessories) && bundled_accessories.length > 0 ? bundled_accessories : undefined,
   }
 
-  const result = await processSingleSaleItem(item, baseSaleFields, gstPct, amountPaidForItem, sessionUser.id)
+  // amount_paid/payment_status are no longer set directly on the sales insert -- see
+  // lib/sales-cart.ts. The carried-over amount + any top-up is ledgered as one
+  // sale_payments row right after the sale commits, same as the Sell form's cart
+  // checkout, so trg_sync_sale_payment_totals derives the summary fields and a later
+  // installment never silently wipes this one out.
+  const result = await processSingleSaleItem(item, baseSaleFields, gstPct, sessionUser.id)
   if (!result.ok) {
     await supabaseAdmin.from('replacement_jobs').delete().eq('id', job.id)
     return NextResponse.json({ error: result.message }, { status: result.status })
+  }
+
+  if (amountPaidForItem > 0) {
+    const { error: paymentErr } = await supabaseAdmin.from('sale_payments').insert({
+      sale_id: result.saleRow.id,
+      amount: amountPaidForItem,
+      payment_account: payment_account || 'Digitalbluez',
+      note: carriedOverPaid > 0 ? 'Carried over from replaced sale, plus any top-up' : 'Recorded at replacement job creation',
+      recorded_by: sessionUser.id,
+    })
+    if (paymentErr) {
+      await reverseSaleInventoryEffects(result.saleRow, {
+        reason: 'Replacement job rolled back -- payment ledger insert failed',
+        userId: sessionUser.id,
+        assetRevertStatus: result.saleRow.priorAssetStatus,
+      })
+      await supabaseAdmin.from('sales').delete().eq('id', result.saleRow.id)
+      await supabaseAdmin.from('replacement_jobs').delete().eq('id', job.id)
+      return NextResponse.json({ error: `Job created but recording payment failed: ${paymentErr.message}. Rolled back.` }, { status: 500 })
+    }
   }
 
   // A newly-typed staff name is saved back into custom_options so it shows up in the
@@ -223,6 +250,15 @@ export async function POST(req: NextRequest) {
       })
     }
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'replacement_jobs',
+    tableName: 'replacement_jobs',
+    recordId: job.id,
+    recordLabel: job.job_number,
+  })
 
   return NextResponse.json({ success: true, id: job.id, job_number: job.job_number }, { status: 201 })
 }

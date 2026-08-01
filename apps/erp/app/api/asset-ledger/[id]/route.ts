@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- DELETE: remove an orphan (no-PO) asset ----------
 // Only safe for units that were never attached to a real Purchase Order and
@@ -18,7 +19,7 @@ export async function DELETE(
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('po_id, status')
+    .select('*')
     .eq('id', id)
     .single()
 
@@ -32,6 +33,17 @@ export async function DELETE(
 
   const { error } = await supabaseAdmin.from('asset_ledger').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'hard_delete',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: id,
+    recordLabel: asset.asset_number || asset.serial_number || id,
+    snapshot: { kind: 'row', table: 'asset_ledger', row: asset },
+    restoreStatus: 'restorable',
+  })
 
   return NextResponse.json({ success: true })
 }

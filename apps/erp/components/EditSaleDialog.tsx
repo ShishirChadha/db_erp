@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -57,6 +58,7 @@ interface SaleDetail {
   amount_paid: number;
   payment_account: string | null;
   sold_by: string | null;
+  notes: string | null;
   finalized: boolean;
   invoice_number: string | null;
   is_deleted: boolean;
@@ -96,6 +98,7 @@ export function EditSaleDialog({
   const [basePrice, setBasePrice] = useState(0);
   const [gstPercent, setGstPercent] = useState(18);
   const [paymentAccount, setPaymentAccount] = useState("");
+  const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<SalePayment[]>([]);
   const [showAddPayment, setShowAddPayment] = useState(false);
 
@@ -133,6 +136,7 @@ export function EditSaleDialog({
         setBasePrice(data.sale_base_price);
         setGstPercent(data.sale_base_price ? Math.round((data.sale_gst / data.sale_base_price) * 10000) / 100 : 18);
         setPaymentAccount(data.payment_account || "");
+        setNotes(data.notes || "");
         setBundled(data.bundled_accessories || []);
       } else {
         setErr("Failed to load sale.");
@@ -165,6 +169,7 @@ export function EditSaleDialog({
       sale_base_price: basePrice,
       gst_percentage: saleType === "GST" ? gstPercent : 0,
       payment_account: paymentAccount || null,
+      notes: notes || null,
       ...(sale?.asset_ledger_id
         ? { bundled_accessories: bundled.map(({ accessory_id, quantity }) => ({ accessory_id, quantity })) }
         : {}),
@@ -273,6 +278,11 @@ export function EditSaleDialog({
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+
+            <div>
+              <Label>Notes</Label>
+              <Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
             {sale.asset_ledger_id && (

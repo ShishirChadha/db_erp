@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent } from '@/lib/audit-log'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
 
 // ---------- POST: owner voids a sale (bookkeeping correction, not a physical return) ----------
@@ -51,13 +52,24 @@ export async function POST(
   const { error: updateErr } = await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', id)
   if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
 
-  await logFieldCorrections(
+  const fieldCorrectionIds = await logFieldCorrections(
     'sales',
     id,
     [{ field: 'is_deleted', oldValue: false, newValue: true }],
     sessionUser.id,
     reason
   )
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'void',
+    module: 'sales',
+    tableName: 'sales',
+    recordId: id,
+    recordLabel: existing.invoice_number || id,
+    fieldCorrectionIds,
+    reason,
+  })
 
   return NextResponse.json({ success: true })
 }

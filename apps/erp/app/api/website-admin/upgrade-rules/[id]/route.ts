@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: toggle active / update price ----------
 export async function PATCH(
@@ -24,6 +25,15 @@ export async function PATCH(
   const { error } = await supabaseAdmin.from('sku_upgrade_rules').update(update).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'sku_upgrade_rules',
+    recordId: id,
+    metadata: update,
+  })
+
   return NextResponse.json({ success: true })
 }
 
@@ -38,6 +48,15 @@ export async function DELETE(
   const { id } = await params
   const { error } = await supabaseAdmin.from('sku_upgrade_rules').delete().eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'hard_delete',
+    module: 'settings',
+    tableName: 'sku_upgrade_rules',
+    recordId: id,
+    restoreStatus: 'not_applicable',
+  })
 
   return NextResponse.json({ success: true })
 }

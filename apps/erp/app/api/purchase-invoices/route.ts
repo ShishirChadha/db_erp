@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Purchase Invoices carry vendor/cost/GST data -- owner-only, no employee access.
 // ---------- GET: list purchase invoices ----------
@@ -136,6 +137,15 @@ if (existingInvoice) {
       .update({ po_status: 'invoiced' })
       .eq('id', po_id)
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'purchase_orders',
+    tableName: 'invoices',
+    recordId: invoice.id,
+    recordLabel: invoice.invoice_number,
+  })
 
   return NextResponse.json(invoice, { status: 201 })
 }

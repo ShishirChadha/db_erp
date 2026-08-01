@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: update workflow/payment-account state on a replacement job ----------
 // Operational fields (status/problem_description) require the replacement_jobs page-edit
@@ -54,5 +55,15 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status' in updates ? 'status_change' : 'update',
+    module: 'replacement_jobs',
+    tableName: 'replacement_jobs',
+    recordId: id,
+    recordLabel: data.job_number,
+  })
+
   return NextResponse.json(data)
 }

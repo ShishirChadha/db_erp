@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { mintSalesInvoiceNumber } from '@/lib/sales-entry'
 import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales } from '@/lib/invoice-finalize'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: owner generates ONE GST invoice covering several sales ----------
 // For the same customer paid into the same account (Digitalbluez/Techtenth/Cash),
@@ -55,5 +56,19 @@ export async function POST(req: NextRequest) {
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+
+  // One summary row covering the whole batch -- every finalized sale's id is still
+  // traceable via metadata.sale_ids rather than one row per sale.
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'status_change',
+    module: 'sales',
+    tableName: 'sales',
+    recordId: null,
+    recordLabel: result.invoice_number || `Batch of ${sales.length} sales`,
+    metadata: { sale_ids: saleIds, invoice_id: result.invoice_id, invoice_number: result.invoice_number },
+    reason: 'Batch sale finalization -- invoice generated',
+  })
+
   return NextResponse.json({ success: true, invoice_id: result.invoice_id, invoice_number: result.invoice_number, sale_count: sales.length })
 }

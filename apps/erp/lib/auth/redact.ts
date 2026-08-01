@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 // in the `redaction_rules` table (Settings -> Field Redaction). Keyed by a logical
 // table/shape name (not always a literal SQL table -- e.g. 'stock_list' is /api/stock's
 // flattened shape).
-export type RedactableShape = 'sku_master' | 'stock_list' | 'accessories'
+export type RedactableShape = 'sku_master' | 'stock_list' | 'accessories' | 'audit_log'
 
 interface RedactionRule {
   shape: string
@@ -57,4 +57,16 @@ export async function redactManyForRole<T extends Record<string, any>>(rows: T[]
     }
     return clone
   })
+}
+
+// For shapes like field_corrections where the redactable field name is a VALUE
+// (row.field_name) rather than an object key -- e.g. a row {field_name:'cost_price',
+// old_value, new_value} has no literal `cost_price` key for redactForRole to strip.
+// Used by the audit-log feed to drop (not mask) a hidden field's diff entirely.
+export async function isFieldHiddenForRole(shape: RedactableShape, fieldName: string, role: Role): Promise<boolean> {
+  if (role === 'owner') return false
+  const rules = await getRules()
+  const rule = rules.find((r) => r.shape === shape && r.field_name === fieldName)
+  if (!rule) return false
+  return role === 'manager' ? rule.hidden_from_manager : rule.hidden_from_employee
 }

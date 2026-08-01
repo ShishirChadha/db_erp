@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { generateRepairJobNumber } from '@/lib/repair-jobs'
 import { parsePagination } from '@/lib/pagination'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list repair jobs ----------
 export async function GET(req: NextRequest) {
@@ -129,6 +130,15 @@ export async function POST(req: NextRequest) {
       })
     }
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'repair_jobs',
+    tableName: 'repair_jobs',
+    recordId: job.id,
+    recordLabel: job.job_number,
+  })
 
   return NextResponse.json({ success: true, id: job.id, job_number: job.job_number }, { status: 201 })
 }

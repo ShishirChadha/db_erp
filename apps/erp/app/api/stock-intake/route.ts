@@ -5,6 +5,7 @@ import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { TYPE_TO_CATEGORY, resolveBrand, buildSpecifications, buildIntakeLedgerRow } from '@/lib/stock-intake'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
 import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: owner's queue of intake units still needing purchase paperwork ----------
 // "Needs paperwork" = never adopted into a PO (po_id IS NULL). Inventory-wise these
@@ -122,6 +123,16 @@ export async function POST(req: NextRequest) {
       createdBy: sessionUser.id,
     })
   }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'stock',
+    tableName: 'asset_ledger',
+    recordId: inserted.id,
+    recordLabel: body.serial_number || inserted.id,
+    metadata: { sku_id: sku.id, type: body.type, model: body.model },
+  })
 
   return NextResponse.json(
     { success: true, id: inserted.id, sku_id: sku.id, possible_duplicates: possibleDuplicates },

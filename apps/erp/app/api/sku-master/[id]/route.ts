@@ -5,6 +5,7 @@ import { canonicalJson } from '@/lib/sku-resolver'
 import { getSessionUser, isOwner, canEditPage } from '@/lib/auth/session'
 import { redactForRole } from '@/lib/auth/redact'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent, AuditActionType } from '@/lib/audit-log'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -152,8 +153,9 @@ export async function PUT(
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+  let fieldCorrectionIds: string[] = []
   if (before) {
-    await logFieldCorrections(
+    fieldCorrectionIds = await logFieldCorrections(
       'sku_master',
       id,
       Object.keys(updatable).map((field) => ({
@@ -164,6 +166,28 @@ export async function PUT(
       sessionUser.id
     )
   }
+
+  // status -> 'archived' is this app's soft-delete-equivalent for sku_master
+  // (see audit-log-restore.ts's sku_master: status->'active' restore entry) --
+  // reactivating (archived -> active) is an ordinary update, not a 'restore'
+  // (restore is reserved for going through the actual Audit Log restore endpoint).
+  let actionType: AuditActionType = 'update'
+  let restoreStatus: 'not_applicable' | 'restorable' = 'not_applicable'
+  if (updatable.status === 'archived' && (before as any)?.status !== 'archived') {
+    actionType = 'soft_delete'
+    restoreStatus = 'restorable'
+  }
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType,
+    module: 'sku_master',
+    tableName: 'sku_master',
+    recordId: id,
+    recordLabel: data?.full_sku_code || id,
+    fieldCorrectionIds,
+    restoreStatus,
+  })
 
   return NextResponse.json(data)
 }

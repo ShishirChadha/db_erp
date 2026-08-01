@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { invalidateRedactionRulesCache } from '@/lib/auth/redact'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Owner-only, both directions: managers see the effect of this policy (costs shown or
 // hidden per redact.ts), but never the policy surface itself -- see docs/decisions.md
@@ -44,5 +45,15 @@ export async function PATCH(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   invalidateRedactionRulesCache()
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'redaction_rules',
+    recordId: id,
+    metadata: updates,
+  })
+
   return NextResponse.json({ success: true })
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { financialYear } from '@/lib/sales-entry'
+import { logAuditEvent } from '@/lib/audit-log'
 
 const VALID_KEYS = ['digitalbluez', 'techtenth', 'cash']
 
@@ -47,6 +48,17 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ key
       { onConflict: 'entity_key,doc_type,financial_year' }
     )
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'invoice_sequences',
+    recordId: key,
+    recordLabel: `${key} sales_invoice ${fy}`,
+    snapshot: { kind: 'field_diff', table: 'invoice_sequences', old: { last_number: existing?.last_number ?? null }, new: { last_number: lastNumber } },
+    metadata: { entity_key: key, doc_type: 'sales_invoice', financial_year: fy, previous_last_number: existing?.last_number ?? null, new_last_number: lastNumber },
+  })
 
   return NextResponse.json({ success: true, entity_key: key, financial_year: fy, last_number: lastNumber, next_will_be: lastNumber + 1 })
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales } from '@/lib/invoice-finalize'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: record a Zoho (external) invoice number against one or more sales ----------
 // The transition-mode counterpart to /finalize: while an entity is issuing invoices in
@@ -69,5 +70,16 @@ export async function POST(req: NextRequest) {
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'sales',
+    tableName: 'invoices',
+    recordId: result.invoice_id || null,
+    recordLabel: result.invoice_number || invoiceNumber,
+    metadata: { sale_ids: saleIds },
+  })
+
   return NextResponse.json({ success: true, invoice_id: result.invoice_id, invoice_number: result.invoice_number, sale_count: sales.length })
 }

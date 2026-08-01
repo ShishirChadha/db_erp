@@ -18,6 +18,7 @@ const KNOWN_CATEGORIES = [
   { key: 'model_tablet', label: 'Model (Tablet)' },
   { key: 'model_monitor', label: 'Model (Monitor)' },
   { key: 'cpu', label: 'CPU' },
+  { key: 'gpu', label: 'GPU (Laptop/Desktop)' },
   { key: 'cpu_series', label: 'CPU Series (standalone CPU SKUs)' },
   { key: 'gpu_series', label: 'GPU Series (standalone GPU SKUs)' },
   { key: 'monitor_resolution', label: 'Monitor Resolution' },
