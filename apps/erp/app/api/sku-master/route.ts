@@ -21,6 +21,59 @@ export async function GET(req: NextRequest) {
   const excludeCategory = searchParams.get('exclude_category') // comma-separated, optional
   const id = searchParams.get('id')
   const statusFilter = searchParams.get('status') // optional -- 'all' to include archived/discontinued, defaults to 'active' only
+  const publishedFilter = searchParams.get('is_published') // 'true' | 'false', optional
+  const stockFilter = searchParams.get('stock_filter') // 'out_of_stock' | 'low_stock', optional
+  const wantCounts = searchParams.get('counts') === 'true'
+
+  // Shared by both the counts request and the main list -- search/category are
+  // filter *context* every tab respects, unlike status/is_published/stock_filter
+  // which are what the tabs themselves switch between.
+  const applySharedFilters = (q: any) => {
+    if (search) q = q.or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%`)
+    if (category) {
+      const categories = category.split(',').map((c: string) => c.trim()).filter(Boolean)
+      q = categories.length > 1 ? q.in('category', categories) : q.eq('category', categories[0])
+    }
+    if (excludeCategory) {
+      const categories = excludeCategory.split(',').map((c: string) => c.trim()).filter(Boolean)
+      if (categories.length > 0) q = q.not('category', 'in', `(${categories.join(',')})`)
+    }
+    return q
+  }
+
+  // quantity_in_stock vs reorder_level is a column-to-column comparison, which
+  // PostgREST's query-string filters can't express directly -- fetch the thin
+  // id/quantity/reorder_level slice (no cost/spec data) and filter in JS instead.
+  const getLowStockIds = async () => {
+    let q = supabaseAdmin.from('sku_master').select('id, quantity_in_stock, reorder_level').eq('status', 'active')
+    q = applySharedFilters(q)
+    const { data } = await q
+    return (data || [])
+      .filter((r) => (r.quantity_in_stock ?? 0) > 0 && (r.quantity_in_stock ?? 0) <= (r.reorder_level ?? 0))
+      .map((r) => r.id)
+  }
+
+  if (wantCounts) {
+    const countQuery = (build: (q: any) => any) => build(applySharedFilters(supabaseAdmin.from('sku_master').select('id', { count: 'exact', head: true })))
+    const [all, published, unpublished, discontinued, archived, lowStockIds] = await Promise.all([
+      countQuery((q) => q.eq('status', 'active')),
+      countQuery((q) => q.eq('status', 'active').eq('is_published', true)),
+      countQuery((q) => q.eq('status', 'active').or('is_published.eq.false,is_published.is.null')),
+      countQuery((q) => q.eq('status', 'discontinued')),
+      countQuery((q) => q.eq('status', 'archived')),
+      getLowStockIds(),
+    ])
+    const outOfStock = await countQuery((q) => q.eq('status', 'active').lte('quantity_in_stock', 0))
+    return NextResponse.json({
+      all: all.count ?? 0,
+      published: published.count ?? 0,
+      unpublished: unpublished.count ?? 0,
+      out_of_stock: outOfStock.count ?? 0,
+      low_stock: lowStockIds.length,
+      discontinued: discontinued.count ?? 0,
+      archived: archived.count ?? 0,
+    })
+  }
 
   // Used by New Entry's Stock Intake form to prefill CPU/RAM/SSD/etc. from whatever
   // spec combination was last recorded for this exact brand+model, so a repeatedly
@@ -67,6 +120,17 @@ export async function GET(req: NextRequest) {
     // flow (/api/purchase-orders/from-accessory-stock) instead.
     const categories = excludeCategory.split(',').map((c) => c.trim()).filter(Boolean)
     if (categories.length > 0) query = query.not('category', 'in', `(${categories.join(',')})`)
+  }
+  if (publishedFilter === 'true') {
+    query = query.eq('is_published', true)
+  } else if (publishedFilter === 'false') {
+    query = query.or('is_published.eq.false,is_published.is.null')
+  }
+  if (stockFilter === 'out_of_stock') {
+    query = query.lte('quantity_in_stock', 0)
+  } else if (stockFilter === 'low_stock') {
+    const lowStockIds = await getLowStockIds()
+    query = query.in('id', lowStockIds.length > 0 ? lowStockIds : ['00000000-0000-0000-0000-000000000000'])
   }
   if (id) {
     query = query.eq('id', id)

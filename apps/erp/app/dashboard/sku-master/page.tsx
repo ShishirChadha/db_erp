@@ -14,8 +14,22 @@ import { buildConfigSummary } from '@/lib/sku-config-summary'
 import { Pagination } from '@/components/Pagination'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ErrorBanner } from '@/components/ErrorBanner'
+import { StatCardsRow, StatCard } from '@/components/StatCardsRow'
+import { StatusBadge } from '@/components/StatusBadge'
 
 const PAGE_SIZE = 25
+
+type FilterTab = 'all' | 'published' | 'unpublished' | 'out_of_stock' | 'low_stock' | 'discontinued' | 'archived'
+
+interface SkuCounts {
+  all: number
+  published: number
+  unpublished: number
+  out_of_stock: number
+  low_stock: number
+  discontinued: number
+  archived: number
+}
 
 interface DuplicateCluster {
   category: string
@@ -39,6 +53,8 @@ interface SKU {
   quantity_in_stock: number
   reorder_level: number
   hsn_code?: string | null
+  is_published?: boolean | null
+  status?: string
 }
 
 interface CategoryTemplate {
@@ -66,6 +82,8 @@ function SkuMasterPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const [filterTab, setFilterTab] = useState<FilterTab>('all')
+  const [counts, setCounts] = useState<SkuCounts | null>(null)
 
   const [duplicateClusters, setDuplicateClusters] = useState<DuplicateCluster[]>([])
   const [showDuplicates, setShowDuplicates] = useState(false)
@@ -95,11 +113,29 @@ function SkuMasterPage() {
     }
   }, [])
 
+  // Tabs beyond category/search: Published/Unpublished narrow by website state,
+  // Out of Stock/Low Stock by quantity vs reorder level, Discontinued/Archived by
+  // the base status column (the default list only ever shows 'active'). Mutually
+  // exclusive -- clicking one replaces the others, same as Live Stock's top-level
+  // tab bar (not layered sub-filters within a tab).
+  const tabToParams = (tab: FilterTab): Record<string, string> => {
+    switch (tab) {
+      case 'published': return { is_published: 'true' }
+      case 'unpublished': return { is_published: 'false' }
+      case 'out_of_stock': return { stock_filter: 'out_of_stock' }
+      case 'low_stock': return { stock_filter: 'low_stock' }
+      case 'discontinued': return { status: 'discontinued' }
+      case 'archived': return { status: 'archived' }
+      default: return {}
+    }
+  }
+
   const fetchSkus = useCallback(async () => {
     try {
       const params = new URLSearchParams()
       if (search) params.append('search', search)
       if (categoryFilter) params.append('category', categoryFilter)
+      Object.entries(tabToParams(filterTab)).forEach(([k, v]) => params.set(k, v))
       params.set('page', String(page))
       params.set('limit', String(PAGE_SIZE))
       const res = await apiFetch(`/api/sku-master?${params.toString()}`)
@@ -111,7 +147,20 @@ function SkuMasterPage() {
       console.error(err)
       setError(err.message)
     }
-  }, [search, categoryFilter, page])
+  }, [search, categoryFilter, filterTab, page])
+
+  const fetchCounts = useCallback(async () => {
+    try {
+      const params = new URLSearchParams({ counts: 'true' })
+      if (search) params.append('search', search)
+      if (categoryFilter) params.append('category', categoryFilter)
+      const res = await apiFetch(`/api/sku-master?${params.toString()}`)
+      if (!res.ok) return
+      setCounts(await res.json())
+    } catch {
+      // Non-critical -- tabs just show without counts if this fails.
+    }
+  }, [search, categoryFilter])
 
   useEffect(() => {
     fetchTemplates()
@@ -122,11 +171,15 @@ function SkuMasterPage() {
   }, [fetchSkus])
 
   useEffect(() => {
+    fetchCounts()
+  }, [fetchCounts])
+
+  useEffect(() => {
     fetchDuplicateCandidates()
   }, [fetchDuplicateCandidates])
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [search, categoryFilter])
+  useEffect(() => { setPage(1) }, [search, categoryFilter, filterTab])
 
   const toggleSort = (field: SortField) => {
     if (sortField === field) {
@@ -174,10 +227,21 @@ function SkuMasterPage() {
     try {
       await apiFetch(`/api/sku-master/${sku.id}`, { method: 'DELETE' })
       fetchSkus()
+      fetchCounts()
     } finally {
       setDeletingId(null)
     }
   }
+
+  const statCards: StatCard[] = counts ? [
+    { label: 'All', value: counts.all, onClick: () => setFilterTab('all'), active: filterTab === 'all' },
+    { label: 'Published', value: counts.published, onClick: () => setFilterTab('published'), active: filterTab === 'published' },
+    { label: 'Unpublished', value: counts.unpublished, onClick: () => setFilterTab('unpublished'), active: filterTab === 'unpublished' },
+    { label: 'Out of Stock', value: counts.out_of_stock, onClick: () => setFilterTab('out_of_stock'), active: filterTab === 'out_of_stock' },
+    { label: 'Low Stock', value: counts.low_stock, onClick: () => setFilterTab('low_stock'), active: filterTab === 'low_stock' },
+    { label: 'Discontinued', value: counts.discontinued, onClick: () => setFilterTab('discontinued'), active: filterTab === 'discontinued' },
+    { label: 'Archived', value: counts.archived, onClick: () => setFilterTab('archived'), active: filterTab === 'archived' },
+  ] : []
 
   if (loading) return <div className="p-4">Loading…</div>
 
@@ -191,6 +255,8 @@ function SkuMasterPage() {
       </div>
 
       {error && <div className="mb-4"><ErrorBanner message={error} onRetry={() => fetchSkus()} /></div>}
+
+      {counts && <StatCardsRow cards={statCards} />}
 
       {duplicateClusters.length > 0 && (
         <div className="mb-4 border border-amber-300 bg-amber-50 rounded-md">
@@ -248,9 +314,9 @@ function SkuMasterPage() {
             className="border p-2 rounded"
           />
         </div>
-        {(categoryFilter || search) && (
+        {(categoryFilter || search || filterTab !== 'all') && (
           <button
-            onClick={() => { setCategoryFilter(''); setSearch('') }}
+            onClick={() => { setCategoryFilter(''); setSearch(''); setFilterTab('all') }}
             className="text-sm text-gray-500 underline"
           >
             Clear filters
@@ -276,11 +342,12 @@ function SkuMasterPage() {
               <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('quantity_in_stock')}>
                 Stock{sortIndicator('quantity_in_stock')}
               </th>
+              <th className="p-2">Website</th>
               <th className="p-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {displayedSkus.length === 0 && <EmptyTableRow colSpan={7} message="No SKUs found." />}
+            {displayedSkus.length === 0 && <EmptyTableRow colSpan={8} message="No SKUs found." />}
             {displayedSkus.map((sku, idx) => (
               <tr key={sku.id}>
                 <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -289,6 +356,11 @@ function SkuMasterPage() {
                 <td className="p-2">{sku.hsn_code || '—'}</td>
                 <td className="p-2">{sku.category}</td>
                 <td className="p-2 text-right tabular-nums">{sku.quantity_in_stock ?? '0'}</td>
+                <td className="p-2">
+                  <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
+                    {sku.is_published ? 'Published' : 'Unpublished'}
+                  </StatusBadge>
+                </td>
                 <td className="p-2 space-x-2">
                   <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
                   {(isOwner || hasPageAccess('website')) && (
@@ -311,7 +383,7 @@ function SkuMasterPage() {
           templates={templates}
           existingSku={editingSku}
           onClose={() => setModalOpen(false)}
-          onSaved={() => fetchSkus()}
+          onSaved={() => { fetchSkus(); fetchCounts() }}
         />
       )}
 
@@ -322,6 +394,7 @@ function SkuMasterPage() {
           onMerged={() => {
             toast.success('SKUs merged')
             fetchSkus()
+            fetchCounts()
             fetchDuplicateCandidates()
           }}
         />
@@ -332,7 +405,7 @@ function SkuMasterPage() {
           sku={webPublishSku}
           templates={templates}
           onClose={() => setWebPublishSku(null)}
-          onSaved={() => fetchSkus()}
+          onSaved={() => { fetchSkus(); fetchCounts() }}
         />
       )}
     </div>
