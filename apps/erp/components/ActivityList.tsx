@@ -33,6 +33,8 @@ interface Activity {
   created_by_name?: string | null;
   assignee_ids: string[];
   assignee_names: string[];
+  watcher_ids: string[];
+  watcher_names: string[];
   related_type?: RelatedType | null;
   related_id?: string | null;
   completed_at?: string | null;
@@ -55,6 +57,7 @@ interface HistoryRow {
 
 interface ActivityDetail extends Activity {
   assignees: { user_id: string; name: string | null; assigned_by_name: string | null; assigned_at: string }[];
+  watchers: { user_id: string; name: string | null; added_by_name: string | null; added_at: string }[];
   history: HistoryRow[];
   created_by_name: string | null;
   completed_by_name: string | null;
@@ -102,6 +105,7 @@ interface TaskFormState {
   related_type: RelatedType | '';
   related_id: string;
   assignee_ids: string[];
+  watcher_ids: string[];
 }
 
 function TaskForm({
@@ -128,6 +132,17 @@ function TaskForm({
       assignee_ids: prev.assignee_ids.includes(userId)
         ? prev.assignee_ids.filter(id => id !== userId)
         : [...prev.assignee_ids, userId],
+      // An assignee already sees and is notified about the task -- adding them
+      // as a watcher too would be a redundant, confusing second relationship.
+      watcher_ids: prev.watcher_ids.filter(id => id !== userId),
+    }));
+  };
+  const toggleWatcher = (userId: string) => {
+    setForm(prev => ({
+      ...prev,
+      watcher_ids: prev.watcher_ids.includes(userId)
+        ? prev.watcher_ids.filter(id => id !== userId)
+        : [...prev.watcher_ids, userId],
     }));
   };
 
@@ -175,6 +190,22 @@ function TaskForm({
           ))}
         </div>
         <p className="text-xs text-gray-400 mt-1">Leave empty for a personal task (only you and the owner will see it).</p>
+      </div>
+
+      <div>
+        <label className="block text-sm font-medium mb-1">Watchers (CC — can see the task, not assigned to do it)</label>
+        <div className="border rounded p-2 max-h-32 overflow-y-auto space-y-1">
+          {assignableUsers.filter(u => !form.assignee_ids.includes(u.id)).length === 0 && (
+            <p className="text-xs text-gray-400">No other users available to watch.</p>
+          )}
+          {assignableUsers.filter(u => !form.assignee_ids.includes(u.id)).map(u => (
+            <label key={u.id} className="flex items-center gap-2 text-sm">
+              <Checkbox checked={form.watcher_ids.includes(u.id)} onCheckedChange={() => toggleWatcher(u.id)} />
+              {userLabel(u)} <span className="text-xs text-gray-400">({u.role})</span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-gray-400 mt-1">e.g. a manager who should see this task without owning the work — they get visibility and a notification, but the task stays assigned to whoever&apos;s checked above.</p>
       </div>
 
       <div>
@@ -230,10 +261,21 @@ function TaskForm({
   );
 }
 
-const EMPTY_FORM: TaskFormState = {
-  title: '', description: '', tags: [], status: 'pending', priority: 'normal',
-  due_date: '', reminder_at: '', related_type: '', related_id: '', assignee_ids: [],
-};
+// Computed fresh (not a static constant) so a form opened later in the day --
+// or across a midnight boundary on a long-lived tab -- still gets a sensible
+// "today" default rather than a value frozen at first page load.
+function buildEmptyForm(): TaskFormState {
+  const due = new Date();
+  due.setHours(18, 0, 0, 0);
+  const reminder = new Date(due);
+  reminder.setHours(reminder.getHours() - 2);
+  return {
+    title: '', description: '', tags: [], status: 'pending', priority: 'normal',
+    due_date: format(due, "yyyy-MM-dd'T'HH:mm"),
+    reminder_at: format(reminder, "yyyy-MM-dd'T'HH:mm"),
+    related_type: '', related_id: '', assignee_ids: [], watcher_ids: [],
+  };
+}
 
 // ---------- Add Activity Modal ----------
 function AddActivityModal({
@@ -241,7 +283,14 @@ function AddActivityModal({
 }: {
   isOpen: boolean; onClose: () => void; onUpdate: () => void; existingTags: string[]; assignableUsers: AssignableUser[];
 }) {
-  const [form, setForm] = useState<TaskFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<TaskFormState>(buildEmptyForm);
+
+  // Fresh defaults every time the modal is opened (including reopen-after-cancel),
+  // not just after a successful submit -- so the due-date/reminder defaults
+  // never go stale relative to "now".
+  useEffect(() => {
+    if (isOpen) setForm(buildEmptyForm());
+  }, [isOpen]);
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title.trim()) return alert('Title is required');
@@ -258,7 +307,7 @@ function AddActivityModal({
     if (res.ok) {
       onUpdate();
       onClose();
-      setForm(EMPTY_FORM);
+      setForm(buildEmptyForm());
     } else {
       const body = await res.json().catch(() => ({}));
       alert(body.error || 'Failed to add task');
@@ -286,7 +335,7 @@ function EditActivityModal({
   activity: Activity | null; isOpen: boolean; onClose: () => void; onUpdate: () => void;
   existingTags: string[]; assignableUsers: AssignableUser[];
 }) {
-  const [form, setForm] = useState<TaskFormState>(EMPTY_FORM);
+  const [form, setForm] = useState<TaskFormState>(buildEmptyForm);
 
   useEffect(() => {
     if (activity) {
@@ -301,6 +350,7 @@ function EditActivityModal({
         related_type: activity.related_type || '',
         related_id: activity.related_id || '',
         assignee_ids: activity.assignee_ids || [],
+        watcher_ids: activity.watcher_ids || [],
       });
     }
   }, [activity]);
@@ -408,6 +458,7 @@ function DetailModal({
             <p><strong>Priority:</strong> <span className={`px-1.5 py-0.5 rounded text-xs ${PRIORITY_STYLES[detail.priority]}`}>{detail.priority}</span></p>
             <p><strong>Created by:</strong> {detail.created_by_name || '—'}</p>
             <p><strong>Assigned to:</strong> {detail.assignees.length > 0 ? detail.assignees.map(a => a.name).join(', ') : '(no one — personal task)'}</p>
+            <p><strong>Watching:</strong> {detail.watchers.length > 0 ? detail.watchers.map(w => w.name).join(', ') : '—'}</p>
             <p><strong>Due Date:</strong> {detail.due_date ? format(new Date(detail.due_date), 'dd/MM/yyyy HH:mm') : '—'}</p>
             <p><strong>Reminder:</strong> {detail.reminder_at ? format(new Date(detail.reminder_at), 'dd/MM/yyyy HH:mm') : '—'}</p>
             <p><strong>Entry Date:</strong> {detail.created_at ? format(new Date(detail.created_at), 'dd/MM/yyyy HH:mm') : '—'}</p>
@@ -451,6 +502,7 @@ function DetailModal({
             canPin={isOwner || detail.created_by === myId}
             mentionPool={[
               ...detail.assignees.map(a => ({ id: a.user_id, name: a.name || 'Unknown user' })),
+              ...detail.watchers.map(w => ({ id: w.user_id, name: w.name || 'Unknown user' })),
               { id: detail.created_by, name: detail.created_by_name || 'Unknown user' },
             ].filter((c, i, arr) => arr.findIndex(x => x.id === c.id) === i && c.id !== myId)}
           />
@@ -471,6 +523,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['pending', 'in_progress', 'done']);
   const [tagFilter, setTagFilter] = useState('');
   const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -498,6 +551,14 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
     });
   }, [myId]);
 
+  // Debounce the search box -- without this, every keystroke fired a full
+  // network round-trip, which read as the search "working alphabet by
+  // alphabet" while the user was still typing the string.
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
   const fetchActivities = async () => {
     setLoading(true);
     const params = new URLSearchParams();
@@ -505,7 +566,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
       params.append('status', selectedStatuses.join(','));
     }
     if (tagFilter) params.append('tag', tagFilter);
-    if (search) params.append('search', search);
+    if (debouncedSearch) params.append('search', debouncedSearch);
     params.append('sort_by', sortBy);
     params.append('sort_order', sortOrder);
     const res = await apiFetch(`/api/activities?${params.toString()}`);
@@ -514,7 +575,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
     setLoading(false);
   };
 
-  useEffect(() => { fetchActivities(); }, [selectedStatuses, tagFilter, search, sortBy, sortOrder]);
+  useEffect(() => { fetchActivities(); }, [selectedStatuses, tagFilter, debouncedSearch, sortBy, sortOrder]);
 
   const triggerReload = () => { onUpdate(); fetchActivities(); };
 
@@ -551,6 +612,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
           title: `${act.title} (copy)`, description: act.description, tags: act.tags,
           status: 'pending', priority: act.priority, due_date: act.due_date, reminder_at: act.reminder_at,
           related_type: act.related_type, related_id: act.related_id, assignee_ids: act.assignee_ids,
+          watcher_ids: act.watcher_ids,
         }),
       });
       triggerReload();

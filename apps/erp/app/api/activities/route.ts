@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
-  buildOwnVisibilityFilter, getAssigneesForActivities, getProfileMap, areValidAssignees,
+  buildOwnVisibilityFilter, getAssigneesForActivities, getWatchersForActivities, getProfileMap, areValidUsers,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -51,20 +51,27 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const activityIds = (data || []).map((a) => a.id)
-  const assigneesByActivity = await getAssigneesForActivities(activityIds)
+  const [assigneesByActivity, watchersByActivity] = await Promise.all([
+    getAssigneesForActivities(activityIds),
+    getWatchersForActivities(activityIds),
+  ])
   const allUserIds = [
     ...(data || []).map((a) => a.created_by),
     ...Array.from(assigneesByActivity.values()).flat(),
+    ...Array.from(watchersByActivity.values()).flat(),
   ]
   const profileMap = await getProfileMap(allUserIds)
 
   const enriched = (data || []).map((a) => {
     const assigneeIds = assigneesByActivity.get(a.id) || []
+    const watcherIds = watchersByActivity.get(a.id) || []
     return {
       ...a,
       created_by_name: profileMap.get(a.created_by)?.full_name || null,
       assignee_ids: assigneeIds,
       assignee_names: assigneeIds.map((id) => profileMap.get(id)?.full_name || 'Unknown user'),
+      watcher_ids: watcherIds,
+      watcher_names: watcherIds.map((id) => profileMap.get(id)?.full_name || 'Unknown user'),
     }
   })
 
@@ -79,7 +86,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     title, description, tags, status, due_date, reminder_at,
-    priority, related_type, related_id, assignee_ids,
+    priority, related_type, related_id, assignee_ids, watcher_ids,
   } = body
 
   if (!title || !String(title).trim()) return NextResponse.json({ error: 'Title is required.' }, { status: 400 })
@@ -91,8 +98,17 @@ export async function POST(req: NextRequest) {
   }
 
   const assigneeIds: string[] = Array.isArray(assignee_ids) ? [...new Set(assignee_ids)] : []
-  if (!(await areValidAssignees(assigneeIds))) {
+  if (!(await areValidUsers(assigneeIds))) {
     return NextResponse.json({ error: 'One or more assignees are not valid active users with Activity Hub access.' }, { status: 400 })
+  }
+  // Watching is a lighter "CC" role, not an assignment -- someone who's already
+  // an assignee doesn't need a separate watcher row (they already see and are
+  // notified about the task as an assignee).
+  const watcherIds: string[] = Array.isArray(watcher_ids)
+    ? [...new Set(watcher_ids as string[])].filter((id) => !assigneeIds.includes(id))
+    : []
+  if (!(await areValidUsers(watcherIds))) {
+    return NextResponse.json({ error: 'One or more watchers are not valid active users with Activity Hub access.' }, { status: 400 })
   }
 
   const { data: created, error } = await supabaseAdmin
@@ -123,6 +139,18 @@ export async function POST(req: NextRequest) {
 
     await notifyMany(assigneeIds.map((userId) => ({
       recipientId: userId, type: 'task_assigned', actorId: sessionUser.id, activityId: created.id,
+      title: created.title, link: `/dashboard/activities?open=${created.id}`,
+    })))
+  }
+
+  if (watcherIds.length > 0) {
+    const { error: watchErr } = await supabaseAdmin.from('activity_watchers').insert(
+      watcherIds.map((userId) => ({ activity_id: created.id, user_id: userId, added_by: sessionUser.id }))
+    )
+    if (watchErr) return NextResponse.json({ error: watchErr.message }, { status: 500 })
+
+    await notifyMany(watcherIds.map((userId) => ({
+      recipientId: userId, type: 'task_watched', actorId: sessionUser.id, activityId: created.id,
       title: created.title, link: `/dashboard/activities?open=${created.id}`,
     })))
   }

@@ -83,15 +83,19 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         .filter((a: { key: string }) => a.key)
     : []
 
-  const { data: assigneeRows } = await supabaseAdmin.from('activity_assignees').select('user_id').eq('activity_id', id)
+  const [{ data: assigneeRows }, { data: watcherRows }] = await Promise.all([
+    supabaseAdmin.from('activity_assignees').select('user_id').eq('activity_id', id),
+    supabaseAdmin.from('activity_watchers').select('user_id').eq('activity_id', id),
+  ])
   const assigneeIds = (assigneeRows || []).map((r) => r.user_id)
+  const watcherIds = (watcherRows || []).map((r) => r.user_id)
   const { data: owners } = await supabaseAdmin.from('profiles').select('id').eq('role', 'owner')
   const ownerIds = (owners || []).map((o) => o.id)
 
   // Mentions are restricted to people who can already see this task (assignees,
-  // the creator, or an owner who sees everything) -- prevents notifying/linking
-  // someone into a task they'd get a 403 opening.
-  const allowedMentionPool = new Set([...assigneeIds, activity.created_by, ...ownerIds])
+  // watchers, the creator, or an owner who sees everything) -- prevents
+  // notifying/linking someone into a task they'd get a 403 opening.
+  const allowedMentionPool = new Set([...assigneeIds, ...watcherIds, activity.created_by, ...ownerIds])
   const mentionedIds: string[] = Array.isArray(body.mentioned_user_ids) ? [...new Set(body.mentioned_user_ids as string[])] : []
   if (mentionedIds.some((uid) => !allowedMentionPool.has(uid))) {
     return NextResponse.json({ error: 'Can only mention someone who can already see this task.' }, { status: 400 })

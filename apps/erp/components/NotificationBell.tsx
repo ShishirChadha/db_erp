@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api-client';
 
 interface Notification {
   id: string;
-  type: 'task_assigned' | 'task_reassigned' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue';
+  type: 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue';
   actor_name: string | null;
   title: string;
   body: string | null;
@@ -23,6 +23,8 @@ function composeMessage(n: Notification): string {
     case 'task_assigned':
     case 'task_reassigned':
       return `${actor} assigned you to "${n.title}"`;
+    case 'task_watched':
+      return `${actor} added you as a watcher on "${n.title}"`;
     case 'comment_added':
       return `${actor} commented on "${n.title}"${n.body ? `: ${n.body}` : ''}`;
     case 'mention':

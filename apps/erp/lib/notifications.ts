@@ -4,7 +4,7 @@ import { sendEmail } from './email'
 // 'due_soon'/'overdue' are inserted directly by the pg_cron-driven
 // scan_activity_due_dates() Postgres function, not via notify()/notifyMany()
 // -- listed here for type-completeness across the app (e.g. NotificationBell).
-export type NotificationType = 'task_assigned' | 'task_reassigned' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue'
+export type NotificationType = 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue'
 
 interface NotifyInput {
   recipientId: string
@@ -20,6 +20,7 @@ interface NotifyInput {
 const TYPE_SUBJECT: Record<NotificationType, string> = {
   task_assigned: 'You were assigned a task',
   task_reassigned: 'You were assigned a task',
+  task_watched: 'You were added to watch a task',
   comment_added: 'New comment on your task',
   mention: 'You were mentioned in a task',
   status_changed: 'Task status changed',

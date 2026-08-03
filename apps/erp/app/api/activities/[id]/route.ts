@@ -4,7 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
-  canSeeActivity, getProfileMap, areValidAssignees,
+  canSeeActivity, getProfileMap, areValidUsers,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -24,6 +24,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const { data: assigneeRows } = await supabaseAdmin
     .from('activity_assignees').select('user_id, assigned_by, assigned_at').eq('activity_id', id)
+  const { data: watcherRows } = await supabaseAdmin
+    .from('activity_watchers').select('user_id, added_by, added_at').eq('activity_id', id)
   const { data: history } = await supabaseAdmin
     .from('field_corrections').select('field_name, old_value, new_value, changed_by, changed_at')
     .eq('table_name', 'activities').eq('record_id', id).order('changed_at', { ascending: true })
@@ -31,6 +33,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const nameIds = [
     activity.created_by, activity.completed_by, activity.reviewed_by,
     ...(assigneeRows || []).flatMap((r) => [r.user_id, r.assigned_by]),
+    ...(watcherRows || []).flatMap((r) => [r.user_id, r.added_by]),
     ...(history || []).map((h) => h.changed_by),
   ].filter(Boolean) as string[]
   const profileMap = await getProfileMap(nameIds)
@@ -43,6 +46,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     reviewed_by_name: nameFor(activity.reviewed_by),
     assignees: (assigneeRows || []).map((r) => ({
       user_id: r.user_id, name: nameFor(r.user_id), assigned_by_name: nameFor(r.assigned_by), assigned_at: r.assigned_at,
+    })),
+    watchers: (watcherRows || []).map((r) => ({
+      user_id: r.user_id, name: nameFor(r.user_id), added_by_name: nameFor(r.added_by), added_at: r.added_at,
     })),
     history: (history || []).map((h) => ({ ...h, changed_by_name: nameFor(h.changed_by) })),
   })
@@ -115,11 +121,14 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     updates.overdue_notified_at = null
   }
 
-  // Fetch current assignees once -- used both as the status-change notification
-  // audience and as the "before" baseline for the assignee diff below.
-  const { data: currentAssigneeRows } = await supabaseAdmin
-    .from('activity_assignees').select('user_id').eq('activity_id', id)
+  // Fetch current assignees/watchers once -- used both as the status-change
+  // notification audience and as the "before" baseline for the diffs below.
+  const [{ data: currentAssigneeRows }, { data: currentWatcherRows }] = await Promise.all([
+    supabaseAdmin.from('activity_assignees').select('user_id').eq('activity_id', id),
+    supabaseAdmin.from('activity_watchers').select('user_id').eq('activity_id', id),
+  ])
   const currentIds = (currentAssigneeRows || []).map((r) => r.user_id)
+  const currentWatcherIds = (currentWatcherRows || []).map((r) => r.user_id)
 
   const { data: updated, error } = await supabaseAdmin
     .from('activities').update(updates).eq('id', id).select('*').single()
@@ -153,7 +162,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   // Assignee changes: diff current vs requested, insert/delete rows, log a summary correction.
   if (Array.isArray(body.assignee_ids)) {
     const newAssigneeIds: string[] = [...new Set(body.assignee_ids as string[])]
-    if (!(await areValidAssignees(newAssigneeIds))) {
+    if (!(await areValidUsers(newAssigneeIds))) {
       return NextResponse.json({ error: 'One or more assignees are not valid active users with Activity Hub access.' }, { status: 400 })
     }
 
@@ -177,6 +186,44 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       const nameList = (ids: string[]) => ids.map((uid) => nameMap.get(uid)?.full_name || uid).join(', ') || '(none)'
       await logFieldCorrections('activities', id,
         [{ field: 'assignees', oldValue: nameList(currentIds), newValue: nameList(newAssigneeIds) }],
+        sessionUser.id)
+    }
+  }
+
+  // Watcher changes: same diff pattern as assignees, kept in a separate table/notification
+  // type since watching is visibility-only, not an assignment.
+  if (Array.isArray(body.watcher_ids)) {
+    const requestedWatcherIds: string[] = [...new Set(body.watcher_ids as string[])]
+    // Re-derive the current assignee set (post any change above) so a user who's
+    // just been made an assignee is never also left as a redundant watcher.
+    const { data: postAssigneeRows } = await supabaseAdmin
+      .from('activity_assignees').select('user_id').eq('activity_id', id)
+    const postAssigneeIds = (postAssigneeRows || []).map((r) => r.user_id)
+    const newWatcherIds = requestedWatcherIds.filter((uid) => !postAssigneeIds.includes(uid))
+    if (!(await areValidUsers(newWatcherIds))) {
+      return NextResponse.json({ error: 'One or more watchers are not valid active users with Activity Hub access.' }, { status: 400 })
+    }
+
+    const toRemove = currentWatcherIds.filter((uid) => !newWatcherIds.includes(uid))
+    const toAdd = newWatcherIds.filter((uid) => !currentWatcherIds.includes(uid))
+
+    if (toRemove.length > 0) {
+      await supabaseAdmin.from('activity_watchers').delete().eq('activity_id', id).in('user_id', toRemove)
+    }
+    if (toAdd.length > 0) {
+      await supabaseAdmin.from('activity_watchers').insert(
+        toAdd.map((userId) => ({ activity_id: id, user_id: userId, added_by: sessionUser.id }))
+      )
+      await notifyMany(toAdd.map((userId) => ({
+        recipientId: userId, type: 'task_watched', actorId: sessionUser.id, activityId: id,
+        title: updated.title, link: `/dashboard/activities?open=${id}`,
+      })))
+    }
+    if (toRemove.length > 0 || toAdd.length > 0) {
+      const nameMap = await getProfileMap([...currentWatcherIds, ...newWatcherIds])
+      const nameList = (ids: string[]) => ids.map((uid) => nameMap.get(uid)?.full_name || uid).join(', ') || '(none)'
+      await logFieldCorrections('activities', id,
+        [{ field: 'watchers', oldValue: nameList(currentWatcherIds), newValue: nameList(newWatcherIds) }],
         sessionUser.id)
     }
   }
