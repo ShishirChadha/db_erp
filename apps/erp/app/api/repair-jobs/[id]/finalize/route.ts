@@ -1,9 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
-// ---------- POST: owner marks a repair job done ----------
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
+// ---------- POST: marks a repair job done ----------
+// Status is an operational field (see PATCH route), so this only requires the
+// repair_jobs page-edit grant, not owner -- finalizing is a status flip, not a
+// payment edit.
 // Inventory for a replacement job -- both the swapped-in unit's sale and the
 // swapped-out unit's return to QC -- is already settled at job intake
 // (POST /api/repair-jobs) -- this route only closes out the job record.
@@ -12,13 +20,14 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canEditPage(sessionUser, 'repair_jobs')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, status, job_number')
+    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account')
     .eq('id', id)
     .single()
 
@@ -40,6 +49,68 @@ export async function POST(
     recordId: id,
     recordLabel: job.job_number,
   })
+
+  // Bring the repair charge into the Sales Ledger the moment the job is done, so it
+  // can be combined with any other sale for this customer into one invoice via the
+  // existing multi-item invoice flow (POST /api/sales/finalize-batch). A job with
+  // nothing to charge (warranty/free fix) or no payment_account set never gets a
+  // sales row -- this never blocks the Done transition itself.
+  if (job.amount_charged && job.amount_charged > 0 && job.payment_account) {
+    const today = new Date()
+    const saleDateObj = new Date(`${today.toISOString().slice(0, 10)}T12:00:00.000Z`)
+
+    const { data: customer } = await supabaseAdmin
+      .from('customers')
+      .select('customer_name')
+      .eq('id', job.customer_id)
+      .single()
+
+    const { data: sale, error: saleErr } = await supabaseAdmin
+      .from('sales')
+      .insert({
+        repair_job_id: job.id,
+        customer_id: job.customer_id,
+        customer_name: customer?.customer_name || null,
+        sale_date: today.toISOString().slice(0, 10),
+        sale_month: MONTHS[saleDateObj.getUTCMonth()],
+        sale_year: saleDateObj.getUTCFullYear(),
+        sale_type: 'Cash',
+        sale_base_price: job.amount_charged,
+        sale_gst: 0,
+        sale_total: job.amount_charged,
+        payment_account: job.payment_account,
+        entered_by: sessionUser.id,
+        finalized: false,
+      })
+      .select('id')
+      .single()
+
+    if (!saleErr && sale) {
+      // Carry over anything already collected while the job was in progress as an
+      // initial payment leg, rather than writing sales.amount_paid directly -- the
+      // sync_sale_payment_totals trigger derives it from sale_payments.
+      if (job.amount_paid && job.amount_paid > 0) {
+        await supabaseAdmin.from('sale_payments').insert({
+          sale_id: sale.id,
+          amount: job.amount_paid,
+          payment_account: job.payment_account,
+          note: `Carried over from repair intake (Job ${job.job_number})`,
+          recorded_by: sessionUser.id,
+        })
+      }
+
+      await logAuditEvent({
+        actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+        actionType: 'create',
+        module: 'sales',
+        tableName: 'sales',
+        recordId: sale.id,
+        recordLabel: customer?.customer_name || job.job_number,
+        metadata: { repair_job_id: job.id, job_number: job.job_number },
+        reason: 'Repair job marked done -- charge added to Sales Ledger',
+      })
+    }
+  }
 
   return NextResponse.json({ success: true })
 }

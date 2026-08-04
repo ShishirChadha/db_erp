@@ -207,11 +207,11 @@ function PurchaseOrdersPage() {
           <thead>
             <tr>
               <th className="p-2 w-10 text-right">#</th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_number')}>
-                PO Number{sortIndicator('po_number')}
-              </th>
               <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_date')}>
                 Date{sortIndicator('po_date')}
+              </th>
+              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_number')}>
+                PO Number{sortIndicator('po_number')}
               </th>
               <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
                 Vendor{sortIndicator('vendor_name')}
@@ -230,8 +230,8 @@ function PurchaseOrdersPage() {
             {sortedOrders.map((po, idx) => (
               <tr key={po.id} className="hover:bg-gray-50">
                 <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                <td className="p-2">{po.po_number}</td>
                 <td className="p-2">{po.po_date}</td>
+                <td className="p-2">{po.po_number}</td>
                 <td className="p-2">{po.vendor_name}</td>
                 <td className="p-2"><StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge></td>
                 <td className="p-2 text-right tabular-nums">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>

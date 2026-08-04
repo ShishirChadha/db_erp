@@ -143,7 +143,7 @@ const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string)
   const [vendorFilter, setVendorFilter] = useState<string>("");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
-  const [sortField, setSortField] = useState<SortField>("asset_number");
+  const [sortField, setSortField] = useState<SortField>("purchase_date");
 const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
 
@@ -190,8 +190,8 @@ const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
     if (dateFrom) query = query.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
     if (dateTo) query = query.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
     query = query.order(sortField, { ascending: sortOrder === "asc" });
-// If sorting by entry_date, add a secondary sort by created_at (or asset_number) to break ties
-if (sortField === "entry_date") {
+// If sorting by entry_date/purchase_date, add a secondary sort by created_at to break ties
+if (sortField === "entry_date" || sortField === "purchase_date") {
   query = query.order("created_at", { ascending: false });
 }
     query = query.range((page - 1) * pageSize, page * pageSize - 1);

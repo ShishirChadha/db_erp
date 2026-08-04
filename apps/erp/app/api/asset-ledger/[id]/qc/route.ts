@@ -55,20 +55,48 @@ export async function GET(
     .eq('asset_id', id)
     .order('checked_at', { ascending: true })
 
-  // Surfaced so the asset detail page can offer a "Sale Details" edit panel for
-  // sold/invoiced/returned units without a second round trip.
+  // Surfaced so the asset detail page can show a "Sale Details" summary (and offer an
+  // edit panel) for sold/invoiced/returned units without a second round trip.
   let saleId: string | null = null
+  let saleSummary: {
+    customer_name: string | null
+    sale_total: number | null
+    payment_status: string | null
+    amount_paid: number | null
+    bundled_accessories_display: { name: string; quantity: number }[]
+  } | null = null
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
     const { data: saleRow } = await supabaseAdmin
       .from('sales')
-      .select('id')
+      .select('id, customer_name, sale_total, payment_status, amount_paid, bundled_accessories')
       .eq('asset_ledger_id', id)
       .eq('is_deleted', false)
       .maybeSingle()
     saleId = saleRow?.id ?? null
+    if (saleRow) {
+      // Bundled accessories are stored inline on the sale row (sales.bundled_accessories
+      // JSONB: [{accessory_id, quantity}]) -- resolve each to a display name, same
+      // pattern as /api/sales and /api/stock.
+      const bundled = Array.isArray(saleRow.bundled_accessories) ? saleRow.bundled_accessories : []
+      const bundledIds = [...new Set(bundled.map((b: any) => b.accessory_id).filter(Boolean))]
+      const { data: bundledSkus } = bundledIds.length
+        ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledIds)
+        : { data: [] as any[] }
+      const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
+      saleSummary = {
+        customer_name: saleRow.customer_name,
+        sale_total: saleRow.sale_total,
+        payment_status: saleRow.payment_status,
+        amount_paid: saleRow.amount_paid,
+        bundled_accessories_display: bundled.map((b: any) => {
+          const bsku = bundledSkuById.get(b.accessory_id)
+          return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
+        }),
+      }
+    }
   }
 
-  return NextResponse.json({ ...asset, checks: checks || [], sale_id: saleId })
+  return NextResponse.json({ ...asset, checks: checks || [], sale_id: saleId, sale_summary: saleSummary })
 }
 
 // ---------- PUT: submit QC checklist + grade, transition status ----------

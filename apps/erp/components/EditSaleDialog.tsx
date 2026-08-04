@@ -97,6 +97,10 @@ export function EditSaleDialog({
   const [saleDate, setSaleDate] = useState("");
   const [basePrice, setBasePrice] = useState(0);
   const [gstPercent, setGstPercent] = useState(18);
+  // Stored sale_base_price is always pre-GST, so the field starts in 'pre_gst' mode --
+  // switching to 'post_gst' just changes how the same number is interpreted/typed,
+  // same convention as the New Entry -> Sell form's priceMode.
+  const [priceMode, setPriceMode] = useState<"pre_gst" | "post_gst">("pre_gst");
   const [paymentAccount, setPaymentAccount] = useState("");
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<SalePayment[]>([]);
@@ -147,6 +151,28 @@ export function EditSaleDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saleId]);
 
+  // Switching modes converts the typed number so the customer-facing total stays the
+  // same -- never just relabels a stale number under the new meaning (mirrors
+  // handlePriceModeChange in app/dashboard/entry/sell/page.tsx).
+  const handlePriceModeChange = (newMode: "pre_gst" | "post_gst") => {
+    if (saleType === "GST" && newMode !== priceMode && basePrice) {
+      const converted = newMode === "post_gst"
+        ? Math.round(basePrice * (1 + gstPercent / 100) * 100) / 100
+        : Math.round((basePrice / (1 + gstPercent / 100)) * 100) / 100;
+      setBasePrice(converted);
+    }
+    setPriceMode(newMode);
+  };
+
+  // Pre-GST subtotal, GST amount, and total recomputed live from the current form
+  // fields -- distinct from the stale sale.sale_total snapshot shown in the Payment
+  // section, which only reflects what was last saved.
+  const interimSubtotal = saleType === "GST" && priceMode === "post_gst" && basePrice
+    ? Math.round((basePrice / (1 + gstPercent / 100)) * 100) / 100
+    : basePrice;
+  const interimGst = saleType === "GST" ? Math.round(interimSubtotal * gstPercent * 100) / 10000 : 0;
+  const interimTotal = interimSubtotal + interimGst;
+
   const deletePayment = async (paymentId: string) => {
     if (!confirm("Remove this payment entry? This cannot be undone.")) return;
     const res = await apiFetch(`/api/sales/${saleId}/payments/${paymentId}`, { method: "DELETE" });
@@ -166,7 +192,7 @@ export function EditSaleDialog({
       sold_by: soldBy,
       sale_type: saleType,
       sale_date: saleDate,
-      sale_base_price: basePrice,
+      sale_base_price: interimSubtotal,
       gst_percentage: saleType === "GST" ? gstPercent : 0,
       payment_account: paymentAccount || null,
       notes: notes || null,
@@ -227,6 +253,11 @@ export function EditSaleDialog({
         ) : (
           <div className="space-y-4">
             {err && <div className="text-red-600 text-sm">{err}</div>}
+            {sale.is_deleted && (
+              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-2">
+                This sale was voided and is read-only -- kept here for reference only. See correction history below for the reason.
+              </div>
+            )}
 
             <div>
               <Label>Customer</Label>
@@ -256,17 +287,39 @@ export function EditSaleDialog({
                 </Select>
               </div>
               <div>
-                <Label>Base Price (₹)</Label>
+                <Label>{saleType === "GST" && priceMode === "post_gst" ? "Price (GST-Incl., ₹)" : "Base Price (₹)"}</Label>
                 <Input type="number" value={basePrice} onChange={(e) => setBasePrice(Number(e.target.value))} className="text-right" />
               </div>
             </div>
 
             {saleType === "GST" && (
-              <div>
-                <Label>GST %</Label>
-                <Input type="number" value={gstPercent} onChange={(e) => setGstPercent(Number(e.target.value))} className="w-32 text-right" />
-              </div>
+              <>
+                <div>
+                  <Label>GST %</Label>
+                  <Input type="number" value={gstPercent} onChange={(e) => setGstPercent(Number(e.target.value))} className="w-32 text-right" />
+                </div>
+
+                <div>
+                  <Label>Price entered above is</Label>
+                  <div className="flex gap-4 text-sm mt-1">
+                    <label className="flex items-center gap-1.5">
+                      <input type="radio" checked={priceMode === "pre_gst"} onChange={() => handlePriceModeChange("pre_gst")} />
+                      Before GST
+                    </label>
+                    <label className="flex items-center gap-1.5">
+                      <input type="radio" checked={priceMode === "post_gst"} onChange={() => handlePriceModeChange("post_gst")} />
+                      After GST (Inclusive)
+                    </label>
+                  </div>
+                </div>
+              </>
             )}
+
+            <div className="border rounded p-3 text-right text-sm space-y-1 bg-gray-50">
+              {saleType === "GST" && priceMode === "post_gst" && <p>Pre-GST: ₹{interimSubtotal.toFixed(2)}</p>}
+              {saleType === "GST" && <p>GST: ₹{interimGst.toFixed(2)}</p>}
+              <p className="font-bold text-base">Total: ₹{interimTotal.toFixed(2)}</p>
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -403,7 +456,7 @@ export function EditSaleDialog({
               </div>
             )}
 
-            {isOwner && (
+            {isOwner && !sale.is_deleted && (
               <div className="border-t pt-3">
                 <Button variant="destructive" size="sm" onClick={() => setVoidOpen(true)}>
                   Void this sale
@@ -417,11 +470,13 @@ export function EditSaleDialog({
         )}
 
         <DialogFooter>
-          <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={() => save()} disabled={saving || loading || !sale} loading={saving}>
-            {saving && <Loader2 className="size-4 animate-spin" />}
-            Save
-          </Button>
+          <Button variant="outline" onClick={onClose} disabled={saving}>{sale?.is_deleted ? "Close" : "Cancel"}</Button>
+          {!sale?.is_deleted && (
+            <Button onClick={() => save()} disabled={saving || loading || !sale} loading={saving}>
+              {saving && <Loader2 className="size-4 animate-spin" />}
+              Save
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
 

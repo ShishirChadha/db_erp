@@ -391,8 +391,8 @@ function QuotationsPage() {
             <thead>
               <tr>
                 <th className="border p-2 w-10 text-right">#</th>
-                <th className="border p-2">Number</th>
                 <th className="border p-2">Date</th>
+                <th className="border p-2">Number</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Entity</th>
                 <th className="border p-2 text-right">Total</th>
@@ -408,8 +408,8 @@ function QuotationsPage() {
                 return (
                   <tr key={d.id}>
                     <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                    <td className="border p-2 font-mono text-xs">{d.document_number}</td>
                     <td className="border p-2">{d.document_date}</td>
+                    <td className="border p-2 font-mono text-xs">{d.document_number}</td>
                     <td className="border p-2">{d.customer_name}</td>
                     <td className="border p-2">{ENTITY_LABELS[d.entity_key]}</td>
                     <td className="border p-2 text-right tabular-nums">₹{Number(d.grand_total).toFixed(2)}</td>

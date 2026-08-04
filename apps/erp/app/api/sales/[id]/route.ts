@@ -59,6 +59,9 @@ export async function PATCH(
   const { id } = await params
   const { data: existing } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
   if (!existing) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+  // A voided sale is a frozen audit record (see /void) -- it can still be viewed via
+  // GET, but nothing about it should be editable afterward.
+  if (existing.is_deleted) return NextResponse.json({ error: 'This sale was voided and can no longer be edited.' }, { status: 400 })
 
   const body = await req.json()
   const updates: Record<string, any> = {}

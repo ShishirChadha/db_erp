@@ -37,9 +37,11 @@ export async function POST(
   }
 
   // Reverses the same inventory effects a cart-checkout rollback undoes (see
-  // lib/sales-entry.ts) -- if this affects 0 rows on the unit case, the unit already
-  // moved on (e.g. an RMA or another action got there first), so bail rather than
-  // silently clobbering whatever state it's actually in now.
+  // lib/sales-entry.ts). If the unit is no longer 'sold', reverseSaleInventoryEffects
+  // checks whether that's because it was already physically returned (RMA
+  // 'from_customer' already reconciled the same inventory effects) -- if so this is a
+  // no-op success; otherwise it bails rather than silently clobbering whatever state
+  // the unit is actually in now.
   const { error: reverseErr } = await reverseSaleInventoryEffects(existing, {
     reason: `Sale voided -- ${reason}`,
     userId: sessionUser.id,

@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('sales_documents')
     .select('*, sales_document_items(id, converted)', pagination ? { count: 'exact' } : undefined)
+    .order('document_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
 
   if (docType) query = query.eq('doc_type', docType)

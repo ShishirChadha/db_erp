@@ -60,7 +60,7 @@ export function classifyGst(
 // batch (all linked units/accessories still exist) before minting a real
 // invoice number or creating any row.
 export async function resolveSaleItemDescriptor(sale: any): Promise<{
-  item_type: 'accessory' | 'asset'
+  item_type: 'accessory' | 'asset' | 'repair'
   description: string
   hsn_code: string | null
   quantity: number
@@ -68,7 +68,23 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
   ledger_asset_id?: string
   sku_id?: string
   asset_number?: string | null
+  repair_job_id?: string
 }> {
+  if (sale.repair_job_id) {
+    const { data: job } = await supabaseAdmin
+      .from('repair_jobs')
+      .select('job_number, problem_description')
+      .eq('id', sale.repair_job_id)
+      .single()
+    return {
+      item_type: 'repair',
+      repair_job_id: sale.repair_job_id,
+      description: `Repair — ${job?.problem_description || 'Service'} (Job ${job?.job_number || sale.repair_job_id})`,
+      hsn_code: null,
+      quantity: 1,
+    }
+  }
+
   if (sale.accessory_id) {
     // Accessories are sku_master rows like everything else (docs/decisions.md,
     // 2026-07-23) -- sale.accessory_id now points at sku_master(id), not the
@@ -255,6 +271,7 @@ export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: Entity
     ledger_asset_id: descriptor.ledger_asset_id || null,
     sku_id: descriptor.sku_id || null,
     asset_number: descriptor.asset_number || null,
+    repair_job_id: descriptor.repair_job_id || null,
     description: descriptor.description,
     hsn_code: descriptor.hsn_code,
     quantity: descriptor.quantity,

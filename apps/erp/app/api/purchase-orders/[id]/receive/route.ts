@@ -30,27 +30,28 @@ export async function POST(
   const user = { id: sessionUser.id }
 
   const body = await req.json()
-  const { items, confirm_duplicate } = body
+  const { items } = body
 
   // Serial number has no DB-level uniqueness constraint -- check every serial being
   // received against the whole ledger before writing anything, so a batch receipt
-  // can't silently duplicate a unit already in the system from another door.
-  if (!confirm_duplicate) {
-    const duplicates: Array<{ serial_number: string; existing: any }> = []
-    for (const recItem of items || []) {
-      for (const asset of recItem.assets || []) {
-        if (!asset.serial_number) continue
-        const dup = await findDuplicateSerial(asset.serial_number)
-        if (dup) duplicates.push({ serial_number: asset.serial_number, existing: dup })
-      }
+  // can't duplicate a unit already in the system from another door. Hard block, no
+  // confirm-and-proceed override -- same reasoning as stock-intake's own duplicate
+  // check (a real live duplicate, serial PG02SA4Q, got through via the old
+  // click-past-the-warning path).
+  const duplicates: Array<{ serial_number: string; existing: any }> = []
+  for (const recItem of items || []) {
+    for (const asset of recItem.assets || []) {
+      if (!asset.serial_number) continue
+      const dup = await findDuplicateSerial(asset.serial_number)
+      if (dup) duplicates.push({ serial_number: asset.serial_number, existing: dup })
     }
-    if (duplicates.length > 0) {
-      return NextResponse.json({
-        error: `${duplicates.length} serial number(s) already exist elsewhere in the system. Review and confirm to proceed.`,
-        error_code: 'duplicate_serial',
-        duplicates,
-      }, { status: 409 })
-    }
+  }
+  if (duplicates.length > 0) {
+    return NextResponse.json({
+      error: `${duplicates.length} serial number(s) already exist elsewhere in the system -- this cannot be received as-is. Check Stock/QC for the existing entry first, or ask the owner to correct it there.`,
+      error_code: 'duplicate_serial',
+      duplicates,
+    }, { status: 409 })
   }
 
   const { data: po } = await supabaseAdmin

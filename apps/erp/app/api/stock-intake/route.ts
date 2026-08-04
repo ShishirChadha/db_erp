@@ -4,7 +4,7 @@ import { resolveOrCreateSku } from '@/lib/sku-resolver'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { TYPE_TO_CATEGORY, resolveBrand, buildSpecifications, buildIntakeLedgerRow } from '@/lib/stock-intake'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
-import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
+import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: owner's queue of intake units still needing purchase paperwork ----------
@@ -43,24 +43,19 @@ export async function POST(req: NextRequest) {
   if (!body.model) return NextResponse.json({ error: 'Model is required.' }, { status: 400 })
 
   // Serial number has no DB-level uniqueness constraint (see the duplication analysis
-  // in docs/decisions.md) -- warn-then-confirm here rather than silently allowing the
-  // same physical unit to be entered twice through this door and a PO/legacy door.
+  // in docs/decisions.md) -- hard block on any existing match, no confirm-and-proceed
+  // override, same as every other door that writes asset_ledger (PO receiving, manual
+  // stock edit -- see lib/duplicate-serial.ts). A live duplicate (serial PG02SA4Q, same
+  // physical unit entered twice under two slightly different model-name spellings) got
+  // through this exact door via the old click-past-the-warning path.
   if (body.serial_number) {
     const dup = await findDuplicateSerial(body.serial_number)
     if (dup) {
-      if (dup.status === 'sold' && !isOwner(sessionUser)) {
-        return NextResponse.json({
-          error: `Serial "${body.serial_number}" already exists as a SOLD unit (${dup.asset_number || dup.id}). Please check with the owner before re-entering this.`,
-          error_code: 'duplicate_serial_sold',
-        }, { status: 409 })
-      }
-      if (!body.confirm_duplicate) {
-        return NextResponse.json({
-          error: duplicateSerialMessage(body.serial_number, dup),
-          error_code: 'duplicate_serial',
-          existing: dup,
-        }, { status: 409 })
-      }
+      return NextResponse.json({
+        error: `Serial "${body.serial_number}" already exists as ${dup.asset_number || 'an untagged unit'} (status: ${dup.status}, source: ${dup.source}). This serial cannot be entered again -- if this is genuinely a different unit, check Stock/QC for the existing entry first, or ask the owner to correct it there.`,
+        error_code: 'duplicate_serial',
+        existing: dup,
+      }, { status: 409 })
     }
   }
 

@@ -10,9 +10,12 @@ export interface DuplicateSerialMatch {
 
 // serial_number is the natural identity key for a physical unit but carries no
 // DB-level uniqueness constraint (docs/decisions.md, "Architectural Analysis:
-// Duplication, Corrections, Repairs, Zoho Transition") -- a handful of real legacy
-// duplicates already exist awaiting owner reconciliation, so this stays a soft,
-// overridable warning rather than a hard block or a live unique index.
+// Duplication, Corrections, Repairs, Zoho Transition"). Every caller (stock intake,
+// PO receiving, manual stock edit) now treats a match as a hard block -- no
+// confirm-and-proceed override -- after a real live duplicate (serial PG02SA4Q) got
+// created through the old click-past-the-warning path. Existing legacy duplicates
+// from before this was hardened still need owner reconciliation directly in the DB/
+// Stock page, not through these entry doors.
 export async function findDuplicateSerial(
   serialNumber: string | null | undefined,
   excludeId?: string
@@ -41,9 +44,4 @@ export async function findDuplicateSerial(
     source: match.source,
     status: match.status,
   }
-}
-
-export function duplicateSerialMessage(serialNumber: string, dup: DuplicateSerialMatch): string {
-  const tag = dup.asset_number || 'no tag yet'
-  return `Serial "${serialNumber}" already exists as ${tag} (status: ${dup.status}, source: ${dup.source}). Submit again to confirm this is a legitimate separate entry.`
 }

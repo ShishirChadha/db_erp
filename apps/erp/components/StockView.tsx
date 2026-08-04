@@ -48,6 +48,7 @@ interface AssetRow {
   invoice_number?: string
   payment_status?: string
   amount_paid?: number
+  bundled_accessories_display?: { name: string; quantity: number }[]
 }
 
 interface Vendor {
@@ -121,6 +122,7 @@ const OPTIONAL_COLUMNS = [
   { key: 'vendorCost', label: 'Vendor / Cost' },
   { key: 'customer', label: 'Customer' },
   { key: 'saleTotal', label: 'Sale Total' },
+  { key: 'bundle', label: 'Bundle' },
   { key: 'invoice', label: 'Invoice' },
 ] as const
 type ColumnKey = typeof OPTIONAL_COLUMNS[number]['key']
@@ -159,10 +161,12 @@ export default function StockView({
   // Restores whichever tab was active before navigating away (Sell/Service/Intake's
   // Back button lands on `${pathname}?tab=<tab>` -- see returnToPath below), instead of
   // always defaulting back to Current.
-  const [tab, setTab] = useState<Tab>(() => {
+  const initialTab = useMemo<Tab>(() => {
     const t = searchParams.get('tab')
     return t === 'sold' || t === 'accessories' || t === 'sold_accessories' ? t : 'current'
-  })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const [tab, setTab] = useState<Tab>(initialTab)
   const returnToPath = `${pathname}?tab=${tab}`
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [soldAccessories, setSoldAccessories] = useState<SoldAccessoryRow[]>([])
@@ -177,8 +181,21 @@ export default function StockView({
     const currentYear = new Date().getFullYear()
     return Array.from({ length: 8 }, (_, i) => currentYear - i)
   }, [])
-  const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT.current.field)
-  const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT.current.order)
+  const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].field)
+  const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].order)
+
+  // Switches tab and resets sort to that tab's own default in one state update, so the
+  // very next fetch (triggered once, by the resulting single re-render) already uses the
+  // right sort -- doing this as two separate effects previously caused an extra fetch
+  // with the OLD tab's sort field firing a split second before the corrected one landed,
+  // which could show briefly (or, under an unlucky response race, lastingly) wrong.
+  const changeTab = (next: Tab) => {
+    setTab(next)
+    if (next === 'current' || next === 'sold') {
+      setSortField(TAB_DEFAULT_SORT[next].field)
+      setSortOrder(TAB_DEFAULT_SORT[next].order)
+    }
+  }
 
   const columnsStorageKey = `stock-columns:${sourceMode}`
   const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>(() => {
@@ -308,16 +325,6 @@ export default function StockView({
 
   // Any filter/tab change invalidates the current page's meaning -- reset to page 1.
   useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
-
-  // Switching tabs switches what "last entry on top" means -- reset to that tab's
-  // own default sort rather than carrying over a sort field the other tab doesn't use.
-  // Sold Accessories has no sort control, so it's excluded from TAB_DEFAULT_SORT.
-  useEffect(() => {
-    if (tab === 'current' || tab === 'sold') {
-      setSortField(TAB_DEFAULT_SORT[tab].field)
-      setSortOrder(TAB_DEFAULT_SORT[tab].order)
-    }
-  }, [tab])
 
   const fetchCounts = useCallback(async () => {
     const [currentRes, soldRes] = await Promise.all([
@@ -460,16 +467,16 @@ export default function StockView({
       <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
 
       <div className="flex mb-4 border rounded overflow-hidden w-fit">
-        <button onClick={() => setTab('current')} className={`px-4 py-2 text-sm font-medium ${tab === 'current' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('current')} className={`px-4 py-2 text-sm font-medium ${tab === 'current' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
           Current Stock
         </button>
-        <button onClick={() => setTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
           Sold Stock
         </button>
-        <button onClick={() => setTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
           Accessories
         </button>
-        <button onClick={() => setTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
           Sold Accessories
         </button>
       </div>
@@ -480,25 +487,25 @@ export default function StockView({
             label: 'Total Current Stock',
             value: statCounts.totalCurrent,
             active: tab === 'current' && !statusFilter,
-            onClick: () => { setTab('current'); setStatusFilter('') },
+            onClick: () => { changeTab('current'); setStatusFilter('') },
           },
           {
             label: 'Ready for Sale',
             value: statCounts.readyForSale,
             active: tab === 'current' && statusFilter === 'ready_for_sale',
-            onClick: () => { setTab('current'); setStatusFilter('ready_for_sale') },
+            onClick: () => { changeTab('current'); setStatusFilter('ready_for_sale') },
           },
           {
             label: 'QC Pending',
             value: statCounts.qcPending,
             active: tab === 'current' && statusFilter === 'qc_pending',
-            onClick: () => { setTab('current'); setStatusFilter('qc_pending') },
+            onClick: () => { changeTab('current'); setStatusFilter('qc_pending') },
           },
           {
             label: 'Sold',
             value: statCounts.totalSold,
             active: tab === 'sold',
-            onClick: () => setTab('sold'),
+            onClick: () => changeTab('sold'),
           },
           ...(isOwner ? [
             { label: 'Missing PO', value: missingPoCount },
@@ -742,6 +749,7 @@ export default function StockView({
                 {isOwner && tab === 'current' && visibleColumns.vendorCost && <th className="border p-2">Vendor / Cost</th>}
                 {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
                 {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
+                {tab === 'sold' && visibleColumns.bundle && <th className="border p-2">Bundle</th>}
                 {tab === 'sold' && <th className="border p-2">Payment</th>}
                 {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
                 {canEdit && <th className="border p-2">Fix SKU</th>}
@@ -794,6 +802,15 @@ export default function StockView({
                   )}
                   {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
                   {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
+                  {tab === 'sold' && visibleColumns.bundle && (
+                    <td className="border p-2">
+                      {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0
+                        ? asset.bundled_accessories_display.map((b, i) => (
+                            <span key={i} className="block">{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ''}</span>
+                          ))
+                        : '—'}
+                    </td>
+                  )}
                   {tab === 'sold' && (
                     <td className="border p-2">
                       <div className="capitalize">{asset.payment_status || '—'}</div>
@@ -983,6 +1000,11 @@ export default function StockView({
                     {asset.payment_status || '—'}
                     {typeof asset.amount_paid === 'number' && ` · ₹${asset.amount_paid.toFixed(2)} of ₹${(asset.sale_total || 0).toFixed(2)}`}
                   </div>
+                  {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0 && (
+                    <div>
+                      Bundled: {asset.bundled_accessories_display.map((b) => `${b.name}${b.quantity > 1 ? ` ×${b.quantity}` : ''}`).join(', ')}
+                    </div>
+                  )}
                   {isOwner && (
                     <div>{asset.invoice_finalized ? <span className="text-green-600">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
                   )}

@@ -185,18 +185,19 @@ function RmaPage() {
         <table className="min-w-full border text-sm">
           <thead>
             <tr>
+              <th className="border p-2">Opened</th>
               <th className="border p-2">Asset</th>
               <th className="border p-2">Direction</th>
               <th className="border p-2">Reason</th>
               <th className="border p-2">Vendor</th>
               <th className="border p-2">Status</th>
-              <th className="border p-2">Opened</th>
               <th className="border p-2">Actions</th>
             </tr>
           </thead>
           <tbody>
             {events.map((e) => (
               <tr key={e.id}>
+                <td className="border p-2">{new Date(e.opened_at).toLocaleDateString()}</td>
                 <td className="border p-2">
                   {e.asset_ledger?.asset_number} {e.asset_ledger?.serial_number ? `(${e.asset_ledger.serial_number})` : ''}
                 </td>
@@ -204,7 +205,6 @@ function RmaPage() {
                 <td className="border p-2">{e.reason}</td>
                 <td className="border p-2">{e.vendors?.company_name || '—'}</td>
                 <td className="border p-2 capitalize">{e.status.replace(/_/g, ' ')}</td>
-                <td className="border p-2">{new Date(e.opened_at).toLocaleDateString()}</td>
                 <td className="border p-2 space-x-2">
                   {(NEXT_STATUS_OPTIONS[e.status] || []).map((next) => (
                     <button

@@ -64,6 +64,13 @@ interface AssetDetail {
   body_condition: string | null
   included_accessories: string | null
   sale_id: string | null
+  sale_summary: {
+    customer_name: string | null
+    sale_total: number | null
+    payment_status: string | null
+    amount_paid: number | null
+    bundled_accessories_display: { name: string; quantity: number }[]
+  } | null
   purchase_order_items: {
     sku_master: {
       full_sku_code: string
@@ -190,20 +197,12 @@ function AssetQCPage() {
         body.confirm_override = true
         body.reason = tagReason.trim()
       }
-      let res = await apiFetch('/api/stock', { method: 'PUT', body: JSON.stringify(body) })
+      const res = await apiFetch('/api/stock', { method: 'PUT', body: JSON.stringify(body) })
       if (!res.ok) {
+        // Duplicate serial (and every other save error) is now a hard block -- no
+        // confirm-and-proceed override.
         const err = await res.json().catch(() => ({}))
-        if (err.error_code === 'duplicate_serial' && confirm(`${err.error}\n\nProceed anyway?`)) {
-          res = await apiFetch('/api/stock', { method: 'PUT', body: JSON.stringify({ ...body, confirm_duplicate: true }) })
-          if (!res.ok) {
-            const err2 = await res.json().catch(() => ({}))
-            throw new Error(err2.error || 'Failed to save.')
-          }
-        } else if (err.error_code === 'duplicate_serial') {
-          return
-        } else {
-          throw new Error(err.error || 'Failed to save.')
-        }
+        throw new Error(err.error || 'Failed to save.')
       }
       setEditingTag(false)
       setTagReason('')
@@ -463,7 +462,28 @@ function AssetQCPage() {
             <h2 className="font-semibold">Sale Details</h2>
             <button onClick={() => setShowEditSale(true)} className="text-blue-600 underline text-sm">Edit Sale</button>
           </div>
-          <p className="text-sm text-gray-500 mt-1">Customer, amount, SKU/laptop, and bundled accessories for this sale.</p>
+          {asset.sale_summary ? (
+            <div className="text-sm text-gray-600 mt-2 space-y-1">
+              <p>
+                {asset.sale_summary.customer_name || '—'} · ₹{asset.sale_summary.sale_total?.toFixed(2)}
+                {asset.sale_summary.payment_status && (
+                  <span className="capitalize"> · {asset.sale_summary.payment_status}
+                    {typeof asset.sale_summary.amount_paid === 'number' && ` (₹${asset.sale_summary.amount_paid.toFixed(2)} paid)`}
+                  </span>
+                )}
+              </p>
+              <p>
+                Bundled:{' '}
+                {asset.sale_summary.bundled_accessories_display.length > 0
+                  ? asset.sale_summary.bundled_accessories_display.map((b, i) => (
+                      <span key={i}>{i > 0 && ', '}{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ''}</span>
+                    ))
+                  : 'none'}
+              </p>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500 mt-1">Customer, amount, SKU/laptop, and bundled accessories for this sale.</p>
+          )}
         </div>
       )}
 

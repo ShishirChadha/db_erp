@@ -107,29 +107,13 @@ function PODetailPage() {
       return
     }
     const err = await res.json().catch(() => ({}))
-    // One or more serials already exist elsewhere in the system -- surface exactly
-    // which ones and let the owner confirm this is legitimate before proceeding.
+    // One or more serials already exist elsewhere in the system -- hard block, no
+    // confirm-and-proceed override. Surface exactly which ones collided.
     if (err.error_code === 'duplicate_serial') {
       const lines = (err.duplicates || []).map((d: any) =>
         `${d.serial_number} -- already ${d.existing.asset_number || 'untagged'} (status: ${d.existing.status}, source: ${d.existing.source})`
       ).join('\n')
-      if (confirm(`${err.error}\n\n${lines}\n\nProceed anyway?`)) {
-        const res2 = await apiFetch(`/api/purchase-orders/${poId}/receive`, {
-          method: 'POST',
-          body: JSON.stringify({ items: itemsPayload, confirm_duplicate: true }),
-        })
-        if (res2.ok) {
-          alert('Goods received successfully!')
-          setShowReceiveModal(false)
-          setReceipts({})
-          setFungibleReceipts({})
-          fetchPO()
-          return
-        }
-        const err2 = await res2.json().catch(() => ({}))
-        alert(err2.error || 'Failed to receive goods.')
-        return
-      }
+      alert(`${err.error}\n\n${lines}`)
       return
     }
     alert(err.error || 'Failed to receive goods.')

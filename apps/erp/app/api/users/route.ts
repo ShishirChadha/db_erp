@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { usernameToSyntheticEmail } from '@/lib/auth/username'
+import { encryptPassword } from '@/lib/auth/password-vault'
 import { logAuditEvent } from '@/lib/audit-log'
 
 const ALLOWED_PAGE_KEYS = [
@@ -98,6 +99,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 400 })
   }
 
+  // Owner passwords are never stored (see lib/auth/password-vault.ts) -- only
+  // manager/employee accounts get a retrievable encrypted copy.
   const { error: profileErr } = await supabaseAdmin
     .from('profiles')
     .insert({
@@ -109,6 +112,7 @@ export async function POST(req: NextRequest) {
       username: trimmedUsername,
       contact_email: contact_email?.trim() || null,
       employee_id: employee_id?.trim() || null,
+      encrypted_password: role === 'owner' ? null : encryptPassword(password),
     })
 
   if (profileErr) {

@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('repair_jobs')
     .select('*, customers(customer_name, phone)', pagination ? { count: 'exact' } : undefined)
+    .order('job_date', { ascending: false, nullsFirst: false })
     .order('created_at', { ascending: false })
 
   if (status) query = query.in('status', status.split(',').map(s => s.trim()))

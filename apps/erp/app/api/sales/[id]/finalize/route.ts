@@ -23,6 +23,7 @@ export async function POST(
 
   const { data: sale } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
   if (!sale) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+  if (sale.is_deleted) return NextResponse.json({ error: 'This sale was voided and cannot be invoiced.' }, { status: 400 })
   if (sale.finalized) return NextResponse.json({ error: 'This sale already has an invoice.' }, { status: 400 })
 
   const entityKey = resolveEntityKey(sale.payment_account)

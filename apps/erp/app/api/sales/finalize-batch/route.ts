@@ -27,6 +27,9 @@ export async function POST(req: NextRequest) {
   if (!sales || sales.length !== saleIds.length) {
     return NextResponse.json({ error: 'One or more sales were not found.' }, { status: 404 })
   }
+  if (sales.some((s) => s.is_deleted)) {
+    return NextResponse.json({ error: 'One or more of these sales were voided and cannot be invoiced.' }, { status: 400 })
+  }
   if (sales.some((s) => s.finalized)) {
     return NextResponse.json({ error: `${sales.filter((s) => s.finalized).length} of these sales already have an invoice.` }, { status: 400 })
   }

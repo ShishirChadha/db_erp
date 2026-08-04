@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
@@ -24,9 +24,9 @@ import {
 } from 'lucide-react'
 import { toast } from 'sonner'
 import DeleteRecordDialog from '@/components/DeleteRecordDialog'
-import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
+import { ResizableHeader } from '@/components/ResizableHeader'
 
 const PAGE_SIZE = 25
 
@@ -68,70 +68,6 @@ const emptyForm = {
   gst_number: '',
   gst_company_name: '',
   remarks: '',
-}
-
-// Resizable column header component
-const ResizableHeader = ({
-  label,
-  width,
-  onResize,
-  className,
-  onSort,
-  sortIndicator,
-}: {
-  label: string
-  width: number
-  onResize: (w: number) => void
-  className?: string
-  onSort?: () => void
-  sortIndicator?: string
-}) => {
-  const startX = useRef(0)
-  const startWidth = useRef(width)
-  const [isResizing, setIsResizing] = useState(false)
-
-  const handleMouseDown = (e: React.MouseEvent) => {
-    startX.current = e.clientX
-    startWidth.current = width
-    setIsResizing(true)
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-  }
-
-  useEffect(() => {
-    if (!isResizing) return
-    const handleMouseMove = (e: MouseEvent) => {
-      const dx = e.clientX - startX.current
-      onResize(Math.max(60, startWidth.current + dx))
-    }
-    const handleMouseUp = () => {
-      setIsResizing(false)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
-    return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
-    }
-  }, [isResizing, onResize])
-
-  return (
-    <th className={cn(className, 'relative')} style={{ width }}>
-      {onSort ? (
-        <span className="cursor-pointer select-none" onClick={onSort}>
-          {label}{sortIndicator || ''}
-        </span>
-      ) : (
-        label
-      )}
-      <div
-        onMouseDown={handleMouseDown}
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-200"
-      />
-    </th>
-  )
 }
 
 type VendorSortField = 'company_name' | 'spoc_name' | 'phone' | 'city'

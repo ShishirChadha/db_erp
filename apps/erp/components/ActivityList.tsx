@@ -106,6 +106,15 @@ interface TaskFormState {
   related_id: string;
   assignee_ids: string[];
   watcher_ids: string[];
+  pendingTag: string;
+}
+
+// Folds any not-yet-committed tag text into `tags` -- used right before submit
+// so typing a tag then clicking Save (without hitting the removed Add button)
+// still saves it, instead of silently dropping it.
+function commitPendingTag(form: TaskFormState): string[] {
+  const pending = form.pendingTag.trim();
+  return pending && !form.tags.includes(pending) ? [...form.tags, pending] : form.tags;
 }
 
 function TaskForm({
@@ -116,14 +125,12 @@ function TaskForm({
   existingTags: string[];
   assignableUsers: AssignableUser[];
 }) {
-  const [tagInput, setTagInput] = useState('');
-
   const handleAddTag = () => {
-    const newTag = tagInput.trim();
-    if (newTag && !form.tags.includes(newTag)) {
-      setForm(prev => ({ ...prev, tags: [...prev.tags, newTag] }));
-      setTagInput('');
-    }
+    setForm(prev => {
+      const newTag = prev.pendingTag.trim();
+      if (!newTag || prev.tags.includes(newTag)) return { ...prev, pendingTag: '' };
+      return { ...prev, tags: [...prev.tags, newTag], pendingTag: '' };
+    });
   };
   const removeTag = (tag: string) => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   const toggleAssignee = (userId: string) => {
@@ -212,13 +219,15 @@ function TaskForm({
         <label className="block text-sm font-medium">Tags</label>
         <div className="flex gap-2">
           <input
-            list="tag-suggestions" className="border rounded p-2 flex-1" placeholder="Select or type new tag"
-            value={tagInput} onChange={e => setTagInput(e.target.value)}
+            list="tag-suggestions" className="border rounded p-2 flex-1" placeholder="Select or type new tag, then press Enter (or just Save)"
+            value={form.pendingTag}
+            onChange={e => setForm(prev => ({ ...prev, pendingTag: e.target.value }))}
+            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
+            onBlur={handleAddTag}
           />
           <datalist id="tag-suggestions">
             {existingTags.map(tag => <option key={tag} value={tag} />)}
           </datalist>
-          <button type="button" onClick={handleAddTag} className="bg-gray-200 px-3 rounded">Add</button>
         </div>
         <div className="flex flex-wrap gap-1 mt-2">
           {form.tags.map(tag => (
@@ -273,7 +282,7 @@ function buildEmptyForm(): TaskFormState {
     title: '', description: '', tags: [], status: 'pending', priority: 'normal',
     due_date: format(due, "yyyy-MM-dd'T'HH:mm"),
     reminder_at: format(reminder, "yyyy-MM-dd'T'HH:mm"),
-    related_type: '', related_id: '', assignee_ids: [], watcher_ids: [],
+    related_type: '', related_id: '', assignee_ids: [], watcher_ids: [], pendingTag: '',
   };
 }
 
@@ -294,10 +303,12 @@ function AddActivityModal({
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title.trim()) return alert('Title is required');
+    const { pendingTag: _pendingTag, ...formFields } = form;
     const res = await apiFetch('/api/activities', {
       method: 'POST',
       body: JSON.stringify({
-        ...form,
+        ...formFields,
+        tags: commitPendingTag(form),
         due_date: form.due_date || null,
         reminder_at: form.reminder_at || null,
         related_type: form.related_type || null,
@@ -315,7 +326,7 @@ function AddActivityModal({
   });
 
   return (
-    <SimpleModal isOpen={isOpen} onClose={onClose} title="New Task" wide>
+    <SimpleModal isOpen={isOpen} onClose={onClose} title="New Task" wide closeOnBackdropClick={false}>
       <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
@@ -351,16 +362,19 @@ function EditActivityModal({
         related_id: activity.related_id || '',
         assignee_ids: activity.assignee_ids || [],
         watcher_ids: activity.watcher_ids || [],
+        pendingTag: '',
       });
     }
   }, [activity]);
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title.trim() || !activity) return alert('Title is required');
+    const { pendingTag: _pendingTag, ...formFields } = form;
     const res = await apiFetch(`/api/activities/${activity.id}`, {
       method: 'PUT',
       body: JSON.stringify({
-        ...form,
+        ...formFields,
+        tags: commitPendingTag(form),
         due_date: form.due_date || null,
         reminder_at: form.reminder_at || null,
         related_type: form.related_type || null,
@@ -377,7 +391,7 @@ function EditActivityModal({
   });
 
   return (
-    <SimpleModal isOpen={isOpen} onClose={onClose} title="Edit Task" wide>
+    <SimpleModal isOpen={isOpen} onClose={onClose} title="Edit Task" wide closeOnBackdropClick={false}>
       <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
@@ -528,7 +542,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   const [editingActivity, setEditingActivity] = useState<Activity | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [sortBy, setSortBy] = useState('entry_date');
+  const [sortBy, setSortBy] = useState('due_date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [existingTags, setExistingTags] = useState<string[]>([]);
 
@@ -664,6 +678,9 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
         <table className="min-w-full divide-y divide-gray-200">
           <thead className="bg-gray-50">
             <tr>
+              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('due_date')}>
+                Due Date <SortIcon column="due_date" />
+              </th>
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('title')}>
                 Title <SortIcon column="title" />
               </th>
@@ -675,9 +692,6 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
               <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('status')}>
                 Status <SortIcon column="status" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('due_date')}>
-                Due Date <SortIcon column="due_date" />
-              </th>
               <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
@@ -687,6 +701,10 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
               const canDelete = isOwner || act.created_by === myId;
               return (
                 <tr key={act.id} className={act.status === 'done' ? 'opacity-50' : overdue ? 'bg-red-50' : ''}>
+                  <td className="px-4 py-3">
+                    {act.due_date ? format(new Date(act.due_date), 'dd/MM/yyyy') : '-'}
+                    {overdue && <span className="ml-1 text-xs text-red-600 font-medium">overdue</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <button onClick={() => setSelectedActivityId(act.id)} className="text-blue-600 hover:underline text-left">
                       {act.title}
@@ -703,10 +721,6 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
                   <td className="px-4 py-3 text-sm">{act.assignee_names.length > 0 ? act.assignee_names.join(', ') : <span className="text-gray-400">—</span>}</td>
                   {isOwner && <td className="px-4 py-3 text-sm">{act.created_by_name || '—'}</td>}
                   <td className="px-4 py-3 capitalize">{act.status.replace('_', ' ')}</td>
-                  <td className="px-4 py-3">
-                    {act.due_date ? format(new Date(act.due_date), 'dd/MM/yyyy') : '-'}
-                    {overdue && <span className="ml-1 text-xs text-red-600 font-medium">overdue</span>}
-                  </td>
                   <td className="px-4 py-3 text-right space-x-2">
                     <button onClick={() => setEditingActivity(act)} className="text-gray-600 hover:text-blue-600"><Edit className="h-4 w-4 inline" /></button>
                     <button onClick={() => handleDuplicate(act)} disabled={duplicatingId === act.id} className="text-gray-600 hover:text-green-600 disabled:opacity-50">

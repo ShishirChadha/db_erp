@@ -19,6 +19,7 @@ interface RepairJob {
   is_own_stock: boolean
   customer_device_description: string | null
   problem_description: string | null
+  job_date: string | null
   status: string
   payment_status: string
   amount_charged: number | null
@@ -29,7 +30,7 @@ interface RepairJob {
 
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
-function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJob; isOwner: boolean; onDone: () => void; index: number; variant?: 'row' | 'card' }) {
+function JobRow({ job, canEdit, onDone, index, variant = 'row' }: { job: RepairJob; canEdit: boolean; onDone: () => void; index: number; variant?: 'row' | 'card' }) {
   const [paymentStatus, setPaymentStatus] = useState(job.payment_status)
   const [amountPaid, setAmountPaid] = useState(job.amount_paid || 0)
   const [paymentAccount, setPaymentAccount] = useState(job.payment_account || '')
@@ -61,7 +62,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
 
   const busy = saving || marking
 
-  const paymentEditor = isOwner ? (
+  const paymentEditor = canEdit ? (
     <div className="flex flex-wrap items-center gap-2">
       <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="border p-1 rounded text-xs">
         <option value="pending">Pending</option>
@@ -76,7 +77,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
     </div>
   ) : null
 
-  const actions = isOwner ? (
+  const actions = canEdit ? (
     <div className="flex items-center gap-3">
       {err && <div className="text-red-600 text-xs">{err}</div>}
       <button onClick={() => savePayment()} disabled={busy} className="text-blue-600 underline text-xs flex items-center gap-1">
@@ -95,6 +96,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
       <div className="border rounded-lg p-3 space-y-2">
         <div className="flex justify-between items-start gap-2">
           <div>
+            <div className="text-xs text-gray-500">{job.job_date?.slice(0, 10) || '—'}</div>
             <div className="font-medium">{job.job_number}</div>
             {job.is_own_stock && <div className="text-xs text-gray-500">Our stock</div>}
           </div>
@@ -102,14 +104,14 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
         </div>
         <div className="text-sm">{job.customers?.customer_name || '—'}</div>
         <div className="text-sm text-gray-600">{job.problem_description || job.customer_device_description || '—'}</div>
-        {isOwner ? paymentEditor : (
+        {canEdit ? paymentEditor : (
           <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
             <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, job.payment_status)}>{job.payment_status}</StatusBadge>
             <span className="tabular-nums">₹{job.amount_paid?.toFixed(2)}</span>
             <span>{job.payment_account || '—'}</span>
           </div>
         )}
-        {isOwner && <div className="pt-1 border-t">{actions}</div>}
+        {canEdit && <div className="pt-1 border-t">{actions}</div>}
       </div>
     )
   }
@@ -117,11 +119,12 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
   return (
     <tr>
       <td className="border p-2 text-right tabular-nums text-gray-400">{index + 1}</td>
+      <td className="border p-2 whitespace-nowrap">{job.job_date?.slice(0, 10) || '—'}</td>
       <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
       <td className="border p-2">{job.customers?.customer_name || '—'}</td>
       <td className="border p-2 max-w-xs truncate">{job.problem_description || job.customer_device_description || '—'}</td>
       <td className="border p-2"><StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge></td>
-      {isOwner ? (
+      {canEdit ? (
         <>
           <td className="border p-2">
             <select value={paymentStatus} onChange={(e) => setPaymentStatus(e.target.value)} className="border p-1 rounded text-xs">
@@ -139,17 +142,6 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
               {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
           </td>
-          <td className="border p-2 space-y-1">
-            {err && <div className="text-red-600 text-xs">{err}</div>}
-            <button onClick={() => savePayment()} disabled={busy} className="text-blue-600 underline text-xs flex items-center gap-1">
-              {saving && <Loader2 className="size-3 animate-spin" />}Save
-            </button>
-            {job.status !== 'done' && (
-              <button onClick={() => markDone()} disabled={busy} className="text-green-700 underline text-xs flex items-center gap-1">
-                {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
-              </button>
-            )}
-          </td>
         </>
       ) : (
         <>
@@ -158,12 +150,16 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: RepairJ
           <td className="border p-2">{job.payment_account || '—'}</td>
         </>
       )}
+      {canEdit && (
+        <td className="border p-2 space-y-1">{actions}</td>
+      )}
     </tr>
   )
 }
 
 function RepairJobsPage() {
-  const { isOwner } = useRole()
+  const { canEditPage } = useRole()
+  const canEdit = canEditPage('repair_jobs')
   const [jobs, setJobs] = useState<RepairJob[]>([])
   const [statusFilter, setStatusFilter] = useState('')
   const [loading, setLoading] = useState(true)
@@ -216,6 +212,7 @@ function RepairJobsPage() {
             <thead>
               <tr>
                 <th className="border p-2 w-10 text-right">#</th>
+                <th className="border p-2">Date</th>
                 <th className="border p-2">Job #</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Problem / Device</th>
@@ -223,13 +220,13 @@ function RepairJobsPage() {
                 <th className="border p-2">Payment</th>
                 <th className="border p-2">Amount Paid</th>
                 <th className="border p-2">Received Into</th>
-                {isOwner && <th className="border p-2">Actions</th>}
+                {canEdit && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job, idx) => <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
+              {jobs.map((job, idx) => <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
               {jobs.length === 0 && (
-                <tr><td colSpan={isOwner ? 9 : 8} className="border p-4 text-center text-gray-400">No repair jobs found.</td></tr>
+                <tr><td colSpan={canEdit ? 10 : 9} className="border p-4 text-center text-gray-400">No repair jobs found.</td></tr>
               )}
             </tbody>
           </table>
@@ -240,7 +237,7 @@ function RepairJobsPage() {
         <div className="md:hidden space-y-2">
           {jobs.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No repair jobs found.</p>}
           {jobs.map((job, idx) => (
-            <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
+            <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
           ))}
         </div>
       )}

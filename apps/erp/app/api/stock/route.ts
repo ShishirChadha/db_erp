@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isOwner, canEditPage } from '@/lib/auth/session'
 import { redactManyForRole } from '@/lib/auth/redact'
-import { findDuplicateSerial, duplicateSerialMessage } from '@/lib/duplicate-serial'
+import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
@@ -128,9 +128,24 @@ export async function GET(req: NextRequest) {
       ].join(','))
 
     const skuIds = (matchingSkus || []).map((s) => s.id)
+
+    // A term can also match the customer a unit was sold to -- customer_name lives on
+    // `sales`, joined in separately after this query runs (see saleByAssetId below), so
+    // it has to be resolved here the same way SKU matches are: look up matching sales
+    // first, then OR their asset_ledger_id into this query.
+    const { data: matchingSales } = await supabaseAdmin
+      .from('sales')
+      .select('asset_ledger_id')
+      .ilike('customer_name', `%${search}%`)
+      .not('asset_ledger_id', 'is', null)
+    const customerAssetIds = [...new Set((matchingSales || []).map((s: any) => s.asset_ledger_id))]
+
     const orClauses = [`asset_number.ilike.%${search}%`, `serial_number.ilike.%${search}%`]
     if (skuIds.length > 0) {
       orClauses.push(`sku_id.in.(${skuIds.join(',')})`)
+    }
+    if (customerAssetIds.length > 0) {
+      orClauses.push(`id.in.(${customerAssetIds.join(',')})`)
     }
     query = query.or(orClauses.join(','))
   }
@@ -216,11 +231,29 @@ export async function GET(req: NextRequest) {
     : { data: [] as any[] }
   const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
 
+  // Bundled accessories are stored inline on the unit's own sales row
+  // (sales.bundled_accessories JSONB: [{accessory_id, quantity, unit_price}]) --
+  // resolve each accessory_id to a display name in one batched lookup, same pattern
+  // as /api/sales's own bundled_accessories_display.
+  const bundledAccessoryIds = [...new Set(
+    (salesRows || []).flatMap((s: any) => (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => b.accessory_id).filter(Boolean))
+  )]
+  const { data: bundledSkus } = bundledAccessoryIds.length
+    ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
+    : { data: [] as any[] }
+  const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
+
   const saleByAssetId = new Map((salesRows || []).map((s: any) => [
     s.asset_ledger_id,
-    !s.finalized && s.customer_id && liveCustomerNameById.has(s.customer_id)
-      ? { ...s, customer_name: liveCustomerNameById.get(s.customer_id) }
-      : s,
+    {
+      ...(!s.finalized && s.customer_id && liveCustomerNameById.has(s.customer_id)
+        ? { ...s, customer_name: liveCustomerNameById.get(s.customer_id) }
+        : s),
+      bundled_accessories_display: (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
+        const bsku = bundledSkuById.get(b.accessory_id)
+        return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
+      }),
+    },
   ]))
 
   // Flatten the nested joins into a simpler structure
@@ -264,6 +297,7 @@ export async function GET(req: NextRequest) {
       payment_status: sale?.payment_status,
       amount_paid: sale?.amount_paid,
       bundled_accessories: sale?.bundled_accessories,
+      bundled_accessories_display: sale?.bundled_accessories_display,
     }
   })
 
@@ -286,30 +320,25 @@ export async function PUT(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { id, asset_number, serial_number, created_at, notes, confirm_duplicate, confirm_override, reason } = body
+  const { id, asset_number, serial_number, created_at, notes, confirm_override, reason } = body
 
   if (!id) {
     return NextResponse.json({ error: 'Asset id is required' }, { status: 400 })
   }
 
-  // Serial number has no DB-level uniqueness constraint -- warn-then-confirm before
-  // letting a correction silently collide with another existing unit's serial.
+  // Serial number has no DB-level uniqueness constraint -- hard block a correction
+  // that would collide with another existing unit's serial, for everyone including
+  // the owner (no confirm-and-proceed override). Same reasoning as stock-intake's
+  // own duplicate check.
   if (serial_number) {
     const dup = await findDuplicateSerial(serial_number, id)
     if (dup) {
-      if (dup.status === 'sold' && !isOwner(sessionUser) && !canEditPage(sessionUser, 'live_stock') && !canEditPage(sessionUser, 'stock')) {
-        return NextResponse.json({
-          error: `Serial "${serial_number}" already exists as a SOLD unit (${dup.asset_number || dup.id}). Please check with the owner before making this change.`,
-          error_code: 'duplicate_serial_sold',
-        }, { status: 409 })
-      }
-      if (!confirm_duplicate) {
-        return NextResponse.json({
-          error: duplicateSerialMessage(serial_number, dup),
-          error_code: 'duplicate_serial',
-          existing: dup,
-        }, { status: 409 })
-      }
+      const statusNote = dup.status === 'sold' ? ' (a SOLD unit)' : ''
+      return NextResponse.json({
+        error: `Serial "${serial_number}" already exists as ${dup.asset_number || 'an untagged unit'}${statusNote} (status: ${dup.status}, source: ${dup.source}). This change cannot be saved -- check Stock/QC for the existing entry first.`,
+        error_code: 'duplicate_serial',
+        existing: dup,
+      }, { status: 409 })
     }
   }
 

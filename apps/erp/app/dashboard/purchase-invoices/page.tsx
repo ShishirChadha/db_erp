@@ -164,11 +164,11 @@ function PurchaseInvoicesPage() {
         <table className="min-w-full border">
           <thead>
             <tr>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_number')}>
-                Invoice #{sortIndicator('invoice_number')}
-              </th>
               <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_date')}>
                 Date{sortIndicator('invoice_date')}
+              </th>
+              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_number')}>
+                Invoice #{sortIndicator('invoice_number')}
               </th>
               <th className="border p-2">PO Number</th>
               <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
@@ -189,8 +189,8 @@ function PurchaseInvoicesPage() {
                 className="cursor-pointer hover:bg-gray-50"
                 onClick={() => router.push(`/dashboard/purchase-invoices/${inv.id}`)}
               >
-                <td className="border p-2">{inv.invoice_number}</td>
                 <td className="border p-2">{inv.invoice_date}</td>
+                <td className="border p-2">{inv.invoice_number}</td>
                 <td className="border p-2">{inv.purchase_orders?.po_number || '—'}</td>
                 <td className="border p-2">{inv.purchase_orders?.vendor_name || '—'}</td>
                 <td className="border p-2">

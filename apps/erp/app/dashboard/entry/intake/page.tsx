@@ -174,23 +174,9 @@ function StockIntakePage() {
       const res = await apiFetch('/api/stock-intake', { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        // Serial number matched an existing unit elsewhere in the system -- let the
-        // user confirm this is a legitimate separate entry rather than silently
-        // blocking or silently allowing a duplicate through.
-        if (err.error_code === 'duplicate_serial' && confirm(`${err.error}\n\nProceed anyway?`)) {
-          const res2 = await apiFetch('/api/stock-intake', {
-            method: 'POST',
-            body: JSON.stringify({ ...payload, confirm_duplicate: true }),
-          })
-          if (!res2.ok) {
-            const err2 = await res2.json().catch(() => ({}))
-            throw new Error(err2.error || 'Failed to save entry.')
-          }
-          notifyPossibleDuplicates(await res2.json().catch(() => ({})))
-          setDone(true)
-          resetForm()
-          return
-        }
+        // Serial number already exists elsewhere in the system -- this door hard-blocks
+        // re-entry of the same serial (no confirm-and-proceed override), since that's
+        // exactly how this class of duplicate got created before.
         throw new Error(err.error || 'Failed to save entry.')
       }
       notifyPossibleDuplicates(await res.json().catch(() => ({})))

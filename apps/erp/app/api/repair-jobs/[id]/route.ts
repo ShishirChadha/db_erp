@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: update workflow/payment state on a repair job ----------
-// Operational fields (status/problem/solution) require the repair_jobs page-edit grant
-// (View-only staff can see the job but not change it -- see profile_page_actions /
-// canEditPage). Financial fields (payment status/amount/account/charge) are owner-only,
-// same restriction as everywhere else money is involved.
+// Both operational fields (status/problem/solution) and financial fields
+// (payment status/amount/account/charge) require the repair_jobs page-edit
+// grant (View-only staff can see the job but not change it -- see
+// profile_page_actions / canEditPage). Unlike most money fields elsewhere in
+// the app, repair job payments are not owner-only -- anyone granted edit
+// access to this page can record them, same as sale_payments.
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -21,21 +23,16 @@ export async function PATCH(
 
   const operationalFields = ['status', 'solution_description', 'problem_description']
   const financialFields = ['payment_status', 'amount_paid', 'amount_charged', 'payment_account']
+  const editableFields = [...operationalFields, ...financialFields]
 
-  const hasOperationalEdit = operationalFields.some((key) => body[key] !== undefined)
-  if (hasOperationalEdit && !canEditPage(sessionUser, 'repair_jobs')) {
+  const hasEdit = editableFields.some((key) => body[key] !== undefined)
+  if (hasEdit && !canEditPage(sessionUser, 'repair_jobs')) {
     return NextResponse.json({ error: 'View-only access.' }, { status: 403 })
   }
 
   const updates: Record<string, any> = {}
-  for (const key of operationalFields) {
+  for (const key of editableFields) {
     if (body[key] !== undefined) updates[key] = body[key]
-  }
-  for (const key of financialFields) {
-    if (body[key] !== undefined) {
-      if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Only the owner can edit payment details.' }, { status: 403 })
-      updates[key] = body[key]
-    }
   }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update.' }, { status: 400 })

@@ -55,7 +55,28 @@ export async function reverseSaleInventoryEffects(
       .select('id')
       .maybeSingle()
     if (revertErr) return { error: revertErr.message }
-    if (!reverted) return { error: "This unit is no longer in 'sold' status (something else already changed it) -- cannot reverse automatically." }
+    if (!reverted) {
+      // The unit not being 'sold' anymore isn't necessarily a conflict -- it may
+      // have already been physically returned by the customer (RMA 'from_customer',
+      // see lib/rma.ts's processCustomerReturn), which reverses this exact same
+      // stock_movements/bundled-accessory effect itself before moving the unit into
+      // qc_pending. In that case inventory is already reconciled and there's
+      // nothing left to reverse here -- voiding the sale just needs to proceed to
+      // soft-deleting the sales row, not fail because inventory already moved on.
+      // Any other status change (no matching return event) is still unexplained
+      // and stays a hard stop, same as before.
+      const { data: returnEvent } = await supabaseAdmin
+        .from('asset_rma_events')
+        .select('id')
+        .eq('asset_id', saleRow.asset_ledger_id)
+        .eq('direction', 'from_customer')
+        .limit(1)
+        .maybeSingle()
+      if (!returnEvent) {
+        return { error: "This unit is no longer in 'sold' status (something else already changed it) -- cannot reverse automatically." }
+      }
+      return {}
+    }
 
     await supabaseAdmin.from('stock_movements').insert({
       sku_id: asset.sku_id,

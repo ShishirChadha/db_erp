@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { encryptPassword } from '@/lib/auth/password-vault'
 
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
@@ -29,12 +30,25 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { role, allowed_pages, page_edit_keys, is_active, password, full_name, contact_email, employee_id } = body
 
   const { data: existingProfile } = await supabaseAdmin
-    .from('profiles').select('full_name, username, is_active').eq('id', id).maybeSingle()
+    .from('profiles').select('full_name, username, is_active, role').eq('id', id).maybeSingle()
+
+  if (password !== undefined && password && password.length < 6) {
+    return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })
+  }
 
   const profileUpdates: Record<string, unknown> = {}
   if (role !== undefined) {
     if (!['owner', 'manager', 'employee'].includes(role)) return NextResponse.json({ error: "Role must be 'owner', 'manager', or 'employee'." }, { status: 400 })
     profileUpdates.role = role
+  }
+  // Owner passwords are never stored (see lib/auth/password-vault.ts) -- whenever
+  // a password is (re)set, store an encrypted copy only if the resulting role is
+  // non-owner; whenever an account becomes owner, wipe any previously stored value.
+  const resultingRole = role !== undefined ? role : existingProfile?.role
+  if (password) {
+    profileUpdates.encrypted_password = resultingRole === 'owner' ? null : encryptPassword(password)
+  } else if (role === 'owner') {
+    profileUpdates.encrypted_password = null
   }
   if (allowed_pages !== undefined) {
     if (!Array.isArray(allowed_pages)) return NextResponse.json({ error: 'allowed_pages must be an array.' }, { status: 400 })
@@ -77,7 +91,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   if (password) {
-    if (password.length < 6) return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })
     const { error: pwErr } = await supabaseAdmin.auth.admin.updateUserById(id, { password })
     if (pwErr) return NextResponse.json({ error: pwErr.message }, { status: 500 })
   }

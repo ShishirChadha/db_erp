@@ -109,6 +109,9 @@ export default function UserManager() {
   const [newPasswordById, setNewPasswordById] = useState<Record<string, string>>({})
   const [editingProfileId, setEditingProfileId] = useState<string | null>(null)
   const [editProfile, setEditProfile] = useState({ fullName: '', employeeId: '', contactEmail: '' })
+  const [viewedPasswordById, setViewedPasswordById] = useState<Record<string, string | null>>({})
+  const [viewPasswordLoadingId, setViewPasswordLoadingId] = useState<string | null>(null)
+  const [showDeactivated, setShowDeactivated] = useState(false)
 
   const fetchUsers = useCallback(async () => {
     setLoading(true)
@@ -118,6 +121,9 @@ export default function UserManager() {
   }, [])
 
   useEffect(() => { fetchUsers() }, [fetchUsers])
+
+  const activeUsers = users.filter(u => u.is_active)
+  const deactivatedUsers = users.filter(u => !u.is_active)
 
   // All actions below share a single `busy` lock (matching existing behavior
   // where any in-flight action disables the others) -- guard re-entrancy with
@@ -221,6 +227,22 @@ export default function UserManager() {
     }
   }
 
+  const toggleViewPassword = async (id: string) => {
+    // Already revealed -- just hide it again, no need to re-fetch.
+    if (id in viewedPasswordById) {
+      setViewedPasswordById(prev => { const next = { ...prev }; delete next[id]; return next })
+      return
+    }
+    setViewPasswordLoadingId(id)
+    try {
+      const res = await apiFetch(`/api/users/${id}/password`)
+      const body = await res.json().catch(() => ({}))
+      setViewedPasswordById(prev => ({ ...prev, [id]: res.ok ? (body.password ?? null) : null }))
+    } finally {
+      setViewPasswordLoadingId(null)
+    }
+  }
+
   const setNewPassword = async (id: string) => {
     if (busyRef.current) return
     const pw = newPasswordById[id]
@@ -230,6 +252,9 @@ export default function UserManager() {
     try {
       await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) })
       setNewPasswordById(prev => ({ ...prev, [id]: '' }))
+      // Stale reveal would show the password we just replaced -- drop it so the
+      // next "View password" click re-fetches the new one instead.
+      setViewedPasswordById(prev => { const next = { ...prev }; delete next[id]; return next })
     } finally {
       busyRef.current = false
       setBusy(false)
@@ -298,105 +323,143 @@ export default function UserManager() {
       {loading ? (
         <p className="text-sm text-gray-400">Loading...</p>
       ) : (
-        <div className="border rounded divide-y">
-          {users.length === 0 && <p className="text-sm text-gray-400 p-2">No users found.</p>}
-          {users.map(u => (
-            <div key={u.id} className="p-2">
-              <div className="flex justify-between items-center">
-                <div>
-                  <div className="text-sm font-medium">{u.full_name || u.username || u.email}</div>
-                  <div className="text-xs text-gray-500">
-                    {u.username ? `ID: ${u.username}` : u.email} · {ROLE_LABELS[u.role]}
-                    {u.employee_id && <> · Emp #{u.employee_id}</>}
-                    {!u.is_active && <span className="text-red-500"> · Inactive</span>}
-                  </div>
-                </div>
-                <div className="flex gap-2 items-center">
-                  <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
-                    Edit name / ID
-                  </button>
-                  {u.role !== 'owner' && (
-                    <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
-                      Edit access
-                    </button>
-                  )}
-                  <button
-                    onClick={() => toggleActive(u)}
-                    disabled={busy}
-                    className={`text-xs px-2 py-1 rounded ${u.is_active ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}
-                  >
-                    {u.is_active ? 'Deactivate' : 'Activate'}
-                  </button>
-                </div>
-              </div>
+        <>
+          <div className="border rounded divide-y">
+            {activeUsers.length === 0 && <p className="text-sm text-gray-400 p-2">No active users found.</p>}
+            {activeUsers.map(u => renderUserRow(u))}
+          </div>
 
-              {editingProfileId === u.id && (
-                <div className="mt-2 border-t pt-2 grid grid-cols-3 gap-2">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
-                    <input
-                      value={editProfile.fullName}
-                      onChange={(e) => setEditProfile(prev => ({ ...prev, fullName: e.target.value }))}
-                      className="border p-1 text-sm rounded w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
-                    <input
-                      value={editProfile.employeeId}
-                      onChange={(e) => setEditProfile(prev => ({ ...prev, employeeId: e.target.value }))}
-                      className="border p-1 text-sm rounded w-full"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
-                    <input
-                      value={editProfile.contactEmail}
-                      onChange={(e) => setEditProfile(prev => ({ ...prev, contactEmail: e.target.value }))}
-                      className="border p-1 text-sm rounded w-full"
-                    />
-                  </div>
-                  <div className="col-span-3 flex gap-2 mt-1">
-                    <button onClick={() => saveProfile(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
-                      Save
-                    </button>
-                    <button onClick={() => setEditingProfileId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
-                      Cancel
-                    </button>
-                  </div>
+          {deactivatedUsers.length > 0 && (
+            <div className="mt-4">
+              <button
+                onClick={() => setShowDeactivated(v => !v)}
+                className="text-sm font-medium text-gray-600 flex items-center gap-1"
+              >
+                {showDeactivated ? '▾' : '▸'} Deactivated Users ({deactivatedUsers.length})
+              </button>
+              {showDeactivated && (
+                <div className="border rounded divide-y mt-2 opacity-75">
+                  {deactivatedUsers.map(u => renderUserRow(u))}
                 </div>
               )}
-
-              {editingId === u.id && (
-                <div className="mt-2 border-t pt-2">
-                  <PageAccessCheckboxes selected={editPages} onChange={setEditPages} editKeys={editKeys} onEditChange={setEditKeys} />
-                  <div className="flex gap-2 mt-2">
-                    <button onClick={() => saveAccess(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
-                      Save Access
-                    </button>
-                    <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="mt-2 flex gap-2 items-center">
-                <input
-                  type="text"
-                  value={newPasswordById[u.id] || ''}
-                  onChange={(e) => setNewPasswordById(prev => ({ ...prev, [u.id]: e.target.value }))}
-                  placeholder="Set new password..."
-                  className="border p-1 text-sm rounded flex-1 max-w-xs"
-                />
-                <button onClick={() => setNewPassword(u.id)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
-                  Set Password
-                </button>
-              </div>
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
     </div>
   )
+
+  function renderUserRow(u: AppUser) {
+    return (
+      <div key={u.id} className="p-2">
+        <div className="flex justify-between items-center">
+          <div>
+            <div className="text-sm font-medium">{u.full_name || u.username || u.email}</div>
+            <div className="text-xs text-gray-500">
+              {u.username ? `ID: ${u.username}` : u.email} · {ROLE_LABELS[u.role]}
+              {u.employee_id && <> · Emp #{u.employee_id}</>}
+              {!u.is_active && <span className="text-red-500"> · Inactive</span>}
+            </div>
+          </div>
+          <div className="flex gap-2 items-center">
+            <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+              Edit name / ID
+            </button>
+            {u.role !== 'owner' && (
+              <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+                Edit access
+              </button>
+            )}
+            <button
+              onClick={() => toggleActive(u)}
+              disabled={busy}
+              className={`text-xs px-2 py-1 rounded ${u.is_active ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}
+            >
+              {u.is_active ? 'Deactivate' : 'Activate'}
+            </button>
+          </div>
+        </div>
+
+        {editingProfileId === u.id && (
+          <div className="mt-2 border-t pt-2 grid grid-cols-3 gap-2">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+              <input
+                value={editProfile.fullName}
+                onChange={(e) => setEditProfile(prev => ({ ...prev, fullName: e.target.value }))}
+                className="border p-1 text-sm rounded w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
+              <input
+                value={editProfile.employeeId}
+                onChange={(e) => setEditProfile(prev => ({ ...prev, employeeId: e.target.value }))}
+                className="border p-1 text-sm rounded w-full"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
+              <input
+                value={editProfile.contactEmail}
+                onChange={(e) => setEditProfile(prev => ({ ...prev, contactEmail: e.target.value }))}
+                className="border p-1 text-sm rounded w-full"
+              />
+            </div>
+            <div className="col-span-3 flex gap-2 mt-1">
+              <button onClick={() => saveProfile(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
+                Save
+              </button>
+              <button onClick={() => setEditingProfileId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        {editingId === u.id && (
+          <div className="mt-2 border-t pt-2">
+            <PageAccessCheckboxes selected={editPages} onChange={setEditPages} editKeys={editKeys} onEditChange={setEditKeys} />
+            <div className="flex gap-2 mt-2">
+              <button onClick={() => saveAccess(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
+                Save Access
+              </button>
+              <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+
+        <div className="mt-2 flex gap-2 items-center flex-wrap">
+          <input
+            type="text"
+            value={newPasswordById[u.id] || ''}
+            onChange={(e) => setNewPasswordById(prev => ({ ...prev, [u.id]: e.target.value }))}
+            placeholder="Set new password..."
+            className="border p-1 text-sm rounded flex-1 max-w-xs"
+          />
+          <button onClick={() => setNewPassword(u.id)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+            Set Password
+          </button>
+          {u.role !== 'owner' && (
+            <>
+              <button
+                onClick={() => toggleViewPassword(u.id)}
+                disabled={viewPasswordLoadingId === u.id}
+                className="text-xs px-2 py-1 rounded bg-gray-100"
+              >
+                {viewPasswordLoadingId === u.id ? 'Loading...' : (u.id in viewedPasswordById ? 'Hide password' : 'View password')}
+              </button>
+              {u.id in viewedPasswordById && (
+                <span className="text-xs font-mono bg-yellow-50 border border-yellow-200 px-2 py-1 rounded">
+                  {viewedPasswordById[u.id] ?? 'No password on file yet — set one above.'}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    )
+  }
 }

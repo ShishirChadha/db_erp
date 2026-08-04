@@ -67,6 +67,7 @@ function InvoicesPage() {
       query = query.eq("status", statusFilter);
     }
 
+    query = query.order("invoice_date", { ascending: false, nullsFirst: false });
     query = query.order("created_at", { ascending: false });
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
@@ -193,8 +194,8 @@ function InvoicesPage() {
           <TableHeader>
             <TableRow>
               <TableHead className="w-10 text-right">#</TableHead>
-              <TableHead>Invoice #</TableHead>
               <TableHead>Date</TableHead>
+              <TableHead>Invoice #</TableHead>
               <TableHead>Customer</TableHead>
               <TableHead className="text-right">Amount</TableHead>
               <TableHead>Status</TableHead>
@@ -211,13 +212,13 @@ function InvoicesPage() {
               invoices.map((inv, idx) => (
                 <TableRow key={inv.id} className={inv.is_deleted ? "opacity-50" : ""}>
                   <TableCell className="text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
+                  <TableCell>{format(new Date(inv.invoice_date), "dd/MM/yyyy")}</TableCell>
                   <TableCell className="font-medium">
                     {inv.invoice_number}
                     {inv.source === "imported_zoho" && (
                       <Badge variant="outline" className="ml-2 text-xs">Imported</Badge>
                     )}
                   </TableCell>
-                  <TableCell>{format(new Date(inv.invoice_date), "dd/MM/yyyy")}</TableCell>
                   <TableCell>{inv.customer_name}</TableCell>
                   <TableCell className="text-right tabular-nums">₹{inv.grand_total?.toFixed(2)}</TableCell>
                   <TableCell><StatusBadge tone={toneFor(INVOICE_STATUS_TONES, inv.status)}>{inv.status.replace("_", " ")}</StatusBadge></TableCell>
