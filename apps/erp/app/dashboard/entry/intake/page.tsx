@@ -31,7 +31,6 @@ function mapSkuToAccessory(s: any): Accessory {
   }
 }
 
-const TYPE_OPTIONS = ['Laptop', 'Desktop', 'Monitor', 'Tablet', 'Tiny']
 const BUYER_OPTIONS = ['Digitalbluez', 'Techtenth', 'Cash', 'Other']
 
 function today() {
@@ -49,7 +48,12 @@ function StockIntakePage() {
   const [done, setDone] = useState(false)
   const [showReview, setShowReview] = useState(false)
 
-  const [type, setType] = useState('Laptop')
+  // Starts empty rather than defaulting straight to 'Laptop' -- SearchableSelect decides
+  // dropdown-vs-free-text mode once on mount based on whether its value is already in
+  // options, and options here loads asynchronously from custom_options; a non-empty
+  // default would race that fetch and can get stuck rendering as a free-text field. See
+  // the effect below, which defaults to 'Laptop' only once the list has actually loaded.
+  const [type, setType] = useState('')
   const [brand, setBrand] = useState('')
   const [brandOther, setBrandOther] = useState('')
   const [model, setModel] = useState('')
@@ -68,6 +72,7 @@ function StockIntakePage() {
   const [accessorySearch, setAccessorySearch] = useState('')
   const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
 
+  const { values: typeOptions, addOption: addTypeOption } = useCustomOptions('stock_intake_type')
   const { values: cpuOptions } = useCustomOptions('cpu')
   const { values: generationOptions } = useCustomOptions('generation')
   const { values: ramOptions } = useCustomOptions('ram')
@@ -80,6 +85,10 @@ function StockIntakePage() {
   const modelCategory = getCustomOptionsCategory(TYPE_TO_CATEGORY[type] || 'OTHER', 'model')
   const { values: modelOptions, addOption: addModelOption } = useCustomOptions(modelCategory || 'model_laptop')
   const screenOptions = type === 'Monitor' ? monitorScreenOptions : laptopScreenOptions
+
+  useEffect(() => {
+    if (!type && typeOptions.includes('Laptop')) setType('Laptop')
+  }, [type, typeOptions])
 
   // Prefill CPU/Generation/RAM/SSD/Screen Size/Model Year from whatever was last
   // recorded for this exact brand+model -- a repeatedly purchased model shouldn't
@@ -224,9 +233,13 @@ function StockIntakePage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Type *</label>
-            <select value={type} onChange={(e) => setType(e.target.value)} className="border p-2 w-full rounded">
-              {TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
+            <SearchableSelect
+              options={typeOptions}
+              value={type}
+              onChange={setType}
+              placeholder="Select type..."
+              onOtherCommit={(v) => { if (!typeOptions.includes(v)) addTypeOption(v) }}
+            />
           </div>
           <div>
             <label className="block font-medium text-sm mb-1">Brand</label>

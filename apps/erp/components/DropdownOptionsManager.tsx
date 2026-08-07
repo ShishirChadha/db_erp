@@ -12,6 +12,7 @@ interface Option {
 }
 
 const KNOWN_CATEGORIES = [
+  { key: 'stock_intake_type', label: 'Stock Intake Type' },
   { key: 'brand', label: 'Brand' },
   { key: 'model_laptop', label: 'Model (Laptop)' },
   { key: 'model_desktop', label: 'Model (Desktop)' },

@@ -38,6 +38,13 @@ export function buildSpecifications(category: string, body: any): Record<string,
         storage: body.ssd,
         ram: body.ram,
       }
+    // A Stock Intake "Type" that isn't one of the known ones (Laptop/Desktop/Monitor/
+    // Tablet/Tiny) falls through to this catch-all category (see TYPE_TO_CATEGORY's
+    // `|| 'OTHER'` fallback) -- sku_category_templates already has an 'OTHER' row with
+    // its own field shape (item_name/description/specs), distinct from every other
+    // category's spec fields, so it needs its own case rather than falling into DES's.
+    case 'OTHER':
+      return { brand, item_name: body.model }
     case 'DES':
     default:
       return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd, ...(body.gpu ? { gpu: body.gpu } : {}), model_year: body.model_year }
