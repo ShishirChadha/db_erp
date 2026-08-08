@@ -44,7 +44,20 @@ export function buildSpecifications(category: string, body: any): Record<string,
     // its own field shape (item_name/description/specs), distinct from every other
     // category's spec fields, so it needs its own case rather than falling into DES's.
     case 'OTHER':
-      return { brand, item_name: body.model }
+      return {
+        brand,
+        item_name: body.model,
+        // Same catch-all category as above, but some 'Other' items (e.g. an AIO / All-in-One
+        // PC) genuinely have laptop/desktop-style specs -- captured here when filled in,
+        // omitted (not blank) when not, matching the LAP/DES omission pattern above.
+        ...(body.cpu ? { cpu: body.cpu } : {}),
+        ...(body.generation ? { generation: body.generation } : {}),
+        ...(body.ram ? { ram: body.ram } : {}),
+        ...(body.ssd ? { ssd: body.ssd } : {}),
+        ...(body.gpu ? { gpu: body.gpu } : {}),
+        ...(body.screen_size ? { screen_size: body.screen_size } : {}),
+        ...(body.model_year ? { model_year: body.model_year } : {}),
+      }
     case 'DES':
     default:
       return { brand, model: body.model, cpu: body.cpu, ram: body.ram, ssd: body.ssd, ...(body.gpu ? { gpu: body.gpu } : {}), model_year: body.model_year }

@@ -196,8 +196,12 @@ function StockIntakePage() {
     }
   })
 
-  const showLaptopFields = type === 'Laptop' || type === 'Desktop' || type === 'Tiny'
-  const showScreenField = type === 'Laptop' || type === 'Monitor' || type === 'Tablet'
+  // A custom-typed value (via Type's "Other" free-text entry, e.g. "AIO") may genuinely have
+  // laptop/desktop-style specs -- show the same spec block rather than leaving it spec-less.
+  const KNOWN_TYPES = ['Laptop', 'Desktop', 'Monitor', 'Tablet', 'Tiny']
+  const isOtherType = type !== '' && !KNOWN_TYPES.includes(type)
+  const showLaptopFields = type === 'Laptop' || type === 'Desktop' || type === 'Tiny' || isOtherType
+  const showScreenField = type === 'Laptop' || type === 'Monitor' || type === 'Tablet' || isOtherType
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
