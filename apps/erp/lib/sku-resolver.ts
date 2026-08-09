@@ -128,6 +128,7 @@ export async function resolveOrCreateSku(
         category: input.category,
         brand,
         modelName,
+        specifications: normalizedSpecs,
         excludeId: newSku.id,
       })
       return { sku: newSku, created: true, possibleDuplicates: possibleDuplicates.length > 0 ? possibleDuplicates : undefined }

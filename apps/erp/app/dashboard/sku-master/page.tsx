@@ -11,7 +11,7 @@ import { MergeSkuDialog } from '@/components/MergeSkuDialog'
 import { SkuWebPublishDialog } from '@/components/SkuWebPublishDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
-import { buildConfigSummary } from '@/lib/sku-config-summary'
+import { buildConfigSummary, buildConfigDiff } from '@/lib/sku-config-summary'
 import { Pagination } from '@/components/Pagination'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ErrorBanner } from '@/components/ErrorBanner'
@@ -35,7 +35,7 @@ interface SkuCounts {
 interface DuplicateCluster {
   category: string
   brand: string
-  skus: { id: string; full_sku_code: string; category: string; brand: string; model_name: string; quantity_in_stock: number | null }[]
+  skus: { id: string; full_sku_code: string; base_sku_code: string; category: string; brand: string; model_name: string; specifications: any; quantity_in_stock: number | null }[]
 }
 
 interface SKU {
@@ -275,11 +275,15 @@ function SkuMasterPage() {
               {duplicateClusters.map((cluster, idx) => (
                 <div key={idx} className="p-3 flex flex-wrap items-center gap-3 text-sm">
                   <div className="flex-1 min-w-0">
-                    {cluster.skus.map((s) => (
-                      <div key={s.id} className="text-gray-700">
-                        {s.full_sku_code} -- {s.brand} {s.model_name} ({s.quantity_in_stock ?? 0} in stock)
-                      </div>
-                    ))}
+                    {cluster.skus.map((s) => {
+                      const configDiff = buildConfigDiff(s.category, s.specifications, templates)
+                      return (
+                        <div key={s.id} className="text-gray-700">
+                          {s.full_sku_code} -- {s.brand} {s.model_name} ({s.quantity_in_stock ?? 0} in stock)
+                          {configDiff && <span className="font-medium"> -- {configDiff}</span>}
+                        </div>
+                      )
+                    })}
                   </div>
                   <button
                     type="button"
@@ -394,6 +398,7 @@ function SkuMasterPage() {
       {mergeCluster && (
         <MergeSkuDialog
           candidates={mergeCluster.skus}
+          templates={templates}
           onClose={() => setMergeCluster(null)}
           onMerged={() => {
             toast.success('SKUs merged')
