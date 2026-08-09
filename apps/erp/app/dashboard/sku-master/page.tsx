@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { Loader2, AlertTriangle } from 'lucide-react'
 import { toast } from 'sonner'
@@ -363,6 +364,9 @@ function SkuMasterPage() {
                 </td>
                 <td className="p-2 space-x-2">
                   <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
+                  {isOwner && (
+                    <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple-600 underline">Pricing</Link>
+                  )}
                   {(isOwner || hasPageAccess('website')) && (
                     <button onClick={() => setWebPublishSku(sku)} className="text-emerald-600 underline">Website</button>
                   )}

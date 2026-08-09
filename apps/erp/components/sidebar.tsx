@@ -97,6 +97,7 @@ const menuGroups = [
       { href: '/dashboard/sales', label: 'Sales', pageKey: 'sales' },
       { href: '/dashboard/invoices', label: 'Invoices', pageKey: 'invoices' },
       { href: '/dashboard/quotations', label: 'Quotations', ownerOnly: true },
+      { href: '/dashboard/pricing', label: 'Price Cockpit', ownerOnly: true },
     ],
   },
   {
