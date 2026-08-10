@@ -5,6 +5,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { redactForRole, redactManyForRole } from '@/lib/auth/redact'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
+import { isSerializedCategory } from '@/lib/sku-categories'
 
 // Used by SKU Master, PO wizard's inline SKU search (owner-only page), Sell's
 // Fix-SKU/Change-SKU picker, and the Accessories page/Sell's accessory picker (which
@@ -142,6 +143,37 @@ export async function GET(req: NextRequest) {
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   const redacted = await redactManyForRole(data || [], 'sku_master', sessionUser.role)
+
+  // Sold count -- only computed for the paginated SKU Master list (the picker/search
+  // callers of this same route don't display it and shouldn't pay for the extra
+  // queries). Serialized categories (laptops/desktops/monitors/tablets) track sales
+  // per-unit via asset_ledger.status='sold'; fungible categories (accessories) have
+  // no asset_ledger rows at all and are tracked via stock_movements movement_type='sale'.
+  if (pagination && data && data.length > 0) {
+    const serializedIds = data.filter((r) => isSerializedCategory(r.category)).map((r) => r.id)
+    const fungibleIds = data.filter((r) => !isSerializedCategory(r.category)).map((r) => r.id)
+
+    const [soldAssets, saleMovements] = await Promise.all([
+      serializedIds.length > 0
+        ? supabaseAdmin.from('asset_ledger').select('sku_id').in('sku_id', serializedIds).eq('status', 'sold')
+        : Promise.resolve({ data: [] as { sku_id: string }[] }),
+      fungibleIds.length > 0
+        ? supabaseAdmin.from('stock_movements').select('sku_id, quantity_change').in('sku_id', fungibleIds).eq('movement_type', 'sale')
+        : Promise.resolve({ data: [] as { sku_id: string; quantity_change: number }[] }),
+    ])
+
+    const soldCountBySkuId = new Map<string, number>()
+    for (const row of soldAssets.data || []) {
+      soldCountBySkuId.set(row.sku_id, (soldCountBySkuId.get(row.sku_id) || 0) + 1)
+    }
+    for (const row of saleMovements.data || []) {
+      soldCountBySkuId.set(row.sku_id, (soldCountBySkuId.get(row.sku_id) || 0) + Math.max(0, -row.quantity_change))
+    }
+    for (const row of redacted) {
+      row.sold_count = soldCountBySkuId.get(row.id) || 0
+    }
+  }
+
   if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
   return NextResponse.json(redacted)
 }

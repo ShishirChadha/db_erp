@@ -56,6 +56,7 @@ interface SKU {
   hsn_code?: string | null
   is_published?: boolean | null
   status?: string
+  sold_count?: number
 }
 
 interface CategoryTemplate {
@@ -65,7 +66,7 @@ interface CategoryTemplate {
   sku_code_format?: string
 }
 
-type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in_stock'
+type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in_stock' | 'sold_count'
 type SortOrder = 'asc' | 'desc'
 
 function SkuMasterPage() {
@@ -223,10 +224,23 @@ function SkuMasterPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const handleDelete = async (sku: SKU) => {
     if (deletingId) return
+    // Known up front from sold_count -- skip the round trip and give a specific
+    // reason instead of a generic confirm the delete would just fail anyway
+    // (asset_ledger/sales FKs are RESTRICT, so this always 409s server-side too).
+    if ((sku.sold_count ?? 0) > 0) {
+      toast.error(`Can't delete ${sku.full_sku_code}: ${sku.sold_count} sold unit(s) are tagged to it. Use Merge instead if this is a duplicate.`)
+      return
+    }
     if (!confirm(`Permanently delete ${sku.full_sku_code}? This action cannot be undone.`)) return
     setDeletingId(sku.id)
     try {
-      await apiFetch(`/api/sku-master/${sku.id}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/sku-master/${sku.id}`, { method: 'DELETE' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        toast.error(err.error || 'Delete failed')
+        return
+      }
+      toast.success(`Deleted ${sku.full_sku_code}`)
       fetchSkus()
       fetchCounts()
     } finally {
@@ -347,12 +361,15 @@ function SkuMasterPage() {
               <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('quantity_in_stock')}>
                 Stock{sortIndicator('quantity_in_stock')}
               </th>
+              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('sold_count')}>
+                Sold{sortIndicator('sold_count')}
+              </th>
               <th className="p-2">Website</th>
               <th className="p-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {displayedSkus.length === 0 && <EmptyTableRow colSpan={8} message="No SKUs found." />}
+            {displayedSkus.length === 0 && <EmptyTableRow colSpan={9} message="No SKUs found." />}
             {displayedSkus.map((sku, idx) => (
               <tr key={sku.id}>
                 <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -361,6 +378,7 @@ function SkuMasterPage() {
                 <td className="p-2">{sku.hsn_code || '—'}</td>
                 <td className="p-2">{sku.category}</td>
                 <td className="p-2 text-right tabular-nums">{sku.quantity_in_stock ?? '0'}</td>
+                <td className="p-2 text-right tabular-nums">{sku.sold_count ?? 0}</td>
                 <td className="p-2">
                   <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
                     {sku.is_published ? 'Published' : 'Unpublished'}
