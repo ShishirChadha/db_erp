@@ -736,7 +736,7 @@ export default function StockView({
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('asset_number')}>
                   Asset / Serial{sortIndicator('asset_number')}
                 </th>
-                {tab === 'current' && visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
+                {visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
                 {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
                 {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
                 {visibleColumns.sku && <th className="border p-2">SKU</th>}
@@ -778,7 +778,7 @@ export default function StockView({
                       </span>
                     )}
                   </td>
-                  {tab === 'current' && visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
+                  {visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
                   {visibleColumns.purchaseDate && <td className="border p-2">{asset.po_date?.slice(0, 10) || '—'}</td>}
                   {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
                   {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
@@ -979,9 +979,9 @@ export default function StockView({
                   <span className="text-gray-400"> · SN: {asset.serial_number}</span>
                 )}
               </div>
-              {(tab === 'current' && asset.created_at) || asset.po_date ? (
+              {asset.created_at || asset.po_date ? (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
-                  {tab === 'current' && asset.created_at && <span>Added {asset.created_at.slice(0, 10)}</span>}
+                  {asset.created_at && <span>Added {asset.created_at.slice(0, 10)}</span>}
                   {asset.po_date && <span>Purchased {asset.po_date.slice(0, 10)}</span>}
                 </div>
               ) : null}

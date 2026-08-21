@@ -61,7 +61,13 @@ export function AsyncCombobox<T>({
         </Button>
       </PopoverTrigger>
       <PopoverContent className={cn(popoverWidthClassName, "p-0")}>
-        <Command>
+        {/* shouldFilter=false: `items` already comes in pre-filtered by the caller's
+            own server-side search query. Without this, cmdk additionally fuzzy-filters
+            client-side by comparing the typed text against each CommandItem's `value`
+            prop -- which callers set to getItemKey(item) (e.g. a customer's UUID, not
+            their name), so cmdk would silently hide almost every real match regardless
+            of how correct the server query was. */}
+        <Command shouldFilter={false}>
           <CommandInput placeholder={searchPlaceholder} value={searchTerm} onValueChange={onSearchTermChange} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>

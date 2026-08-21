@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
+import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import {
   Dialog,
@@ -154,7 +155,12 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
 
           <div>
             <label className="block text-sm font-medium mb-1">Customer</label>
-            <SearchableCustomerSelect value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />
+            <div className="flex gap-2 items-start">
+              <div className="flex-1">
+                <SearchableCustomerSelect value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />
+              </div>
+              <AddCustomerDialog onAdd={(created) => created && setCustomerId(created.id)} />
+            </div>
           </div>
 
           <div className="border rounded p-3 space-y-2">

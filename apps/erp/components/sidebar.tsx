@@ -27,6 +27,7 @@ import {
   Loader2,
   ListChecks,
   History,
+  DatabaseBackup,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
@@ -136,6 +137,12 @@ const menuGroups = [
     href: '/dashboard/settings/audit-log',
     // Deliberately no ownerOnly / pageKey: every active user is entitled to see
     // their own trail here; the API itself restricts non-owners to their own rows.
+  },
+  {
+    label: 'Backup',
+    icon: DatabaseBackup,
+    href: '/dashboard/settings/backup',
+    ownerOnly: true,
   },
   {
     label: 'Settings',
