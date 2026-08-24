@@ -6,6 +6,8 @@ export interface DuplicateSerialMatch {
   serial_number: string
   source: string
   status: string
+  po_id: string | null
+  sku_id: string
 }
 
 // serial_number is the natural identity key for a physical unit but carries no
@@ -16,6 +18,12 @@ export interface DuplicateSerialMatch {
 // created through the old click-past-the-warning path. Existing legacy duplicates
 // from before this was hardened still need owner reconciliation directly in the DB/
 // Stock page, not through these entry doors.
+//
+// One documented carve-out: PO receive (app/api/purchase-orders/[id]/receive) uses
+// po_id/sku_id on the match to tell a real duplicate apart from the same physical
+// unit catching up on paperwork (an employee-intake row, still unattached to any PO,
+// for the same SKU) -- that case gets auto-promoted onto the PO instead of blocked,
+// mirroring /api/purchase-orders/from-intake. Every other caller still hard-blocks.
 export async function findDuplicateSerial(
   serialNumber: string | null | undefined,
   excludeId?: string
@@ -25,7 +33,7 @@ export async function findDuplicateSerial(
 
   let query = supabaseAdmin
     .from('asset_ledger')
-    .select('id, asset_number, serial_number, source, status, is_deleted')
+    .select('id, asset_number, serial_number, source, status, is_deleted, po_id, sku_id')
     .ilike('serial_number', normalized)
   if (excludeId) query = query.neq('id', excludeId)
 
@@ -43,5 +51,7 @@ export async function findDuplicateSerial(
     serial_number: match.serial_number,
     source: match.source,
     status: match.status,
+    po_id: match.po_id,
+    sku_id: match.sku_id,
   }
 }

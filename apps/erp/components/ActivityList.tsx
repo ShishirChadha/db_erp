@@ -458,7 +458,7 @@ function DetailModal({
   const linkBase = detail?.related_type ? RELATED_TYPE_LINK_BASE[detail.related_type] : undefined;
 
   return (
-    <SimpleModal isOpen={isOpen} onClose={onClose} title="Task Details" wide>
+    <SimpleModal isOpen={isOpen} onClose={onClose} title="Task Details" wide closeOnBackdropClick={false}>
       {loading && <p className="text-sm text-gray-500">Loading...</p>}
       {!loading && detail && (
         <div className="space-y-4">

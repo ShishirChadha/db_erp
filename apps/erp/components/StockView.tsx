@@ -88,6 +88,8 @@ interface AccessoryStockRow {
   base_cost?: number
   needs_po_qty?: number
   last_vendor?: string | null
+  last_entry_vendor?: string | null
+  last_entry_price?: number | null
 }
 
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
@@ -623,14 +625,15 @@ export default function StockView({
                 <th className="border p-2">Brand</th>
                 <th className="border p-2 text-right">In Stock</th>
                 <th className="border p-2 text-right">Selling Price</th>
+                <th className="border p-2" title="Vendor/price optionally logged by whoever received the stock -- visible to everyone.">Last Purchase</th>
                 {isOwner && <th className="border p-2 text-right">Cost</th>}
-                {isOwner && <th className="border p-2">Last Vendor</th>}
+                {isOwner && <th className="border p-2">Last Vendor (PO)</th>}
                 {isOwner && <th className="border p-2">Awaiting PO</th>}
                 <th className="border p-2">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {accessoryStock.length === 0 && <EmptyTableRow colSpan={10} message="No accessories in stock." />}
+              {accessoryStock.length === 0 && <EmptyTableRow colSpan={isOwner ? 11 : 8} message="No accessories in stock." />}
               {accessoryStock.map((sku, idx) => (
                 <tr key={sku.id}>
                   <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -643,6 +646,11 @@ export default function StockView({
                   <td className="border p-2">{sku.brand || '—'}</td>
                   <td className="border p-2 text-right tabular-nums">{sku.quantity_in_stock}</td>
                   <td className="border p-2 text-right tabular-nums">{sku.selling_price_default ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}</td>
+                  <td className="border p-2 text-xs">
+                    {sku.last_entry_vendor
+                      ? <>{sku.last_entry_vendor}{sku.last_entry_price != null && <span className="text-gray-500"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}</>
+                      : '—'}
+                  </td>
                   {isOwner && <td className="border p-2 text-right tabular-nums">{sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}</td>}
                   {isOwner && <td className="border p-2">{sku.last_vendor || '—'}</td>}
                   {isOwner && (
@@ -940,6 +948,11 @@ export default function StockView({
                 In stock: {sku.quantity_in_stock}
                 {sku.selling_price_default != null && ` · ₹${sku.selling_price_default.toFixed(2)}`}
               </div>
+              {sku.last_entry_vendor && (
+                <div className="text-xs text-gray-600">
+                  Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ₹${sku.last_entry_price.toFixed(2)}`}
+                </div>
+              )}
               {isOwner && (
                 <div className="text-xs text-gray-600 space-y-0.5">
                   <div>Cost: {sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}{sku.last_vendor ? ` · ${sku.last_vendor}` : ''}</div>

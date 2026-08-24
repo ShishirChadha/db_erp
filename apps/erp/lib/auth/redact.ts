@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 // in the `redaction_rules` table (Settings -> Field Redaction). Keyed by a logical
 // table/shape name (not always a literal SQL table -- e.g. 'stock_list' is /api/stock's
 // flattened shape).
-export type RedactableShape = 'sku_master' | 'stock_list' | 'accessories' | 'audit_log'
+export type RedactableShape = 'sku_master' | 'stock_list' | 'accessories' | 'audit_log' | 'vendors'
 
 interface RedactionRule {
   shape: string

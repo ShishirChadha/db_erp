@@ -36,7 +36,7 @@ export async function GET(
 
   const { data: movements, error: movErr } = await supabaseAdmin
     .from('stock_movements')
-    .select('id, movement_type, quantity_change, quantity_before, quantity_after, po_id, notes, created_at')
+    .select('id, movement_type, quantity_change, quantity_before, quantity_after, po_id, unit_price, notes, created_at, vendors(company_name)')
     .eq('sku_id', id)
     .order('created_at', { ascending: false })
   if (movErr) return NextResponse.json({ error: movErr.message }, { status: 500 })
@@ -62,13 +62,18 @@ export async function GET(
   const result: any = {
     sku,
     summary: { received, sold, adjusted, in_stock: sku.quantity_in_stock },
-    movements: (movements || []).map((m) => ({
+    // vendor_name/unit_price here are the employee-entered "who did we buy this from and
+    // at what price" captured optionally at receipt time -- visible to every role by
+    // design (see docs/decisions.md), unlike the owner-only formal PO purchases[] below.
+    movements: (movements || []).map((m: any) => ({
       id: m.id,
       movement_type: m.movement_type,
       quantity_change: m.quantity_change,
       quantity_before: m.quantity_before,
       quantity_after: m.quantity_after,
       po_number: m.po_id ? poNumberById.get(m.po_id) || null : null,
+      vendor_name: m.vendors?.company_name ?? null,
+      unit_price: m.unit_price,
       notes: m.notes,
       created_at: m.created_at,
     })),

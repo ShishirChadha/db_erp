@@ -11,14 +11,6 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
 } from '@/components/ui/dialog'
-import { Textarea } from '@/components/ui/textarea'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import {
   Plus, Search, Eye, Loader2, Pencil, Trash2, RotateCcw
 } from 'lucide-react'
@@ -27,6 +19,7 @@ import DeleteRecordDialog from '@/components/DeleteRecordDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { ResizableHeader } from '@/components/ResizableHeader'
+import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
 
 const PAGE_SIZE = 25
 
@@ -47,28 +40,14 @@ type Vendor = {
   gst_number: string
   gst_company_name: string
   remarks: string | null
+  supplies_accessories: boolean
   is_deleted: boolean
   deleted_remarks: string | null
   deleted_at: string | null
   created_at: string
 }
 
-const emptyForm = {
-  company_name: '',
-  spoc_name: '',
-  owner_name: '',
-  phone: '',
-  address_line1: '',
-  address_line2: '',
-  city: '',
-  state: '',
-  pincode: '',
-  email: '',
-  has_gst: 'false',
-  gst_number: '',
-  gst_company_name: '',
-  remarks: '',
-}
+const emptyForm = emptyVendorForm
 
 type VendorSortField = 'company_name' | 'spoc_name' | 'phone' | 'city'
 type SortOrder = 'asc' | 'desc'
@@ -82,7 +61,7 @@ function VendorsPage() {
   const [showForm, setShowForm] = useState(false)
   const [viewItem, setViewItem] = useState<Vendor | null>(null)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
-  const [form, setForm] = useState(emptyForm)
+  const [form, setForm] = useState<VendorFormState>(emptyForm)
   const [error, setError] = useState('')
   const [fetchingGst, setFetchingGst] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
@@ -93,7 +72,7 @@ function VendorsPage() {
   const supabase = createClient()
 
   // Initial column widths
-  const [colWidths, setColWidths] = useState([200, 120, 100, 120, 80, 120, 100])
+  const [colWidths, setColWidths] = useState([200, 120, 100, 120, 80, 120, 90, 100])
 
   // Search/sort/showDeleted/pagination all happen server-side now -- this used to
   // fetch the entire table once on mount and filter/sort the full array in the
@@ -136,7 +115,7 @@ function VendorsPage() {
       const res = await fetch(`/api/gst?gst=${form.gst_number}`)
       const data = await res.json()
       if (data.company_name) {
-        setForm(prev => ({
+        setForm((prev: VendorFormState) => ({
           ...prev,
           gst_company_name: data.company_name,
           company_name: data.company_name,
@@ -175,6 +154,7 @@ function VendorsPage() {
       gst_number: vendor.gst_number || '',
       gst_company_name: vendor.gst_company_name || '',
       remarks: vendor.remarks || '',
+      supplies_accessories: !!vendor.supplies_accessories,
     })
     setShowForm(true)
   }
@@ -201,6 +181,7 @@ function VendorsPage() {
       gst_number: form.gst_number,
       gst_company_name: form.gst_company_name,
       remarks: form.remarks,
+      supplies_accessories: form.supplies_accessories,
     }
 
     let result
@@ -309,7 +290,7 @@ function VendorsPage() {
               <thead>
                 <tr className="border-b border-gray-200 bg-gray-50">
                   <th className="text-right px-4 py-3 font-medium text-gray-600 w-10">#</th>
-                  {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Actions'] as const).map((label, i) => {
+                  {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Accessories', 'Actions'] as const).map((label, i) => {
                     const sortableField: Partial<Record<typeof label, VendorSortField>> = {
                       Company: 'company_name',
                       SPOC: 'spoc_name',
@@ -338,7 +319,7 @@ function VendorsPage() {
               <tbody>
                 {vendors.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-12 text-gray-400">
+                    <td colSpan={9} className="text-center py-12 text-gray-400">
                       No vendors found. Add your first vendor.
                     </td>
                   </tr>
@@ -358,6 +339,9 @@ function VendorsPage() {
   <td className="px-4 py-3 text-gray-700">{v.phone || '—'}</td>
   <td className="px-4 py-3 text-gray-700">{v.city || '—'}</td>
   <td className="px-4 py-3 text-gray-700 max-w-xs truncate">{v.remarks || '—'}</td>
+  <td className="px-4 py-3 text-gray-700" title="Whether employees can select this vendor when receiving accessory stock">
+    {v.supplies_accessories ? '✓' : '—'}
+  </td>
   <td className="px-4 py-3 text-right space-x-1">
     {/* actions unchanged */}
   </td>
@@ -377,143 +361,13 @@ function VendorsPage() {
           <DialogHeader>
             <DialogTitle>{editingVendor ? 'Edit Vendor' : 'Add New Vendor'}</DialogTitle>
           </DialogHeader>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-            <div className="space-y-2 md:col-span-2">
-              <Label>Company Name *</Label>
-              <Input
-                placeholder="e.g. Tech Traders Pvt Ltd"
-                value={form.company_name}
-                onChange={(e) => setForm({ ...form, company_name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>SPOC Name</Label>
-              <Input
-                placeholder="Point of contact name"
-                value={form.spoc_name}
-                onChange={(e) => setForm({ ...form, spoc_name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Owner Name</Label>
-              <Input
-                placeholder="Owner / Proprietor name"
-                value={form.owner_name}
-                onChange={(e) => setForm({ ...form, owner_name: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Phone</Label>
-              <Input
-                placeholder="+91 98765 43210"
-                value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Email</Label>
-              <Input
-                type="email"
-                placeholder="vendor@company.com"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2 md:col-span-2">
-              <Label>Address Line 1</Label>
-              <Input
-                placeholder="Street, building, etc."
-                value={form.address_line1}
-                onChange={(e) => setForm({ ...form, address_line1: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2 md:col-span-2">
-              <Label>Address Line 2</Label>
-              <Input
-                placeholder="Apartment, suite, etc. (optional)"
-                value={form.address_line2}
-                onChange={(e) => setForm({ ...form, address_line2: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>City</Label>
-              <Input
-                placeholder="City"
-                value={form.city}
-                onChange={(e) => setForm({ ...form, city: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>State</Label>
-              <Input
-                placeholder="State"
-                value={form.state}
-                onChange={(e) => setForm({ ...form, state: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label>Pincode</Label>
-              <Input
-                placeholder="Pincode"
-                value={form.pincode}
-                onChange={(e) => setForm({ ...form, pincode: e.target.value })}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>Has GST?</Label>
-              <Select
-                value={form.has_gst}
-                onValueChange={(v) => setForm({ ...form, has_gst: v })}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Yes or No" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="true">Yes</SelectItem>
-                  <SelectItem value="false">No</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {form.has_gst === 'true' && (
-              <>
-                <div className="space-y-2">
-                  <Label>GST Number</Label>
-                  <Input
-                    placeholder="e.g. 07AAAAA0000A1Z5"
-                    value={form.gst_number}
-                    onChange={(e) => setForm({ ...form, gst_number: e.target.value.toUpperCase() })}
-                    onBlur={handleGstBlur}
-                  />
-                  {fetchingGst && <p className="text-xs text-blue-500">Fetching company details...</p>}
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Auto-filled Company Name (from GST)</Label>
-                  <Input
-                    value={form.gst_company_name}
-                    readOnly
-                    className="bg-gray-50"
-                  />
-                </div>
-              </>
-            )}
-
-            <div className="space-y-2 md:col-span-2">
-              <Label>Remarks</Label>
-              <Textarea
-                placeholder="Any notes about this vendor"
-                value={form.remarks}
-                onChange={(e) => setForm({ ...form, remarks: e.target.value })}
-                rows={2}
-              />
-            </div>
-          </div>
+          <VendorFormFields
+            form={form}
+            onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+            fetchingGst={fetchingGst}
+            onGstBlur={handleGstBlur}
+            showSuppliesAccessories
+          />
 
           {error && (
             <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">{error}</div>

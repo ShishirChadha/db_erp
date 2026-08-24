@@ -8,9 +8,12 @@ import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import { Pagination } from '@/components/Pagination'
+import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
 
 const PAGE_SIZE = 25
 
@@ -49,41 +52,177 @@ interface PoBacklog {
   quantity: number
 }
 
+// Lets whoever is receiving stock add a vendor on the spot if it's not in the dropdown
+// yet, with the same fields as the owner's Vendors-page form -- POST /api/vendors forces
+// supplies_accessories=true server-side for a non-owner caller and resolves by name
+// against any existing vendor rather than risking a near-duplicate (see
+// docs/decisions.md, 2026-08-24). The owner can still edit/delete it normally afterward
+// from the Vendors page, which stays the only place to manage vendors beyond this.
+function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor) => void; onClose: () => void }) {
+  const [form, setForm] = useState<VendorFormState>(emptyVendorForm)
+  const [fetchingGst, setFetchingGst] = useState(false)
+  const [err, setErr] = useState('')
+
+  const handleGstBlur = async () => {
+    if (!form.gst_number || form.gst_number.length !== 15) return
+    setFetchingGst(true)
+    try {
+      const res = await fetch(`/api/gst?gst=${form.gst_number}`)
+      const data = await res.json()
+      if (data.company_name) {
+        setForm((prev) => ({ ...prev, gst_company_name: data.company_name, company_name: data.company_name }))
+      } else {
+        setErr('GST number not found. Please check.')
+      }
+    } catch {
+      setErr('Failed to verify GST. Try again.')
+    } finally {
+      setFetchingGst(false)
+    }
+  }
+
+  const { run: submit, pending: busy } = useAsyncAction(async () => {
+    setErr('')
+    if (!form.company_name.trim()) { setErr('Company Name is required.'); return }
+    const res = await apiFetch('/api/vendors', {
+      method: 'POST',
+      body: JSON.stringify({
+        company_name: form.company_name,
+        spoc_name: form.spoc_name,
+        owner_name: form.owner_name,
+        phone: form.phone,
+        address_line1: form.address_line1,
+        address_line2: form.address_line2,
+        city: form.city,
+        state: form.state,
+        pincode: form.pincode,
+        email: form.email,
+        has_gst: form.has_gst === 'true',
+        gst_number: form.gst_number,
+        gst_company_name: form.gst_company_name,
+        remarks: form.remarks,
+      }),
+    })
+    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to add vendor.'); return }
+    onAdded(await res.json())
+  })
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Add New Vendor</DialogTitle>
+        </DialogHeader>
+        <VendorFormFields
+          form={form}
+          onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
+          fetchingGst={fetchingGst}
+          onGstBlur={handleGstBlur}
+        />
+        {err && <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">{err}</div>}
+        <div className="flex gap-3 mt-4">
+          <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => submit()} loading={busy}>
+            Save Vendor
+          </Button>
+          <Button variant="outline" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 // Records stock received (batteries, RAM, SSD, mice, bags, etc.) via the shared
 // quantity-only movement endpoint -- quantity_in_stock is trigger-maintained off
 // stock_movements the same way every other sku_master category already works, so
-// this never writes the quantity column directly.
+// this never writes the quantity column directly. Vendor + unit price are optional --
+// captured here so there's a record of "who was this bought from, at what price" even
+// before the owner's separate, formal Attach-PO step (see docs/decisions.md). Unlike
+// laptop/PO vendor+cost, this is visible to every role by design.
 function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => void }) {
+  const [open, setOpen] = useState(false)
   const [qty, setQty] = useState<number | ''>('')
+  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [vendorId, setVendorId] = useState('')
+  const [unitPrice, setUnitPrice] = useState<number | ''>('')
   const [err, setErr] = useState('')
+  const [addVendorOpen, setAddVendorOpen] = useState(false)
+
+  useEffect(() => {
+    if (!open) return
+    apiFetch('/api/vendors').then(res => res.json()).then((data) => setVendors(Array.isArray(data) ? data : []))
+  }, [open])
 
   const { run: receive, pending: busy } = useAsyncAction(async () => {
     setErr('')
     if (!qty || qty <= 0) { setErr('Enter a quantity > 0.'); return }
     const res = await apiFetch(`/api/sku-master/${skuId}/stock-movement`, {
       method: 'POST',
-      body: JSON.stringify({ movement_type: 'receipt', quantity_change: qty, notes: 'Stock received' }),
+      body: JSON.stringify({
+        movement_type: 'receipt',
+        quantity_change: qty,
+        notes: 'Stock received',
+        vendor_id: vendorId || undefined,
+        unit_price: unitPrice === '' ? undefined : unitPrice,
+      }),
     })
     if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to record stock.'); return }
-    setQty('')
+    setOpen(false); setQty(''); setVendorId(''); setUnitPrice('')
     onDone()
   })
 
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-blue-600 underline text-xs whitespace-nowrap">
+        Receive Stock
+      </button>
+    )
+  }
+
   return (
-    <div className="flex items-center gap-1">
+    <div className="border rounded p-2 bg-gray-50 space-y-1 w-56">
+      {err && <div className="text-red-600 text-xs">{err}</div>}
       <input
         type="number"
         min={1}
         value={qty}
         onChange={(e) => setQty(e.target.value === '' ? '' : Number(e.target.value))}
         placeholder="Qty"
-        className="border p-1 w-16 rounded text-xs"
+        className="border p-1 w-full rounded text-xs"
       />
-      <button onClick={() => receive()} disabled={busy} className="text-blue-600 underline text-xs disabled:opacity-50 inline-flex items-center gap-1 whitespace-nowrap">
-        {busy && <Loader2 className="size-3 animate-spin" />}
-        Receive Stock
+      <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-xs">
+        <option value="">Vendor (optional)...</option>
+        {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
+      </select>
+      <button onClick={() => setAddVendorOpen(true)} className="text-blue-600 underline text-xs">
+        + Add new vendor
       </button>
-      {err && <div className="text-red-600 text-xs">{err}</div>}
+      <input
+        type="number"
+        min={0}
+        value={unitPrice}
+        onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
+        placeholder="Unit price (optional)"
+        className="border p-1 w-full rounded text-xs"
+      />
+      <div className="flex gap-1">
+        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100 flex-1">Cancel</button>
+        <button onClick={() => receive()} disabled={busy} className="text-xs px-2 py-1 rounded bg-blue-600 text-white flex-1 inline-flex items-center justify-center gap-1">
+          {busy && <Loader2 className="size-3 animate-spin" />}
+          Receive
+        </button>
+      </div>
+      {addVendorOpen && (
+        <AddVendorDialog
+          onClose={() => setAddVendorOpen(false)}
+          onAdded={(vendor) => {
+            setVendors((prev) => (prev.some((v) => v.id === vendor.id) ? prev : [...prev, vendor]))
+            setVendorId(vendor.id)
+            setAddVendorOpen(false)
+          }}
+        />
+      )}
     </div>
   )
 }
@@ -170,7 +309,7 @@ function ArchiveControl({ sku, onDone }: { sku: AccessorySku; onDone: () => void
 // Owner-only: attaches a real vendor/PO/cost to this SKU's still-unattached stock-in
 // movements (mirrors the laptop "attach to PO" flow, but quantity-based -- no asset
 // numbers to mint). Only shown when there's an actual backlog for this SKU.
-function AttachPoControl({ skuId, backlogQty, onDone }: { skuId: string; backlogQty: number; onDone: () => void }) {
+function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId: string; backlogQty: number; defaultVendorId?: string; onDone: () => void }) {
   const [open, setOpen] = useState(false)
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
@@ -182,7 +321,10 @@ function AttachPoControl({ skuId, backlogQty, onDone }: { skuId: string; backlog
   useEffect(() => {
     if (!open) return
     apiFetch('/api/vendors').then(res => res.json()).then((data) => setVendors(Array.isArray(data) ? data : []))
-  }, [open])
+    // Pre-fill from whatever vendor the employee last logged at receipt time -- just a
+    // convenience since both flows now reference the same vendors table; still editable.
+    if (defaultVendorId) setVendorId((current) => current || defaultVendorId)
+  }, [open, defaultVendorId])
 
   const { run: attach, pending: busy } = useAsyncAction(async () => {
     setErr('')
@@ -245,6 +387,7 @@ function AccessoriesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
   const [lastVendors, setLastVendors] = useState<Map<string, string>>(new Map())
+  const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null }>>(new Map())
   const [showArchived, setShowArchived] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -278,6 +421,12 @@ function AccessoriesPage() {
       if (vendorRes.ok) setLastVendors(new Map(Object.entries(await vendorRes.json())))
     } else {
       setLastVendors(new Map())
+    }
+    if (loadedSkus.length > 0) {
+      const entryRes = await apiFetch(`/api/sku-master/last-entry-vendors?ids=${loadedSkus.map((s) => s.id).join(',')}`)
+      if (entryRes.ok) setLastEntries(new Map(Object.entries(await entryRes.json())))
+    } else {
+      setLastEntries(new Map())
     }
     setLoading(false)
   }, [search, isOwner, showArchived, page])
@@ -333,14 +482,15 @@ function AccessoriesPage() {
                   <th className="p-2">Brand</th>
                   <th className="p-2 text-right">In Stock</th>
                   <th className="p-2 text-right">Selling Price</th>
+                  <th className="p-2" title="Vendor/price optionally logged by whoever received the stock -- visible to everyone.">Last Purchase</th>
                   {isOwner && <th className="p-2 text-right">Cost</th>}
-                  {isOwner && <th className="p-2">Last Vendor</th>}
+                  {isOwner && <th className="p-2">Last Vendor (PO)</th>}
                   <th className="p-2">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {skus.length === 0 && (
-                  <tr><td colSpan={isOwner ? 9 : 7} className="p-4 text-center text-sm text-gray-400">No accessories found.</td></tr>
+                  <tr><td colSpan={isOwner ? 10 : 8} className="p-4 text-center text-sm text-gray-400">No accessories found.</td></tr>
                 )}
                 {skus.map((s, idx) => (
                   <tr key={s.id} className={s.status !== 'active' ? 'opacity-50' : ''}>
@@ -355,6 +505,16 @@ function AccessoriesPage() {
                     <td className="p-2">{s.brand || '—'}</td>
                     <td className="p-2 text-right tabular-nums">{s.quantity_in_stock}</td>
                     <td className="p-2 text-right tabular-nums">{s.selling_price_default ? `₹${s.selling_price_default.toFixed(2)}` : '—'}</td>
+                    <td className="p-2 text-xs">
+                      {lastEntries.has(s.id) ? (
+                        <>
+                          {lastEntries.get(s.id)!.vendor_name}
+                          {lastEntries.get(s.id)!.unit_price != null && (
+                            <span className="text-gray-500"> @ ₹{lastEntries.get(s.id)!.unit_price!.toFixed(2)}</span>
+                          )}
+                        </>
+                      ) : '—'}
+                    </td>
                     {isOwner && <td className="p-2 text-right tabular-nums">{s.base_cost != null ? `₹${s.base_cost.toFixed(2)}` : '—'}</td>}
                     {isOwner && <td className="p-2">{lastVendors.get(s.id) || '—'}</td>}
                     <td className="p-2">
@@ -367,7 +527,7 @@ function AccessoriesPage() {
                         )}
                         {isOwner && s.status === 'active' && <AdjustQuantityControl skuId={s.id} onDone={fetchAll} />}
                         {isOwner && poBacklog.has(s.id) && (
-                          <AttachPoControl skuId={s.id} backlogQty={poBacklog.get(s.id)!} onDone={fetchAll} />
+                          <AttachPoControl skuId={s.id} backlogQty={poBacklog.get(s.id)!} defaultVendorId={lastEntries.get(s.id)?.vendor_id} onDone={fetchAll} />
                         )}
                         {isOwner && <ArchiveControl sku={s} onDone={fetchAll} />}
                       </div>

@@ -16,6 +16,7 @@ const SHAPE_LABELS: Record<string, string> = {
   sku_master: 'SKU Master',
   stock_list: 'Stock (Live Stock / New Entry / Invoices)',
   accessories: 'Accessories',
+  vendors: 'Vendors',
 }
 
 export default function FieldRedactionManager() {

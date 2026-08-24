@@ -194,6 +194,33 @@ purchase history (vendor/cost per PO) and the raw movement ledger live at
 /api/stock/accessories`) alongside its existing "Sold Accessories" tab, since that page
 is otherwise `asset_ledger`-only and accessories would be invisible there.
 
+**One vendor system, two doors (2026-08-24):** whoever records an accessory receipt
+(`POST /api/sku-master/[id]/stock-movement`, `movement_type: 'receipt'`) can optionally
+attach a real `vendors.id` + `unit_price` right then (`stock_movements.vendor_id`/
+`unit_price`) — an informal "who was this bought from, at what price" reference,
+distinct from the owner's later formal PO-attach step (`purchase_order_items`, which stays
+the authoritative cost and still overwrites `sku_master.base_cost`). Both doors reference
+the **same** `vendors` table (no parallel vendor list) — this is the one deliberate,
+narrow exception to "employees never see vendor/cost" (see `CLAUDE.md`): `GET /api/vendors`
+is open to any role with `accessories`/`new_entry` page access, redacted via
+`redactManyForRole(..., 'vendors', role)` to company name/code only (contact/GST fields
+stay owner-only). This is scoped further, not just redacted: a non-owner's `GET` also
+filters to `vendors.supplies_accessories = true` (owner-set, defaults `false`), so a
+laptop-only vendor is never returned to an employee at all — not even its name. An
+employee can also create a new vendor on the spot from Receive Stock (`POST /api/vendors`,
+same full field set as the owner's Vendors-page form via the shared
+`components/VendorFormFields.tsx`) — server-side forced `supplies_accessories = true` and
+resolved-by-name against any existing vendor (case-insensitive, trimmed `company_name`
+match — same dedup idiom as `resolveOrCreateSku`/`custom_options`) so it can't create a
+near-duplicate company record. No approval gate, matches "stock-in is immediately real."
+Editing, deleting, or tagging/untagging an *existing* vendor stays exclusively on the
+owner-only Vendors page.
+The most recent entry-vendor/price per SKU (`lib/accessory-movements.ts`'s
+`getLastEntryVendorsBySku`, `GET /api/sku-master/last-entry-vendors`) surfaces as a
+"Last Purchase" column on `/dashboard/accessories`, the Stock page's Accessories tab, and
+pre-fills (editable) the owner's Attach-PO vendor picker — all visible to every role,
+unlike the adjacent owner-only "Last Vendor (PO)"/Cost columns sourced from real POs.
+
 ### Activity Hub (`activities`, `activity_assignees`) — shared task/collaboration model
 
 `activities` is a shared, assignable task model — `created_by` is the author; zero-to-many rows in `activity_assignees` (own table, `UNIQUE(activity_id, user_id)`) are who it's assigned to; an empty assignee set is a personal task (visible only to its creator and the owner). Enforcement is API-layer, `supabaseAdmin` + `getSessionUser()` (Bearer token via `apiFetch`), matching the rest of the app — RLS on both tables is the same permissive "backstop, not the boundary" policy used by `purchase_orders`/`asset_ledger`/`field_corrections`, not the restrictive per-`user_id` policies it used to have. Visibility rule (computed server-side in every route, `lib/activities.ts`'s `buildOwnVisibilityFilter`/`canSeeActivity`): owner sees every task; an employee sees only what they created or are assigned to. Any user with `activities` page access can assign a task to any other active user (not self-assign-only).
@@ -230,6 +257,9 @@ Customer/vendor returns use the older, separately-built `asset_rma_events` table
 | View Sales Ledger, Stock (Main ERP), RMA (vendor returns) | ❌ (page-gated) | ✅ |
 | Create a new accessory SKU / add a new customer (lightweight fields) | ✅ | ✅ |
 | Attach an accessory SKU's stock-in to a real PO/vendor/cost | ❌ | ✅ |
+| Record an accessory receipt's vendor + unit price (informal, see below) | ✅ (2026-08-24) | ✅ |
+| Browse the vendor list (accessory-tagged vendors only, no contact/GST) | ✅ (2026-08-24) | ✅ (full list) |
+| Create a new vendor (always accessory-tagged) / edit or delete an existing vendor | ✅ create-only (2026-08-24) / ❌ | ✅ |
 
 Note the split above: **reassigning** which SKU an asset points to is open to both
 roles (it never reads or writes cost/vendor data), while **editing** a SKU's own

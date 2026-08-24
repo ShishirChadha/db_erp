@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { getLastVendorsBySku } from '@/lib/purchase-utils'
+import { getLastEntryVendorsBySku } from '@/lib/accessory-movements'
 import { redactManyForRole } from '@/lib/auth/redact'
 
 // ---------- GET: current (in-stock) accessories ----------
@@ -44,6 +45,7 @@ export async function GET(req: NextRequest) {
   // already small (in-stock accessories only, paginated). Always computed; redacted below.
   let backlogBySkuId = new Map<string, number>()
   let lastVendorBySkuId = new Map<string, string>()
+  let lastEntryBySkuId = new Map<string, { vendorName: string; unitPrice: number | null; receivedAt: string }>()
   if (skus && skus.length > 0) {
     const skuIds = skus.map((s: any) => s.id)
 
@@ -58,13 +60,21 @@ export async function GET(req: NextRequest) {
     }
 
     lastVendorBySkuId = await getLastVendorsBySku(skuIds)
+    lastEntryBySkuId = await getLastEntryVendorsBySku(skuIds)
   }
 
-  const result = (skus || []).map((s: any) => ({
-    ...s,
-    needs_po_qty: backlogBySkuId.get(s.id) || 0,
-    last_vendor: lastVendorBySkuId.get(s.id) || null,
-  }))
+  const result = (skus || []).map((s: any) => {
+    const lastEntry = lastEntryBySkuId.get(s.id)
+    return {
+      ...s,
+      needs_po_qty: backlogBySkuId.get(s.id) || 0,
+      last_vendor: lastVendorBySkuId.get(s.id) || null,
+      // Employee-entered receipt vendor/price -- visible to every role, unlike the
+      // fields above (redacted below for 'accessories' shape). See docs/decisions.md.
+      last_entry_vendor: lastEntry?.vendorName || null,
+      last_entry_price: lastEntry?.unitPrice ?? null,
+    }
+  })
 
   const redacted = await redactManyForRole(result, 'accessories', sessionUser.role)
 

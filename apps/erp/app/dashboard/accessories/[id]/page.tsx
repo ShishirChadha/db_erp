@@ -13,6 +13,8 @@ interface Movement {
   quantity_before: number | null
   quantity_after: number | null
   po_number: string | null
+  vendor_name: string | null
+  unit_price: number | null
   notes: string | null
   created_at: string
 }
@@ -182,6 +184,8 @@ function AccessoryDetailPage() {
                   <th className="border p-2 text-right">Change</th>
                   <th className="border p-2 text-right">Before → After</th>
                   <th className="border p-2">PO #</th>
+                  <th className="border p-2" title="Optionally logged by whoever received the stock -- visible to everyone.">Vendor</th>
+                  <th className="border p-2 text-right">Price</th>
                   <th className="border p-2">Notes</th>
                 </tr>
               </thead>
@@ -195,6 +199,8 @@ function AccessoryDetailPage() {
                       {m.quantity_before ?? '—'} → {m.quantity_after ?? '—'}
                     </td>
                     <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-amber-600">awaiting PO</span> : '—')}</td>
+                    <td className="border p-2">{m.vendor_name || '—'}</td>
+                    <td className="border p-2 text-right tabular-nums">{m.unit_price != null ? `₹${m.unit_price.toFixed(2)}` : '—'}</td>
                     <td className="border p-2 text-gray-500">{m.notes || '—'}</td>
                   </tr>
                 ))}

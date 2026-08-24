@@ -99,7 +99,13 @@ function PODetailPage() {
       body: JSON.stringify({ items: itemsPayload }),
     })
     if (res.ok) {
-      alert('Goods received successfully!')
+      const result = await res.json().catch(() => ({}))
+      const promoted = result.promoted_count || 0
+      alert(
+        promoted > 0
+          ? `Goods received successfully! (${promoted} matched existing employee-intake stock -- no duplicate stock added.)`
+          : 'Goods received successfully!'
+      )
       setShowReceiveModal(false)
       setReceipts({})
       setFungibleReceipts({})
