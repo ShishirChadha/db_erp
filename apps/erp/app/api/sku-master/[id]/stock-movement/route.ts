@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   const body = await req.json()
-  const { movement_type, quantity_change, notes, vendor_id, unit_price, purchase_date } = body
+  const { movement_type, quantity_change, notes, vendor_id, unit_price, purchase_date, payment_account } = body
 
   if (!['receipt', 'adjustment'].includes(movement_type)) {
     return NextResponse.json({ error: "movement_type must be 'receipt' or 'adjustment' here." }, { status: 400 })
@@ -37,6 +37,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   let resolvedVendorId: string | null = null
   let resolvedUnitPrice: number | null = null
   let resolvedPurchaseDate: string | null = null
+  let resolvedPaymentAccount: string | null = null
   if (movement_type === 'receipt') {
     if (vendor_id) {
       const { data: vendor } = await supabaseAdmin
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       resolvedPurchaseDate = purchase_date
     }
+    if (payment_account) {
+      resolvedPaymentAccount = payment_account
+    }
   }
 
   const { error } = await insertAccessoryMovement({
@@ -69,6 +73,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     vendorId: resolvedVendorId,
     unitPrice: resolvedUnitPrice,
     purchaseDate: resolvedPurchaseDate,
+    paymentAccount: resolvedPaymentAccount,
     notes,
     createdBy: sessionUser.id,
   })

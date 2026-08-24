@@ -36,7 +36,7 @@ export async function GET(
 
   const { data: movements, error: movErr } = await supabaseAdmin
     .from('stock_movements')
-    .select('id, movement_type, quantity_change, quantity_before, quantity_after, po_id, unit_price, purchase_date, notes, created_at, vendors(company_name)')
+    .select('id, movement_type, quantity_change, quantity_before, quantity_after, po_id, vendor_id, unit_price, purchase_date, payment_account, notes, created_at, vendors(company_name)')
     .eq('sku_id', id)
     .order('created_at', { ascending: false })
   if (movErr) return NextResponse.json({ error: movErr.message }, { status: 500 })
@@ -72,12 +72,14 @@ export async function GET(
       quantity_before: m.quantity_before,
       quantity_after: m.quantity_after,
       po_number: m.po_id ? poNumberById.get(m.po_id) || null : null,
+      vendor_id: m.vendor_id,
       vendor_name: m.vendors?.company_name ?? null,
       unit_price: m.unit_price,
       // Business date of the purchase (defaults to entry day, can be backdated) --
       // falls back to created_at's date for older rows/other movement types that never
       // had purchase_date set.
       purchase_date: m.purchase_date || m.created_at?.slice(0, 10) || null,
+      payment_account: m.payment_account,
       notes: m.notes,
       created_at: m.created_at,
     })),

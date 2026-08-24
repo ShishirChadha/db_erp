@@ -15,6 +15,7 @@ export async function insertAccessoryMovement(input: {
   vendorId?: string | null
   unitPrice?: number | null
   purchaseDate?: string | null
+  paymentAccount?: string | null
   notes?: string | null
   createdBy: string
 }) {
@@ -26,6 +27,7 @@ export async function insertAccessoryMovement(input: {
     vendor_id: input.vendorId || null,
     unit_price: input.unitPrice ?? null,
     purchase_date: input.purchaseDate || null,
+    payment_account: input.paymentAccount || null,
     notes: input.notes || null,
     created_by: input.createdBy,
   })

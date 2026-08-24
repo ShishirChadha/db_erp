@@ -220,6 +220,28 @@ The most recent entry-vendor/price per SKU (`lib/accessory-movements.ts`'s
 "Last Purchase" column on `/dashboard/accessories`, the Stock page's Accessories tab, and
 pre-fills (editable) the owner's Attach-PO vendor picker — all visible to every role,
 unlike the adjacent owner-only "Last Vendor (PO)"/Cost columns sourced from real POs.
+"Most recent" compares an *effective date* (`purchase_date` if set, else the row's
+`created_at` day) computed client-side in `getLastEntryVendorsBySku` rather than a plain
+`.order()` — PostgREST can't express the needed `COALESCE` server-side, and a naive
+`ORDER BY purchase_date DESC NULLS LAST` would let an old backdated entry outrank a
+same-day undated one.
+
+A receipt can also optionally capture `purchase_date` (defaults to today in the Receive
+Stock form, backdatable), `payment_account` (`Digitalbluez`/`Techtenth`/`Cash`, the same
+vocabulary as `sales`/`repair_jobs`/intake), and free-text `notes` — all on
+`stock_movements`, all receipt-only by convention (never set on `adjustment`/`sale` rows).
+`vendor_id`/`unit_price`/`purchase_date`/`payment_account`/`notes` are all explicitly
+editable after the fact (`PATCH /api/stock-movements/[id]`, an "Edit" action on `receipt`
+rows in the Movement Ledger for the first four, plus `notes` staying separately
+click-to-edit inline on every movement type) since they're meant to be quick entries
+corrected later — wrong amount, wrong vendor, a typo. **`quantity_change` is deliberately
+never editable** through this endpoint: `trg_sync_sku_stock` only fires `BEFORE INSERT`,
+not `UPDATE`, so editing a past quantity would silently desync `sku_master
+.quantity_in_stock` from the ledger and corrupt every later movement's
+`quantity_before`/`quantity_after` running total for that SKU — a real, auditable
+`'adjustment'` entry (the existing "Correct Quantity" control) is the only way to correct
+a wrong quantity. The other four fields only apply to `receipt` rows (400 if attempted on
+`adjustment`/`sale`); `notes` can be edited on any row type.
 
 ### Activity Hub (`activities`, `activity_assignees`) — shared task/collaboration model
 

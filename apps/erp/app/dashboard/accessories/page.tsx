@@ -8,14 +8,13 @@ import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Button } from '@/components/ui/button'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import { Pagination } from '@/components/Pagination'
-import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
+import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
 
 const PAGE_SIZE = 25
+const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
 // Accessories are sku_master rows like everything else (see docs/decisions.md,
 // 2026-07-23) -- this page is just SKU Master filtered to the non-serialized
@@ -42,96 +41,11 @@ interface CategoryTemplate {
   sku_code_format?: string
 }
 
-interface Vendor {
-  id: string
-  company_name: string
-}
-
 interface PoBacklog {
   sku_id: string
   quantity: number
 }
 
-// Lets whoever is receiving stock add a vendor on the spot if it's not in the dropdown
-// yet, with the same fields as the owner's Vendors-page form -- POST /api/vendors forces
-// supplies_accessories=true server-side for a non-owner caller and resolves by name
-// against any existing vendor rather than risking a near-duplicate (see
-// docs/decisions.md, 2026-08-24). The owner can still edit/delete it normally afterward
-// from the Vendors page, which stays the only place to manage vendors beyond this.
-function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor) => void; onClose: () => void }) {
-  const [form, setForm] = useState<VendorFormState>(emptyVendorForm)
-  const [fetchingGst, setFetchingGst] = useState(false)
-  const [err, setErr] = useState('')
-
-  const handleGstBlur = async () => {
-    if (!form.gst_number || form.gst_number.length !== 15) return
-    setFetchingGst(true)
-    try {
-      const res = await fetch(`/api/gst?gst=${form.gst_number}`)
-      const data = await res.json()
-      if (data.company_name) {
-        setForm((prev) => ({ ...prev, gst_company_name: data.company_name, company_name: data.company_name }))
-      } else {
-        setErr('GST number not found. Please check.')
-      }
-    } catch {
-      setErr('Failed to verify GST. Try again.')
-    } finally {
-      setFetchingGst(false)
-    }
-  }
-
-  const { run: submit, pending: busy } = useAsyncAction(async () => {
-    setErr('')
-    if (!form.company_name.trim()) { setErr('Company Name is required.'); return }
-    const res = await apiFetch('/api/vendors', {
-      method: 'POST',
-      body: JSON.stringify({
-        company_name: form.company_name,
-        spoc_name: form.spoc_name,
-        owner_name: form.owner_name,
-        phone: form.phone,
-        address_line1: form.address_line1,
-        address_line2: form.address_line2,
-        city: form.city,
-        state: form.state,
-        pincode: form.pincode,
-        email: form.email,
-        has_gst: form.has_gst === 'true',
-        gst_number: form.gst_number,
-        gst_company_name: form.gst_company_name,
-        remarks: form.remarks,
-      }),
-    })
-    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to add vendor.'); return }
-    onAdded(await res.json())
-  })
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Add New Vendor</DialogTitle>
-        </DialogHeader>
-        <VendorFormFields
-          form={form}
-          onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}
-          fetchingGst={fetchingGst}
-          onGstBlur={handleGstBlur}
-        />
-        {err && <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">{err}</div>}
-        <div className="flex gap-3 mt-4">
-          <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => submit()} loading={busy}>
-            Save Vendor
-          </Button>
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            Cancel
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
-  )
-}
 
 // Records stock received (batteries, RAM, SSD, mice, bags, etc.) via the shared
 // quantity-only movement endpoint -- quantity_in_stock is trigger-maintained off
@@ -147,6 +61,8 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
   const [vendorId, setVendorId] = useState('')
   const [unitPrice, setUnitPrice] = useState<number | ''>('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10))
+  const [paymentAccount, setPaymentAccount] = useState(PAYMENT_ACCOUNTS[0])
+  const [remarks, setRemarks] = useState('')
   const [err, setErr] = useState('')
   const [addVendorOpen, setAddVendorOpen] = useState(false)
 
@@ -163,14 +79,16 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
       body: JSON.stringify({
         movement_type: 'receipt',
         quantity_change: qty,
-        notes: 'Stock received',
+        notes: remarks || 'Stock received',
         vendor_id: vendorId || undefined,
         unit_price: unitPrice === '' ? undefined : unitPrice,
         purchase_date: purchaseDate || undefined,
+        payment_account: paymentAccount,
       }),
     })
     if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to record stock.'); return }
     setOpen(false); setQty(''); setVendorId(''); setUnitPrice(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
+    setPaymentAccount(PAYMENT_ACCOUNTS[0]); setRemarks('')
     onDone()
   })
 
@@ -215,6 +133,16 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         value={unitPrice}
         onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
         placeholder="Unit price (optional)"
+        className="border p-1 w-full rounded text-xs"
+      />
+      <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 w-full rounded text-xs">
+        {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+      </select>
+      <input
+        type="text"
+        value={remarks}
+        onChange={(e) => setRemarks(e.target.value)}
+        placeholder="Remarks (optional, editable later)"
         className="border p-1 w-full rounded text-xs"
       />
       <div className="flex gap-1">

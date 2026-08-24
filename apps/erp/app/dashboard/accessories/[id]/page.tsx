@@ -5,6 +5,12 @@ import { useParams, useRouter } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
+import { useAsyncAction } from '@/lib/useAsyncAction'
+import { Button } from '@/components/ui/button'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
+
+const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
 interface Movement {
   id: string
@@ -13,9 +19,11 @@ interface Movement {
   quantity_before: number | null
   quantity_after: number | null
   po_number: string | null
+  vendor_id: string | null
   vendor_name: string | null
   unit_price: number | null
   purchase_date: string | null
+  payment_account: string | null
   notes: string | null
   created_at: string
 }
@@ -55,6 +63,174 @@ const MOVEMENT_LABELS: Record<string, string> = {
   adjustment: 'Adjusted',
 }
 
+// Notes are meant to be a quick, temporary remark at entry time -- this lets anyone with
+// access come back and fix it up later without re-recording the whole movement (see
+// docs/decisions.md).
+function EditableNote({ movementId, notes, onSaved }: { movementId: string; notes: string | null; onSaved: (notes: string | null) => void }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState(notes || '')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+
+  const save = async () => {
+    setBusy(true)
+    setErr('')
+    const res = await apiFetch(`/api/stock-movements/${movementId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ notes: value }),
+    })
+    setBusy(false)
+    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to save.'); return }
+    const updated = await res.json()
+    onSaved(updated.notes)
+    setEditing(false)
+  }
+
+  if (!editing) {
+    return (
+      <button
+        onClick={() => { setValue(notes || ''); setEditing(true) }}
+        className="text-left text-gray-500 hover:text-gray-900 hover:underline w-full"
+        title="Click to edit"
+      >
+        {notes || '—'}
+      </button>
+    )
+  }
+
+  return (
+    <div className="space-y-1 min-w-[10rem]">
+      {err && <div className="text-red-600 text-xs">{err}</div>}
+      <input
+        type="text"
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        className="border p-1 w-full rounded text-xs"
+        autoFocus
+      />
+      <div className="flex gap-1">
+        <button onClick={() => setEditing(false)} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-gray-100">Cancel</button>
+        <button onClick={save} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white">Save</button>
+      </div>
+    </div>
+  )
+}
+
+// Corrects a receipt's vendor/price/purchase-date/payment-account/notes -- everything
+// captured optionally at receipt time, for when the wrong amount or vendor got typed in.
+// Quantity is intentionally not editable here: trg_sync_sku_stock only fires on INSERT,
+// so editing a past quantity would silently desync quantity_in_stock and corrupt every
+// later movement's before/after running total for this SKU -- use "Correct Quantity"
+// (a real 'adjustment' entry) for that instead. Only ever shown for movement_type
+// 'receipt' (see docs/decisions.md).
+function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement; onClose: () => void; onSaved: (patch: Partial<Movement>) => void }) {
+  const [vendors, setVendors] = useState<Vendor[]>([])
+  const [vendorId, setVendorId] = useState(movement.vendor_id || '')
+  const [unitPrice, setUnitPrice] = useState<number | ''>(movement.unit_price ?? '')
+  const [purchaseDate, setPurchaseDate] = useState(movement.purchase_date || '')
+  const [paymentAccount, setPaymentAccount] = useState(movement.payment_account || PAYMENT_ACCOUNTS[0])
+  const [notes, setNotes] = useState(movement.notes || '')
+  const [addVendorOpen, setAddVendorOpen] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    apiFetch('/api/vendors').then(res => res.json()).then((data) => setVendors(Array.isArray(data) ? data : []))
+  }, [])
+
+  const { run: submit, pending: busy } = useAsyncAction(async () => {
+    setErr('')
+    const res = await apiFetch(`/api/stock-movements/${movement.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        vendor_id: vendorId || null,
+        unit_price: unitPrice === '' ? null : unitPrice,
+        purchase_date: purchaseDate || null,
+        payment_account: paymentAccount || null,
+        notes,
+      }),
+    })
+    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to save.'); return }
+    onSaved(await res.json())
+  })
+
+  return (
+    <>
+      <Dialog open onOpenChange={(open) => !open && onClose()}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Edit Receipt</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-2">
+            {err && <div className="text-red-600 text-xs">{err}</div>}
+            <label className="block text-xs text-gray-500">
+              Purchase date
+              <input
+                type="date"
+                value={purchaseDate}
+                onChange={(e) => setPurchaseDate(e.target.value)}
+                className="border p-1 w-full rounded text-sm mt-0.5"
+              />
+            </label>
+            <label className="block text-xs text-gray-500">
+              Vendor
+              <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-sm mt-0.5">
+                <option value="">No vendor</option>
+                {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
+              </select>
+            </label>
+            <button type="button" onClick={() => setAddVendorOpen(true)} className="text-blue-600 underline text-xs">
+              + Add new vendor
+            </button>
+            <label className="block text-xs text-gray-500">
+              Unit price
+              <input
+                type="number"
+                min={0}
+                value={unitPrice}
+                onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                className="border p-1 w-full rounded text-sm mt-0.5"
+              />
+            </label>
+            <label className="block text-xs text-gray-500">
+              Payment account
+              <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 w-full rounded text-sm mt-0.5">
+                {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs text-gray-500">
+              Notes
+              <input
+                type="text"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="border p-1 w-full rounded text-sm mt-0.5"
+              />
+            </label>
+          </div>
+          <div className="flex gap-3 mt-4">
+            <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => submit()} loading={busy}>
+              Save
+            </Button>
+            <Button variant="outline" onClick={onClose} disabled={busy}>
+              Cancel
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+      {addVendorOpen && (
+        <AddVendorDialog
+          onClose={() => setAddVendorOpen(false)}
+          onAdded={(v) => {
+            setVendors((prev) => (prev.some((x) => x.id === v.id) ? prev : [...prev, v]))
+            setVendorId(v.id)
+            setAddVendorOpen(false)
+          }}
+        />
+      )}
+    </>
+  )
+}
+
 function AccessoryDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -64,6 +240,7 @@ function AccessoryDetailPage() {
   const [data, setData] = useState<HistoryResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [editingMovement, setEditingMovement] = useState<Movement | null>(null)
 
   const fetchHistory = useCallback(async () => {
     setLoading(true)
@@ -187,7 +364,9 @@ function AccessoryDetailPage() {
                   <th className="border p-2">PO #</th>
                   <th className="border p-2" title="Optionally logged by whoever received the stock -- visible to everyone.">Vendor</th>
                   <th className="border p-2 text-right">Price</th>
-                  <th className="border p-2">Notes</th>
+                  <th className="border p-2">Payment</th>
+                  <th className="border p-2" title="Click a note to edit it">Notes</th>
+                  <th className="border p-2">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -202,7 +381,27 @@ function AccessoryDetailPage() {
                     <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-amber-600">awaiting PO</span> : '—')}</td>
                     <td className="border p-2">{m.vendor_name || '—'}</td>
                     <td className="border p-2 text-right tabular-nums">{m.unit_price != null ? `₹${m.unit_price.toFixed(2)}` : '—'}</td>
-                    <td className="border p-2 text-gray-500">{m.notes || '—'}</td>
+                    <td className="border p-2">{m.payment_account || '—'}</td>
+                    <td className="border p-2">
+                      <EditableNote
+                        movementId={m.id}
+                        notes={m.notes}
+                        onSaved={(notes) => {
+                          setData((prev) =>
+                            prev
+                              ? { ...prev, movements: prev.movements.map((mv) => (mv.id === m.id ? { ...mv, notes } : mv)) }
+                              : prev
+                          )
+                        }}
+                      />
+                    </td>
+                    <td className="border p-2">
+                      {m.movement_type === 'receipt' && (
+                        <button onClick={() => setEditingMovement(m)} className="text-blue-600 underline text-xs whitespace-nowrap">
+                          Edit
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -210,6 +409,21 @@ function AccessoryDetailPage() {
           </div>
         )}
       </div>
+
+      {editingMovement && (
+        <EditReceiptDialog
+          movement={editingMovement}
+          onClose={() => setEditingMovement(null)}
+          onSaved={(patch) => {
+            setData((prev) =>
+              prev
+                ? { ...prev, movements: prev.movements.map((mv) => (mv.id === editingMovement.id ? { ...mv, ...patch } : mv)) }
+                : prev
+            )
+            setEditingMovement(null)
+          }}
+        />
+      )}
     </div>
   )
 }
