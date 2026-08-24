@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     Object.fromEntries(
       [...map].map(([skuId, v]) => [
         skuId,
-        { vendor_id: v.vendorId, vendor_name: v.vendorName, unit_price: v.unitPrice, received_at: v.receivedAt },
+        { vendor_id: v.vendorId, vendor_name: v.vendorName, unit_price: v.unitPrice, purchase_date: v.purchaseDate },
       ])
     )
   )

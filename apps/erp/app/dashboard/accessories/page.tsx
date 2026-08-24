@@ -146,6 +146,7 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
   const [unitPrice, setUnitPrice] = useState<number | ''>('')
+  const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10))
   const [err, setErr] = useState('')
   const [addVendorOpen, setAddVendorOpen] = useState(false)
 
@@ -165,10 +166,11 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         notes: 'Stock received',
         vendor_id: vendorId || undefined,
         unit_price: unitPrice === '' ? undefined : unitPrice,
+        purchase_date: purchaseDate || undefined,
       }),
     })
     if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to record stock.'); return }
-    setOpen(false); setQty(''); setVendorId(''); setUnitPrice('')
+    setOpen(false); setQty(''); setVendorId(''); setUnitPrice(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
     onDone()
   })
 
@@ -191,6 +193,15 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         placeholder="Qty"
         className="border p-1 w-full rounded text-xs"
       />
+      <label className="block text-[10px] text-gray-500">
+        Purchase date
+        <input
+          type="date"
+          value={purchaseDate}
+          onChange={(e) => setPurchaseDate(e.target.value)}
+          className="border p-1 w-full rounded text-xs mt-0.5"
+        />
+      </label>
       <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-xs">
         <option value="">Vendor (optional)...</option>
         {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
@@ -387,7 +398,7 @@ function AccessoriesPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
   const [lastVendors, setLastVendors] = useState<Map<string, string>>(new Map())
-  const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null }>>(new Map())
+  const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null; purchase_date: string | null }>>(new Map())
   const [showArchived, setShowArchived] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -511,6 +522,9 @@ function AccessoriesPage() {
                           {lastEntries.get(s.id)!.vendor_name}
                           {lastEntries.get(s.id)!.unit_price != null && (
                             <span className="text-gray-500"> @ ₹{lastEntries.get(s.id)!.unit_price!.toFixed(2)}</span>
+                          )}
+                          {lastEntries.get(s.id)!.purchase_date && (
+                            <div className="text-gray-400">{lastEntries.get(s.id)!.purchase_date!.slice(0, 10)}</div>
                           )}
                         </>
                       ) : '—'}

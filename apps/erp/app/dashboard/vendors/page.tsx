@@ -342,8 +342,33 @@ function VendorsPage() {
   <td className="px-4 py-3 text-gray-700" title="Whether employees can select this vendor when receiving accessory stock">
     {v.supplies_accessories ? '✓' : '—'}
   </td>
-  <td className="px-4 py-3 text-right space-x-1">
-    {/* actions unchanged */}
+  <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
+    <button onClick={() => setViewItem(v)} title="View" className="text-gray-500 hover:text-gray-900 inline-flex align-middle p-1">
+      <Eye className="h-4 w-4" />
+    </button>
+    {!v.is_deleted ? (
+      <>
+        <button onClick={() => handleEdit(v)} title="Edit" className="text-gray-500 hover:text-blue-600 inline-flex align-middle p-1">
+          <Pencil className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => { setVendorToDelete(v); setDeleteDialogOpen(true) }}
+          title="Delete"
+          className="text-gray-500 hover:text-red-600 inline-flex align-middle p-1"
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      </>
+    ) : (
+      <button
+        onClick={() => handleRestore(v)}
+        disabled={restoringId === v.id}
+        title="Restore"
+        className="text-gray-500 hover:text-green-600 inline-flex align-middle p-1 disabled:opacity-50"
+      >
+        {restoringId === v.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+      </button>
+    )}
   </td>
 </tr>
                   ))

@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   const body = await req.json()
-  const { movement_type, quantity_change, notes, vendor_id, unit_price } = body
+  const { movement_type, quantity_change, notes, vendor_id, unit_price, purchase_date } = body
 
   if (!['receipt', 'adjustment'].includes(movement_type)) {
     return NextResponse.json({ error: "movement_type must be 'receipt' or 'adjustment' here." }, { status: 400 })
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // PO-attach cost/vendor.
   let resolvedVendorId: string | null = null
   let resolvedUnitPrice: number | null = null
+  let resolvedPurchaseDate: string | null = null
   if (movement_type === 'receipt') {
     if (vendor_id) {
       const { data: vendor } = await supabaseAdmin
@@ -53,6 +54,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       resolvedUnitPrice = unit_price
     }
+    if (purchase_date) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(purchase_date)) {
+        return NextResponse.json({ error: 'purchase_date must be in YYYY-MM-DD format.' }, { status: 400 })
+      }
+      resolvedPurchaseDate = purchase_date
+    }
   }
 
   const { error } = await insertAccessoryMovement({
@@ -61,6 +68,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     quantityChange: quantity_change,
     vendorId: resolvedVendorId,
     unitPrice: resolvedUnitPrice,
+    purchaseDate: resolvedPurchaseDate,
     notes,
     createdBy: sessionUser.id,
   })

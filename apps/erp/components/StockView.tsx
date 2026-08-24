@@ -90,6 +90,7 @@ interface AccessoryStockRow {
   last_vendor?: string | null
   last_entry_vendor?: string | null
   last_entry_price?: number | null
+  last_entry_date?: string | null
 }
 
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
@@ -647,9 +648,13 @@ export default function StockView({
                   <td className="border p-2 text-right tabular-nums">{sku.quantity_in_stock}</td>
                   <td className="border p-2 text-right tabular-nums">{sku.selling_price_default ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}</td>
                   <td className="border p-2 text-xs">
-                    {sku.last_entry_vendor
-                      ? <>{sku.last_entry_vendor}{sku.last_entry_price != null && <span className="text-gray-500"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}</>
-                      : '—'}
+                    {sku.last_entry_vendor ? (
+                      <>
+                        {sku.last_entry_vendor}
+                        {sku.last_entry_price != null && <span className="text-gray-500"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}
+                        {sku.last_entry_date && <div className="text-gray-400">{sku.last_entry_date.slice(0, 10)}</div>}
+                      </>
+                    ) : '—'}
                   </td>
                   {isOwner && <td className="border p-2 text-right tabular-nums">{sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}</td>}
                   {isOwner && <td className="border p-2">{sku.last_vendor || '—'}</td>}
@@ -951,6 +956,7 @@ export default function StockView({
               {sku.last_entry_vendor && (
                 <div className="text-xs text-gray-600">
                   Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ₹${sku.last_entry_price.toFixed(2)}`}
+                  {sku.last_entry_date && ` (${sku.last_entry_date.slice(0, 10)})`}
                 </div>
               )}
               {isOwner && (

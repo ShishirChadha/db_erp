@@ -15,6 +15,7 @@ interface Movement {
   po_number: string | null
   vendor_name: string | null
   unit_price: number | null
+  purchase_date: string | null
   notes: string | null
   created_at: string
 }
@@ -192,7 +193,7 @@ function AccessoryDetailPage() {
               <tbody>
                 {movements.map((m) => (
                   <tr key={m.id}>
-                    <td className="border p-2">{m.created_at?.slice(0, 10)}</td>
+                    <td className="border p-2">{(m.purchase_date || m.created_at)?.slice(0, 10)}</td>
                     <td className="border p-2">{MOVEMENT_LABELS[m.movement_type] || m.movement_type}</td>
                     <td className="border p-2 text-right tabular-nums">{m.quantity_change > 0 ? '+' : ''}{m.quantity_change}</td>
                     <td className="border p-2 text-right tabular-nums text-gray-500">

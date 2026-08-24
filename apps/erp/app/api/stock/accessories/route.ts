@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
   // already small (in-stock accessories only, paginated). Always computed; redacted below.
   let backlogBySkuId = new Map<string, number>()
   let lastVendorBySkuId = new Map<string, string>()
-  let lastEntryBySkuId = new Map<string, { vendorName: string; unitPrice: number | null; receivedAt: string }>()
+  let lastEntryBySkuId = new Map<string, { vendorName: string; unitPrice: number | null; purchaseDate: string | null }>()
   if (skus && skus.length > 0) {
     const skuIds = skus.map((s: any) => s.id)
 
@@ -73,6 +73,7 @@ export async function GET(req: NextRequest) {
       // fields above (redacted below for 'accessories' shape). See docs/decisions.md.
       last_entry_vendor: lastEntry?.vendorName || null,
       last_entry_price: lastEntry?.unitPrice ?? null,
+      last_entry_date: lastEntry?.purchaseDate || null,
     }
   })
 
