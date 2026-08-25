@@ -58,6 +58,13 @@ export function RecordZohoInvoiceDialog({
       setErr((await res.json().catch(() => ({}))).error || 'Failed to record invoice.')
       return
     }
+    const data = await res.json().catch(() => ({}))
+    // This invoice number already existed for the same customer/entity -- these
+    // sale(s) were added to it as extra line items rather than creating a new one
+    // (see the append path in /api/sales/record-external-invoice).
+    if (data.appended) {
+      alert(`Added to existing invoice ${data.invoice_number} as ${saleIds.length > 1 ? 'additional line items' : 'an additional line item'}, alongside whatever was already recorded on it.`)
+    }
     onRecorded()
     onClose()
   })

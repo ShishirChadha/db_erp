@@ -213,7 +213,12 @@ export default function StockView({
     window.localStorage.setItem(columnsStorageKey, JSON.stringify(visibleColumns))
   }, [visibleColumns, columnsStorageKey])
 
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Keyed by asset id, valued with the full row -- not just a Set<string> of ids --
+  // so a selection made on one tab (e.g. Current Stock) survives switching to another
+  // (e.g. Sold Stock) and building one combined PO across both. `assets` state gets
+  // wholesale replaced on every tab/filter/page fetch, so the id alone wouldn't be
+  // enough to recover a since-scrolled-off row's sku_code/cost fields for the form.
+  const [selected, setSelected] = useState<Map<string, AssetRow>>(new Map())
   const [showPoForm, setShowPoForm] = useState(false)
   const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
   const [editSaleId, setEditSaleId] = useState<string | null>(null)
@@ -264,7 +269,10 @@ export default function StockView({
       const json = await res.json()
       setAssets(json.data || [])
       setTotal(json.total || 0)
-      setSelected(new Set())
+      // Selection is deliberately NOT cleared here -- it must survive tab/filter/page
+      // changes so a cross-tab (current + sold) selection can be built up and submitted
+      // as one PO. It's only cleared explicitly: on successful PO creation, or when the
+      // owner unchecks a row/hits "select all" again.
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -361,18 +369,35 @@ export default function StockView({
 
   const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
 
+  // Selectable rows on the CURRENTLY VISIBLE page/tab only -- selections made on other
+  // tabs/pages aren't reflected here, which is exactly what "select all" and the header
+  // checkbox's tri-state need to stay scoped to what's on screen right now.
   const selectableIds = useMemo(
     () => displayedAssets.filter(a => !a.po_id).map(a => a.id),
     [displayedAssets]
   )
+  const visibleSelectedCount = useMemo(
+    () => selectableIds.filter(id => selected.has(id)).length,
+    [selectableIds, selected]
+  )
 
   const toggleSelectAll = () => {
-    setSelected(prev => prev.size === selectableIds.length ? new Set() : new Set(selectableIds))
-  }
-  const toggleSelectOne = (id: string) => {
     setSelected(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id); else next.add(id)
+      const next = new Map(prev)
+      if (visibleSelectedCount === selectableIds.length) {
+        for (const id of selectableIds) next.delete(id)
+      } else {
+        for (const asset of displayedAssets) {
+          if (!asset.po_id) next.set(asset.id, asset)
+        }
+      }
+      return next
+    })
+  }
+  const toggleSelectOne = (asset: AssetRow) => {
+    setSelected(prev => {
+      const next = new Map(prev)
+      if (next.has(asset.id)) next.delete(asset.id); else next.set(asset.id, asset)
       return next
     })
   }
@@ -556,9 +581,17 @@ export default function StockView({
           </button>
         )}
         {isOwner && (tab === 'current' || tab === 'sold') && selected.size > 0 && (
-          <button onClick={() => setShowPoForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
-            Create PO from Selected ({selected.size})
-          </button>
+          <>
+            <button onClick={() => setShowPoForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
+              Create PO from Selected ({selected.size})
+            </button>
+            {/* Selection now persists across tab/filter/page changes (so a Current +
+                Sold combo can be built into one PO) -- give an explicit way to reset it
+                rather than relying on the old implicit "any fetch clears it" behavior. */}
+            <button onClick={() => setSelected(new Map())} className="text-sm text-gray-500 underline self-center">
+              Clear selection
+            </button>
+          </>
         )}
         {tab !== 'sold_accessories' && tab !== 'accessories' && (
           <div className="hidden md:block ml-auto">
@@ -569,10 +602,10 @@ export default function StockView({
 
       {showPoForm && (
         <CreatePoForm
-          assetIds={[...selected]}
-          assets={displayedAssets.filter(a => selected.has(a.id))}
+          assetIds={[...selected.keys()]}
+          assets={[...selected.values()]}
           onClose={() => setShowPoForm(false)}
-          onDone={() => { setShowPoForm(false); fetchAssets(); fetchCounts() }}
+          onDone={() => { setShowPoForm(false); setSelected(new Map()); fetchAssets(); fetchCounts() }}
         />
       )}
 
@@ -735,9 +768,9 @@ export default function StockView({
                       checked={
                         selectableIds.length === 0
                           ? false
-                          : selected.size === selectableIds.length
+                          : visibleSelectedCount === selectableIds.length
                           ? true
-                          : selected.size > 0
+                          : visibleSelectedCount > 0
                           ? 'indeterminate'
                           : false
                       }
@@ -776,7 +809,7 @@ export default function StockView({
                   {isOwner && (tab === 'current' || tab === 'sold') && (
                     <td className="border p-2 w-8 text-center">
                       {!asset.po_id && (
-                        <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
+                        <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset)} />
                       )}
                     </td>
                   )}
@@ -989,7 +1022,7 @@ export default function StockView({
                   <div className="text-xs text-gray-500">{asset.sku_code}</div>
                 </div>
                 {isOwner && (tab === 'current' || tab === 'sold') && !asset.po_id && (
-                  <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
+                  <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset)} />
                 )}
               </div>
               <div className="text-sm">

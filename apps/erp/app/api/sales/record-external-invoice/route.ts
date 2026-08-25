@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
-import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales } from '@/lib/invoice-finalize'
+import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales, appendSalesToInvoice } from '@/lib/invoice-finalize'
 import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: record a Zoho (external) invoice number against one or more sales ----------
@@ -51,15 +51,57 @@ export async function POST(req: NextRequest) {
     }, { status: 409 })
   }
 
-  // Preserve the real Zoho number verbatim -- reject a collision with a clear message
-  // rather than a raw unique-constraint error.
+  // Preserve the real Zoho number verbatim. A collision on the number isn't always a
+  // mistake -- Zoho commonly issues ONE invoice covering several units/sales that
+  // didn't all get selected together in the ERP the first time (e.g. 3 laptops sold
+  // the same day, only 1 recorded initially). If the existing invoice is the same
+  // Zoho-sourced invoice for the same customer + entity, append these sale(s) to it as
+  // extra line items instead of blocking. Anything else (different customer/entity, or
+  // an ERP-generated invoice) is a real collision/typo and still hard-blocks.
   const { data: existing } = await supabaseAdmin
     .from('invoices')
-    .select('id')
+    .select('id, entity_key, customer_id, source')
     .eq('invoice_number', invoiceNumber)
     .maybeSingle()
+
   if (existing) {
-    return NextResponse.json({ error: `Invoice number "${invoiceNumber}" already exists in the system.` }, { status: 409 })
+    if (existing.source !== 'imported_zoho') {
+      return NextResponse.json({
+        error: `Invoice number "${invoiceNumber}" already exists as an ERP-generated invoice -- it can't be extended from here.`,
+      }, { status: 409 })
+    }
+    if (existing.entity_key !== entityKey || existing.customer_id !== sales[0].customer_id) {
+      return NextResponse.json({
+        error: `Invoice number "${invoiceNumber}" already exists for a different customer or entity. Double-check the number, or void the earlier record first if it was entered by mistake.`,
+      }, { status: 409 })
+    }
+
+    const appendResult = await appendSalesToInvoice({
+      invoiceId: existing.id,
+      sales,
+      entityKey,
+      userId: sessionUser.id,
+      attachmentUrls,
+    })
+    if (!appendResult.ok) return NextResponse.json({ error: appendResult.error }, { status: appendResult.status })
+
+    await logAuditEvent({
+      actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+      actionType: 'update',
+      module: 'sales',
+      tableName: 'invoices',
+      recordId: appendResult.invoice_id,
+      recordLabel: appendResult.invoice_number,
+      metadata: { sale_ids: saleIds, appended: true },
+    })
+
+    return NextResponse.json({
+      success: true,
+      invoice_id: appendResult.invoice_id,
+      invoice_number: appendResult.invoice_number,
+      sale_count: sales.length,
+      appended: true,
+    })
   }
 
   const result = await createInvoiceFromSales({

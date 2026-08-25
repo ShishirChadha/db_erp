@@ -9,6 +9,7 @@ import { useRole } from "@/lib/auth/useRole";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { StatCardsRow } from "@/components/StatCardsRow";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
+import { AttachInvoiceFileDialog } from "@/components/AttachInvoiceFileDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EditSaleDialog } from "@/components/EditSaleDialog";
 import { ResizableHeader } from "@/components/ResizableHeader";
@@ -42,6 +43,7 @@ interface Sale {
   finalized: boolean;
   is_deleted?: boolean;
   invoice_number: string | null;
+  invoice_id?: string | null;
   invoice_mode?: "erp" | "external";
   sku_description?: string | null;
   full_sku_code?: string | null;
@@ -313,6 +315,7 @@ function ItemCell({ sale }: { sale: Sale }) {
 
 function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; onDone: () => void }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false);
+  const [showAttachDialog, setShowAttachDialog] = useState(false);
   const isExternal = sale.invoice_mode === "external";
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: "POST", body: "{}" });
@@ -327,7 +330,16 @@ function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; 
   return (
     <>
       {sale.finalized ? (
-        <span className="text-green-600">✓ {sale.invoice_number}</span>
+        <span className="text-green-600 inline-flex items-center gap-1.5">
+          ✓ {sale.invoice_number}
+          {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
+              one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
+          {isExternal && isOwner && sale.invoice_id && (
+            <button onClick={() => setShowAttachDialog(true)} className="text-blue-600 underline text-xs">
+              File
+            </button>
+          )}
+        </span>
       ) : sale.is_deleted ? (
         <span className="text-gray-400 text-xs">Voided -- not invoiceable</span>
       ) : !isOwner ? (
@@ -344,6 +356,14 @@ function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; 
       )}
       {showZohoDialog && (
         <RecordZohoInvoiceDialog saleIds={[sale.id]} onClose={() => setShowZohoDialog(false)} onRecorded={onDone} />
+      )}
+      {showAttachDialog && sale.invoice_id && (
+        <AttachInvoiceFileDialog
+          invoiceId={sale.invoice_id}
+          invoiceNumber={sale.invoice_number}
+          onClose={() => setShowAttachDialog(false)}
+          onAttached={onDone}
+        />
       )}
     </>
   );

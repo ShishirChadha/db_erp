@@ -257,6 +257,104 @@ export async function createInvoiceFromSales(opts: {
   return { ok: true, invoice_id: invoice.id, invoice_number: invoiceNumber }
 }
 
+// Adds more sales as extra line items on an ALREADY-EXISTING Zoho-recorded invoice --
+// the append-mode counterpart to createInvoiceFromSales above. Covers the real-world
+// case where Zoho issued one invoice covering several units/sales, but not all of them
+// were selected together in the ERP the first time (e.g. laptops sold on the same day
+// to the same customer, only one of which got recorded under the invoice number
+// initially). Only ever called for a same-customer, same-entity, source='imported_zoho'
+// match on the invoice number -- see the collision check in
+// /api/sales/record-external-invoice, which is the only caller.
+export async function appendSalesToInvoice(opts: {
+  invoiceId: string
+  sales: any[]
+  entityKey: string
+  userId: string
+  attachmentUrls?: string[] | null
+}): Promise<CreateInvoiceResult> {
+  const { invoiceId, sales, entityKey, userId, attachmentUrls } = opts
+  if (!sales.length) return { ok: false, error: 'No sales provided.', status: 400 }
+
+  const { data: invoice } = await supabaseAdmin.from('invoices').select('*').eq('id', invoiceId).single()
+  if (!invoice) return { ok: false, error: 'Invoice not found.', status: 404 }
+
+  const customerId = sales[0].customer_id
+  const { data: customer } = await supabaseAdmin
+    .from('customers')
+    .select('gst_number, state_code')
+    .eq('id', customerId)
+    .single()
+
+  const { data: entity } = await supabaseAdmin
+    .from('business_profiles')
+    .select('is_gst_registered, state_code')
+    .eq('key', entityKey)
+    .single()
+  if (!entity) return { ok: false, error: `No business profile configured for entity '${entityKey}'`, status: 500 }
+
+  // Validate every sale's linked unit/accessory BEFORE writing anything, same as
+  // createInvoiceFromSales.
+  const descriptors: Record<string, Awaited<ReturnType<typeof resolveSaleItemDescriptor>>> = {}
+  for (const sale of sales) {
+    try {
+      descriptors[sale.id] = await resolveSaleItemDescriptor(sale)
+    } catch (err: any) {
+      return { ok: false, error: err.message, status: 404 }
+    }
+  }
+
+  const gstBySale = new Map(sales.map((s) => [
+    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total),
+  ]))
+  const addedSubtotal = sales.reduce((a, s) => a + gstBySale.get(s.id)!.subtotal, 0)
+  const addedGst = sales.reduce((a, s) => a + gstBySale.get(s.id)!.totalGst, 0)
+  const addedTotal = sales.reduce((a, s) => a + Number(s.sale_total), 0)
+
+  const itemRows = sales.map((s) => buildInvoiceItemRow(invoiceId, s, entity, gstBySale.get(s.id)!, descriptors[s.id]))
+  const { error: itemsErr } = await supabaseAdmin.from('invoice_items').insert(itemRows)
+  if (itemsErr) return { ok: false, error: itemsErr.message, status: 500 }
+
+  const { error: upErr } = await supabaseAdmin
+    .from('sales')
+    .update({
+      finalized: true,
+      finalized_by: userId,
+      finalized_at: new Date().toISOString(),
+      invoice_id: invoiceId,
+      invoice_number: invoice.invoice_number,
+    })
+    .in('id', sales.map((s) => s.id))
+  if (upErr) {
+    return { ok: false, error: `Invoice ${invoice.invoice_number} was updated, but marking the sale(s) finalized failed: ${upErr.message}`, status: 500 }
+  }
+
+  // Recompute payment_status from every sale now linked to this invoice (the ones
+  // already on it plus these new ones) rather than assuming -- an earlier item could
+  // be 'partial' even if these new ones are 'paid', or vice versa.
+  const { data: allLinkedSales } = await supabaseAdmin.from('sales').select('payment_status').eq('invoice_id', invoiceId)
+  const allPaid = (allLinkedSales || []).every((s: any) => s.payment_status === 'paid')
+
+  const mergedAttachments = attachmentUrls && attachmentUrls.length
+    ? [...new Set([...(invoice.attachment_urls || []), ...attachmentUrls])]
+    : invoice.attachment_urls
+
+  const { error: invUpErr } = await supabaseAdmin
+    .from('invoices')
+    .update({
+      subtotal: Number(invoice.subtotal) + addedSubtotal,
+      total_gst: Number(invoice.total_gst) + addedGst,
+      grand_total: Number(invoice.grand_total) + addedTotal,
+      total_amount: Number(invoice.total_amount) + addedSubtotal,
+      gst_total: Number(invoice.gst_total) + addedGst,
+      payment_status: allPaid ? 'paid' : 'pending',
+      attachment_urls: mergedAttachments,
+    })
+    .eq('id', invoiceId)
+  if (invUpErr) return { ok: false, error: `Sale(s) were added, but updating the invoice totals failed: ${invUpErr.message}`, status: 500 }
+
+  return { ok: true, invoice_id: invoiceId, invoice_number: invoice.invoice_number }
+}
+
 // Builds one full invoice_items insert row from a resolved descriptor + this
 // sale's GST classification.
 export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: EntityInfo, gst: GstClassification, descriptor: Awaited<ReturnType<typeof resolveSaleItemDescriptor>>) {
