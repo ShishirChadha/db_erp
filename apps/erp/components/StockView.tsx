@@ -555,7 +555,7 @@ export default function StockView({
             Clear filters
           </button>
         )}
-        {isOwner && tab === 'current' && selected.size > 0 && (
+        {isOwner && (tab === 'current' || tab === 'sold') && selected.size > 0 && (
           <button onClick={() => setShowPoForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
             Create PO from Selected ({selected.size})
           </button>
@@ -729,7 +729,7 @@ export default function StockView({
           <table className="min-w-full border text-sm">
             <thead>
               <tr>
-                {isOwner && tab === 'current' && (
+                {isOwner && (tab === 'current' || tab === 'sold') && (
                   <th className="border p-2 w-8 text-center">
                     <Checkbox
                       checked={
@@ -773,7 +773,7 @@ export default function StockView({
               {displayedAssets.length === 0 && <EmptyTableRow colSpan={20} message="No assets found." />}
               {displayedAssets.map((asset, idx) => (
                 <tr key={asset.id}>
-                  {isOwner && tab === 'current' && (
+                  {isOwner && (tab === 'current' || tab === 'sold') && (
                     <td className="border p-2 w-8 text-center">
                       {!asset.po_id && (
                         <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
@@ -988,7 +988,7 @@ export default function StockView({
                   </Link>
                   <div className="text-xs text-gray-500">{asset.sku_code}</div>
                 </div>
-                {isOwner && tab === 'current' && !asset.po_id && (
+                {isOwner && (tab === 'current' || tab === 'sold') && !asset.po_id && (
                   <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset.id)} />
                 )}
               </div>
@@ -1086,6 +1086,8 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
   const [error, setError] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
+  const soldCount = useMemo(() => assets.filter(a => a.status === 'sold').length, [assets])
+
   // One cost/GST input per distinct SKU among the selected units.
   const skuGroups = useMemo(() => {
     const map = new Map<string, { sku_code: string; count: number }>()
@@ -1149,6 +1151,11 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
   return (
     <div className="border rounded p-4 mb-4 bg-gray-50">
       <h3 className="font-semibold mb-2">Create Purchase Order from {assetIds.length} selected unit(s)</h3>
+      {soldCount > 0 && (
+        <div className="text-xs text-gray-600 mb-2">
+          Includes {soldCount} already-sold unit{soldCount > 1 ? 's' : ''} -- their sale record is unaffected, this only attaches the purchase paperwork (vendor/cost/GST).
+        </div>
+      )}
       {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
       <div className="grid grid-cols-3 gap-4 mb-3">
         <div>
