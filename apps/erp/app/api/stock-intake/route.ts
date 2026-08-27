@@ -64,6 +64,21 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // A desktop bought as a "complete set" can bundle its own monitor -- a real
+  // serialized unit (own sku_master/asset_ledger row), not a quantity-only accessory.
+  // Validate its serial up front too, before any writes happen for either unit.
+  const bundledMonitor = body.bundled_monitor as { brand?: string; size?: string; resolution?: string; serial_number?: string } | undefined
+  if (bundledMonitor?.serial_number) {
+    const dupMon = await findDuplicateSerial(bundledMonitor.serial_number)
+    if (dupMon) {
+      return NextResponse.json({
+        error: `Bundled monitor serial "${bundledMonitor.serial_number}" already exists as ${dupMon.asset_number || 'an untagged unit'} (status: ${dupMon.status}, source: ${dupMon.source}).`,
+        error_code: 'duplicate_serial',
+        existing: dupMon,
+      }, { status: 409 })
+    }
+  }
+
   // Schema-driven callers (the current Stock Intake frontend) send a ready-made
   // `specifications` object matching the category's own sku_category_templates.
   // field_schema, same shape SKU Master's "New SKU" form sends -- used verbatim when
@@ -141,8 +156,67 @@ export async function POST(req: NextRequest) {
     metadata: { sku_id: sku.id, type: body.type, model: body.model },
   })
 
+  // Bundled monitor -- a genuine second unit, created the same way the primary one
+  // was (resolve/create its SKU, insert its own asset_ledger row, own receipt
+  // movement), just fixed to category MON. Not wrapped in the primary unit's success
+  // response failing if this fails -- the desktop is already live stock either way,
+  // so a problem here is surfaced as a warning, not a rollback.
+  let bundledMonitorId: string | undefined
+  let bundledMonitorWarning: string | undefined
+  if (bundledMonitor?.brand && bundledMonitor?.size) {
+    try {
+      const monSpecs = { brand: bundledMonitor.brand, size: bundledMonitor.size, ...(bundledMonitor.resolution ? { resolution: bundledMonitor.resolution } : {}) }
+      const monResult = await resolveOrCreateSku({
+        category: 'MON',
+        item_type: 'Monitor',
+        brand: bundledMonitor.brand,
+        model_name: `${bundledMonitor.brand} ${bundledMonitor.size}"`,
+        specifications: monSpecs,
+        sku_description: `${bundledMonitor.brand} ${bundledMonitor.size}" Monitor`,
+      })
+      const monLedgerRow = buildIntakeLedgerRow(
+        { ...body, serial_number: bundledMonitor.serial_number, condition_notes: `Bundled with desktop -- serial ${body.serial_number || 'n/a'}` },
+        { skuId: monResult.sku.id, enteredBy: sessionUser.id }
+      )
+      const { data: monInserted, error: monInsertErr } = await supabaseAdmin
+        .from('asset_ledger')
+        .insert(monLedgerRow)
+        .select('id')
+        .single()
+      if (monInsertErr) throw new Error(monInsertErr.message)
+      bundledMonitorId = monInserted.id
+
+      await supabaseAdmin.from('stock_movements').insert({
+        sku_id: monResult.sku.id,
+        movement_type: 'receipt',
+        quantity_change: 1,
+        notes: `Bundled monitor with desktop intake -- serial ${bundledMonitor.serial_number || 'n/a'}`,
+        created_by: sessionUser.id,
+      })
+
+      await logAuditEvent({
+        actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+        actionType: 'create',
+        module: 'stock',
+        tableName: 'asset_ledger',
+        recordId: monInserted.id,
+        recordLabel: bundledMonitor.serial_number || monInserted.id,
+        metadata: { sku_id: monResult.sku.id, type: 'Monitor', bundled_with: inserted.id },
+      })
+    } catch (err: any) {
+      bundledMonitorWarning = `Desktop saved, but the bundled monitor failed: ${err.message}`
+    }
+  }
+
   return NextResponse.json(
-    { success: true, id: inserted.id, sku_id: sku.id, possible_duplicates: possibleDuplicates },
+    {
+      success: true,
+      id: inserted.id,
+      sku_id: sku.id,
+      possible_duplicates: possibleDuplicates,
+      bundled_monitor_id: bundledMonitorId,
+      bundled_monitor_warning: bundledMonitorWarning,
+    },
     { status: 201 }
   )
 }

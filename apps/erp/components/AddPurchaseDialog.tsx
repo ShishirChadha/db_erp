@@ -11,6 +11,8 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { getCustomOptionsCategory } from "@/lib/sku-field-options";
 import { TYPE_TO_CATEGORY } from "@/lib/sku-category-map";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { AccessoryBundlePicker, type BundledAccessory } from "@/components/AccessoryBundlePicker";
+import { BundleMonitorFields, EMPTY_BUNDLED_MONITOR, type BundledMonitor } from "@/components/BundleMonitorFields";
 import {
   Dialog,
   DialogContent,
@@ -173,6 +175,9 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
   const [quantity, setQuantity] = useState(1);
   const [serialNumbersList, setSerialNumbersList] = useState("");
   const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const [bundled, setBundled] = useState<BundledAccessory[]>([]);
+  const [bundleMonitor, setBundleMonitor] = useState(false);
+  const [bundledMonitor, setBundledMonitor] = useState<BundledMonitor>(EMPTY_BUNDLED_MONITOR);
 
   const { values: cpuOptions } = useCustomOptions('cpu');
   const { values: generationOptions } = useCustomOptions('generation');
@@ -257,6 +262,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       setQuantity(1);
       setSerialNumbersList("");
       setSkuGenerated(false);
+      setBundled([]); setBundleMonitor(false); setBundledMonitor(EMPTY_BUNDLED_MONITOR);
     } else {
       setFormData({
         entry_date: today,
@@ -304,6 +310,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
       setQuantity(1);
       setSerialNumbersList("");
       setSkuGenerated(false);
+      setBundled([]); setBundleMonitor(false); setBundledMonitor(EMPTY_BUNDLED_MONITOR);
     }
     isInitialized.current = true;
   };
@@ -385,6 +392,10 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
         ? serialNumbersList.split(/\r?\n/).map(s => s.trim())
         : undefined;
 
+      // Bundling (real accessory stock + a genuine bundled monitor unit) only makes
+      // sense for a single "complete set" purchase -- a multi-quantity batch would need
+      // its own serial/quantity per bundled item per unit, which this door doesn't
+      // collect, so it's only offered (and only sent) at quantity 1.
       const res = await apiFetch("/api/purchases", {
         method: "POST",
         body: JSON.stringify({
@@ -392,6 +403,12 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           quantity,
           serial_numbers: serialNumbers,
           status,
+          bundled_accessories: quantity === 1 && bundled.length > 0
+            ? bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity }))
+            : undefined,
+          bundled_monitor: quantity === 1 && bundleMonitor && bundledMonitor.brand && bundledMonitor.size
+            ? bundledMonitor
+            : undefined,
         }),
       });
 
@@ -408,6 +425,9 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           duration: 10000,
           action: { label: "Review", onClick: () => router.push("/dashboard/sku-master") },
         });
+      }
+      if (data.bundled_monitor_warning) {
+        toast.error(data.bundled_monitor_warning);
       }
 
       onOpenChange(false);
@@ -579,6 +599,36 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
               <div className="md:col-span-2 lg:col-span-3"><Label>Asset Description</Label><Input value={formData.asset_description} onChange={(e) => handleChange("asset_description", e.target.value)} /></div>
             </div>
           </div>
+
+          {/* Complete Set Bundling -- real stock, not just a descriptive flag (unlike
+              the Keyboard/Mouse/Monitor Size fields above, which are notes only) */}
+          {isDesktop && (
+            quantity === 1 ? (
+              <div className="border rounded-lg p-4 space-y-4">
+                <h3 className="font-semibold">Bought as a Complete Set?</h3>
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Adds real, independently trackable stock for a bundled keyboard/mouse/monitor -- separate
+                  from the descriptive "Included?" fields above.
+                </p>
+                <AccessoryBundlePicker bundled={bundled} onChange={setBundled} />
+                <div>
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input type="checkbox" checked={bundleMonitor} onChange={(e) => setBundleMonitor(e.target.checked)} />
+                    This came with a monitor
+                  </label>
+                  {bundleMonitor && (
+                    <div className="mt-2">
+                      <BundleMonitorFields value={bundledMonitor} onChange={setBundledMonitor} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Bundling a real keyboard/mouse/monitor is only available at quantity 1.
+              </p>
+            )
+          )}
 
           {/* SKU (auto) */}
           <div><Label>SKU (Auto)</Label><Input value={formData.sku} disabled className="bg-gray-100" /></div>

@@ -12,29 +12,13 @@ import { CategorySpecFields, parseFieldSchema } from '@/components/CategorySpecF
 import { TYPE_TO_CATEGORY } from '@/lib/sku-category-map'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
-
-interface Accessory {
-  id: string
-  accessory_name: string
-  quantity: number
-}
+import { AccessoryBundlePicker, type BundledAccessory } from '@/components/AccessoryBundlePicker'
+import { BundleMonitorFields, EMPTY_BUNDLED_MONITOR, type BundledMonitor } from '@/components/BundleMonitorFields'
 
 interface CategoryTemplate {
   category: string
   display_name: string
   field_schema: any
-}
-
-// Accessories are sku_master rows filtered to the non-serialized categories (see
-// docs/decisions.md, 2026-07-23) -- map the raw SKU shape into this page's existing
-// Accessory shape so the rest of the component doesn't need to change.
-const ACCESSORY_CATEGORIES = 'RAM,SSD,CPU,GPU,KBD,MOUSE,ACC,ADP'
-function mapSkuToAccessory(s: any): Accessory {
-  return {
-    id: s.id,
-    accessory_name: s.sku_description || s.model_name || s.full_sku_code,
-    quantity: s.quantity_in_stock,
-  }
 }
 
 const BUYER_OPTIONS = ['Digitalbluez', 'Techtenth', 'Cash', 'Other']
@@ -79,9 +63,9 @@ function StockIntakePage() {
   const [purchasedByType, setPurchasedByType] = useState('Digitalbluez')
   const [conditionNotes, setConditionNotes] = useState('')
   const [receivedDate, setReceivedDate] = useState(today())
-  const [bundled, setBundled] = useState<{ accessory_id: string; accessory_name: string; quantity: number }[]>([])
-  const [accessorySearch, setAccessorySearch] = useState('')
-  const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
+  const [bundled, setBundled] = useState<BundledAccessory[]>([])
+  const [bundleMonitor, setBundleMonitor] = useState(false)
+  const [bundledMonitor, setBundledMonitor] = useState<BundledMonitor>(EMPTY_BUNDLED_MONITOR)
 
   const { values: typeOptions, addOption: addTypeOption } = useCustomOptions('stock_intake_type')
 
@@ -129,25 +113,9 @@ function StockIntakePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [identityValue, category])
 
-  useEffect(() => {
-    if (!accessorySearch.trim()) { setAccessoryOptions([]); return }
-    const timer = setTimeout(async () => {
-      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(accessorySearch)}`)
-      const data = await res.json()
-      setAccessoryOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
-    }, 300)
-    return () => clearTimeout(timer)
-  }, [accessorySearch])
-
-  const addBundledAccessory = (a: Accessory) => {
-    if (bundled.some(b => b.accessory_id === a.id)) return
-    setBundled(prev => [...prev, { accessory_id: a.id, accessory_name: a.accessory_name, quantity: 1 }])
-    setAccessorySearch(''); setAccessoryOptions([])
-  }
-
   const resetForm = () => {
     setType('Laptop'); setSpecs({})
-    setBundled([]); setAccessorySearch(''); setAccessoryOptions([])
+    setBundled([]); setBundleMonitor(false); setBundledMonitor(EMPTY_BUNDLED_MONITOR)
     setSerialNumber(''); setPurchasedByType('Digitalbluez'); setConditionNotes('')
     setReceivedDate(today())
   }
@@ -182,6 +150,7 @@ function StockIntakePage() {
       condition_notes: conditionNotes,
       received_date: receivedDate,
       bundled_accessories: bundled.length > 0 ? bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity })) : undefined,
+      bundled_monitor: category === 'DES' && bundleMonitor && bundledMonitor.brand && bundledMonitor.size ? bundledMonitor : undefined,
     }
 
     // Informational only -- never blocks this submission. Employees can't reach
@@ -191,6 +160,9 @@ function StockIntakePage() {
       const match = data?.possible_duplicates?.[0]
       if (match) {
         toast(`Heads up: this looks similar to an existing SKU (${match.full_sku_code}, ${match.quantity_in_stock ?? 0} in stock). The owner may merge these later.`)
+      }
+      if (data?.bundled_monitor_warning) {
+        toast.error(data.bundled_monitor_warning)
       }
     }
 
@@ -260,41 +232,21 @@ function StockIntakePage() {
           onChange={(name, value) => setSpecs(prev => ({ ...prev, [name]: value }))}
         />
 
-        <div>
-          <label className="block font-medium text-sm mb-1">Bundled Accessories Received (e.g. mouse, adapter, bag)</label>
-          <input
-            value={accessorySearch}
-            onChange={(e) => setAccessorySearch(e.target.value)}
-            placeholder="Search to add..."
-            className="border p-2 w-full rounded"
-          />
-          {accessoryOptions.length > 0 && (
-            <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
-              {accessoryOptions.map(a => (
-                <li key={a.id} onClick={() => addBundledAccessory(a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
-                  {a.accessory_name}
-                </li>
-              ))}
-            </ul>
-          )}
-          {bundled.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-2">
-              {bundled.map((b, idx) => (
-                <span key={b.accessory_id} className="bg-gray-100 text-sm px-2 py-1 rounded flex items-center gap-1">
-                  {b.accessory_name}
-                  <input
-                    type="number"
-                    min={1}
-                    value={b.quantity}
-                    onChange={(e) => setBundled(prev => prev.map((p, i) => i === idx ? { ...p, quantity: Number(e.target.value) } : p))}
-                    className="w-12 border rounded text-center"
-                  />
-                  <button onClick={() => setBundled(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        <AccessoryBundlePicker bundled={bundled} onChange={setBundled} />
+
+        {category === 'DES' && (
+          <div>
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <input type="checkbox" checked={bundleMonitor} onChange={(e) => setBundleMonitor(e.target.checked)} />
+              This came with a monitor (complete set)
+            </label>
+            {bundleMonitor && (
+              <div className="mt-2">
+                <BundleMonitorFields value={bundledMonitor} onChange={setBundledMonitor} />
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -347,6 +299,7 @@ function StockIntakePage() {
             { label: 'Serial Number', value: serialNumber },
             { label: 'Purchased By', value: purchasedByType },
             ...(bundled.length > 0 ? [{ label: 'Bundled Accessories', value: bundled.map(b => `${b.accessory_name} ×${b.quantity}`).join(', ') }] : []),
+            ...(category === 'DES' && bundleMonitor && bundledMonitor.brand ? [{ label: 'Bundled Monitor', value: `${bundledMonitor.brand} ${bundledMonitor.size}"` }] : []),
             { label: 'Condition Notes', value: conditionNotes },
             { label: 'Date Received', value: receivedDate },
           ]}
