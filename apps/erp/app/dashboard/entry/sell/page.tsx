@@ -536,7 +536,7 @@ function SellPageInner() {
                             onClick={() => setShowChangeSkuForLineId(line.id)}
                             className="text-blue-600 underline text-xs mt-1"
                           >
-                            Wrong or upgraded spec? Change SKU
+                            Wrong, upgraded, or downgraded spec? Change SKU
                           </button>
                         </>
                       ) : (

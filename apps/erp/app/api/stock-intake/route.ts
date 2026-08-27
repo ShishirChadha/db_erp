@@ -40,7 +40,12 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
 
   if (!body.type) return NextResponse.json({ error: 'Type is required.' }, { status: 400 })
-  if (!body.model) return NextResponse.json({ error: 'Model is required.' }, { status: 400 })
+  const category = TYPE_TO_CATEGORY[body.type] || 'OTHER'
+  // Monitor's field_schema has no `model`-equivalent field (just brand/size/etc, see
+  // sku_category_templates) -- schema-driven field capture means the frontend genuinely
+  // has nothing to send for it, matching how creating a Monitor SKU via SKU Master's own
+  // "New SKU" form works today. Every other category still requires it.
+  if (!body.model && category !== 'MON') return NextResponse.json({ error: 'Model is required.' }, { status: 400 })
 
   // Serial number has no DB-level uniqueness constraint (see the duplication analysis
   // in docs/decisions.md) -- hard block on any existing match, no confirm-and-proceed
@@ -59,8 +64,15 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  const category = TYPE_TO_CATEGORY[body.type] || 'OTHER'
-  const specs = buildSpecifications(category, body)
+  // Schema-driven callers (the current Stock Intake frontend) send a ready-made
+  // `specifications` object matching the category's own sku_category_templates.
+  // field_schema, same shape SKU Master's "New SKU" form sends -- used verbatim when
+  // present. `buildSpecifications`'s legacy flat-field assembly stays as a fallback for
+  // any caller that still sends the old shape (e.g. /api/purchases' AddPurchaseDialog,
+  // which shares this same helper and hasn't been migrated).
+  const specs = body.specifications && typeof body.specifications === 'object'
+    ? { brand: resolveBrand(body), ...body.specifications }
+    : buildSpecifications(category, body)
   const brand = resolveBrand(body)
 
   let sku
@@ -70,9 +82,9 @@ export async function POST(req: NextRequest) {
       category,
       item_type: body.type,
       brand,
-      model_name: body.model,
+      model_name: body.model || '',
       specifications: specs,
-      sku_description: `${brand} ${body.model}`.trim(),
+      sku_description: `${brand} ${body.model || ''}`.trim(),
     })
     sku = result.sku
     possibleDuplicates = result.possibleDuplicates

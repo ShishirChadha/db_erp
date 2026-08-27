@@ -35,10 +35,19 @@ interface Activity {
   assignee_names: string[];
   watcher_ids: string[];
   watcher_names: string[];
+  checklist_total?: number;
+  checklist_done?: number;
   related_type?: RelatedType | null;
   related_id?: string | null;
   completed_at?: string | null;
   reviewed_at?: string | null;
+}
+
+interface ChecklistItem {
+  id: string;
+  text: string;
+  is_done: boolean;
+  position: number;
 }
 
 interface AssignableUser {
@@ -58,6 +67,7 @@ interface HistoryRow {
 interface ActivityDetail extends Activity {
   assignees: { user_id: string; name: string | null; assigned_by_name: string | null; assigned_at: string }[];
   watchers: { user_id: string; name: string | null; added_by_name: string | null; added_at: string }[];
+  checklist: ChecklistItem[];
   history: HistoryRow[];
   created_by_name: string | null;
   completed_by_name: string | null;
@@ -425,6 +435,82 @@ function DeleteConfirmModal({
   );
 }
 
+// ---------- Checklist section (inside Task Details) ----------
+function ChecklistSection({
+  activityId, items, onChange,
+}: {
+  activityId: string; items: ChecklistItem[]; onChange: () => void;
+}) {
+  const [newText, setNewText] = useState('');
+  const [adding, setAdding] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  const addItem = async () => {
+    const text = newText.trim();
+    if (!text || adding) return;
+    setAdding(true);
+    try {
+      const res = await apiFetch(`/api/activities/${activityId}/checklist`, { method: 'POST', body: JSON.stringify({ text }) });
+      if (res.ok) { setNewText(''); onChange(); }
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const toggleItem = async (item: ChecklistItem) => {
+    if (busyId) return;
+    setBusyId(item.id);
+    try {
+      const res = await apiFetch(`/api/activities/${activityId}/checklist/${item.id}`, {
+        method: 'PATCH', body: JSON.stringify({ is_done: !item.is_done }),
+      });
+      if (res.ok) onChange();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const deleteItem = async (item: ChecklistItem) => {
+    if (busyId) return;
+    setBusyId(item.id);
+    try {
+      const res = await apiFetch(`/api/activities/${activityId}/checklist/${item.id}`, { method: 'DELETE' });
+      if (res.ok) onChange();
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const doneCount = items.filter(i => i.is_done).length;
+
+  return (
+    <div>
+      <h4 className="font-medium text-sm mb-1">
+        Checklist {items.length > 0 && <span className="text-xs text-gray-400">({doneCount}/{items.length})</span>}
+      </h4>
+      {items.length === 0 && <p className="text-xs text-gray-400 mb-1">No checklist items yet.</p>}
+      <ul className="space-y-1 mb-2">
+        {items.map(item => (
+          <li key={item.id} className="flex items-center gap-2 text-sm group">
+            <Checkbox checked={item.is_done} onCheckedChange={() => toggleItem(item)} disabled={busyId === item.id} />
+            <span className={item.is_done ? 'line-through text-gray-400 flex-1' : 'flex-1'}>{item.text}</span>
+            <button onClick={() => deleteItem(item)} disabled={busyId === item.id} className="text-gray-300 hover:text-red-600 opacity-0 group-hover:opacity-100">
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </li>
+        ))}
+      </ul>
+      <input
+        type="text" placeholder="Add a checklist item, then press Enter" className="w-full border rounded p-1.5 text-sm"
+        value={newText} onChange={e => setNewText(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addItem(); } }}
+        onBlur={addItem}
+        disabled={adding}
+      />
+    </div>
+  );
+}
+
 // ---------- Detail Modal (fetches full detail incl. history on open) ----------
 function DetailModal({
   activityId, isOpen, onClose, isOwner, onUpdate, myId,
@@ -433,6 +519,13 @@ function DetailModal({
 }) {
   const [detail, setDetail] = useState<ActivityDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [downloadingIcs, setDownloadingIcs] = useState(false);
+
+  const refetchDetail = async () => {
+    if (!activityId) return;
+    const res = await apiFetch(`/api/activities/${activityId}`);
+    if (res.ok) setDetail(await res.json());
+  };
 
   useEffect(() => {
     if (!isOpen || !activityId) { setDetail(null); return; }
@@ -442,6 +535,30 @@ function DetailModal({
       .then(data => setDetail(data))
       .finally(() => setLoading(false));
   }, [isOpen, activityId]);
+
+  const handleChecklistChange = () => { refetchDetail(); onUpdate(); };
+
+  const handleDownloadIcs = async () => {
+    if (!activityId || downloadingIcs) return;
+    setDownloadingIcs(true);
+    try {
+      const res = await apiFetch(`/api/activities/${activityId}/ics`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        alert(body.error || 'Failed to export task to calendar.');
+        return;
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${activityId}.ics`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setDownloadingIcs(false);
+    }
+  };
 
   const { run: markReviewed, pending: reviewing } = useAsyncAction(async () => {
     if (!activityId) return;
@@ -462,9 +579,19 @@ function DetailModal({
       {loading && <p className="text-sm text-gray-500">Loading...</p>}
       {!loading && detail && (
         <div className="space-y-4">
-          <div>
-            <h3 className="font-semibold text-lg">{detail.title}</h3>
-            <p className="text-sm text-gray-600 whitespace-pre-wrap">{detail.description || '—'}</p>
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <h3 className="font-semibold text-lg">{detail.title}</h3>
+              <p className="text-sm text-gray-600 whitespace-pre-wrap">{detail.description || '—'}</p>
+            </div>
+            {detail.due_date && (
+              <button
+                onClick={handleDownloadIcs} disabled={downloadingIcs}
+                className="shrink-0 text-xs px-2 py-1 border rounded text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                {downloadingIcs ? 'Exporting...' : 'Add to Calendar'}
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-2 text-sm">
@@ -495,6 +622,8 @@ function DetailModal({
               )}
             </p>
           </div>
+
+          <ChecklistSection activityId={detail.id} items={detail.checklist} onChange={handleChecklistChange} />
 
           <div>
             <h4 className="font-medium text-sm mb-1">History</h4>
@@ -709,6 +838,9 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
                     <button onClick={() => setSelectedActivityId(act.id)} className="text-blue-600 hover:underline text-left">
                       {act.title}
                     </button>
+                    {!!act.checklist_total && (
+                      <span className="ml-1.5 text-xs text-gray-400 align-middle">({act.checklist_done}/{act.checklist_total})</span>
+                    )}
                     {act.tags?.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
                         {act.tags.map(tag => (

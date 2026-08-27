@@ -3,7 +3,8 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
-  buildOwnVisibilityFilter, getAssigneesForActivities, getWatchersForActivities, getProfileMap, areValidUsers,
+  buildOwnVisibilityFilter, getAssigneesForActivities, getWatchersForActivities,
+  getChecklistCountsForActivities, getProfileMap, areValidUsers,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -51,9 +52,10 @@ export async function GET(req: NextRequest) {
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const activityIds = (data || []).map((a) => a.id)
-  const [assigneesByActivity, watchersByActivity] = await Promise.all([
+  const [assigneesByActivity, watchersByActivity, checklistCounts] = await Promise.all([
     getAssigneesForActivities(activityIds),
     getWatchersForActivities(activityIds),
+    getChecklistCountsForActivities(activityIds),
   ])
   const allUserIds = [
     ...(data || []).map((a) => a.created_by),
@@ -65,6 +67,7 @@ export async function GET(req: NextRequest) {
   const enriched = (data || []).map((a) => {
     const assigneeIds = assigneesByActivity.get(a.id) || []
     const watcherIds = watchersByActivity.get(a.id) || []
+    const checklist = checklistCounts.get(a.id)
     return {
       ...a,
       created_by_name: profileMap.get(a.created_by)?.full_name || null,
@@ -72,6 +75,8 @@ export async function GET(req: NextRequest) {
       assignee_names: assigneeIds.map((id) => profileMap.get(id)?.full_name || 'Unknown user'),
       watcher_ids: watcherIds,
       watcher_names: watcherIds.map((id) => profileMap.get(id)?.full_name || 'Unknown user'),
+      checklist_total: checklist?.total || 0,
+      checklist_done: checklist?.done || 0,
     }
   })
 

@@ -7,6 +7,11 @@ import { logAuditEvent } from '@/lib/audit-log'
 // A PO-linked asset's SKU is governed by its purchase_order_items.sku_id, shared
 // by every asset under that same line item -- reassigning one means reassigning
 // all of them together. The caller should see that count before confirming.
+// Also returns the asset's CURRENT sku's specifications (`current_sku`) -- the
+// "before" side of a spec diff FixSkuDialog uses to detect an upgrade/downgrade on
+// RAM or SSD and prompt the correct stock-adjustment direction, rather than a
+// generic guess. Purely additive: existing callers that only read
+// po_item_id/affected_count are unaffected.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -18,14 +23,16 @@ export async function GET(
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('po_item_id, sku_id')
+    .select('po_item_id, sku_id, sku_master(id, full_sku_code, sku_description, category, specifications)')
     .eq('id', id)
     .single()
 
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
 
+  const currentSku = Array.isArray(asset.sku_master) ? asset.sku_master[0] : asset.sku_master
+
   if (!asset.po_item_id) {
-    return NextResponse.json({ po_item_id: null, affected_count: 1 })
+    return NextResponse.json({ po_item_id: null, affected_count: 1, current_sku: currentSku || null })
   }
 
   const { count } = await supabaseAdmin
@@ -33,7 +40,7 @@ export async function GET(
     .select('id', { count: 'exact', head: true })
     .eq('po_item_id', asset.po_item_id)
 
-  return NextResponse.json({ po_item_id: asset.po_item_id, affected_count: count ?? 1 })
+  return NextResponse.json({ po_item_id: asset.po_item_id, affected_count: count ?? 1, current_sku: currentSku || null })
 }
 
 // ---------- PATCH: reassign this asset (or its whole PO line item) to an existing SKU ----------

@@ -85,3 +85,19 @@ export function getAssigneesForActivities(activityIds: string[]) {
 export function getWatchersForActivities(activityIds: string[]) {
   return groupByActivity('activity_watchers', activityIds)
 }
+
+// {total, done} per activity -- used for the list view's "2/4" checklist badge
+// without fetching every item's full text.
+export async function getChecklistCountsForActivities(activityIds: string[]) {
+  const map = new Map<string, { total: number; done: number }>()
+  if (activityIds.length === 0) return map
+  const { data } = await supabaseAdmin
+    .from('activity_checklist_items').select('activity_id, is_done').in('activity_id', activityIds)
+  for (const row of data || []) {
+    const counts = map.get(row.activity_id) || { total: 0, done: 0 }
+    counts.total += 1
+    if (row.is_done) counts.done += 1
+    map.set(row.activity_id, counts)
+  }
+  return map
+}

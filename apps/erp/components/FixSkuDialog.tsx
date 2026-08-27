@@ -11,6 +11,7 @@ interface SkuOption {
   id: string
   full_sku_code: string
   sku_description: string
+  specifications?: Record<string, any>
 }
 
 interface CategoryTemplate {
@@ -18,6 +19,45 @@ interface CategoryTemplate {
   display_name: string
   field_schema: any
   sku_code_format?: string
+}
+
+// RAM/SSD are the two physical-swap fields this business already treats specially
+// (same fields as sku_upgrade_rules.ALLOWED_FIELDS on the website side) -- the only
+// ones worth auto-diffing to detect an upgrade/downgrade on reassignment.
+const COMPONENT_FIELDS = ['ram', 'ssd'] as const
+type ComponentField = (typeof COMPONENT_FIELDS)[number]
+interface ComponentChange {
+  field: ComponentField
+  from: string
+  to: string
+  direction: 'up' | 'down'
+}
+const ACCESSORY_CATEGORIES = 'RAM,SSD,CPU,GPU,KBD,MOUSE,ACC,ADP'
+
+function parseLeadingInt(v: any): number | null {
+  const m = String(v ?? '').match(/\d+/)
+  return m ? parseInt(m[0], 10) : null
+}
+
+// Compares the unit's spec before vs. after a reassignment on RAM/SSD only --
+// skips a field entirely if either side is missing/unparseable/equal, so a plain
+// data-entry correction (e.g. fixing a brand typo) never triggers a false positive.
+function diffComponents(
+  oldSpecs: Record<string, any> | null | undefined,
+  newSpecs: Record<string, any> | null | undefined
+): ComponentChange[] {
+  if (!oldSpecs || !newSpecs) return []
+  const changes: ComponentChange[] = []
+  for (const field of COMPONENT_FIELDS) {
+    const from = oldSpecs[field]
+    const to = newSpecs[field]
+    if (!from || !to || from === to) continue
+    const fromNum = parseLeadingInt(from)
+    const toNum = parseLeadingInt(to)
+    if (fromNum === null || toNum === null || fromNum === toNum) continue
+    changes.push({ field, from: String(from), to: String(to), direction: toNum < fromNum ? 'down' : 'up' })
+  }
+  return changes
 }
 
 // Lets the seller search for (or create) the correct SKU and reassign the asset
@@ -44,6 +84,13 @@ export function FixSkuDialog({
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
   const [upgradeCost, setUpgradeCost] = useState('')
   const [upgradeReason, setUpgradeReason] = useState('')
+
+  // Set once reassignment succeeds AND at least one tracked component (RAM/SSD)
+  // actually changed -- switches the dialog into the follow-up stock-adjustment
+  // step instead of closing immediately. Most reassignments are plain corrections
+  // with no RAM/SSD change, so this stays null and the dialog closes as before.
+  const [pendingChanges, setPendingChanges] = useState<ComponentChange[] | null>(null)
+  const [newSkuLabel, setNewSkuLabel] = useState('')
 
   useEffect(() => {
     if (!search.trim()) { setOptions([]); return }
@@ -108,13 +155,31 @@ export function FixSkuDialog({
         }
       }
 
-      onReassigned()
-      onClose()
+      // info.current_sku is the unit's spec BEFORE this reassignment (fetched by the
+      // GET above, ahead of the PATCH) -- diff it against the SKU just reassigned to.
+      const changes = diffComponents(info.current_sku?.specifications, sku.specifications)
+      if (changes.length > 0) {
+        setNewSkuLabel(sku.full_sku_code)
+        setPendingChanges(changes)
+      } else {
+        onReassigned()
+        onClose()
+      }
     } catch (err: any) {
       setError(err.message)
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (pendingChanges) {
+    return (
+      <ComponentStockFollowUp
+        changes={pendingChanges}
+        newSkuLabel={newSkuLabel}
+        onDone={() => { onReassigned(); onClose() }}
+      />
+    )
   }
 
   if (showCreateSku) {
@@ -204,5 +269,136 @@ export function FixSkuDialog({
         </div>
       </div>
     </SimpleModal>
+  )
+}
+
+// Shown only when the reassignment actually changed RAM and/or SSD -- one row per
+// changed field, each independently searchable/skippable, so staff aren't forced
+// to log anything that doesn't apply (e.g. the part was sourced externally).
+function ComponentStockFollowUp({
+  changes,
+  newSkuLabel,
+  onDone,
+}: {
+  changes: ComponentChange[]
+  newSkuLabel: string
+  onDone: () => void
+}) {
+  return (
+    <SimpleModal isOpen onClose={onDone} title="Change SKU">
+      <div className="space-y-3">
+        <p className="text-sm text-gray-500">
+          Reassigned to <span className="font-medium">{newSkuLabel}</span>. This changed:
+        </p>
+        {changes.map((c) => (
+          <ComponentStockRow key={c.field} change={c} />
+        ))}
+        <div className="flex justify-end pt-2">
+          <button type="button" onClick={onDone} className="px-4 py-2 bg-blue-600 text-white rounded">Done</button>
+        </div>
+      </div>
+    </SimpleModal>
+  )
+}
+
+function ComponentStockRow({ change }: { change: ComponentChange }) {
+  const [search, setSearch] = useState('')
+  const [options, setOptions] = useState<SkuOption[]>([])
+  const [selected, setSelected] = useState<SkuOption | null>(null)
+  const [qty, setQty] = useState('1')
+  const [submitting, setSubmitting] = useState(false)
+  const [done, setDone] = useState(false)
+  const [skipped, setSkipped] = useState(false)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    if (!search.trim()) { setOptions([]); return }
+    const timer = setTimeout(() => {
+      apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(search)}`)
+        .then(res => res.json())
+        .then((data) => setOptions(Array.isArray(data) ? data : []))
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
+
+  const isDowngrade = change.direction === 'down'
+  const label = change.field.toUpperCase()
+  const message = isDowngrade
+    ? `${label} decreased from ${change.from} to ${change.to} -- log the removed component back into stock?`
+    : `${label} increased from ${change.from} to ${change.to} -- if it came from your own accessory stock (not bought fresh for this), deduct it now:`
+
+  const submit = async () => {
+    if (!selected) return
+    setSubmitting(true)
+    setErr('')
+    const n = Number(qty) || 1
+    const res = await apiFetch(`/api/sku-master/${selected.id}/stock-movement`, {
+      method: 'POST',
+      body: JSON.stringify({
+        movement_type: isDowngrade ? 'receipt' : 'adjustment',
+        quantity_change: isDowngrade ? n : -n,
+        notes: `${isDowngrade ? 'Removed' : 'Used'} during SKU reassignment (${label} ${change.from} → ${change.to})`,
+      }),
+    })
+    setSubmitting(false)
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}))
+      setErr(e.error || 'Failed to update stock.')
+      return
+    }
+    setDone(true)
+  }
+
+  if (done) {
+    return <div className="border rounded p-2 text-sm text-green-600">✓ {label}: stock updated.</div>
+  }
+  if (skipped) {
+    return <div className="border rounded p-2 text-sm text-gray-400">{label}: skipped.</div>
+  }
+
+  return (
+    <div className="border rounded p-2 space-y-2">
+      <p className="text-sm">{message}</p>
+      {err && <p className="text-xs text-red-600">{err}</p>}
+      {!selected ? (
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search accessory SKU..."
+          className="border p-2 w-full rounded text-sm"
+        />
+      ) : (
+        <div className="flex items-center gap-2">
+          <span className="text-sm flex-1 truncate">{selected.full_sku_code}</span>
+          <input
+            type="number"
+            min={1}
+            value={qty}
+            onChange={(e) => setQty(e.target.value)}
+            className="border p-1 w-16 rounded text-sm text-right"
+          />
+          <button type="button" disabled={submitting} onClick={submit} className="text-xs bg-blue-600 text-white px-2 py-1 rounded disabled:opacity-50 shrink-0">
+            {submitting ? '...' : isDowngrade ? 'Receive to Stock' : 'Deduct from Stock'}
+          </button>
+          <button type="button" onClick={() => setSelected(null)} className="text-xs text-gray-500 underline shrink-0">Change</button>
+        </div>
+      )}
+      {!selected && options.length > 0 && (
+        <ul className="border rounded divide-y max-h-32 overflow-y-auto text-sm">
+          {options.map((o) => (
+            <li
+              key={o.id}
+              onClick={() => { setSelected(o); setSearch(''); setOptions([]) }}
+              className="p-2 hover:bg-gray-50 cursor-pointer"
+            >
+              {o.full_sku_code} — {o.sku_description}
+            </li>
+          ))}
+        </ul>
+      )}
+      {!selected && (
+        <button type="button" onClick={() => setSkipped(true)} className="text-xs text-gray-500 underline">Skip</button>
+      )}
+    </div>
   )
 }

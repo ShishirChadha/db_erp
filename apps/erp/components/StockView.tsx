@@ -18,6 +18,7 @@ import { ColumnToggle } from '@/components/ColumnToggle'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
+import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
 
 interface AssetRow {
   id: string
@@ -1132,7 +1133,35 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
     return [...map.entries()]
   }, [assets])
 
-  const [costInputs, setCostInputs] = useState<Record<string, { cost_price: number; gst_percentage: number }>>({})
+  // cost_price/gst_percentage/line_total are kept in sync with each other the same
+  // way the New PO wizard's Unit Price/GST%/Line Total fields are (lib/po-gst-calc.ts)
+  // -- editing price or GST% forward-computes the total; editing the total back-solves
+  // price. Only `cost_price`/`gst_percentage` are ever sent to the server.
+  const [costInputs, setCostInputs] = useState<Record<string, { cost_price: number; gst_percentage: number; line_total: number }>>({})
+
+  const updateCostPrice = (skuCode: string, qty: number, cost_price: number) => {
+    setCostInputs(prev => {
+      const gst_percentage = prev[skuCode]?.gst_percentage ?? 18
+      return { ...prev, [skuCode]: { cost_price, gst_percentage, line_total: computeFromUnitPrice(cost_price, qty, gst_percentage).lineTotal } }
+    })
+  }
+  const updateGstPercentage = (skuCode: string, qty: number, gst_percentage: number) => {
+    setCostInputs(prev => {
+      const cost_price = prev[skuCode]?.cost_price ?? 0
+      return { ...prev, [skuCode]: { cost_price, gst_percentage, line_total: computeFromUnitPrice(cost_price, qty, gst_percentage).lineTotal } }
+    })
+  }
+  const updateLineTotal = (skuCode: string, qty: number, line_total: number) => {
+    setCostInputs(prev => {
+      const gst_percentage = prev[skuCode]?.gst_percentage ?? 18
+      return { ...prev, [skuCode]: { cost_price: computeFromLineTotal(line_total, qty, gst_percentage).unitPrice, gst_percentage, line_total } }
+    })
+  }
+
+  const grandTotal = useMemo(
+    () => skuGroups.reduce((sum, [skuCode]) => sum + (costInputs[skuCode]?.line_total ?? 0), 0),
+    [skuGroups, costInputs]
+  )
 
   useEffect(() => {
     apiFetch('/api/vendors').then(res => res.json()).then(setVendors).catch(() => {})
@@ -1214,7 +1243,13 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
 
       <table className="min-w-full border text-sm mb-3">
         <thead>
-          <tr><th className="border p-2">SKU</th><th className="border p-2">Qty</th><th className="border p-2">Unit Cost (₹)</th><th className="border p-2">GST %</th></tr>
+          <tr>
+            <th className="border p-2">SKU</th>
+            <th className="border p-2">Qty</th>
+            <th className="border p-2">Unit Price (before GST) (₹)</th>
+            <th className="border p-2">GST %</th>
+            <th className="border p-2">Line Total (incl. GST) (₹)</th>
+          </tr>
         </thead>
         <tbody>
           {skuGroups.map(([skuCode, info]) => (
@@ -1226,7 +1261,7 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
                   type="number"
                   className="border p-1 w-24 rounded"
                   value={costInputs[skuCode]?.cost_price ?? ''}
-                  onChange={(e) => setCostInputs(prev => ({ ...prev, [skuCode]: { ...prev[skuCode], cost_price: Number(e.target.value), gst_percentage: prev[skuCode]?.gst_percentage ?? 18 } }))}
+                  onChange={(e) => updateCostPrice(skuCode, info.count, Number(e.target.value))}
                 />
               </td>
               <td className="border p-2">
@@ -1234,12 +1269,26 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
                   type="number"
                   className="border p-1 w-20 rounded"
                   value={costInputs[skuCode]?.gst_percentage ?? 18}
-                  onChange={(e) => setCostInputs(prev => ({ ...prev, [skuCode]: { ...prev[skuCode], gst_percentage: Number(e.target.value), cost_price: prev[skuCode]?.cost_price ?? 0 } }))}
+                  onChange={(e) => updateGstPercentage(skuCode, info.count, Number(e.target.value))}
+                />
+              </td>
+              <td className="border p-2">
+                <input
+                  type="number"
+                  className="border p-1 w-28 rounded"
+                  value={costInputs[skuCode]?.line_total ?? ''}
+                  onChange={(e) => updateLineTotal(skuCode, info.count, Number(e.target.value))}
                 />
               </td>
             </tr>
           ))}
         </tbody>
+        <tfoot>
+          <tr>
+            <td className="border p-2 text-right font-medium" colSpan={4}>Grand Total (incl. GST)</td>
+            <td className="border p-2 font-medium">₹{grandTotal.toFixed(2)}</td>
+          </tr>
+        </tfoot>
       </table>
 
       <div className="flex justify-end gap-2">

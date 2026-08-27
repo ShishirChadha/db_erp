@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { recalcPOTotals } from '@/lib/purchase-utils'
+import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 
 export async function GET(
@@ -201,6 +202,79 @@ export async function PUT(
     module: 'purchase_orders',
     tableName: 'purchase_orders',
     recordId: id,
+  })
+
+  return NextResponse.json({ success: true })
+}
+
+// ---------- PATCH: owner corrects the vendor after the fact (any status past draft) ----------
+// A draft PO's vendor is still edited via the full-header PUT above. Same
+// already-invoiced guard as PATCH /items/[itemId] -- correcting is allowed, but an
+// already-generated Purchase Invoice is a frozen snapshot this never retroactively
+// updates, so it requires an explicit confirm.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const { id } = await params
+  const body = await req.json()
+  const { vendor_id, reason, confirm_despite_invoice } = body
+  if (!vendor_id) return NextResponse.json({ error: 'vendor_id is required.' }, { status: 400 })
+
+  const { data: po } = await supabaseAdmin.from('purchase_orders').select('po_status, vendor_id, vendor_name').eq('id', id).single()
+  if (!po) return NextResponse.json({ error: 'Purchase Order not found' }, { status: 404 })
+  if (po.po_status === 'draft') {
+    return NextResponse.json({ error: 'A draft PO\'s vendor is edited via the New PO wizard, not this endpoint.' }, { status: 400 })
+  }
+  if (po.po_status === 'cancelled') {
+    return NextResponse.json({ error: 'A cancelled PO cannot be edited.' }, { status: 400 })
+  }
+  if (vendor_id === po.vendor_id) return NextResponse.json({ success: true })
+
+  const { data: existingInvoices } = await supabaseAdmin
+    .from('invoices')
+    .select('id, invoice_number')
+    .eq('po_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const invoice = existingInvoices?.[0]
+  if (invoice && !confirm_despite_invoice) {
+    return NextResponse.json({
+      error: `This PO is already invoiced (${invoice.invoice_number}) -- correcting the vendor will NOT update that invoice, which will then disagree with the live record. Confirm to proceed anyway.`,
+      error_code: 'already_invoiced',
+    }, { status: 409 })
+  }
+
+  const vendorName = await getVendorName(vendor_id)
+  await supabaseAdmin.from('purchase_orders').update({ vendor_id, vendor_name: vendorName }).eq('id', id)
+
+  const fieldCorrectionIds = await logFieldCorrections(
+    'purchase_orders',
+    id,
+    [
+      { field: 'vendor_id', oldValue: po.vendor_id, newValue: vendor_id },
+      { field: 'vendor_name', oldValue: po.vendor_name, newValue: vendorName },
+    ],
+    sessionUser.id,
+    reason || null
+  )
+
+  // Vendor is header-level but was copied per-unit into asset_ledger at
+  // submit/receive/promotion time -- keep every unit on this PO in sync.
+  await supabaseAdmin.from('asset_ledger').update({ vendor_id }).eq('po_id', id)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'purchase_orders',
+    tableName: 'purchase_orders',
+    recordId: id,
+    recordLabel: vendorName,
+    fieldCorrectionIds,
+    reason: reason || null,
   })
 
   return NextResponse.json({ success: true })

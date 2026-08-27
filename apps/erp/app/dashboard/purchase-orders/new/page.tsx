@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
 
 interface Vendor {
   id: string
@@ -110,9 +111,7 @@ function NewPurchaseOrderPage() {
       setQuantity(1)
       setGstPercent(18)
       setHsnCode(selectedSku.hsn_code || '')
-      const lineBeforeGst = baseCost * 1
-      const gstAmt = lineBeforeGst * 18 / 100
-      setLineTotalInput(lineBeforeGst + gstAmt)
+      setLineTotalInput(computeFromUnitPrice(baseCost, 1, 18).lineTotal)
     }
   }, [selectedSku])
 
@@ -122,9 +121,7 @@ function NewPurchaseOrderPage() {
   // stale total (that was the bug: a prior reverse-calc could silently shrink the
   // unit price when quantity changed after the user had last edited Line Total).
   const recalcLineTotal = (newUnitPrice: number, newQuantity: number, newGstPercent: number) => {
-    const lineBeforeGst = newUnitPrice * newQuantity
-    const gstAmt = lineBeforeGst * newGstPercent / 100
-    setLineTotalInput(lineBeforeGst + gstAmt)
+    setLineTotalInput(computeFromUnitPrice(newUnitPrice, newQuantity, newGstPercent).lineTotal)
   }
 
   const handleQuantityChange = (newQty: number) => {
@@ -146,15 +143,12 @@ function NewPurchaseOrderPage() {
   // unit price -- quantity/unit-price/GST% edits never trigger this.
   const handleLineTotalChange = (newLineTotal: number) => {
     setLineTotalInput(newLineTotal)
-    const lineBeforeGst = newLineTotal / (1 + gstPercent / 100)
-    setUnitPrice(quantity > 0 ? lineBeforeGst / quantity : 0)
+    setUnitPrice(computeFromLineTotal(newLineTotal, quantity, gstPercent).unitPrice)
   }
 
   const addItem = () => {
     if (!selectedSku || quantity <= 0 || unitPrice <= 0) return
-    const lineBeforeGst = unitPrice * quantity
-    const gstAmt = lineBeforeGst * gstPercent / 100
-    const lineTotal = lineBeforeGst + gstAmt
+    const { lineTotalBeforeGst, gstAmount, lineTotal } = computeFromUnitPrice(unitPrice, quantity, gstPercent)
     const newItem: LineItem = {
       sku_id: selectedSku.id,
       sku_full_code: selectedSku.full_sku_code,
@@ -162,9 +156,9 @@ function NewPurchaseOrderPage() {
       specs: selectedSku.specifications || {},
       quantity,
       unit_price: unitPrice,
-      line_total_before_gst: lineBeforeGst,
+      line_total_before_gst: lineTotalBeforeGst,
       gst_percentage: gstPercent,
-      gst_amount: gstAmt,
+      gst_amount: gstAmount,
       line_total: lineTotal,
       hsn_code: hsnCode,
     }
@@ -362,7 +356,7 @@ function NewPurchaseOrderPage() {
                   <input type="number" min={1} value={quantity} onChange={(e) => handleQuantityChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Unit Price (₹)</label>
+                  <label className="block text-sm font-medium">Unit Price (before GST) (₹)</label>
                   <input type="number" value={unitPrice} onChange={(e) => handleUnitPriceChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
@@ -370,7 +364,7 @@ function NewPurchaseOrderPage() {
                   <input type="number" value={gstPercent} onChange={(e) => handleGstPercentChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium">Line Total (₹)</label>
+                  <label className="block text-sm font-medium">Line Total (incl. GST) (₹)</label>
                   <input type="number" value={lineTotalInput} onChange={(e) => handleLineTotalChange(Number(e.target.value))} className="border p-2 w-full rounded" />
                 </div>
                 <div className="col-span-2 md:col-span-4">

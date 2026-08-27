@@ -10,7 +10,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 // quantity. Received progress for fungible lines is derived from the movement ledger
 // (the source of truth for quantity), never a stored counter -- mirrors how a
 // serialized line derives its received count from its serial_numbers array.
-async function receivedQtyForLine(poItemId: string): Promise<number> {
+export async function receivedQtyForLine(poItemId: string): Promise<number> {
   const { data } = await supabaseAdmin
     .from('stock_movements')
     .select('quantity_change')

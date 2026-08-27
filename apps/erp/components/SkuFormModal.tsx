@@ -5,11 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
-import { useCustomOptions } from '@/lib/useCustomOptions'
-import { SearchableSelect } from '@/components/SearchableSelect'
-import { Checkbox } from '@/components/ui/checkbox'
-import { getCustomOptionsCategory } from '@/lib/sku-field-options'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { CategorySpecFields, parseFieldSchema } from '@/components/CategorySpecFields'
 
 interface SKU {
   id: string
@@ -34,29 +31,6 @@ interface CategoryTemplate {
   display_name: string
   field_schema: any
   sku_code_format?: string
-}
-
-// useCustomOptions is a hook, so it can't be called conditionally inside a
-// fields.map() loop -- this wrapper isolates the hook call per dropdown-backed
-// field so the parent can render a variable-length field list safely.
-function CustomOptionSpecField({
-  optionsCategory,
-  value,
-  onChange,
-}: {
-  optionsCategory: string
-  value: string
-  onChange: (v: string) => void
-}) {
-  const { values, addOption } = useCustomOptions(optionsCategory)
-  return (
-    <SearchableSelect
-      options={values}
-      value={value ?? ''}
-      onChange={onChange}
-      onOtherCommit={(v) => { if (!values.includes(v)) addOption(v) }}
-    />
-  )
 }
 
 export function SkuFormModal({
@@ -85,12 +59,6 @@ export function SkuFormModal({
 
   const selectedTemplate = templates.find(t => t.category === category)
 
-  const parseFieldSchema = (schema: any) => {
-    if (typeof schema === 'string') {
-      try { return JSON.parse(schema) } catch { return { fields: [] } }
-    }
-    return schema || { fields: [] }
-  }
   const fieldSchema = parseFieldSchema(selectedTemplate?.field_schema)
   const fields = fieldSchema?.fields || []
 
@@ -216,52 +184,7 @@ export function SkuFormModal({
             </select>
           </div>
 
-          {fields.length > 0 ? (
-            fields.map((field: any) => {
-              const optionsCategory = getCustomOptionsCategory(category, field.name)
-              return (
-                <div key={field.name} className="mb-3">
-                  <label className="block text-sm font-medium">{field.label}</label>
-                  {optionsCategory ? (
-                    <CustomOptionSpecField
-                      optionsCategory={optionsCategory}
-                      value={specs[field.name]}
-                      onChange={(v) => handleSpecChange(field.name, v)}
-                    />
-                  ) : field.type === 'text' || field.type === 'number' ? (
-                    <input
-                      type={field.type}
-                      value={specs[field.name] ?? ''}
-                      onChange={(e) =>
-                        handleSpecChange(field.name, field.type === 'number' ? Number(e.target.value) : e.target.value)
-                      }
-                      className="border p-2 w-full rounded"
-                      required={field.required}
-                    />
-                  ) : field.type === 'checkbox' ? (
-                    <Checkbox
-                      checked={!!specs[field.name]}
-                      onCheckedChange={(v) => handleSpecChange(field.name, !!v)}
-                    />
-                  ) : field.type === 'select' ? (
-                    <select
-                      value={specs[field.name] || ''}
-                      onChange={(e) => handleSpecChange(field.name, e.target.value)}
-                      className="border p-2 w-full rounded"
-                    >
-                      <option value="">Select...</option>
-                      {(field.options || []).map((opt: string) => (
-                        <option key={opt} value={opt}>{opt}</option>
-                      ))}
-                    </select>
-                  ) : null}
-                  <span className="text-xs text-gray-500">{field.required ? 'Required' : 'Optional'}</span>
-                </div>
-              )
-            })
-          ) : (
-            <p className="text-sm text-gray-500 mb-3">No additional specs for this category.</p>
-          )}
+          <CategorySpecFields fields={fields} specs={specs} category={category} onChange={handleSpecChange} />
 
           <div className="mb-3">
             <label className="block text-sm font-medium">SKU Code</label>

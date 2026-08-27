@@ -26,6 +26,8 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .from('activity_assignees').select('user_id, assigned_by, assigned_at').eq('activity_id', id)
   const { data: watcherRows } = await supabaseAdmin
     .from('activity_watchers').select('user_id, added_by, added_at').eq('activity_id', id)
+  const { data: checklistRows } = await supabaseAdmin
+    .from('activity_checklist_items').select('*').eq('activity_id', id).order('position', { ascending: true })
   const { data: history } = await supabaseAdmin
     .from('field_corrections').select('field_name, old_value, new_value, changed_by, changed_at')
     .eq('table_name', 'activities').eq('record_id', id).order('changed_at', { ascending: true })
@@ -50,6 +52,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     watchers: (watcherRows || []).map((r) => ({
       user_id: r.user_id, name: nameFor(r.user_id), added_by_name: nameFor(r.added_by), added_at: r.added_at,
     })),
+    checklist: checklistRows || [],
     history: (history || []).map((h) => ({ ...h, changed_by_name: nameFor(h.changed_by) })),
   })
 }

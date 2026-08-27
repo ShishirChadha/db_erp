@@ -6,6 +6,8 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { EditPoItemDialog } from '@/components/EditPoItemDialog'
+import { EditPoVendorDialog } from '@/components/EditPoVendorDialog'
 
 interface POItem {
   id: string
@@ -28,12 +30,14 @@ interface POItem {
   sku_category: string | null
   is_serialized: boolean
   received_quantity: number
+  notes?: string | null
 }
 
 interface PurchaseOrder {
   id: string
   po_number: string
   po_date: string
+  vendor_id: string
   vendor_name: string
   po_status: string
   purchase_type: string
@@ -57,6 +61,8 @@ function PODetailPage() {
   const [showReceiveModal, setShowReceiveModal] = useState(false)
   const [receipts, setReceipts] = useState<Record<string, string>>({}) // serialized: asset_number -> serial
   const [fungibleReceipts, setFungibleReceipts] = useState<Record<string, number | ''>>({}) // fungible: po_item_id -> qty received now
+  const [editingItemId, setEditingItemId] = useState<string | null>(null)
+  const [editingVendor, setEditingVendor] = useState(false)
 
   const fetchPO = async () => {
     setLoading(true)
@@ -180,7 +186,12 @@ function PODetailPage() {
 
       <div className="grid grid-cols-2 gap-4 mb-6 bg-white p-4 shadow rounded">
         <div>
-          <p><strong>Vendor:</strong> {po.vendor_name}</p>
+          <p>
+            <strong>Vendor:</strong> {po.vendor_name}
+            {po.po_status !== 'cancelled' && (
+              <button onClick={() => setEditingVendor(true)} className="ml-2 text-xs text-blue-600 underline">Edit</button>
+            )}
+          </p>
           <p><strong>PO Date:</strong> {po.po_date}</p>
           <p><strong>Expected Delivery:</strong> {po.expected_delivery_date || 'N/A'}</p>
         </div>
@@ -205,6 +216,7 @@ function PODetailPage() {
             <th className="border p-2">Line Total</th>
             <th className="border p-2">Assets Reserved</th>
             <th className="border p-2">Received</th>
+            {po.po_status !== 'cancelled' && <th className="border p-2">Edit</th>}
           </tr>
         </thead>
         <tbody>
@@ -237,6 +249,11 @@ function PODetailPage() {
                     ? ((item.serial_numbers || []).join(', ') || '-')
                     : `${item.received_quantity} of ${item.quantity}`}
                 </td>
+                {po.po_status !== 'cancelled' && (
+                  <td className="border p-2 text-center">
+                    <button onClick={() => setEditingItemId(item.id)} className="text-xs text-blue-600 underline">Edit</button>
+                  </td>
+                )}
               </tr>
             )
           })}
@@ -352,6 +369,29 @@ function PODetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {editingItemId && po.items.find(i => i.id === editingItemId) && (
+        <EditPoItemDialog
+          poId={poId}
+          poStatus={po.po_status}
+          item={(() => {
+            const i = po.items.find(x => x.id === editingItemId)!
+            return { id: i.id, sku_id: i.sku_id, sku_code: i.sku_code, quantity: i.quantity, unit_price: i.unit_price, gst_percentage: i.gst_percentage, notes: i.notes }
+          })()}
+          allItems={po.items.map(i => ({ id: i.id, sku_id: i.sku_id, sku_code: i.sku_code, quantity: i.quantity, unit_price: i.unit_price, gst_percentage: i.gst_percentage, notes: i.notes }))}
+          onClose={() => setEditingItemId(null)}
+          onSaved={fetchPO}
+        />
+      )}
+
+      {editingVendor && (
+        <EditPoVendorDialog
+          poId={poId}
+          currentVendorId={po.vendor_id}
+          onClose={() => setEditingVendor(false)}
+          onSaved={fetchPO}
+        />
       )}
     </div>
   )

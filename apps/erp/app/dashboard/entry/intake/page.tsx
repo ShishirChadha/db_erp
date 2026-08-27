@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api-client'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import RequirePageAccess from '@/components/RequirePageAccess'
-import { getCustomOptionsCategory } from '@/lib/sku-field-options'
+import { CategorySpecFields, parseFieldSchema } from '@/components/CategorySpecFields'
 import { TYPE_TO_CATEGORY } from '@/lib/sku-category-map'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
@@ -17,6 +17,12 @@ interface Accessory {
   id: string
   accessory_name: string
   quantity: number
+}
+
+interface CategoryTemplate {
+  category: string
+  display_name: string
+  field_schema: any
 }
 
 // Accessories are sku_master rows filtered to the non-serialized categories (see
@@ -37,6 +43,13 @@ function today() {
   return new Date().toISOString().slice(0, 10)
 }
 
+// The category's own field, if any, that identifies "which model/item this is" --
+// LAP/DES/TAB call it `model`, OTHER calls it `item_name`; Monitor has neither (brand +
+// size already fully identify it, matching SKU Master's own MON template).
+function findIdentityField(fields: any[]): string | undefined {
+  return fields.find((f: any) => f.name === 'model' || f.name === 'item_name')?.name
+}
+
 function StockIntakePage() {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -47,6 +60,7 @@ function StockIntakePage() {
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
   const [showReview, setShowReview] = useState(false)
+  const [templates, setTemplates] = useState<CategoryTemplate[]>([])
 
   // Starts empty rather than defaulting straight to 'Laptop' -- SearchableSelect decides
   // dropdown-vs-free-text mode once on mount based on whether its value is already in
@@ -54,16 +68,13 @@ function StockIntakePage() {
   // default would race that fetch and can get stuck rendering as a free-text field. See
   // the effect below, which defaults to 'Laptop' only once the list has actually loaded.
   const [type, setType] = useState('')
-  const [brand, setBrand] = useState('')
-  const [brandOther, setBrandOther] = useState('')
-  const [model, setModel] = useState('')
-  const [cpu, setCpu] = useState('')
-  const [generation, setGeneration] = useState('')
-  const [ram, setRam] = useState('')
-  const [ssd, setSsd] = useState('')
-  const [gpu, setGpu] = useState('')
-  const [screenSize, setScreenSize] = useState('')
-  const [modelYear, setModelYear] = useState('')
+  // Every category-specific SKU field (brand, model/item_name, and every spec field the
+  // resolved category's sku_category_templates.field_schema defines) -- schema-driven,
+  // same mechanism and same field set as SkuFormModal's "New SKU" form, so the two entry
+  // points can't drift apart on which fields a category captures. Per-unit fields
+  // (serial, condition, etc.) stay as their own state below, separate from this
+  // SKU-level object.
+  const [specs, setSpecs] = useState<Record<string, any>>({})
   const [serialNumber, setSerialNumber] = useState('')
   const [purchasedByType, setPurchasedByType] = useState('Digitalbluez')
   const [conditionNotes, setConditionNotes] = useState('')
@@ -73,48 +84,50 @@ function StockIntakePage() {
   const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
 
   const { values: typeOptions, addOption: addTypeOption } = useCustomOptions('stock_intake_type')
-  const { values: cpuOptions } = useCustomOptions('cpu')
-  const { values: generationOptions } = useCustomOptions('generation')
-  const { values: ramOptions } = useCustomOptions('ram')
-  const { values: storageOptions } = useCustomOptions('storage')
-  const { values: gpuOptions } = useCustomOptions('gpu')
-  const { values: laptopScreenOptions } = useCustomOptions('screen_size_laptop')
-  const { values: monitorScreenOptions } = useCustomOptions('screen_size_monitor')
-  const { values: brandOptions } = useCustomOptions('brand')
-  const { values: modelYearOptions } = useCustomOptions('apple_model_year')
-  const modelCategory = getCustomOptionsCategory(TYPE_TO_CATEGORY[type] || 'OTHER', 'model')
-  const { values: modelOptions, addOption: addModelOption } = useCustomOptions(modelCategory || 'model_laptop')
-  const screenOptions = type === 'Monitor' ? monitorScreenOptions : laptopScreenOptions
+
+  const category = TYPE_TO_CATEGORY[type] || 'OTHER'
+  const selectedTemplate = templates.find(t => t.category === category)
+  const fieldSchema = parseFieldSchema(selectedTemplate?.field_schema)
+  // Model Year is the one field kept conditionally hidden rather than always rendered --
+  // irrelevant for non-Apple brands, same UX carve-out this page had before going
+  // schema-driven.
+  const fields = (fieldSchema?.fields || []).filter((f: any) => f.name !== 'model_year' || specs.brand === 'Apple')
+  const identityField = findIdentityField(fields)
+
+  useEffect(() => {
+    apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
+      setTemplates(Array.isArray(data) ? data : [])
+    })
+  }, [])
 
   useEffect(() => {
     if (!type && typeOptions.includes('Laptop')) setType('Laptop')
   }, [type, typeOptions])
 
-  // Prefill CPU/Generation/RAM/SSD/Screen Size/Model Year from whatever was last
-  // recorded for this exact brand+model -- a repeatedly purchased model shouldn't
-  // need every spec field re-picked by hand each time. Only fills fields that are
-  // still empty, so it never overwrites something the user already chose, and it's
-  // fully editable afterward either way.
+  // Prefill specs from whatever was last recorded for this exact identity value (model/
+  // item name) -- a repeatedly purchased model shouldn't need every spec field re-picked
+  // by hand each time. Only fills fields that are still empty, so it never overwrites
+  // something the user already chose, and it's fully editable afterward either way.
+  const identityValue = identityField ? specs[identityField] : undefined
   useEffect(() => {
-    if (!model.trim()) return
-    const category = TYPE_TO_CATEGORY[type] || 'OTHER'
+    if (!identityValue || !String(identityValue).trim()) return
     let cancelled = false
-    apiFetch(`/api/sku-master?latest_for_model=${encodeURIComponent(model)}&category=${encodeURIComponent(category)}`)
+    apiFetch(`/api/sku-master?latest_for_model=${encodeURIComponent(identityValue)}&category=${encodeURIComponent(category)}`)
       .then(res => res.json())
-      .then((specs) => {
-        if (cancelled || !specs) return
-        if (!cpu && specs.cpu) setCpu(specs.cpu)
-        if (!generation && specs.generation) setGeneration(specs.generation)
-        if (!ram && specs.ram) setRam(specs.ram)
-        if (!ssd && specs.ssd) setSsd(specs.ssd)
-        if (!gpu && specs.gpu) setGpu(specs.gpu)
-        if (!screenSize && specs.screen_size) setScreenSize(specs.screen_size)
-        if (!modelYear && specs.model_year) setModelYear(specs.model_year)
+      .then((fetched) => {
+        if (cancelled || !fetched) return
+        setSpecs(prev => {
+          const next = { ...prev }
+          for (const [key, value] of Object.entries(fetched)) {
+            if ((next[key] === undefined || next[key] === '') && value) next[key] = value
+          }
+          return next
+        })
       })
       .catch(() => {})
     return () => { cancelled = true }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [model, type])
+  }, [identityValue, category])
 
   useEffect(() => {
     if (!accessorySearch.trim()) { setAccessoryOptions([]); return }
@@ -133,35 +146,37 @@ function StockIntakePage() {
   }
 
   const resetForm = () => {
-    setType('Laptop'); setBrand(''); setBrandOther(''); setModel('')
-    setCpu(''); setGeneration(''); setRam(''); setSsd(''); setGpu(''); setScreenSize('')
-    setModelYear(''); setBundled([]); setAccessorySearch(''); setAccessoryOptions([])
+    setType('Laptop'); setSpecs({})
+    setBundled([]); setAccessorySearch(''); setAccessoryOptions([])
     setSerialNumber(''); setPurchasedByType('Digitalbluez'); setConditionNotes('')
     setReceivedDate(today())
   }
 
+  // Generic required-field check, driven by the resolved category's own field_schema --
+  // whatever that category marks required (brand, model, size, ...) must be filled, no
+  // hardcoded "Model" special case.
+  const missingRequiredLabel = () => {
+    const missing = fields.filter((f: any) => f.required && !specs[f.name])
+    return missing.length > 0 ? missing.map((f: any) => f.label).join(', ') : null
+  }
+
   const openReview = () => {
     setError('')
-    if (!model.trim()) { setError('Model is required.'); return }
+    const missing = missingRequiredLabel()
+    if (missing) { setError(`${missing} required.`); return }
     setShowReview(true)
   }
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     setError('')
-    if (!model.trim()) { setError('Model is required.'); return }
+    const missing = missingRequiredLabel()
+    if (missing) { setError(`${missing} required.`); return }
 
     const payload = {
       type,
-      brand,
-      brand_other: brandOther,
-      model,
-      cpu,
-      generation,
-      ram,
-      ssd,
-      gpu,
-      screen_size: screenSize,
-      model_year: modelYear,
+      model: identityField ? specs[identityField] : undefined,
+      brand: specs.brand,
+      specifications: specs,
       serial_number: serialNumber,
       purchased_by_type: purchasedByType,
       condition_notes: conditionNotes,
@@ -196,13 +211,6 @@ function StockIntakePage() {
     }
   })
 
-  // A custom-typed value (via Type's "Other" free-text entry, e.g. "AIO") may genuinely have
-  // laptop/desktop-style specs -- show the same spec block rather than leaving it spec-less.
-  const KNOWN_TYPES = ['Laptop', 'Desktop', 'Monitor', 'Tablet', 'Tiny']
-  const isOtherType = type !== '' && !KNOWN_TYPES.includes(type)
-  const showLaptopFields = type === 'Laptop' || type === 'Desktop' || type === 'Tiny' || isOtherType
-  const showScreenField = type === 'Laptop' || type === 'Monitor' || type === 'Tablet' || isOtherType
-
   return (
     <div className="p-4 max-w-2xl mx-auto">
       <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
@@ -234,76 +242,23 @@ function StockIntakePage() {
           <p className="text-xs text-gray-400 mt-1">Backdate this if the unit was actually received earlier.</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block font-medium text-sm mb-1">Type *</label>
-            <SearchableSelect
-              options={typeOptions}
-              value={type}
-              onChange={setType}
-              placeholder="Select type..."
-              onOtherCommit={(v) => { if (!typeOptions.includes(v)) addTypeOption(v) }}
-            />
-          </div>
-          <div>
-            <label className="block font-medium text-sm mb-1">Brand</label>
-            <SearchableSelect options={brandOptions} value={brand} onChange={setBrand} placeholder="Select brand..." />
-          </div>
-        </div>
-
         <div>
-          <label className="block font-medium text-sm mb-1">Model *</label>
-          {modelCategory ? (
-            <SearchableSelect
-              options={modelOptions}
-              value={model}
-              onChange={setModel}
-              placeholder="Select model..."
-              otherPosition="top"
-              onOtherCommit={(v) => { if (!modelOptions.includes(v)) addModelOption(v) }}
-            />
-          ) : (
-            <input value={model} onChange={(e) => setModel(e.target.value)} placeholder="e.g. Latitude E5450" className="border p-2 w-full rounded" />
-          )}
+          <label className="block font-medium text-sm mb-1">Type *</label>
+          <SearchableSelect
+            options={typeOptions}
+            value={type}
+            onChange={(v) => { setType(v); setSpecs({}) }}
+            placeholder="Select type..."
+            onOtherCommit={(v) => { if (!typeOptions.includes(v)) addTypeOption(v) }}
+          />
         </div>
 
-        {showLaptopFields && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-medium text-sm mb-1">CPU</label>
-              <SearchableSelect options={cpuOptions} value={cpu} onChange={setCpu} placeholder="Select CPU..." />
-            </div>
-            <div>
-              <label className="block font-medium text-sm mb-1">Generation</label>
-              <SearchableSelect options={generationOptions} value={generation} onChange={setGeneration} placeholder="Select generation..." />
-            </div>
-            <div>
-              <label className="block font-medium text-sm mb-1">RAM</label>
-              <SearchableSelect options={ramOptions} value={ram} onChange={setRam} placeholder="Select RAM..." />
-            </div>
-            <div>
-              <label className="block font-medium text-sm mb-1">SSD / Storage</label>
-              <SearchableSelect options={storageOptions} value={ssd} onChange={setSsd} placeholder="Select storage..." />
-            </div>
-            <div>
-              <label className="block font-medium text-sm mb-1">GPU</label>
-              <SearchableSelect options={gpuOptions} value={gpu} onChange={setGpu} placeholder="Select GPU (if dedicated)..." />
-            </div>
-            {brand === 'Apple' && (
-              <div>
-                <label className="block font-medium text-sm mb-1">Model Year</label>
-                <SearchableSelect options={modelYearOptions} value={modelYear} onChange={setModelYear} placeholder="Select year..." />
-              </div>
-            )}
-          </div>
-        )}
-
-        {showScreenField && (
-          <div>
-            <label className="block font-medium text-sm mb-1">Screen Size</label>
-            <SearchableSelect options={screenOptions} value={screenSize} onChange={setScreenSize} placeholder="Select screen size..." />
-          </div>
-        )}
+        <CategorySpecFields
+          fields={fields}
+          specs={specs}
+          category={category}
+          onChange={(name, value) => setSpecs(prev => ({ ...prev, [name]: value }))}
+        />
 
         <div>
           <label className="block font-medium text-sm mb-1">Bundled Accessories Received (e.g. mouse, adapter, bag)</label>
@@ -385,15 +340,10 @@ function StockIntakePage() {
           onConfirm={async () => { await handleSubmit(); setShowReview(false) }}
           rows={[
             { label: 'Type', value: type },
-            { label: 'Brand', value: brand === 'Other' ? brandOther : brand },
-            { label: 'Model', value: model },
-            { label: 'CPU', value: cpu },
-            { label: 'Generation', value: generation },
-            { label: 'RAM', value: ram },
-            { label: 'SSD / Storage', value: ssd },
-            { label: 'GPU', value: gpu },
-            { label: 'Screen Size', value: screenSize },
-            { label: 'Model Year', value: modelYear },
+            ...fields.map((f: any) => ({
+              label: f.label,
+              value: typeof specs[f.name] === 'boolean' ? (specs[f.name] ? 'Yes' : 'No') : (specs[f.name] ?? ''),
+            })),
             { label: 'Serial Number', value: serialNumber },
             { label: 'Purchased By', value: purchasedByType },
             ...(bundled.length > 0 ? [{ label: 'Bundled Accessories', value: bundled.map(b => `${b.accessory_name} ×${b.quantity}`).join(', ') }] : []),

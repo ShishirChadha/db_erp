@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ActivityList from '@/components/ActivityList';
 import ActivityCalendar from '@/components/ActivityCalendar';
+import CalendarFeedLink from '@/components/CalendarFeedLink';
 import { toast } from 'sonner';
 import { getPendingReminders, markReminderSent } from '@/app/actions/reminders';
 import { CalendarDays } from 'lucide-react';
@@ -40,7 +41,7 @@ function ActivitiesPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Activity Hub</h1>
-        
+        <CalendarFeedLink />
       </div>
       <Tabs defaultValue="list" onValueChange={(v) => setView(v as 'list' | 'calendar')}>
         <TabsList>
