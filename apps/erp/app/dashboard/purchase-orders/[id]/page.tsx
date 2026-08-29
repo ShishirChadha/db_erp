@@ -386,7 +386,7 @@ function PODetailPage() {
           poStatus={po.po_status}
           item={(() => {
             const i = po.items.find(x => x.id === editingItemId)!
-            return { id: i.id, sku_id: i.sku_id, sku_code: i.sku_code, quantity: i.quantity, unit_price: i.unit_price, gst_percentage: i.gst_percentage, notes: i.notes }
+            return { id: i.id, sku_id: i.sku_id, sku_code: i.sku_code, quantity: i.quantity, unit_price: i.unit_price, gst_percentage: i.gst_percentage, notes: i.notes, hsn_code: i.hsn_code }
           })()}
           allItems={po.items.map(i => ({ id: i.id, sku_id: i.sku_id, sku_code: i.sku_code, quantity: i.quantity, unit_price: i.unit_price, gst_percentage: i.gst_percentage, notes: i.notes }))}
           onClose={() => setEditingItemId(null)}

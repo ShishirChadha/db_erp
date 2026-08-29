@@ -5,7 +5,6 @@ import { isSerializedCategory } from '@/lib/sku-categories'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
-import { receivedQtyForLine } from '../../receive/route'
 
 // ---------- PATCH: owner corrects a mistaken quantity/price/GST% on a line item ----------
 // Unlike the draft-only PUT on /api/purchase-orders/[id], this works at any PO status
@@ -141,12 +140,52 @@ export async function PATCH(
           .eq('id', itemId)
       }
     } else {
-      const alreadyReceived = await receivedQtyForLine(itemId)
+      // A fungible line's `quantity` only tracks real stock once it equals what's
+      // actually been receipted -- below that there's still unreceived headroom and
+      // changing `quantity` is pure paperwork (matches the "ordered more / cancelled
+      // the rest" case, no stock_movements touch, same as before). Once there's no
+      // headroom left (the common case for a backlog-attach line, e.g.
+      // /attach-accessory-stock, which starts at 100% received), ANY quantity edit
+      // necessarily means "correct the actual counted amount" -- so it must write a
+      // compensating 'adjustment' movement to keep sku_master.quantity_in_stock
+      // truthful, the same mechanism the Accessories page's own "Correct Quantity"
+      // control already uses. Counts both 'receipt' and this endpoint's own prior
+      // 'adjustment' corrections linked to this line -- receivedQtyForLine alone
+      // (receipt-only) would forget an earlier correction on the very next edit.
+      const { data: linkedMovements } = await supabaseAdmin
+        .from('stock_movements')
+        .select('quantity_change')
+        .eq('po_item_id', itemId)
+        .in('movement_type', ['receipt', 'adjustment'])
+      const alreadyReceived = (linkedMovements || []).reduce((sum, m) => sum + m.quantity_change, 0)
+      const fullyReceived = alreadyReceived === item.quantity
+
       if (newQuantity < alreadyReceived) {
-        return NextResponse.json({
-          error: `Cannot reduce quantity below ${alreadyReceived} -- that much has already been received on this line.`,
-        }, { status: 400 })
+        const shortfall = alreadyReceived - newQuantity
+        const { data: skuStock } = await supabaseAdmin
+          .from('sku_master')
+          .select('quantity_in_stock')
+          .eq('id', item.sku_id)
+          .single()
+        const available = skuStock?.quantity_in_stock ?? 0
+        if (available < shortfall) {
+          return NextResponse.json({
+            error: `Cannot reduce this line below ${alreadyReceived - available} -- only ${available} unit(s) of this SKU remain in stock (the rest has already sold), so reducing further would understate what's actually been sold.`,
+          }, { status: 400 })
+        }
+        await supabaseAdmin.from('stock_movements').insert({
+          sku_id: item.sku_id, movement_type: 'adjustment', quantity_change: -shortfall,
+          po_id: poId, po_item_id: itemId, notes: `Quantity correction on PO ${po.po_number}`, created_by: sessionUser.id,
+        })
+      } else if (newQuantity > alreadyReceived && fullyReceived) {
+        const extra = newQuantity - alreadyReceived
+        await supabaseAdmin.from('stock_movements').insert({
+          sku_id: item.sku_id, movement_type: 'adjustment', quantity_change: extra,
+          po_id: poId, po_item_id: itemId, notes: `Quantity correction on PO ${po.po_number}`, created_by: sessionUser.id,
+        })
       }
+      // else: still unreceived headroom (newQuantity >= alreadyReceived, not fully
+      // received) -- ordered-amount edit only, no stock impact, unchanged from before.
     }
   }
 

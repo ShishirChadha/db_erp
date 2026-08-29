@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { logAuditEvent } from '@/lib/audit-log'
+import { isSerializedCategory } from '@/lib/sku-categories'
 
 // ---------- GET: owner's backlog of accessory SKUs with stock received but no PO yet ----------
 // Same "needs paperwork" concept as /api/stock-intake's GET, just for quantity-only
@@ -23,7 +24,12 @@ export async function GET(req: NextRequest) {
   const bySkuId = new Map<string, { sku_id: string; full_sku_code: string; sku_description: string; category: string; quantity: number }>()
   for (const m of movements || []) {
     const sku: any = m.sku_master
-    if (!sku) continue
+    // Laptops/desktops/etc. also get a 'receipt' movement on intake (sku_master.
+    // quantity_in_stock is a universal cache across every category), but they're
+    // tracked per-unit via asset_ledger -- their "still needs a PO" backlog is
+    // /api/stock-intake's, not this one. Without this filter a serialized SKU could
+    // show up here too, colliding with its own asset-based attach flow.
+    if (!sku || isSerializedCategory(sku.category)) continue
     const existing = bySkuId.get(m.sku_id)
     if (existing) {
       existing.quantity += m.quantity_change

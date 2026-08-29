@@ -25,6 +25,7 @@ interface POItemLite {
   unit_price: number
   gst_percentage: number
   notes?: string | null
+  hsn_code?: string | null
 }
 
 // Corrects a mistaken quantity/price/GST% on one PO line item after creation. For a
@@ -51,6 +52,7 @@ export function EditPoItemDialog({
   const [quantity, setQuantity] = useState(item.quantity)
   const [unitPrice, setUnitPrice] = useState(item.unit_price)
   const [gstPercent, setGstPercent] = useState(item.gst_percentage)
+  const [hsnCode, setHsnCode] = useState(item.hsn_code || '')
   const [lineTotalInput, setLineTotalInput] = useState(
     computeFromUnitPrice(item.unit_price, item.quantity, item.gst_percentage).lineTotal
   )
@@ -70,6 +72,19 @@ export function EditPoItemDialog({
     setUnitPrice(computeFromLineTotal(v, quantity, gstPercent).unitPrice)
   }
 
+  // HSN code lives on sku_master, not on the PO item itself -- there's no per-line
+  // override, so a correction here just edits the SKU's own HSN code directly
+  // (same PUT /api/sku-master/[id] the SKU Master page uses), independent of the
+  // PO's own status/draft-vs-not branching below.
+  const saveHsnIfChanged = async () => {
+    if (hsnCode === (item.hsn_code || '')) return
+    const res = await apiFetch(`/api/sku-master/${item.sku_id}`, { method: 'PUT', body: JSON.stringify({ hsn_code: hsnCode }) })
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}))
+      throw new Error(e.error || 'Failed to save HSN code.')
+    }
+  }
+
   const { run: save, pending: saving } = useAsyncAction(async () => {
     setError('')
 
@@ -84,6 +99,7 @@ export function EditPoItemDialog({
         const e = await res.json().catch(() => ({}))
         throw new Error(e.error || 'Failed to save.')
       }
+      await saveHsnIfChanged()
       onSaved()
       onClose()
       return
@@ -105,6 +121,7 @@ export function EditPoItemDialog({
         throw new Error(e2.error || 'Failed to save.')
       }
     }
+    await saveHsnIfChanged()
     onSaved()
     onClose()
   })
@@ -135,6 +152,11 @@ export function EditPoItemDialog({
           <div>
             <Label>Line Total (incl. GST) (₹)</Label>
             <Input type="number" value={lineTotalInput} onChange={(e) => handleLineTotalChange(Number(e.target.value))} />
+          </div>
+          <div>
+            <Label>HSN Code</Label>
+            <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="e.g. 8471" />
+            <p className="text-xs text-gray-500 mt-1">Belongs to the SKU, not just this PO -- correcting it here updates the SKU everywhere.</p>
           </div>
 
           {!isDraft && (

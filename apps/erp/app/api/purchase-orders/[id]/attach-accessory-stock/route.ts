@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 import { logAuditEvent } from '@/lib/audit-log'
+import { isSerializedCategory } from '@/lib/sku-categories'
 
 // ---------- POST: owner attaches a fungible/quantity-only SKU's still-unattached ----------
 // ---------- stock-in movements onto an ALREADY-CREATED PO ----------
@@ -65,10 +66,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: skuRow, error: skuErr } = await supabaseAdmin
     .from('sku_master')
-    .select('base_sku_code, variant_number')
+    .select('base_sku_code, variant_number, category')
     .eq('id', sku_id)
     .single()
   if (skuErr || !skuRow) return NextResponse.json({ error: 'SKU not found.' }, { status: 404 })
+  // Laptops/desktops/etc. are tracked per-unit via asset_ledger -- use /attach-units
+  // for those, not this quantity-only endpoint (see from-accessory-stock's GET for
+  // the matching backlog-listing filter).
+  if (isSerializedCategory(skuRow.category)) {
+    return NextResponse.json({ error: 'This SKU is serialized -- use "Add Units from Stock" to attach individual units instead.' }, { status: 400 })
+  }
 
   const { data: maxItem } = await supabaseAdmin
     .from('purchase_order_items')
