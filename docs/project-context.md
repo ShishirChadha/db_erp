@@ -266,6 +266,45 @@ UI: `components/ActivityList.tsx` (table + filters, priority, assignee picker, r
 
 Customer/vendor returns use the older, separately-built `asset_rma_events` table (`direction` = `'to_vendor'` or `'from_customer'`) via `/api/rma` — vendor returns are owner-only (touch vendor identity); customer returns (Return sub-tab in `/dashboard/entry/service`) are open to both roles and simply move the unit back into the QC funnel.
 
+### The Bible (`docs/bible/**`) and "DB", the internal advisor
+A versioned internal manual, split between hand-written chapters
+(`modules/`, `processes/`, `rules/` — YAML frontmatter with `slug`,
+`audience`, `keywords` including Hinglish synonyms, and a `sources` glob list
+that ties the chapter to the code it describes) and 8 auto-generated
+reference appendices (`generated/**`, never hand-edited — full schema,
+every API route's auth/role guards, the nav map, the live permissions matrix,
+SKU category templates, dropdown options, RPC signatures, and every CHECK-
+constraint-enforced status value, all rebuilt from live truth by
+`scripts/bible/generate.ts`). Two tables, `kb_chapters`/`kb_chapter_sections`
+(read-only to any `authenticated` role, written only by
+`scripts/bible/sync.ts`), hold a synced, full-text-searchable copy for
+runtime lookups.
+
+**What keeps it from rotting**: `npm run bible:check` fails loudly (a
+warn-only `pre-push` hook) when a chapter's declared source files changed
+more recently than the chapter itself — see `docs/decisions.md` (2026-08-29)
+for the full mechanism and a new `.claude/skills/bible/SKILL.md` (`/bible`)
+that drafts the fix.
+
+**"DB"** (`apps/erp/lib/advisor/**`) is the advisor that reads this manual
+plus the `report_*` RPCs to answer report/revenue/how-to/"where is X"
+questions — built with **no LLM**: every question in scope is a retrieval
+problem (an intent router matches record-number / metric-keyword /
+how-to-phrase / where-is-phrase patterns to an existing RPC, chapter, or nav
+entry — `lib/advisor/router.ts`), not a reasoning one, so it answers in
+milliseconds and cannot hallucinate a figure, at zero recurring cost. `⌘K`
+anywhere in the dashboard opens the ask palette (`AdvisorLauncher` /
+`AdvisorPalette`, lazy-loaded so it adds ~0 to the initial bundle). Every
+question logs to `advisor_queries` (owner-readable miss log) regardless of
+whether a resolver matched — that log is what prioritizes which Bible
+chapters/keywords to write next. Record lookups reuse the exact same
+role guards and `redactManyForRole()` calls the underlying page's own route
+uses, so cost/vendor visibility is identical whether asked through DB or
+viewed on the page directly. Phase 0 (the Bible) and Phase 1 (this
+deterministic layer) are complete; draft/execute action tiers and a
+Settings-configurable tone/voice/Hinglish layer are not yet built — see
+`docs/current-progress.md`.
+
 ## Roles and permissions summary
 | Action | Employee | Owner |
 |---|---|---|

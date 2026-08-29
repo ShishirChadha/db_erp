@@ -1,859 +1,633 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import {
-  BarChart, Bar, LineChart, Line,
+  BarChart, Bar, LineChart, Line, ComposedChart,
   XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, PieChart, Pie, Cell, Legend
+  ResponsiveContainer, PieChart, Pie, Cell, Legend,
 } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  TrendingUp, TrendingDown, Package,
-  IndianRupee, BarChart3, Users,
-  ShoppingCart, AlertTriangle, Star
+  TrendingUp, TrendingDown, Package, IndianRupee, Users, AlertTriangle,
 } from 'lucide-react'
+import { apiFetch } from '@/lib/api-client'
+import {
+  toDateStr, monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod,
+} from '@/lib/reports'
 
-type Sale = {
-  id: string
-  sale_date: string
-  sale_month: string
-  sale_year: number
-  customer_name: string
-  asset_number: string
-  brand: string
-  type: string
-  sale_base_price: number
-  sale_gst: number
-  sale_total: number
-  sale_type: string
+const COLORS = ['#2563eb', '#16a34a', '#ea580c', '#9333ea', '#db2777', '#0891b2', '#65a30d', '#dc2626']
+
+function fmt(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '—'
+  return `₹${Math.round(n).toLocaleString('en-IN')}`
+}
+function pct(n: number | null | undefined): string {
+  if (n === null || n === undefined) return '—'
+  return `${n > 0 ? '+' : ''}${n}%`
 }
 
-type Purchase = {
-  id: string
-  purchase_date: string
-  asset_number: string
-  brand: string
-  type: string
-  base_price: number
-  total_price: number
-  selling_price: number
-  stock_status: string
-  purchase_type: string
-  created_at: string
-  asset_description: string   // ← add this line
+type Period = { from: string; to: string; label: string }
+
+function presets(): Record<string, Period> {
+  const mtd = monthToDate()
+  const l7 = last7Days()
+  const l15 = last15Days()
+  const lm = lastMonthFull()
+  const fy = fyToDate()
+  return {
+    mtd: { ...mtd, label: 'Month to Date' },
+    l7: { ...l7, label: 'Last 7 Days' },
+    l15: { ...l15, label: 'Last 15 Days' },
+    lm: { ...lm, label: 'Last Month' },
+    fy: { ...fy, label: 'FY to Date' },
+  }
 }
 
-type Expense = {
-  id: string
-  expense_date: string
-  type: string
-  amount: number
+async function getReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<T | null> {
+  const sp = new URLSearchParams({ metric, ...params })
+  const res = await apiFetch(`/api/reports?${sp.toString()}`)
+  if (!res.ok) return null
+  return res.json()
 }
 
-const COLORS = ['#2563eb','#16a34a','#ea580c','#9333ea','#db2777','#0891b2','#65a30d','#dc2626']
-const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-
-export default function ReportsClient({
-  allSales,
-  allPurchases,
-  allExpenses,
-  stockForSale,
-  inStock,
-  currentMonth,
-  currentYear,
-  lastMonth,
-  lastMonthYear,
-  lastYear,
-}: {
-  allSales: Sale[]
-  allPurchases: Purchase[]
-  allExpenses: Expense[]
-  stockForSale: Purchase[]
-  inStock: Purchase[]
-  currentMonth: number
-  currentYear: number
-  lastMonth: number
-  lastMonthYear: number
-  lastYear: number
-}) {
+export default function ReportsClient() {
+  const allPresets = useMemo(presets, [])
+  const [presetKey, setPresetKey] = useState('mtd')
+  const period = allPresets[presetKey]
+  const compare = useMemo(() => prevPeriod(period.from, period.to), [period.from, period.to])
 
   const [activeTab, setActiveTab] = useState('overview')
+  const [kpis, setKpis] = useState<any>(null)
+  const [timeseries, setTimeseries] = useState<any[] | null>(null)
+  const [loading, setLoading] = useState(true)
 
-  // ── Helper: filter sales by month+year ──
-  const salesOf = (month: number, year: number) =>
-    allSales.filter(s => s.sale_year === year &&
-      new Date(s.sale_date).getMonth() + 1 === month)
-
-  const salesOfYear = (year: number) =>
-    allSales.filter(s => s.sale_year === year)
-
-  // ── Revenue helpers ──
-  const revenue = (sales: Sale[]) =>
-    sales.reduce((sum, s) => sum + (s.sale_total || 0), 0)
-
-  const grossProfit = (sales: Sale[]) => {
-    return sales.reduce((sum, s) => {
-      const purchase = allPurchases.find(p => p.asset_number === s.asset_number)
-      const cost = purchase?.total_price || 0
-      return sum + ((s.sale_total || 0) - cost)
-    }, 0)
-  }
-
-  const totalExpensesOf = (month: number, year: number) =>
-    allExpenses
-      .filter(e => {
-        const d = new Date(e.expense_date)
-        return d.getMonth() + 1 === month && d.getFullYear() === year
-      })
-      .reduce((sum, e) => sum + (e.amount || 0), 0)
-
-  const totalExpensesOfYear = (year: number) =>
-    allExpenses
-      .filter(e => new Date(e.expense_date).getFullYear() === year)
-      .reduce((sum, e) => sum + (e.amount || 0), 0)
-
-  // ── Key metrics ──
-  const mtdSales   = salesOf(currentMonth, currentYear)
-  const lmtdSales  = salesOf(lastMonth, lastMonthYear)
-  const ytdSales   = salesOfYear(currentYear)
-  const lytdSales  = salesOfYear(lastYear)
-
-  const mtdRevenue   = revenue(mtdSales)
-  const lmtdRevenue  = revenue(lmtdSales)
-  const ytdRevenue   = revenue(ytdSales)
-  const lytdRevenue  = revenue(lytdSales)
-
-  const mtdGross   = grossProfit(mtdSales)
-  const ytdGross   = grossProfit(ytdSales)
-
-  const mtdExpenses  = totalExpensesOf(currentMonth, currentYear)
-  const ytdExpenses  = totalExpensesOfYear(currentYear)
-
-  const mtdNet  = mtdGross - mtdExpenses
-  const ytdNet  = ytdGross - ytdExpenses
-
-  const revenueGrowth = lmtdRevenue > 0
-    ? Number((((mtdRevenue - lmtdRevenue) / lmtdRevenue) * 100).toFixed(1))
-    : 0
-
-  const ytdGrowth = lytdRevenue > 0
-    ? Number((((ytdRevenue - lytdRevenue) / lytdRevenue) * 100).toFixed(1))
-    : 0
-
-  // ── Monthly trend (last 12 months) ──
-  const monthlyTrend = useMemo(() => {
-    return Array.from({ length: 12 }, (_, i) => {
-      const d = new Date(currentYear, currentMonth - 1 - (11 - i), 1)
-      const m = d.getMonth() + 1
-      const y = d.getFullYear()
-      const s = salesOf(m, y)
-      return {
-        name: MONTH_NAMES[d.getMonth()],
-        revenue: Math.round(revenue(s)),
-        profit: Math.round(grossProfit(s)),
-        units: s.length,
-      }
+  useEffect(() => {
+    setLoading(true)
+    Promise.all([
+      getReport('kpis', { from: period.from, to: period.to, compare_from: compare.from, compare_to: compare.to }),
+      getReport('timeseries', { from: period.from, to: period.to, grain: 'day' }),
+    ]).then(([k, t]) => {
+      setKpis(k)
+      setTimeseries(t)
+      setLoading(false)
     })
-  }, [allSales])
+  }, [period.from, period.to, compare.from, compare.to])
 
-  // ── Brand performance ──
-  const brandData = useMemo(() => {
-    const map: Record<string, { revenue: number; units: number; profit: number }> = {}
-    allSales.forEach(s => {
-      const brand = s.brand || 'Unknown'
-      const purchase = allPurchases.find(p => p.asset_number === s.asset_number)
-      const cost = purchase?.total_price || 0
-      if (!map[brand]) map[brand] = { revenue: 0, units: 0, profit: 0 }
-      map[brand].revenue += s.sale_total || 0
-      map[brand].units += 1
-      map[brand].profit += (s.sale_total || 0) - cost
-    })
-    return Object.entries(map)
-      .map(([brand, d]) => ({ brand, ...d }))
-      .sort((a, b) => b.revenue - a.revenue)
-  }, [allSales])
-
-  // ── Customer revenue ──
-  const customerData = useMemo(() => {
-    const map: Record<string, { revenue: number; units: number }> = {}
-    allSales.forEach(s => {
-      const c = s.customer_name || 'Unknown'
-      if (!map[c]) map[c] = { revenue: 0, units: 0 }
-      map[c].revenue += s.sale_total || 0
-      map[c].units += 1
-    })
-    return Object.entries(map)
-      .map(([customer, d]) => ({ customer, ...d }))
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 10)
-  }, [allSales])
-
-  // ── Expense breakdown ──
-  const expenseByType = useMemo(() => {
-    const map: Record<string, number> = {}
-    allExpenses.forEach(e => {
-      map[e.type] = (map[e.type] || 0) + (e.amount || 0)
-    })
-    return Object.entries(map).map(([name, value]) => ({ name, value }))
-  }, [allExpenses])
-
-  // ── Stock aging ──
-  const stockAging = useMemo(() => {
-    const now = new Date()
-    return [...inStock, ...stockForSale].map(p => {
-      const purchaseDate = new Date(p.purchase_date || p.created_at)
-      const days = Math.floor((now.getTime() - purchaseDate.getTime()) / (1000 * 60 * 60 * 24))
-      const potentialLoss = (p.selling_price || 0) - (p.total_price || 0)
-      return { ...p, daysInStock: days, potentialProfit: potentialLoss }
-    }).sort((a, b) => b.daysInStock - a.daysInStock)
-  }, [inStock, stockForSale])
-
-  // ── Sale type split ──
-  const saleTypeSplit = useMemo(() => {
-    const cash = allSales.filter(s => s.sale_type === 'Cash').length
-    const gst = allSales.filter(s => s.sale_type === 'GST').length
-    return [
-      { name: 'Cash', value: cash },
-      { name: 'GST', value: gst },
-    ]
-  }, [allSales])
-
-  // ── Format helpers ──
-  const fmt = (n: number) => `₹${Math.round(n).toLocaleString('en-IN')}`
-  const pct = (n: number) => Number(n) >= 0
-    ? <span className="text-green-600 flex items-center gap-1"><TrendingUp className="h-3 w-3" />+{n}%</span>
-    : <span className="text-red-600 flex items-center gap-1"><TrendingDown className="h-3 w-3" />{n}%</span>
-
-  const MetricCard = ({
-    title, value, sub, icon: Icon, color, growth
-  }: {
-    title: string
-    value: string
-    sub?: string
-    icon: React.ElementType
-    color: string
-    growth?: React.ReactNode
-  }) => (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-            {title}
-          </CardTitle>
-          <div className={`p-2 rounded-lg ${color}`}>
-            <Icon className="h-3.5 w-3.5 text-white" />
-          </div>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <p className="text-xl font-semibold text-gray-900">{value}</p>
-        {sub && <p className="text-xs text-gray-500 mt-0.5">{sub}</p>}
-        {growth && <div className="text-xs mt-1">{growth}</div>}
-      </CardContent>
-    </Card>
-  )
+  const cur = kpis?.current
+  const includeFinancials = cur ? 'cost_coverage_pct' in cur : false
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-semibold text-gray-900">Reports & Insights</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Live data from your inventory
-        </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900">Reports</h1>
+          <p className="text-gray-500 text-sm mt-1">
+            {new Date(period.from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })} –{' '}
+            {new Date(period.to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+          </p>
+        </div>
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+          {Object.entries(allPresets).map(([key, p]) => (
+            <button
+              key={key}
+              onClick={() => setPresetKey(key)}
+              className={`px-3 py-1.5 text-sm rounded-md transition ${
+                presetKey === key ? 'bg-white shadow-sm font-medium text-gray-900' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="mb-6 flex flex-wrap gap-1 h-auto">
+        <TabsList className="mb-4 flex-wrap h-auto">
           <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="revenue">Revenue</TabsTrigger>
-          <TabsTrigger value="stock">Stock</TabsTrigger>
-          <TabsTrigger value="customers">Customers</TabsTrigger>
-          <TabsTrigger value="insights">Insights</TabsTrigger>
+          <TabsTrigger value="sales">Sales</TabsTrigger>
+          <TabsTrigger value="profitability">Profitability</TabsTrigger>
+          <TabsTrigger value="inventory">Inventory & Ageing</TabsTrigger>
+          <TabsTrigger value="purchasing">Purchasing & Vendors</TabsTrigger>
+          <TabsTrigger value="cash">Cash & Receivables</TabsTrigger>
+          <TabsTrigger value="gst">GST</TabsTrigger>
+          <TabsTrigger value="data_health">Data Health</TabsTrigger>
         </TabsList>
 
-        {/* ── OVERVIEW TAB ── */}
         <TabsContent value="overview">
-
-          {/* Revenue metrics */}
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-            Revenue metrics
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <MetricCard
-              title="MTD Revenue"
-              value={fmt(mtdRevenue)}
-              sub={`${mtdSales.length} units sold`}
-              icon={IndianRupee}
-              color="bg-blue-600"
-              growth={pct(revenueGrowth)}
-            />
-            <MetricCard
-              title="LMTD Revenue"
-              value={fmt(lmtdRevenue)}
-              sub={`${lmtdSales.length} units sold`}
-              icon={IndianRupee}
-              color="bg-gray-500"
-            />
-            <MetricCard
-              title="YTD Revenue"
-              value={fmt(ytdRevenue)}
-              sub={`${ytdSales.length} units sold`}
-              icon={TrendingUp}
-              color="bg-green-600"
-              growth={pct(ytdGrowth)}
-            />
-            <MetricCard
-              title="LYTD Revenue"
-              value={fmt(lytdRevenue)}
-              sub={`${lytdSales.length} units sold`}
-              icon={TrendingUp}
-              color="bg-gray-500"
-            />
-          </div>
-
-          {/* Profit metrics */}
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-            Profit metrics
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <MetricCard
-              title="MTD Gross Profit"
-              value={fmt(mtdGross)}
-              sub="Revenue minus purchase cost"
-              icon={TrendingUp}
-              color="bg-emerald-600"
-            />
-            <MetricCard
-              title="MTD Net Profit"
-              value={fmt(mtdNet)}
-              sub="After all expenses"
-              icon={IndianRupee}
-              color={mtdNet >= 0 ? 'bg-emerald-600' : 'bg-red-600'}
-            />
-            <MetricCard
-              title="YTD Gross Profit"
-              value={fmt(ytdGross)}
-              sub="Revenue minus purchase cost"
-              icon={TrendingUp}
-              color="bg-emerald-600"
-            />
-            <MetricCard
-              title="YTD Net Profit"
-              value={fmt(ytdNet)}
-              sub="After all expenses"
-              icon={IndianRupee}
-              color={ytdNet >= 0 ? 'bg-emerald-600' : 'bg-red-600'}
-            />
-          </div>
-
-          {/* Stock overview */}
-          <p className="text-xs font-medium text-gray-400 uppercase tracking-wide mb-3">
-            Stock overview
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-            <MetricCard
-              title="Ready for Sale"
-              value={stockForSale.length.toString()}
-              sub={`Value: ${fmt(stockForSale.reduce((s, p) => s + (p.selling_price || 0), 0))}`}
-              icon={Package}
-              color="bg-green-600"
-            />
-            <MetricCard
-              title="In Stock"
-              value={inStock.length.toString()}
-              sub={`Cost: ${fmt(inStock.reduce((s, p) => s + (p.total_price || 0), 0))}`}
-              icon={Package}
-              color="bg-orange-500"
-            />
-            <MetricCard
-              title="Total Purchases"
-              value={allPurchases.length.toString()}
-              sub="All time"
-              icon={ShoppingCart}
-              color="bg-blue-600"
-            />
-            <MetricCard
-              title="Total Sales"
-              value={allSales.length.toString()}
-              sub="All time"
-              icon={BarChart3}
-              color="bg-purple-600"
-            />
-          </div>
-
-          {/* Monthly trend chart */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Monthly Revenue vs Gross Profit (last 12 months)
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={monthlyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />
-                  <Tooltip formatter={(value: any) => `₹${Number(value).toLocaleString('en-IN')}`} />
-                  <Legend />
-                  <Bar dataKey="revenue" name="Revenue" fill="#2563eb" radius={[4,4,0,0]} />
-                  <Bar dataKey="profit" name="Gross Profit" fill="#16a34a" radius={[4,4,0,0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
+          <OverviewTab kpis={kpis} timeseries={timeseries} loading={loading} includeFinancials={includeFinancials} />
         </TabsContent>
-
-        {/* ── REVENUE TAB ── */}
-        <TabsContent value="revenue">
-
-          {/* Units trend */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Units Sold per Month
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ResponsiveContainer width="100%" height={240}>
-                <LineChart data={monthlyTrend}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                  <XAxis dataKey="name" tick={{ fontSize: 12 }} />
-                  <YAxis tick={{ fontSize: 12 }} />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="units"
-                    name="Units Sold"
-                    stroke="#2563eb"
-                    strokeWidth={2}
-                    dot={{ r: 4 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            </CardContent>
-          </Card>
-
-          {/* Brand performance table */}
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="text-sm font-medium">
-                Revenue by Brand
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Units Sold</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Revenue</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Gross Profit</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Avg Margin</th>
-                   </tr>
-                </thead>
-                <tbody>
-                  {brandData.map((b, i) => (
-                    <tr key={b.brand} className="border-b border-gray-100 hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium flex items-center gap-2">
-                        {i === 0 && <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />}
-                        {b.brand}
-                      </td>
-                      <td className="px-4 py-3">{b.units}</td>
-                      <td className="px-4 py-3 font-medium">{fmt(b.revenue)}</td>
-                      <td className="px-4 py-3 text-green-600">{fmt(b.profit)}</td>
-                      <td className="px-4 py-3">
-                        <Badge
-                          className={
-                            b.revenue > 0 && (b.profit / b.revenue) > 0.15
-                              ? 'bg-green-100 text-green-700'
-                              : 'bg-orange-100 text-orange-700'
-                          }
-                        >
-                          {b.revenue > 0 ? ((b.profit / b.revenue) * 100).toFixed(1) : 0}%
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
-                  {brandData.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="text-center py-8 text-gray-400">
-                        No sales data yet
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </CardContent>
-          </Card>
-
-          {/* Sale type split */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Cash vs GST Sales</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={saleTypeSplit}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name, value }) => `${name}: ${value}`}
-                    >
-                      {saleTypeSplit.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i]} />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm font-medium">Expense Breakdown</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ResponsiveContainer width="100%" height={200}>
-                  <PieChart>
-                    <Pie
-                      data={expenseByType}
-                      cx="50%"
-                      cy="50%"
-                      innerRadius={50}
-                      outerRadius={80}
-                      dataKey="value"
-                      label={({ name }) => name}
-                    >
-                      {expenseByType.map((_, i) => (
-                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value: any) => fmt(Number(value))} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
-          </div>
-
+        <TabsContent value="sales">
+          <SalesTab period={period} active={activeTab === 'sales'} />
         </TabsContent>
+        <TabsContent value="profitability">
+          <ProfitabilityTab period={period} active={activeTab === 'profitability'} includeFinancials={includeFinancials} cur={cur} />
+        </TabsContent>
+        <TabsContent value="inventory">
+          <InventoryTab active={activeTab === 'inventory'} includeFinancials={includeFinancials} />
+        </TabsContent>
+        <TabsContent value="purchasing">
+          <PurchasingTab period={period} active={activeTab === 'purchasing'} includeFinancials={includeFinancials} />
+        </TabsContent>
+        <TabsContent value="cash">
+          <CashTab active={activeTab === 'cash'} />
+        </TabsContent>
+        <TabsContent value="gst">
+          <GstTab period={period} active={activeTab === 'gst'} />
+        </TabsContent>
+        <TabsContent value="data_health">
+          <DataHealthTab active={activeTab === 'data_health'} />
+        </TabsContent>
+      </Tabs>
+    </div>
+  )
+}
 
-        {/* ── STOCK TAB ── */}
-        <TabsContent value="stock">
+// ── Overview ──────────────────────────────────────────────────────────
+function OverviewTab({ kpis, timeseries, loading, includeFinancials }: any) {
+  const cur = kpis?.current
+  if (loading || !cur) return <p className="text-sm text-gray-500">Loading…</p>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Total Stock Value</p>
-                <p className="text-2xl font-semibold mt-1">
-                  {fmt([...inStock, ...stockForSale].reduce((s, p) => s + (p.selling_price || 0), 0))}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">At selling price</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Total Cost in Stock</p>
-                <p className="text-2xl font-semibold mt-1">
-                  {fmt([...inStock, ...stockForSale].reduce((s, p) => s + (p.total_price || 0), 0))}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">Money tied up</p>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="pt-6">
-                <p className="text-xs text-gray-500 uppercase tracking-wide">Potential Profit</p>
-                <p className="text-2xl font-semibold text-green-600 mt-1">
-                  {fmt([...inStock, ...stockForSale].reduce((s, p) =>
-                    s + ((p.selling_price || 0) - (p.total_price || 0)), 0))}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">If all stock sold today</p>
-              </CardContent>
-            </Card>
-          </div>
+  const tiles = [
+    { title: 'Revenue', value: fmt(cur.revenue_incl), sub: kpis.revenue_growth_pct !== undefined ? pct(kpis.revenue_growth_pct) + ' vs prior period' : undefined, icon: TrendingUp, color: 'text-green-600', bg: 'bg-green-50' },
+    { title: 'Units Sold', value: cur.units, sub: `${cur.order_count} orders`, icon: Package, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { title: 'Collections', value: fmt(cur.collections), sub: `${fmt(cur.outstanding)} outstanding`, icon: IndianRupee, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { title: 'New Customers', value: cur.new_customers, sub: `${cur.repeat_customers} repeat`, icon: Users, color: 'text-pink-600', bg: 'bg-pink-50' },
+  ]
+  if (includeFinancials) {
+    tiles.push({
+      title: 'Gross Margin (costed units)',
+      value: fmt(cur.gross_margin_known),
+      sub: `Cost coverage: ${cur.cost_coverage_pct ?? '—'}% of unit sales`,
+      icon: cur.gross_margin_known >= 0 ? TrendingUp : TrendingDown,
+      color: 'text-purple-600', bg: 'bg-purple-50',
+    })
+  }
 
-          {/* Stock aging table */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-orange-500" />
-                Stock Aging Report
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-gray-200 bg-gray-50">
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Asset No.</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Brand</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Description</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Days in Stock</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Cost</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Selling Price</th>
-                      <th className="text-left px-4 py-3 font-medium text-gray-600">Potential Profit</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {stockAging.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="text-center py-8 text-gray-400">
-                          No stock found
-                        </td>
-                      </tr>
-                    ) : (
-                      stockAging.map((p) => (
-                        <tr key={p.id} className="border-b border-gray-100 hover:bg-gray-50">
-                          <td className="px-4 py-3 font-medium text-blue-600">{p.asset_number}</td>
-                          <td className="px-4 py-3">{p.brand}</td>
-                          <td className="px-4 py-3 text-gray-600 max-w-[180px] truncate">
-                            {p.asset_description}
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge
-                              className={
-                                p.stock_status === 'Ready for Sale'
-                                  ? 'bg-green-100 text-green-700'
-                                  : 'bg-orange-100 text-orange-700'
-                              }
-                            >
-                              {p.stock_status}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Badge
-                              className={
-                                p.daysInStock > 60
-                                  ? 'bg-red-100 text-red-700'
-                                  : p.daysInStock > 30
-                                  ? 'bg-orange-100 text-orange-700'
-                                  : 'bg-green-100 text-green-700'
-                              }
-                            >
-                              {p.daysInStock}d
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3">{fmt(p.total_price)}</td>
-                          <td className="px-4 py-3 text-green-600 font-medium">
-                            {fmt(p.selling_price)}
-                          </td>
-                          <td className="px-4 py-3 font-medium">
-                            {fmt(p.potentialProfit)}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {tiles.map((t) => (
+          <Card key={t.title}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-gray-500">{t.title}</CardTitle>
+                <div className={`${t.bg} p-2 rounded-lg`}><t.icon className={`h-4 w-4 ${t.color}`} /></div>
               </div>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xl font-semibold text-gray-900">{t.value}</p>
+              {t.sub && <p className="text-xs text-gray-400 mt-1">{t.sub}</p>}
             </CardContent>
           </Card>
+        ))}
+      </div>
 
-        </TabsContent>
+      {includeFinancials && cur.cost_coverage_pct !== null && cur.cost_coverage_pct < 50 && (
+        <div className="flex items-start gap-2 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>
+            Only {cur.cost_coverage_pct}% of unit sales in this period have a known cost — margin here reflects the costed
+            subset only, not the full picture. See the Data Health tab and Profitability tab to close the gap.
+          </span>
+        </div>
+      )}
 
-        {/* ── CUSTOMERS TAB ── */}
-        <TabsContent value="customers">
+      {timeseries && timeseries.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Daily Revenue{includeFinancials ? ' & Known Margin' : ''}</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={timeseries}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} />
+                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+                <Tooltip formatter={(v: any) => fmt(Number(v))} labelFormatter={(d) => new Date(d).toLocaleDateString('en-IN')} />
+                <Bar dataKey="revenue_incl" name="Revenue" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                {includeFinancials && <Line type="monotone" dataKey="gross_margin_known" name="Known Margin" stroke="#16a34a" strokeWidth={2} dot={false} />}
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
 
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-medium flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                Top 10 Customers by Revenue
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
+// ── Sales ─────────────────────────────────────────────────────────────
+function SalesTab({ period, active }: { period: Period; active: boolean }) {
+  const [byBrand, setByBrand] = useState<any[] | null>(null)
+  const [byStaff, setByStaff] = useState<any[] | null>(null)
+  const [byEntity, setByEntity] = useState<any[] | null>(null)
+  const [byType, setByType] = useState<any[] | null>(null)
+  const [topCustomers, setTopCustomers] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    if (!active) return
+    const p = { from: period.from, to: period.to }
+    getReport('breakdown', { ...p, dimension: 'brand', limit: '10' }).then(setByBrand)
+    getReport('breakdown', { ...p, dimension: 'staff', limit: '10' }).then(setByStaff)
+    getReport('breakdown', { ...p, dimension: 'entity', limit: '5' }).then(setByEntity)
+    getReport('breakdown', { ...p, dimension: 'sale_type', limit: '5' }).then(setByType)
+    getReport('breakdown', { ...p, dimension: 'customer', limit: '10' }).then(setTopCustomers)
+  }, [active, period.from, period.to])
+
+  return (
+    <div className="grid md:grid-cols-2 gap-6">
+      <BreakdownCard title="Revenue by Brand" rows={byBrand} />
+      <BreakdownCard title="Revenue by Staff" rows={byStaff} />
+      <BreakdownCard title="Revenue by Entity" rows={byEntity} />
+      <ChartPie title="GST vs Cash Split" rows={byType} valueKey="units" />
+      <BreakdownCard title="Top Customers" rows={topCustomers} className="md:col-span-2" />
+    </div>
+  )
+}
+
+function BreakdownCard({ title, rows, className }: { title: string; rows: any[] | null; className?: string }) {
+  return (
+    <Card className={className}>
+      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardContent>
+        {!rows ? <p className="text-sm text-gray-500">Loading…</p> : rows.length === 0 ? <p className="text-sm text-gray-500">No data for this period.</p> : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">Label</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Revenue</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Units</th>
+                  {'gross_margin_known' in (rows[0] || {}) && <th className="text-right px-3 py-2 font-medium text-gray-500">Margin (costed)</th>}
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2">{r.label}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.revenue_incl)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r.units}</td>
+                    {'gross_margin_known' in r && <td className="px-3 py-2 text-right tabular-nums">{fmt(r.gross_margin_known)}</td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+function ChartPie({ title, rows, valueKey }: { title: string; rows: any[] | null; valueKey: string }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardContent>
+        {!rows ? <p className="text-sm text-gray-500">Loading…</p> : rows.length === 0 ? <p className="text-sm text-gray-500">No data.</p> : (
+          <ResponsiveContainer width="100%" height={220}>
+            <PieChart>
+              <Pie data={rows} dataKey={valueKey} nameKey="label" outerRadius={80} label={(e: any) => `${e.label}: ${e[valueKey]}`}>
+                {rows.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+              </Pie>
+              <Tooltip />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
+// ── Profitability ────────────────────────────────────────────────────
+function ProfitabilityTab({ period, active, includeFinancials, cur }: { period: Period; active: boolean; includeFinancials: boolean; cur: any }) {
+  const [byCategory, setByCategory] = useState<any[] | null>(null)
+
+  useEffect(() => {
+    if (!active) return
+    getReport('breakdown', { from: period.from, to: period.to, dimension: 'category', limit: '15' }).then(setByCategory)
+  }, [active, period.from, period.to])
+
+  if (!includeFinancials) {
+    return <p className="text-sm text-gray-500">Margin figures are owner-only.</p>
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Cost Coverage</CardTitle></CardHeader>
+          <CardContent>
+            <p className="text-xl font-semibold text-gray-900">{cur?.cost_coverage_pct ?? '—'}%</p>
+            <p className="text-xs text-gray-400 mt-1">{cur?.unit_sales_costed ?? 0} of {cur?.unit_sales_total ?? 0} unit sales costed</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Revenue (costed)</CardTitle></CardHeader>
+          <CardContent><p className="text-xl font-semibold text-gray-900">{fmt(cur?.revenue_of_costed)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">COGS (known)</CardTitle></CardHeader>
+          <CardContent><p className="text-xl font-semibold text-gray-900">{fmt(cur?.cogs_known)}</p></CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">Gross Margin (known)</CardTitle></CardHeader>
+          <CardContent><p className="text-xl font-semibold text-gray-900">{fmt(cur?.gross_margin_known)}</p></CardContent>
+        </Card>
+      </div>
+
+      <BreakdownCard title="Margin by Category (costed units only)" rows={byCategory} />
+
+      <Card className="border-amber-200">
+        <CardHeader><CardTitle className="text-base flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-amber-600" /> Sold units awaiting a cost</CardTitle></CardHeader>
+        <CardContent>
+          <p className="text-sm text-gray-600">
+            Every sale in this period without a recoverable cost is excluded from the margin figures above rather
+            than treated as zero cost. Attach a Purchase Order to these units — from Stock → the unit → Attach to
+            PO — to bring them into margin reporting.
+          </p>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ── Inventory ─────────────────────────────────────────────────────────
+function InventoryTab({ active, includeFinancials }: { active: boolean; includeFinancials: boolean }) {
+  const [data, setData] = useState<any>(null)
+
+  useEffect(() => {
+    if (!active) return
+    getReport('inventory').then(setData)
+  }, [active])
+
+  if (!data) return <p className="text-sm text-gray-500">Loading…</p>
+  const u = data.units
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+        <StatTile label="Sellable" value={u.sellable_count} />
+        <StatTile label="On Hand (pre-sale)" value={u.on_hand_count} />
+        <StatTile label="QC Pending" value={u.qc_pending_count} />
+        <StatTile label="Faulty" value={u.faulty_count} />
+        <StatTile label="Sold, no sale record" value={u.sold_without_sale_row} warn={u.sold_without_sale_row > 0} />
+        {includeFinancials && <StatTile label="Stock Value (at cost)" value={fmt(u.stock_value_at_cost)} sub={`${u.stock_value_costed_count} units costed`} />}
+      </div>
+
+      {data.ageing && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Stock Ageing</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={data.ageing}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
+                <YAxis tick={{ fontSize: 12 }} />
+                <Tooltip />
+                <Bar dataKey="count" fill="#ea580c" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      {data.accessories_attention?.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Accessories Needing Attention</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto rounded-md border">
               <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-200 bg-gray-50">
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">#</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Customer</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Units Bought</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Total Revenue</th>
-                    <th className="text-left px-4 py-3 font-medium text-gray-600">Avg per Unit</th>
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-500">SKU</th>
+                    <th className="text-left px-3 py-2 font-medium text-gray-500">Category</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">In Stock</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">Needs PO</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {customerData.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="text-center py-8 text-gray-400">
-                        No sales data yet
-                      </td>
+                  {data.accessories_attention.slice(0, 25).map((a: any) => (
+                    <tr key={a.sku_id} className="border-t">
+                      <td className="px-3 py-2">{a.full_sku_code}</td>
+                      <td className="px-3 py-2">{a.category}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{a.quantity_in_stock}{a.low_stock && <Badge variant="destructive" className="ml-2 text-xs">Low</Badge>}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{a.needs_po_qty}</td>
                     </tr>
-                  ) : (
-                    customerData.map((c, i) => (
-                      <tr key={c.customer} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-3 text-gray-400">{i + 1}</td>
-                        <td className="px-4 py-3 font-medium flex items-center gap-2">
-                          {i === 0 && <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />}
-                          {c.customer}
-                        </td>
-                        <td className="px-4 py-3">{c.units}</td>
-                        <td className="px-4 py-3 font-medium text-blue-600">
-                          {fmt(c.revenue)}
-                        </td>
-                        <td className="px-4 py-3 text-gray-600">
-                          {fmt(c.units > 0 ? c.revenue / c.units : 0)}
-                        </td>
-                      </tr>
-                    ))
-                  )}
+                  ))}
                 </tbody>
               </table>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  )
+}
 
-        </TabsContent>
+function StatTile({ label, value, sub, warn }: { label: string; value: any; sub?: string; warn?: boolean }) {
+  return (
+    <Card className={warn ? 'border-amber-300' : undefined}>
+      <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-gray-500">{label}</CardTitle></CardHeader>
+      <CardContent>
+        <p className={`text-xl font-semibold ${warn ? 'text-amber-700' : 'text-gray-900'}`}>{value}</p>
+        {sub && <p className="text-xs text-gray-400 mt-1">{sub}</p>}
+      </CardContent>
+    </Card>
+  )
+}
 
-        {/* ── INSIGHTS TAB ── */}
-        <TabsContent value="insights">
+// ── Purchasing & Vendors ─────────────────────────────────────────────
+function PurchasingTab({ period, active, includeFinancials }: { period: Period; active: boolean; includeFinancials: boolean }) {
+  const [byVendor, setByVendor] = useState<any[] | null>(null)
+  const [byCategory, setByCategory] = useState<any[] | null>(null)
 
-          <div className="space-y-4">
+  useEffect(() => {
+    if (!active) return
+    getReport('breakdown', { from: period.from, to: period.to, dimension: 'vendor', limit: '15' }).then(setByVendor)
+  }, [active, period.from, period.to])
 
-            {/* Slow moving stock alert */}
-            {stockAging.filter(p => p.daysInStock > 45).length > 0 && (
-              <Card className="border-orange-200">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2 text-orange-700">
-                    <AlertTriangle className="h-4 w-4" />
-                    Slow Moving Stock Alert
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600 mb-3">
-                    {stockAging.filter(p => p.daysInStock > 45).length} items
-                    have been in stock for more than 45 days.
-                    Used electronics depreciate — consider a price reduction to move them faster.
-                  </p>
-                  <div className="space-y-2">
-                    {stockAging.filter(p => p.daysInStock > 45).slice(0, 5).map(p => (
-                      <div key={p.id} className="flex items-center justify-between bg-orange-50 rounded-lg px-3 py-2 text-sm">
-                        <span className="font-medium">{p.asset_number} — {p.brand}</span>
-                        <Badge className="bg-orange-100 text-orange-700">{p.daysInStock} days</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </CardContent>
-              </Card>
-            )}
+  if (!includeFinancials) return <p className="text-sm text-gray-500">Purchasing figures are owner-only.</p>
 
-            {/* Best performing brand insight */}
-            {brandData.length > 0 && (
-              <Card className="border-green-200">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2 text-green-700">
-                    <Star className="h-4 w-4" />
-                    Best Performing Brand
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">
-                    <span className="font-semibold text-gray-900">{brandData[0].brand}</span> is
-                    your top brand with {fmt(brandData[0].revenue)} in revenue
-                    across {brandData[0].units} units sold.
-                    Gross margin: {brandData[0].revenue > 0
-                      ? ((brandData[0].profit / brandData[0].revenue) * 100).toFixed(1)
-                      : 0}%.
-                    Prioritise sourcing more {brandData[0].brand} stock.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Spend by Vendor</CardTitle></CardHeader>
+        <CardContent>
+          {!byVendor ? <p className="text-sm text-gray-500">Loading…</p> : byVendor.length === 0 ? <p className="text-sm text-gray-500">No purchases in this period.</p> : (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-gray-50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-gray-500">Vendor</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">Spend</th>
+                    <th className="text-right px-3 py-2 font-medium text-gray-500">Units</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {byVendor.map((v: any, i: number) => (
+                    <tr key={i} className="border-t">
+                      <td className="px-3 py-2">{v.label}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{fmt(v.spend)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{v.units}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
-            {/* Revenue growth insight */}
-            <Card className={Number(revenueGrowth) >= 0 ? 'border-green-200' : 'border-red-200'}>
-              <CardHeader className="pb-2">
-                <CardTitle className={`text-sm font-medium flex items-center gap-2 ${Number(revenueGrowth) >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                  {Number(revenueGrowth) >= 0
-                    ? <TrendingUp className="h-4 w-4" />
-                    : <TrendingDown className="h-4 w-4" />
-                  }
-                  Month on Month Revenue Trend
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  This month you have earned{' '}
-                  <span className="font-semibold text-gray-900">{fmt(mtdRevenue)}</span> vs{' '}
-                  <span className="font-semibold text-gray-900">{fmt(lmtdRevenue)}</span> last month.
-                  That is a{' '}
-                  <span className={`font-semibold ${Number(revenueGrowth) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {Number(revenueGrowth) >= 0 ? '+' : ''}{revenueGrowth}%
-                  </span>{' '}
-                  {Number(revenueGrowth) >= 0 ? 'growth' : 'decline'}.
-                  {Number(revenueGrowth) < 0 && ' Focus on clearing ready-for-sale stock this month.'}
-                  {Number(revenueGrowth) >= 20 && ' Excellent growth! Consider sourcing more inventory.'}
-                </p>
-              </CardContent>
-            </Card>
+// ── Cash & Receivables ───────────────────────────────────────────────
+function CashTab({ active }: { active: boolean }) {
+  const [data, setData] = useState<any>(null)
 
-            {/* Net profit insight */}
-            <Card className={mtdNet >= 0 ? 'border-green-200' : 'border-red-200'}>
-              <CardHeader className="pb-2">
-                <CardTitle className={`text-sm font-medium flex items-center gap-2 ${mtdNet >= 0 ? 'text-green-700' : 'text-red-700'}`}>
-                  <IndianRupee className="h-4 w-4" />
-                  Net Profit Health
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-gray-600">
-                  This month your gross profit is{' '}
-                  <span className="font-semibold text-gray-900">{fmt(mtdGross)}</span> and
-                  total expenses are{' '}
-                  <span className="font-semibold text-gray-900">{fmt(mtdExpenses)}</span>,
-                  leaving a net profit of{' '}
-                  <span className={`font-semibold ${mtdNet >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                    {fmt(mtdNet)}
-                  </span>.
-                  {mtdNet < 0 && ' Your expenses exceed your gross profit this month. Review your expense categories.'}
-                  {mtdNet >= 0 && mtdGross > 0 &&
-                    ` Net margin: ${((mtdNet / mtdRevenue) * 100).toFixed(1)}%.`
-                  }
-                </p>
-              </CardContent>
-            </Card>
+  useEffect(() => {
+    if (!active) return
+    getReport('receivables').then(setData)
+  }, [active])
 
-            {/* Top customer insight */}
-            {customerData.length > 0 && (
-              <Card className="border-blue-200">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium flex items-center gap-2 text-blue-700">
-                    <Users className="h-4 w-4" />
-                    Top Customer Insight
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600">
-                    Your top customer is{' '}
-                    <span className="font-semibold text-gray-900">{customerData[0].customer}</span>{' '}
-                    with {fmt(customerData[0].revenue)} in total purchases
-                    across {customerData[0].units} units.
-                    They represent{' '}
-                    <span className="font-semibold text-gray-900">
-                      {ytdRevenue > 0
-                        ? ((customerData[0].revenue / ytdRevenue) * 100).toFixed(1)
-                        : 0}%
-                    </span>{' '}
-                    of your total revenue. Nurture this relationship.
-                  </p>
-                </CardContent>
-              </Card>
-            )}
+  if (!data) return <p className="text-sm text-gray-500">Loading…</p>
 
+  return (
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Receivables Ageing</CardTitle></CardHeader>
+        <CardContent>
+          <ResponsiveContainer width="100%" height={220}>
+            <BarChart data={data.by_bucket}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="bucket" tick={{ fontSize: 12 }} />
+              <YAxis tick={{ fontSize: 12 }} tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`} />
+              <Tooltip formatter={(v: any) => fmt(Number(v))} />
+              <Bar dataKey="outstanding" fill="#dc2626" radius={[4, 4, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader><CardTitle className="text-base">Top Outstanding Customers</CardTitle></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">Customer</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Outstanding</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Sales</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Oldest (days)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.top_debtors.map((d: any, i: number) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2">{d.customer_name}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(d.outstanding)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{d.sales_count}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{d.oldest_days}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
-        </TabsContent>
+// ── GST ───────────────────────────────────────────────────────────────
+function GstTab({ period, active }: { period: Period; active: boolean }) {
+  const [data, setData] = useState<any>(null)
 
-      </Tabs>
+  useEffect(() => {
+    if (!active) return
+    getReport('gst_summary', { from: period.from, to: period.to }).then(setData)
+  }, [active, period.from, period.to])
+
+  if (!data) return <p className="text-sm text-gray-500">Loading…</p>
+
+  return (
+    <div className="space-y-6">
+      <Card className="border-amber-200">
+        <CardContent className="pt-6 flex items-center justify-between">
+          <span className="text-sm text-gray-700">GST sales not yet invoiced in this period</span>
+          <Badge variant={data.gst_sales_not_invoiced > 0 ? 'destructive' : 'secondary'}>{data.gst_sales_not_invoiced}</Badge>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardHeader><CardTitle className="text-base">Output GST by Month & Entity</CardTitle></CardHeader>
+        <CardContent>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">Month</th>
+                  <th className="text-left px-3 py-2 font-medium text-gray-500">Entity</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Taxable Value</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">GST</th>
+                  <th className="text-right px-3 py-2 font-medium text-gray-500">Cash Revenue</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.by_month_entity.map((r: any, i: number) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2">{new Date(r.month).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}</td>
+                    <td className="px-3 py-2">{r.entity}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.taxable_value)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.gst)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{fmt(r.cash_revenue)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+// ── Data Health ───────────────────────────────────────────────────────
+const ISSUE_LABELS: Record<string, string> = {
+  sold_assets_without_sale_row: 'Sold assets with no matching sale record',
+  sales_with_unknown_cogs: 'Unit sales with no recoverable cost',
+  skus_without_base_cost: 'SKUs with no base cost set',
+  receipts_without_unit_price: 'Stock receipts with no unit price',
+  sales_year_month_mismatch: 'Sales with inconsistent year/month fields',
+  sales_without_asset_or_accessory_link: 'Sales not linked to any unit or accessory',
+  po_items_without_price: 'PO line items with no unit price',
+}
+
+function DataHealthTab({ active }: { active: boolean }) {
+  const [data, setData] = useState<Record<string, number> | null>(null)
+
+  useEffect(() => {
+    if (!active) return
+    getReport('data_health').then(setData)
+  }, [active])
+
+  if (!data) return <p className="text-sm text-gray-500">Loading…</p>
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-gray-500 mb-4">
+        These are exactly the gaps that make some numbers elsewhere in Reports partial rather than complete —
+        closing them (attaching POs, pricing receipts) directly raises Cost Coverage %.
+      </p>
+      {Object.entries(data).map(([issue, count]) => (
+        <Card key={issue}>
+          <CardContent className="pt-6 flex items-center justify-between">
+            <span className="text-sm text-gray-700">{ISSUE_LABELS[issue] || issue}</span>
+            <Badge variant={count > 0 ? 'destructive' : 'secondary'}>{count}</Badge>
+          </CardContent>
+        </Card>
+      ))}
     </div>
   )
 }

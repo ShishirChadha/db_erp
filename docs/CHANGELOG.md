@@ -6,6 +6,66 @@ the top. This is the **one file to check** for "what changed and when" — see
 
 ---
 
+## 2026-08-29 — "DB" can now answer questions (Phase 1)
+
+`⌘K` anywhere in the dashboard opens **Ask DB** — type a question and get an
+answer in milliseconds, no waiting, no model "thinking." This is the actual
+advisor feature landing on top of yesterday's Bible foundation, and it's
+still built with **zero AI, zero recurring cost**, on purpose — every
+question in scope (a report number, a specific record, "how do I...", "where
+is...") is something the app already knows precisely, so a fast lookup beats
+a model at both speed and correctness.
+
+- **"revenue this month"**, **"receivables"**, **"gst last fortnight"** — pulls
+  straight from the same numbers the Reports page shows, so the two can never
+  disagree.
+- **"DBI2026-681"**, an asset number, a serial number — looks the record up
+  and shows a summary card, respecting exactly the same cost/vendor
+  visibility rules as everywhere else (an employee never sees a cost figure
+  here that they wouldn't see on the Stock page).
+- **"how do I sell a laptop"** — pulls the exact steps from the internal
+  manual.
+- **"where is invoices"** — tells you the page and whether you can open it.
+- Every question is logged (who asked, what matched) so unanswered questions
+  become a visible backlog of what to teach DB next, rather than silently
+  going nowhere.
+
+## 2026-08-29 — The Bible (Phase 0 of "DB", the internal advisor)
+
+A living, versioned manual for the ERP — `docs/bible/**` — plus the tooling
+that keeps it from going stale, which is the part that matters. This is the
+foundation for "DB," a planned internal answer layer (revenue/reports,
+step-by-step how-tos, "where is X") that will read from this same manual —
+built with **no LLM and no external service**: everything DB answers is a
+retrieval problem, not a reasoning one, so a deterministic router is faster
+and can't hallucinate a number. That layer is Phase 1+, not yet built.
+
+- **23 hand-written chapters** — 2 rules (the business invariants from
+  `CLAUDE.md`, expanded with worked examples; roles & permissions), 12 module
+  overviews (Purchasing, Inventory/SKU, Live Stock & QC, Sales & Invoicing,
+  Accessories, Repairs/Replacements/RMA, Customers & Vendors, Finance/GST/
+  Reports, Activities & Notifications, Website, Settings & Admin, Backup &
+  Audit), 9 step-by-step processes (selling a unit, receiving stock, QC'ing a
+  unit, attaching units to a PO, raising a GST invoice, recording a part
+  payment, opening a repair job, RMA, publishing a SKU to the website).
+- **8 auto-generated reference appendices** (`docs/bible/generated/`, never
+  hand-edited) built live from the actual database and code: full schema
+  (tables/columns/types/FKs/comments), every API route with its auth/role
+  guards, the navigation map, the real permissions matrix, SKU category
+  templates, dropdown option lists, every database function's signature, and
+  every status/enum value actually enforced by a CHECK constraint. These stay
+  accurate by construction — they're generated from live truth, not
+  remembered.
+- **The mechanism that stops this rotting**: `npm run bible:check` maps each
+  chapter's declared source files against what changed and fails loudly (a
+  `pre-push` hook, warn-only) if a chapter wasn't updated alongside its code —
+  replacing "please remember to update the docs" with something that actually
+  catches it. A new `/bible` skill drafts the fix. `npm run bible:sync` pushes
+  chapters into Postgres (full-text search, English + Hinglish) after every
+  build, so what's live can never be older than what's deployed.
+- Two new tables (`kb_chapters`, `kb_chapter_sections`), read-only for every
+  signed-in role, written only by the sync script.
+
 ## 2026-07-23 — Sales, Invoice & Quotation Redesign
 
 The biggest change to date: rebuilt the invoicing system so the ERP can

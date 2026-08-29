@@ -23,6 +23,64 @@ export async function GET(req: NextRequest) {
   const excludeSource = searchParams.get('exclude_source') // optional not-equal, e.g. 'employee_intake'
   const pagination = parsePagination(searchParams, 20)
 
+  // Stat-card counts mode: SQL exact counts instead of fetching+filtering full rows.
+  // The previous approach (StockView.tsx's fetchCounts) fetched every current+sold
+  // row unpaginated and did .length/.filter().length in JS -- silently plateaus at
+  // PostgREST's row cap once a source/status bucket exceeds it. This mirrors the
+  // pattern already used correctly in /api/sku-master's counts=true branch.
+  if (searchParams.get('counts') === 'true') {
+    const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
+    const applySource = (q: any) => {
+      if (source) q = q.eq('source', source)
+      if (excludeSource) q = q.neq('source', excludeSource)
+      return q
+    }
+    const countQuery = (extra: (q: any) => any) =>
+      applySource(extra(supabaseAdmin.from('asset_ledger').select('id', { count: 'exact', head: true })))
+
+    const [totalCurrent, readyForSale, qcPending, totalSold] = await Promise.all([
+      countQuery((q) => q.in('status', CURRENT_STATUSES)),
+      countQuery((q) => q.eq('status', 'ready_for_sale')),
+      countQuery((q) => q.eq('status', 'qc_pending')),
+      countQuery((q) => q.eq('status', 'sold')),
+    ])
+
+    const result: Record<string, number> = {
+      totalCurrent: totalCurrent.count || 0,
+      readyForSale: readyForSale.count || 0,
+      qcPending: qcPending.count || 0,
+      totalSold: totalSold.count || 0,
+    }
+
+    if (isOwner(sessionUser)) {
+      // invoice_finalized isn't a real column -- it's derived at read time from a
+      // join in the row-fetch path below, so "missing invoice" among sold units has
+      // to be counted the same way: sold units whose asset_ledger_id never appears
+      // on a finalized sale. The finalized-sales lookup itself has no `source`
+      // column (that's asset_ledger's), so it's intentionally not source-scoped --
+      // only the outer asset_ledger count is.
+      const { data: finalizedSales } = await supabaseAdmin
+        .from('sales')
+        .select('asset_ledger_id')
+        .eq('finalized', true)
+        .not('asset_ledger_id', 'is', null)
+      const finalizedAssetIds = [...new Set((finalizedSales || []).map((s: any) => s.asset_ledger_id))]
+
+      const [missingPo, missingInvoice] = await Promise.all([
+        countQuery((q) => q.in('status', CURRENT_STATUSES).is('po_id', null)),
+        countQuery((q) =>
+          finalizedAssetIds.length > 0
+            ? q.eq('status', 'sold').not('id', 'in', `(${finalizedAssetIds.join(',')})`)
+            : q.eq('status', 'sold')
+        ),
+      ])
+      result.missingPoCount = missingPo.count || 0
+      result.missingInvoiceCount = missingInvoice.count || 0
+    }
+
+    return NextResponse.json(result)
+  }
+
   // Sort is opt-in -- callers that don't pass it (Sell/Service pickers, RMA,
   // SearchableItemSelect, pending-tasks) keep today's exact asset_number-ascending
   // order, unchanged. Whitelisted to real, single-column, always-populated fields;

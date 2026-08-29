@@ -8,7 +8,7 @@ import { apiFetch } from '@/lib/api-client';
 
 interface Notification {
   id: string;
-  type: 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready';
+  type: 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready' | 'digest';
   actor_name: string | null;
   title: string;
   body: string | null;
@@ -36,6 +36,8 @@ function composeMessage(n: Notification): string {
     case 'overdue':
       return `"${n.title}" is overdue${n.body ? ` (${n.body})` : ''}`;
     case 'backup_ready':
+      return n.body || n.title;
+    case 'digest':
       return n.body || n.title;
     default:
       return n.title;

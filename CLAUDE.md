@@ -69,6 +69,7 @@ This repo is an **npm-workspaces monorepo**: `apps/erp` (this ERP, unchanged beh
 ## Before modifying code
 - Check for an existing table/column/RPC/helper before adding a new one — this schema has accumulated some duplicate/dead mechanisms in the past (see `docs/decisions.md` for what was already cleaned up and why).
 - Check `docs/current-progress.md` for what's already built vs. in progress before starting new work in the Stock/Sales/Repair/Accessories area.
+- `docs/bible/**` is a living internal manual (modules/processes/rules, plus auto-generated schema/routes/nav/permissions reference in `docs/bible/generated/`) — check it for "how does X actually work today" the same way you'd check `docs/project-context.md`. If a change touches a file listed in a chapter's frontmatter `sources`, update that chapter too (or run `/bible` to draft the update) — `npm run bible:check` will otherwise flag it as stale on push. Never hand-edit `docs/bible/generated/**`; it's rebuilt by `npm run bible:generate`.
 
 ## Autonomous development rules
 - Always back up before a schema migration: `supabase db dump --linked -f backups/<date>_<label>_schema_backup.sql` (schema) and `--data-only` (data).

@@ -12,12 +12,23 @@
     "dev:erp": "turbo dev --filter=erp",
     "dev:web": "turbo dev --filter=web",
     "build": "turbo build",
+    "postbuild": "npm run bible:sync",
+    "postinstall": "sh scripts/bible/install-hook.sh || true",
     "lint": "turbo lint",
-    "typecheck": "turbo typecheck"
+    "typecheck": "turbo typecheck",
+    "bible:generate": "tsx scripts/bible/generate.ts",
+    "bible:check": "tsx scripts/bible/check.ts",
+    "bible:sync": "tsx scripts/bible/sync.ts",
+    "bible:install-hook": "sh scripts/bible/install-hook.sh"
   },
   "devDependencies": {
     "turbo": "^2.8.17",
     "typescript": "^5",
-    "vercel": "^58.9.0"
+    "vercel": "^58.9.0",
+    "tsx": "^4.21.0",
+    "js-yaml": "^4.1.1",
+    "glob": "^13.0.6",
+    "minimatch": "^9.0.0",
+    "@types/js-yaml": "^4.0.9"
   }
 }

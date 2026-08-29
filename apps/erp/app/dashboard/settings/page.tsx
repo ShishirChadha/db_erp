@@ -9,6 +9,7 @@ import BusinessProfileManager from '@/components/BusinessProfileManager'
 import TagsManager from '@/components/TagsManager'
 import WebsiteAdminManager from '@/components/WebsiteAdminManager'
 import FieldRedactionManager from '@/components/FieldRedactionManager'
+import DigestsManager from '@/components/DigestsManager'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
 interface AssetCounter {
@@ -33,6 +34,7 @@ const CATEGORIES = [
   { key: 'activity_tags', label: 'Activity Tags' },
   { key: 'website_admin', label: 'Website Admin' },
   { key: 'field_redaction', label: 'Field Redaction' },
+  { key: 'digests', label: 'Digests' },
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']

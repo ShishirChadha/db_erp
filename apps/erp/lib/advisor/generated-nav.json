@@ -1,0 +1,140 @@
+[
+  {
+    "label": "Dashboard",
+    "route": "/dashboard",
+    "pageKey": "dashboard",
+    "ownerOnly": false
+  },
+  {
+    "label": "Pending Tasks",
+    "route": "/dashboard/pending-tasks",
+    "pageKey": "pending_tasks",
+    "ownerOnly": false
+  },
+  {
+    "label": "New Entry",
+    "route": "/dashboard/entry",
+    "pageKey": "new_entry",
+    "ownerOnly": false
+  },
+  {
+    "label": "Accessories",
+    "route": "/dashboard/accessories",
+    "pageKey": "accessories",
+    "ownerOnly": false
+  },
+  {
+    "label": "Purchases > Purchase Orders",
+    "route": "/dashboard/purchase-orders",
+    "ownerOnly": true
+  },
+  {
+    "label": "Purchases > Purchase Invoices",
+    "route": "/dashboard/purchase-invoices",
+    "ownerOnly": true
+  },
+  {
+    "label": "Purchases > OLD Purchase IN",
+    "route": "/dashboard/purchases",
+    "ownerOnly": true
+  },
+  {
+    "label": "Inventory > SKU Master",
+    "route": "/dashboard/sku-master",
+    "pageKey": "sku_master",
+    "ownerOnly": false
+  },
+  {
+    "label": "Inventory > Stock / Assets (Main ERP)",
+    "route": "/dashboard/stock",
+    "pageKey": "stock",
+    "ownerOnly": false
+  },
+  {
+    "label": "Live Stock > Live Stock",
+    "route": "/dashboard/live-stock",
+    "pageKey": "live_stock",
+    "ownerOnly": false
+  },
+  {
+    "label": "Live Stock > Repair Jobs",
+    "route": "/dashboard/repair-jobs",
+    "pageKey": "repair_jobs",
+    "ownerOnly": false
+  },
+  {
+    "label": "Live Stock > Replacement Jobs",
+    "route": "/dashboard/replacement-jobs",
+    "pageKey": "replacement_jobs",
+    "ownerOnly": false
+  },
+  {
+    "label": "Sales > Sales",
+    "route": "/dashboard/sales",
+    "pageKey": "sales",
+    "ownerOnly": false
+  },
+  {
+    "label": "Sales > Invoices",
+    "route": "/dashboard/invoices",
+    "pageKey": "invoices",
+    "ownerOnly": false
+  },
+  {
+    "label": "Sales > Quotations",
+    "route": "/dashboard/quotations",
+    "ownerOnly": true
+  },
+  {
+    "label": "Sales > Price Cockpit",
+    "route": "/dashboard/pricing",
+    "ownerOnly": true
+  },
+  {
+    "label": "Contacts > Customers",
+    "route": "/dashboard/customers",
+    "pageKey": "customers",
+    "ownerOnly": false
+  },
+  {
+    "label": "Contacts > Vendors",
+    "route": "/dashboard/vendors",
+    "ownerOnly": true
+  },
+  {
+    "label": "Service > RMA (Vendor Returns)",
+    "route": "/dashboard/rma",
+    "ownerOnly": true
+  },
+  {
+    "label": "Finance > Expenses",
+    "route": "/dashboard/expenses",
+    "ownerOnly": true
+  },
+  {
+    "label": "Finance > Reports",
+    "route": "/dashboard/reports",
+    "ownerOnly": true
+  },
+  {
+    "label": "Activity Hub",
+    "route": "/dashboard/activities",
+    "pageKey": "activities",
+    "ownerOnly": false
+  },
+  {
+    "label": "Audit Log",
+    "route": "/dashboard/settings/audit-log",
+    "ownerOnly": false
+  },
+  {
+    "label": "Backup",
+    "route": "/dashboard/settings/backup",
+    "ownerOnly": true
+  },
+  {
+    "label": "Settings",
+    "route": "/dashboard/settings",
+    "ownerOnly": true
+  }
+]

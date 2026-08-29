@@ -17,13 +17,15 @@ export interface SendEmailResult {
 }
 
 export interface SendPlainEmailInput {
-  to: string
+  to: string | string[]
   subject: string
   html: string
 }
 
 // No-attachment variant for notification emails (task assigned/commented/mentioned/etc.)
-// -- same config-missing/no-op behavior as sendEmailWithAttachment.
+// -- same config-missing/no-op behavior as sendEmailWithAttachment. `to` accepts an
+// array so a digest can go to multiple recipients (e.g. owner + accountant) in one
+// Resend call -- Resend's API accepts either a string or an array here natively.
 export async function sendEmail(input: SendPlainEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY
   const fromEmail = process.env.RESEND_FROM_EMAIL

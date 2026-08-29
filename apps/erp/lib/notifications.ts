@@ -4,7 +4,11 @@ import { sendEmail } from './email'
 // 'due_soon'/'overdue'/'backup_ready' are inserted directly by pg_cron-driven Postgres
 // functions (scan_activity_due_dates(), generate_backup_snapshot()), not via
 // notify()/notifyMany() -- listed here for type-completeness across the app (e.g. NotificationBell).
-export type NotificationType = 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready'
+// 'digest' is inserted directly by app/api/digests/run/route.ts, also bypassing
+// notify() -- the digest route sends its own rich HTML email as a separate channel
+// (gated by the subscription's own channel toggles), so it doesn't want notify()'s
+// generic plain-text emailBestEffort() firing a second, duller email alongside it.
+export type NotificationType = 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready' | 'digest'
 
 interface NotifyInput {
   recipientId: string
@@ -27,6 +31,7 @@ const TYPE_SUBJECT: Record<NotificationType, string> = {
   due_soon: 'Task due soon',
   overdue: 'Task overdue',
   backup_ready: 'Backup ready', // never sent via notify() -- see comment on NotificationType above
+  digest: 'Report digest', // never sent via notify() -- see comment on NotificationType above
 }
 
 // Best-effort email -- never throws, never blocks the caller. The in-app

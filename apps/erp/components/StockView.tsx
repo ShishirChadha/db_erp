@@ -339,21 +339,21 @@ export default function StockView({
   useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
 
   const fetchCounts = useCallback(async () => {
-    const [currentRes, soldRes] = await Promise.all([
-      apiFetch(`/api/stock?${sourceParam}&status=${CURRENT_STATUSES.join(',')}`),
-      apiFetch(`/api/stock?${sourceParam}&status=sold`),
-    ])
-    const currentData = currentRes.ok ? await currentRes.json() : []
-    const soldData = soldRes.ok ? await soldRes.json() : []
+    // SQL exact counts (see /api/stock's counts=true branch), not full-row fetch
+    // + JS .filter().length -- the latter silently plateaus once a bucket exceeds
+    // PostgREST's row cap, which real intake volume has already gotten close to.
+    const res = await apiFetch(`/api/stock?${sourceParam}&counts=true`)
+    if (!res.ok) return
+    const counts = await res.json()
     setStatCounts({
-      totalCurrent: currentData.length,
-      readyForSale: currentData.filter((a: AssetRow) => a.status === 'ready_for_sale').length,
-      qcPending: currentData.filter((a: AssetRow) => a.status === 'qc_pending').length,
-      totalSold: soldData.length,
+      totalCurrent: counts.totalCurrent || 0,
+      readyForSale: counts.readyForSale || 0,
+      qcPending: counts.qcPending || 0,
+      totalSold: counts.totalSold || 0,
     })
     if (isOwner) {
-      setMissingPoCount(currentData.filter((a: AssetRow) => !a.po_id).length)
-      setMissingInvoiceCount(soldData.filter((a: AssetRow) => !a.invoice_finalized).length)
+      setMissingPoCount(counts.missingPoCount || 0)
+      setMissingInvoiceCount(counts.missingInvoiceCount || 0)
     }
   }, [isOwner, sourceParam])
 

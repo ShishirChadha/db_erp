@@ -27,6 +27,34 @@ export async function GET(req: NextRequest) {
   const voided = searchParams.get('voided') === 'true'
   const pagination = parsePagination(searchParams)
 
+  // Stat-card counts mode: SQL exact counts for the same filters the ledger's stat
+  // cards use (search/payment_status/received_into, never `finalized` -- matches
+  // sales/page.tsx's fetchStats, which deliberately omits it so Pending/Partial/
+  // Awaiting Invoice always count across both finalized states). Replaces an
+  // unpaginated select('*') + JS .filter().length that silently plateaued at
+  // PostgREST's row cap as the ledger grew.
+  if (searchParams.get('counts') === 'true') {
+    const countQuery = (extra: (q: any) => any) => {
+      let q = supabaseAdmin.from('sales').select('id', { count: 'exact', head: true }).eq('is_deleted', voided)
+      if (paymentStatus) q = q.eq('payment_status', paymentStatus)
+      if (receivedInto) q = q.eq('payment_account', receivedInto)
+      if (search) q = q.or(`customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%`)
+      return extra(q)
+    }
+    const [totalSold, pending, partial, awaitingInvoice] = await Promise.all([
+      countQuery((q: any) => q),
+      countQuery((q: any) => q.eq('payment_status', 'pending')),
+      countQuery((q: any) => q.eq('payment_status', 'partial')),
+      countQuery((q: any) => q.eq('finalized', false)),
+    ])
+    return NextResponse.json({
+      totalCount: totalSold.count || 0,
+      pendingCount: pending.count || 0,
+      partialCount: partial.count || 0,
+      awaitingInvoiceCount: awaitingInvoice.count || 0,
+    })
+  }
+
   // Sorting has to happen after enrichment below, not in this query -- several
   // sortable columns (description/RAM/SSD/bundle) are resolved from sku_master
   // post-fetch, not real columns on `sales`. So this always fetches every row

@@ -460,9 +460,9 @@ function SalesLedgerPage() {
   const [showVoided, setShowVoided] = useState(false);
   const [showBatchZoho, setShowBatchZoho] = useState(false);
   // Stat cards (Total Sold / Pending / Partial / Awaiting Invoice) need counts over
-  // every matching sale, not just the current page -- fetched separately, unpaginated,
-  // with the same filters (same pattern StockView.tsx uses for its own stat cards).
-  const [statsSales, setStatsSales] = useState<Sale[]>([]);
+  // every matching sale, not just the current page -- SQL exact counts (see
+  // /api/sales' counts=true branch), same pattern StockView.tsx uses for its own.
+  const [statCounts, setStatCounts] = useState({ totalCount: 0, pendingCount: 0, partialCount: 0, awaitingInvoiceCount: 0 });
   // Defaults to newest-first by Date -- matches the old fixed `order('created_at',
   // {ascending: false})` the API used before sorting became a user-driven param.
   const [sortKey, setSortKey] = useState<string | null>("sale_date");
@@ -560,14 +560,14 @@ function SalesLedgerPage() {
     setLoading(false);
   }, [buildFilterParams, showVoided, page, pageSize, sortKey, sortDir]);
 
-  // Unpaginated fetch, deliberately excluding the awaitingInvoiceOnly-driven
-  // `finalized` filter, purely to source accurate stat-card counts (Pending/Partial/
-  // Awaiting Invoice) across every matching sale independent of that toggle --
-  // matches the pre-pagination behavior where these counts came from the full
-  // (unpaginated) result before the client-side awaitingInvoiceOnly filter applied.
+  // SQL exact counts (see /api/sales' counts=true branch), deliberately excluding
+  // the awaitingInvoiceOnly-driven `finalized` filter so Pending/Partial/Awaiting
+  // Invoice always count across every matching sale independent of that toggle.
   const fetchStats = useCallback(async () => {
-    const res = await apiFetch(`/api/sales?${buildFilterParams(false).toString()}`);
-    setStatsSales(res.ok ? await res.json() : []);
+    const params = buildFilterParams(false);
+    params.set("counts", "true");
+    const res = await apiFetch(`/api/sales?${params.toString()}`);
+    if (res.ok) setStatCounts(await res.json());
   }, [buildFilterParams]);
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
@@ -611,11 +611,9 @@ function SalesLedgerPage() {
   const toggleSelectAll = () => {
     setSelected(prev => prev.size === selectableIds.length ? new Set() : new Set(selectableIds));
   };
-  // Sourced from the unpaginated statsSales fetch -- counts every matching sale,
-  // not just the current page (see fetchStats above).
-  const pendingCount = statsSales.filter(s => s.payment_status === "pending").length;
-  const partialCount = statsSales.filter(s => s.payment_status === "partial").length;
-  const awaitingInvoiceCount = statsSales.filter(s => !s.finalized).length;
+  // Sourced from the SQL counts fetch -- counts every matching sale, not just the
+  // current page (see fetchStats above).
+  const { totalCount, pendingCount, partialCount, awaitingInvoiceCount } = statCounts;
 
   // A combined invoice over the selected sales is either a Zoho recording (all
   // selected are external-mode) or ERP generation (none are) -- mixed selections
@@ -648,7 +646,7 @@ function SalesLedgerPage() {
 
       <StatCardsRow
         cards={[
-          { label: "Total Sold", value: statsSales.length },
+          { label: "Total Sold", value: totalCount },
           {
             label: "Payment Pending",
             value: pendingCount,

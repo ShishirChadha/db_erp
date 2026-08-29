@@ -1,61 +1,16 @@
-import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
 import ReportsClient from './reports-client'
 
+// Reporting rebuild (2026-08-29): this page used to fetch five whole tables
+// (select('*'), no is_deleted filters, no pagination -- silently truncated at
+// PostgREST's row cap) into the browser and reduce() them client-side. It now
+// renders a thin client shell that calls /api/reports, which is backed by the
+// report_* SQL RPCs (single source of truth -- see the reporting-metrics
+// migrations and docs/current-progress.md). No data is fetched here.
 export default async function ReportsPage() {
   const sessionUser = await getCookieSessionUser()
   if (!isOwner(sessionUser)) redirect('/dashboard')
 
-  const supabase = await createClient()
-
-  const now = new Date()
-  const thisMonth = now.getMonth() + 1
-  const thisYear = now.getFullYear()
-  const lastMonth = thisMonth === 1 ? 12 : thisMonth - 1
-  const lastMonthYear = thisMonth === 1 ? thisYear - 1 : thisYear
-  const lastYear = thisYear - 1
-
-  // All sales
-  const { data: allSales } = await supabase
-    .from('sales')
-    .select('*')
-    .order('sale_date', { ascending: true })
-
-  // All purchases
-  const { data: allPurchases } = await supabase
-    .from('purchases')
-    .select('*')
-
-  // All expenses
-  const { data: allExpenses } = await supabase
-    .from('expenses')
-    .select('*')
-
-  // Stock for sale
-  const { data: stockForSale } = await supabase
-    .from('purchases')
-    .select('*')
-    .eq('stock_status', 'Ready for Sale')
-
-  // In stock
-  const { data: inStock } = await supabase
-    .from('purchases')
-    .select('*')
-    .eq('stock_status', 'In Stock')
-
-  return (
-    <ReportsClient
-      allSales={allSales || []}
-      allPurchases={allPurchases || []}
-      allExpenses={allExpenses || []}
-      stockForSale={stockForSale || []}
-      inStock={inStock || []}
-      currentMonth={thisMonth}
-      currentYear={thisYear}
-      lastMonth={lastMonth}
-      lastMonthYear={lastMonthYear}
-      lastYear={lastYear}
-    />
-  )
+  return <ReportsClient />
 }
