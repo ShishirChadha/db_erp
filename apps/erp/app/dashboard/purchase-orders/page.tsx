@@ -21,6 +21,7 @@ interface PurchaseOrder {
   vendor_name: string
   po_status: string
   total_amount: number | null
+  grand_total: number | null
 }
 
 interface Vendor {
@@ -28,7 +29,7 @@ interface Vendor {
   company_name: string
 }
 
-type SortField = 'po_number' | 'po_date' | 'vendor_name' | 'po_status' | 'total_amount'
+type SortField = 'po_number' | 'po_date' | 'vendor_name' | 'po_status' | 'total_amount' | 'grand_total'
 type SortOrder = 'asc' | 'desc'
 
 function PurchaseOrdersPage() {
@@ -220,13 +221,16 @@ function PurchaseOrdersPage() {
                 Status{sortIndicator('po_status')}
               </th>
               <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('total_amount')}>
-                Total{sortIndicator('total_amount')}
+                Total (before GST){sortIndicator('total_amount')}
+              </th>
+              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('grand_total')}>
+                Grand Total (incl. GST){sortIndicator('grand_total')}
               </th>
               <th className="p-2">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y">
-            {sortedOrders.length === 0 && <EmptyTableRow colSpan={7} message="No purchase orders found." />}
+            {sortedOrders.length === 0 && <EmptyTableRow colSpan={8} message="No purchase orders found." />}
             {sortedOrders.map((po, idx) => (
               <tr key={po.id} className="hover:bg-gray-50">
                 <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -235,6 +239,7 @@ function PurchaseOrdersPage() {
                 <td className="p-2">{po.vendor_name}</td>
                 <td className="p-2"><StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge></td>
                 <td className="p-2 text-right tabular-nums">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>
+                <td className="p-2 text-right tabular-nums">{po.grand_total ? `₹${po.grand_total.toFixed(2)}` : '-'}</td>
                 <td className="p-2 space-x-2">
                   <button
                     onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}

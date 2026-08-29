@@ -8,6 +8,7 @@ import RequireOwner from '@/components/RequireOwner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { EditPoItemDialog } from '@/components/EditPoItemDialog'
 import { EditPoVendorDialog } from '@/components/EditPoVendorDialog'
+import { AttachUnitsDialog } from '@/components/AttachUnitsDialog'
 
 interface POItem {
   id: string
@@ -63,6 +64,7 @@ function PODetailPage() {
   const [fungibleReceipts, setFungibleReceipts] = useState<Record<string, number | ''>>({}) // fungible: po_item_id -> qty received now
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingVendor, setEditingVendor] = useState(false)
+  const [attachingUnits, setAttachingUnits] = useState(false)
 
   const fetchPO = async () => {
     setLoading(true)
@@ -202,7 +204,14 @@ function PODetailPage() {
         </div>
       </div>
 
-      <h2 className="text-lg font-semibold mb-2">Line Items</h2>
+      <div className="flex justify-between items-center mb-2">
+        <h2 className="text-lg font-semibold">Line Items</h2>
+        {po.po_status !== 'cancelled' && (
+          <button onClick={() => setAttachingUnits(true)} className="text-sm text-blue-600 underline">
+            + Add Units from Stock
+          </button>
+        )}
+      </div>
       <table className="min-w-full border mb-4 text-sm">
         <thead>
           <tr>
@@ -390,6 +399,14 @@ function PODetailPage() {
           poId={poId}
           currentVendorId={po.vendor_id}
           onClose={() => setEditingVendor(false)}
+          onSaved={fetchPO}
+        />
+      )}
+
+      {attachingUnits && (
+        <AttachUnitsDialog
+          poId={poId}
+          onClose={() => setAttachingUnits(false)}
           onSaved={fetchPO}
         />
       )}
