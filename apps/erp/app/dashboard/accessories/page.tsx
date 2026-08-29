@@ -247,14 +247,21 @@ function ArchiveControl({ sku, onDone }: { sku: AccessorySku; onDone: () => void
 
 // Owner-only: attaches a real vendor/PO/cost to this SKU's still-unattached stock-in
 // movements (mirrors the laptop "attach to PO" flow, but quantity-based -- no asset
-// numbers to mint). Only shown when there's an actual backlog for this SKU.
+// numbers to mint). Only shown when there's an actual backlog for this SKU. Two modes:
+// mint a brand-new PO (original behaviour), or fold this backlog into an existing PO
+// (e.g. the laptop(s) on the same vendor invoice already got their own PO -- this
+// puts the RAM/accessory line on that same PO instead of a second one).
 function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId: string; backlogQty: number; defaultVendorId?: string; onDone: () => void }) {
   const [open, setOpen] = useState(false)
+  const [mode, setMode] = useState<'new' | 'existing'>('new')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
   const [poDate, setPoDate] = useState(new Date().toISOString().slice(0, 10))
   const [costPrice, setCostPrice] = useState<number | ''>('')
   const [gstPercentage, setGstPercentage] = useState<number>(18)
+  const [poSearch, setPoSearch] = useState('')
+  const [poResults, setPoResults] = useState<{ id: string; po_number: string; vendor_name: string; po_status: string }[]>([])
+  const [selectedPo, setSelectedPo] = useState<{ id: string; po_number: string } | null>(null)
   const [err, setErr] = useState('')
 
   useEffect(() => {
@@ -265,18 +272,55 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
     if (defaultVendorId) setVendorId((current) => current || defaultVendorId)
   }, [open, defaultVendorId])
 
+  useEffect(() => {
+    if (!open || mode !== 'existing' || !poSearch) { setPoResults([]); return }
+    let cancelled = false
+    const params = new URLSearchParams({ search: poSearch, status: 'draft,submitted,partially_received,received,invoiced' })
+    apiFetch(`/api/purchase-orders?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => !cancelled && setPoResults((Array.isArray(data) ? data : []).slice(0, 15)))
+    return () => { cancelled = true }
+  }, [open, mode, poSearch])
+
   const { run: attach, pending: busy } = useAsyncAction(async () => {
     setErr('')
-    if (!vendorId) { setErr('Select a vendor.'); return }
     if (costPrice === '' || costPrice < 0) { setErr('Enter a valid cost.'); return }
-    const res = await apiFetch('/api/purchase-orders/from-accessory-stock', {
+
+    if (mode === 'new') {
+      if (!vendorId) { setErr('Select a vendor.'); return }
+      const res = await apiFetch('/api/purchase-orders/from-accessory-stock', {
+        method: 'POST',
+        body: JSON.stringify({
+          sku_id: skuId, vendor_id: vendorId, po_date: poDate,
+          cost_price: costPrice, gst_percentage: gstPercentage,
+        }),
+      })
+      if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to attach PO.'); return }
+      setOpen(false)
+      onDone()
+      return
+    }
+
+    if (!selectedPo) { setErr('Select a PO to attach to.'); return }
+    const attachBody = { sku_id: skuId, cost_price: costPrice, gst_percentage: gstPercentage }
+    let res = await apiFetch(`/api/purchase-orders/${selectedPo.id}/attach-accessory-stock`, {
       method: 'POST',
-      body: JSON.stringify({
-        sku_id: skuId, vendor_id: vendorId, po_date: poDate,
-        cost_price: costPrice, gst_percentage: gstPercentage,
-      }),
+      body: JSON.stringify(attachBody),
     })
-    if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to attach PO.'); return }
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}))
+      if (e.error_code === 'already_invoiced') {
+        if (!confirm(`${e.error}\n\nProceed anyway?`)) return
+        res = await apiFetch(`/api/purchase-orders/${selectedPo.id}/attach-accessory-stock`, {
+          method: 'POST',
+          body: JSON.stringify({ ...attachBody, confirm_despite_invoice: true }),
+        })
+      }
+      if (!res.ok) {
+        setErr((await res.json().catch(() => ({}))).error || 'Failed to attach to PO.')
+        return
+      }
+    }
     setOpen(false)
     onDone()
   })
@@ -294,13 +338,55 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
   }
 
   return (
-    <div className="border rounded p-2 bg-gray-50 space-y-1 w-56">
+    <div className="border rounded p-2 bg-gray-50 space-y-1 w-64">
       {err && <div className="text-red-600 text-xs">{err}</div>}
-      <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-xs">
-        <option value="">Select vendor...</option>
-        {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
-      </select>
-      <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} className="border p-1 w-full rounded text-xs" />
+      <div className="flex gap-1 text-xs">
+        <button onClick={() => setMode('new')} className={`flex-1 px-2 py-1 rounded ${mode === 'new' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>New PO</button>
+        <button onClick={() => setMode('existing')} className={`flex-1 px-2 py-1 rounded ${mode === 'existing' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>Existing PO</button>
+      </div>
+
+      {mode === 'new' ? (
+        <>
+          <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-xs">
+            <option value="">Select vendor...</option>
+            {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
+          </select>
+          <input type="date" value={poDate} onChange={(e) => setPoDate(e.target.value)} className="border p-1 w-full rounded text-xs" />
+        </>
+      ) : (
+        <>
+          {selectedPo ? (
+            <div className="flex items-center justify-between border rounded p-1 text-xs bg-white">
+              <span>{selectedPo.po_number}</span>
+              <button onClick={() => setSelectedPo(null)} className="text-gray-500 underline">Change</button>
+            </div>
+          ) : (
+            <>
+              <input
+                type="text"
+                value={poSearch}
+                onChange={(e) => setPoSearch(e.target.value)}
+                placeholder="Search PO number..."
+                className="border p-1 w-full rounded text-xs"
+              />
+              {poResults.length > 0 && (
+                <div className="border rounded max-h-28 overflow-y-auto bg-white">
+                  {poResults.map((po) => (
+                    <button
+                      key={po.id}
+                      onClick={() => { setSelectedPo({ id: po.id, po_number: po.po_number }); setPoResults([]) }}
+                      className="block w-full text-left px-2 py-1 text-xs hover:bg-gray-100 border-b last:border-b-0"
+                    >
+                      {po.po_number} — {po.vendor_name} ({po.po_status.replace(/_/g, ' ')})
+                    </button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </>
+      )}
+
       <div className="flex gap-1">
         <input type="number" value={costPrice} onChange={(e) => setCostPrice(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Unit cost" className="border p-1 w-full rounded text-xs" />
         <input type="number" value={gstPercentage} onChange={(e) => setGstPercentage(Number(e.target.value))} placeholder="GST%" className="border p-1 w-16 rounded text-xs" />
