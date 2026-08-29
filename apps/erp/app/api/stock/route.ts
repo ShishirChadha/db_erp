@@ -7,6 +7,31 @@ import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
 
+// Category spec field names (used to build the specifications->>field ILIKE clauses
+// below) rarely change -- refetching all of sku_category_templates on every single
+// keystroke of a search box was pure overhead. Same short-TTL in-memory cache pattern
+// as lib/auth/redact.ts's redaction rules cache.
+let specFieldNamesCache: string[] | null = null
+let specFieldNamesCacheAt = 0
+const SPEC_FIELD_CACHE_TTL_MS = 60_000
+
+async function getSpecFieldNames(): Promise<string[]> {
+  if (specFieldNamesCache && Date.now() - specFieldNamesCacheAt < SPEC_FIELD_CACHE_TTL_MS) {
+    return specFieldNamesCache
+  }
+  const { data: specTemplates } = await supabaseAdmin
+    .from('sku_category_templates')
+    .select('field_schema')
+  const names = new Set<string>()
+  for (const t of specTemplates || []) {
+    const fields = (t as any).field_schema?.fields
+    if (Array.isArray(fields)) for (const f of fields) if (f?.name) names.add(f.name)
+  }
+  specFieldNamesCache = [...names]
+  specFieldNamesCacheAt = Date.now()
+  return specFieldNamesCache
+}
+
 // ---------- GET: list all assets ----------
 // Used by Live Stock, Sell/Service unit search, and the main-ERP Stock page + RMA.
 export async function GET(req: NextRequest) {
@@ -164,15 +189,8 @@ export async function GET(req: NextRequest) {
     // spec value buried in sku_master.specifications (e.g. "16GB" RAM, "i5" CPU) --
     // asset_ledger.sku_id is always populated regardless of PO-link status, so
     // resolving matching SKUs first and OR-ing on sku_id covers all three.
-    const { data: specTemplates } = await supabaseAdmin
-      .from('sku_category_templates')
-      .select('field_schema')
-    const specFieldNames = new Set<string>()
-    for (const t of specTemplates || []) {
-      const fields = (t as any).field_schema?.fields
-      if (Array.isArray(fields)) for (const f of fields) if (f?.name) specFieldNames.add(f.name)
-    }
-    const specClauses = [...specFieldNames].map((f) => `specifications->>${f}.ilike.%${search}%`)
+    const specFieldNames = await getSpecFieldNames()
+    const specClauses = specFieldNames.map((f) => `specifications->>${f}.ilike.%${search}%`)
 
     const { data: matchingSkus } = await supabaseAdmin
       .from('sku_master')

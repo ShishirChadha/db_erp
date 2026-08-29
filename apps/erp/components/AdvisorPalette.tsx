@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
+  Command,
   CommandDialog,
   CommandInput,
   CommandList,
@@ -90,6 +91,7 @@ export default function AdvisorPalette({ open, onOpenChange }: { open: boolean; 
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title="Ask DB" description="Ask about a report, a record number, how to do something, or where a page is.">
+      <Command shouldFilter={false}>
       <CommandInput
         placeholder="Ask DB — revenue this month, DBI2026-681, how to sell a laptop, where is invoices..."
         value={text}
@@ -132,6 +134,7 @@ export default function AdvisorPalette({ open, onOpenChange }: { open: boolean; 
           </CommandGroup>
         )}
       </CommandList>
+      </Command>
     </CommandDialog>
   )
 }

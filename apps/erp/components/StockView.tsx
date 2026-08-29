@@ -178,7 +178,18 @@ export default function StockView({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
+  // searchInput updates on every keystroke (so the box itself feels responsive);
+  // searchTerm only catches up 300ms after typing stops, and is what actually drives
+  // the fetch effects below -- without this, every keystroke fired its own full
+  // request (each doing several sequential DB round trips server-side), which piled up
+  // overlapping in-flight requests and was the real cause of "search is slow / sometimes
+  // errors" rather than any single request being slow on its own.
+  const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [monthFilter, setMonthFilter] = useState('')
   const [yearFilter, setYearFilter] = useState('')
   const yearOptions = useMemo(() => {
@@ -560,8 +571,8 @@ export default function StockView({
             tab === 'accessories' ? 'Search accessories...' :
             'Search asset, serial, SKU, or spec (e.g. 16GB, i5)...'
           }
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           className="border p-2 rounded"
         />
         {(tab === 'current' || tab === 'sold' || tab === 'sold_accessories') && (
@@ -576,8 +587,8 @@ export default function StockView({
             </select>
           </>
         )}
-        {(statusFilter || searchTerm || monthFilter || yearFilter) && (
-          <button onClick={() => { setStatusFilter(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-gray-500 underline self-center">
+        {(statusFilter || searchInput || monthFilter || yearFilter) && (
+          <button onClick={() => { setStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-gray-500 underline self-center">
             Clear filters
           </button>
         )}
