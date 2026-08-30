@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 ## The three roles
