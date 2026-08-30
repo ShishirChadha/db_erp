@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-08-29
+updated: 2026-08-30
 ---
 
 ## What this covers
@@ -46,6 +46,12 @@ employee-facing `/dashboard/live-stock` both read `asset_ledger`, filtered by
 `source` (`employee_intake` vs. everything else). Never query across both
 without a reason — they're kept apart on purpose while the owner works through
 a backlog of legacy data. See **live-stock-qc**.
+
+`GET /api/stock`'s search caches the category spec field names (used to build
+the `specifications->>field ILIKE` clauses) for 60s rather than re-querying
+`sku_category_templates` on every keystroke — a short-TTL in-memory cache,
+same pattern as `lib/auth/redact.ts`'s redaction-rules cache. `StockView`'s
+own search box debounces input by 300ms before it drives that fetch at all.
 
 ## Related
 

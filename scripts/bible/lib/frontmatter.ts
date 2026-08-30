@@ -44,5 +44,13 @@ export function parseChapterFile(path: string): Chapter {
       throw new Error(`${path}: frontmatter missing required field "${required}"`)
     }
   }
+  // js-yaml parses an unquoted YYYY-MM-DD scalar as a native Date, not a string --
+  // silently breaking every string-typed consumer (check.ts's `>` comparison against
+  // a git-log date string always evaluated false this way, since it fell back to
+  // comparing against Date.prototype.toString()'s "Sat Aug 29 2026..." format instead
+  // of the ISO date). Normalize back to the YYYY-MM-DD string the type promises.
+  if (meta.updated instanceof Date) {
+    meta.updated = meta.updated.toISOString().slice(0, 10)
+  }
   return { meta, body: body.trim(), raw, path }
 }

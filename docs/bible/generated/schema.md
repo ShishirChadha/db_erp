@@ -87,7 +87,7 @@ Live schema snapshot -- 69 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~82 rows (estimate)
+~83 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -116,7 +116,7 @@ Live schema snapshot -- 69 tables. Regenerate with `npm run bible:generate`.
 
 ## activity_assignees
 
-~65 rows (estimate)
+~95 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -156,7 +156,7 @@ Live schema snapshot -- 69 tables. Regenerate with `npm run bible:generate`.
 
 ## activity_comments
 
-~25 rows (estimate)
+~74 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -176,7 +176,7 @@ Live schema snapshot -- 69 tables. Regenerate with `npm run bible:generate`.
 
 ## activity_watchers
 
-~0 rows (estimate)
+~17 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -190,7 +190,7 @@ Live schema snapshot -- 69 tables. Regenerate with `npm run bible:generate`.
 
 DB advisor miss log -- every question asked, whether a resolver matched, and how long it took. Feeds the Bible backlog (unmatched questions -> which chapter/keyword to add next).
 
-~0 rows (estimate)
+~5 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -217,7 +217,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 ## asset_counters
 
-~6 rows (estimate)
+~12 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -228,7 +228,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 ## asset_ledger
 
-~1,090 rows (estimate)
+~1,095 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -274,7 +274,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 ## asset_qc_checks
 
-~2,590 rows (estimate)
+~2,614 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -288,7 +288,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 ## asset_rma_events
 
-~0 rows (estimate)
+~2 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -307,7 +307,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~807 rows (estimate)
+~838 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -332,7 +332,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## backup_settings
 
-~0 rows (estimate)
+~1 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -349,7 +349,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## backup_snapshots
 
-~0 rows (estimate)
+~1 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -439,7 +439,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## customer_profiles
 
-~0 rows (estimate)
+~1 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -476,7 +476,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## digest_channel_config
 
-~0 rows (estimate)
+~1 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -567,7 +567,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## field_corrections
 
-~526 rows (estimate)
+~541 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -583,7 +583,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## invoice_items
 
-~39 rows (estimate)
+~43 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -625,7 +625,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## invoices
 
-~36 rows (estimate)
+~41 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -735,7 +735,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## notifications
 
-~654 rows (estimate)
+~711 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -827,7 +827,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## profiles
 
-~6 rows (estimate)
+~7 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -881,7 +881,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## purchase_files
 
-~0 rows (estimate)
+~18 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -923,7 +923,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## purchase_orders
 
-~752 rows (estimate)
+~756 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -954,7 +954,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## purchases
 
-~763 rows (estimate)
+~764 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1060,7 +1060,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## repair_job_parts
 
-~0 rows (estimate)
+~2 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1072,7 +1072,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## repair_jobs
 
-~2 rows (estimate)
+~12 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1121,7 +1121,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## replacement_jobs
 
-~0 rows (estimate)
+~2 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1146,7 +1146,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## sale_payments
 
-~188 rows (estimate)
+~247 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1161,7 +1161,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## sales
 
-~249 rows (estimate)
+~267 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1288,7 +1288,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## sku_master
 
-~267 rows (estimate)
+~264 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1341,7 +1341,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## stock_movements
 
-~1,092 rows (estimate)
+~1,104 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
