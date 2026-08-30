@@ -2,10 +2,19 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { getPublishedProducts, getCategories } from "@/lib/queries";
-import { slugToCategory } from "@/lib/categories";
+import { CATEGORY_SLUGS, slugToCategory } from "@/lib/categories";
 import { ProductCard } from "@/components/ProductCard";
 
 export const revalidate = 60;
+
+// A fixed, small set of category codes -- enumerating them here (rather than
+// relying on dynamicParams on-demand generation) is what makes this route
+// ISR-cacheable at all: without at least an empty array returned from
+// generateStaticParams, Next.js renders dynamic segments fully per-request
+// regardless of `revalidate`.
+export async function generateStaticParams() {
+  return Object.values(CATEGORY_SLUGS).map((slug) => ({ categorySlug: slug }));
+}
 
 async function resolveCategory(categorySlug: string) {
   const code = slugToCategory(categorySlug);

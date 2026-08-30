@@ -33,6 +33,16 @@ import { StickyBuyBar } from "@/components/StickyBuyBar";
 
 export const revalidate = 60;
 
+// Enumerating known slugs (rather than relying on dynamicParams on-demand
+// generation) is what makes this route ISR-cacheable at all -- without at
+// least an empty array returned from generateStaticParams, Next.js renders
+// dynamic segments fully per-request regardless of `revalidate`. The catalog
+// is small enough to prerender every published product at build time.
+export async function generateStaticParams() {
+  const products = await getPublishedProducts({});
+  return products.filter((p) => p.web_slug).map((p) => ({ slug: p.web_slug as string }));
+}
+
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
 
 const SCHEMA_AVAILABILITY: Record<string, string> = {

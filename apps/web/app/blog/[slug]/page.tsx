@@ -1,9 +1,18 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getBlogPostBySlug } from "@/lib/queries";
+import { getBlogPostBySlug, getPublishedBlogPosts } from "@/lib/queries";
 
 export const revalidate = 60;
+
+// Enumerating known slugs (rather than relying on dynamicParams on-demand
+// generation) is what makes this route ISR-cacheable at all -- without at
+// least an empty array returned from generateStaticParams, Next.js renders
+// dynamic segments fully per-request regardless of `revalidate`.
+export async function generateStaticParams() {
+  const posts = await getPublishedBlogPosts();
+  return posts.map((p) => ({ slug: p.slug }));
+}
 
 export async function generateMetadata({
   params,
