@@ -1,4 +1,4 @@
-import { createServerSupabaseClient } from '@db/db/server'
+import { createPublicSupabaseClient } from '@db/db/public'
 
 export interface PublicProduct {
   id: string
@@ -44,7 +44,7 @@ export async function getPublishedProducts(opts: {
   limit?: number
   excludeId?: string
 } = {}): Promise<PublicProduct[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   let query = supabase
     .from('public_products')
     .select(PRODUCT_COLUMNS)
@@ -74,7 +74,7 @@ export async function getSiblingConfigurations(opts: {
   modelName: string
   excludeId: string
 }): Promise<PublicProduct[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_products')
     .select(PRODUCT_COLUMNS)
@@ -87,7 +87,7 @@ export async function getSiblingConfigurations(opts: {
 }
 
 export async function getProductBySlug(slug: string): Promise<PublicProduct | null> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_products')
     .select(PRODUCT_COLUMNS)
@@ -97,7 +97,7 @@ export async function getProductBySlug(slug: string): Promise<PublicProduct | nu
 }
 
 export async function getProductImages(skuId: string): Promise<PublicProductImage[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_product_images')
     .select('id, storage_path, alt_text, sort_order, is_primary')
@@ -108,7 +108,7 @@ export async function getProductImages(skuId: string): Promise<PublicProductImag
 }
 
 export async function getCategories(): Promise<CategoryTemplate[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase.from('public_categories').select('category, display_name, field_schema')
   return (data ?? []) as CategoryTemplate[]
 }
@@ -123,7 +123,7 @@ export interface BlogPost {
 }
 
 export async function getPublishedBlogPosts(): Promise<BlogPost[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
     .select('id, slug, title, excerpt, body, published_at')
@@ -133,7 +133,7 @@ export async function getPublishedBlogPosts(): Promise<BlogPost[]> {
 }
 
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
     .select('id, slug, title, excerpt, body, published_at')
@@ -159,7 +159,7 @@ export interface ProductUnit {
 }
 
 export async function getProductUnits(skuId: string): Promise<ProductUnit[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_product_units')
     .select(
@@ -175,7 +175,7 @@ export interface TestReportItem {
 }
 
 export async function getAssetTestReport(skuId: string, serialNumber: string): Promise<TestReportItem[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_asset_test_report')
     .select('check_item, result')
@@ -202,7 +202,7 @@ export async function getUpgradeOptions(opts: {
   currentSsd?: string | null
   currentWarrantyMonths?: number | null
 }): Promise<UpgradeOption[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const fromValues: string[] = []
   if (opts.currentRam) fromValues.push(opts.currentRam)
   if (opts.currentSsd) fromValues.push(opts.currentSsd)
@@ -228,7 +228,7 @@ export async function getUpgradeOptions(opts: {
 // behavioral claim (this system doesn't have the sales volume for that to be
 // honest yet), just an explicit merchandising rule the owner sets.
 export async function getCrossSellCategories(sourceCategory: string): Promise<string[]> {
-  const supabase = await createServerSupabaseClient()
+  const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_cross_sell_rules')
     .select('suggested_category')

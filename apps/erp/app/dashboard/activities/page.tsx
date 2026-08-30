@@ -31,7 +31,9 @@ function ActivitiesPage() {
       }
     };
     checkReminders();
-    const interval = setInterval(checkReminders, 60000);
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible') checkReminders();
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 

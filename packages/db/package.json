@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./browser": "./src/browser.ts",
     "./server": "./src/server.ts",
-    "./admin": "./src/admin.ts"
+    "./admin": "./src/admin.ts",
+    "./public": "./src/public.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit -p ."
