@@ -9,6 +9,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { EditPoItemDialog } from '@/components/EditPoItemDialog'
 import { EditPoVendorDialog } from '@/components/EditPoVendorDialog'
 import { AttachUnitsDialog } from '@/components/AttachUnitsDialog'
+import { MoveUnitDialog } from '@/components/MoveUnitDialog'
 
 interface POItem {
   id: string
@@ -28,6 +29,7 @@ interface POItem {
   line_total: number
   asset_numbers_reserved: string[]
   serial_numbers: string[]
+  units: { asset_number: string; serial_number: string | null; entry_date: string | null; status: string }[]
   sku_category: string | null
   is_serialized: boolean
   received_quantity: number
@@ -65,6 +67,7 @@ function PODetailPage() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null)
   const [editingVendor, setEditingVendor] = useState(false)
   const [attachingUnits, setAttachingUnits] = useState(false)
+  const [movingUnit, setMovingUnit] = useState<{ assetNumber: string; serialNumber: string | null; entryDate: string | null; skuLabel: string } | null>(null)
 
   const fetchPO = async () => {
     setLoading(true)
@@ -252,7 +255,35 @@ function PODetailPage() {
                 <td className="border p-2">₹{(item.unit_price ?? 0).toFixed(2)}</td>
                 <td className="border p-2">{item.gst_percentage}%</td>
                 <td className="border p-2">₹{(item.line_total ?? 0).toFixed(2)}</td>
-                <td className="border p-2 text-sm">{item.is_serialized ? ((item.asset_numbers_reserved || []).join(', ') || '-') : <span className="text-gray-400">quantity item</span>}</td>
+                <td className="border p-2 text-sm">
+                  {item.is_serialized ? (
+                    (item.units || []).length > 0 ? (
+                      <div className="space-y-0.5">
+                        {item.units.map((unit) => (
+                          <div key={unit.asset_number} className="flex items-center gap-1">
+                            <span>{unit.asset_number}</span>
+                            <span className="text-xs text-gray-400">
+                              ({unit.entry_date ? unit.entry_date.slice(0, 10) : 'no entry date'})
+                            </span>
+                            {po.po_status !== 'cancelled' && (
+                              <button
+                                onClick={() => setMovingUnit({
+                                  assetNumber: unit.asset_number,
+                                  serialNumber: unit.serial_number,
+                                  entryDate: unit.entry_date,
+                                  skuLabel: item.sku_code,
+                                })}
+                                className="text-xs text-gray-400 hover:text-blue-600 underline"
+                              >
+                                Move
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : '-'
+                  ) : <span className="text-gray-400">quantity item</span>}
+                </td>
                 <td className="border p-2 text-sm">
                   {item.is_serialized
                     ? ((item.serial_numbers || []).join(', ') || '-')
@@ -407,6 +438,18 @@ function PODetailPage() {
         <AttachUnitsDialog
           poId={poId}
           onClose={() => setAttachingUnits(false)}
+          onSaved={fetchPO}
+        />
+      )}
+
+      {movingUnit && (
+        <MoveUnitDialog
+          sourcePoId={poId}
+          assetNumber={movingUnit.assetNumber}
+          serialNumber={movingUnit.serialNumber}
+          entryDate={movingUnit.entryDate}
+          skuLabel={movingUnit.skuLabel}
+          onClose={() => setMovingUnit(null)}
           onSaved={fetchPO}
         />
       )}

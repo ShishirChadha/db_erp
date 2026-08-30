@@ -36,8 +36,9 @@ export async function GET(
   // Fetch all asset mappings for this PO to get the current asset numbers
   const { data: allAssets } = await supabaseAdmin
     .from('asset_ledger')
-    .select('po_item_id, asset_number, serial_number, status')
+    .select('po_item_id, asset_number, serial_number, status, created_at')
     .eq('po_id', id)
+    .order('created_at', { ascending: true })
 
   // Group assets by po_item_id
   const assetsByItem: Record<string, any[]> = {}
@@ -76,6 +77,18 @@ export async function GET(
       hsn_code: item.sku?.hsn_code || item.hsn_code || '',
       asset_numbers_reserved: liveAssets.map(a => a.asset_number),  // live list (serialized only)
       serial_numbers: serials, // updated serials (serialized only)
+      // Properly aligned per-unit detail (asset_numbers_reserved/serial_numbers above
+      // are kept as-is for existing callers -- serial_numbers only has entries for
+      // units actually received, so it isn't reliably index-aligned with
+      // asset_numbers_reserved). entry_date is asset_ledger.created_at -- when this
+      // exact unit was entered/reserved, distinct from the PO's own po_date, which
+      // matters when correcting which invoice/PO a unit actually belongs on.
+      units: serialized ? liveAssets.map(a => ({
+        asset_number: a.asset_number,
+        serial_number: a.serial_number,
+        entry_date: a.created_at,
+        status: a.status,
+      })) : [],
       received_quantity: serialized ? serials.length : (receivedByItem[item.id] || 0),
     }
   })
