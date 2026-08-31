@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { renderSalesDocumentPdf } from '@/lib/documents/renderSalesDocumentPdf'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'quotations')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
   const rendered = await renderSalesDocumentPdf(id)

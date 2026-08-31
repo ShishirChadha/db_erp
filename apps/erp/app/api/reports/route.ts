@@ -5,7 +5,7 @@
 // never re-derives an aggregate in JS.
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { REPORT_DIMENSIONS, type ReportDimension } from '@/lib/reports'
 
 const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health'] as const
@@ -13,6 +13,7 @@ const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(sessionUser, 'reports')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const sp = req.nextUrl.searchParams
   const metric = sp.get('metric')

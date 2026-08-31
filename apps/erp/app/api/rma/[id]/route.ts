@@ -1,33 +1,37 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
+import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
-
 // ---------- GET: RMA event detail ----------
+// Same non-owner scoping as GET /api/rma -- from_customer only, no vendor identity.
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const sessionUser = await getSessionUser(req)
+  if (!hasPageAccess(sessionUser, 'rma')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
   const { id } = await params
+  const ownerCaller = isOwner(sessionUser)
 
   const { data, error } = await supabaseAdmin
     .from('asset_rma_events')
-    .select(`
-      id, asset_id, direction, reason, vendor_id, status, opened_at, closed_at, notes,
-      asset_ledger ( asset_number, serial_number, status ),
-      vendors ( company_name )
-    `)
+    .select(
+      ownerCaller
+        ? `id, asset_id, direction, reason, vendor_id, status, opened_at, closed_at, notes,
+           asset_ledger ( asset_number, serial_number, status ),
+           vendors ( company_name )`
+        : `id, asset_id, direction, reason, status, opened_at, closed_at, notes,
+           asset_ledger ( asset_number, serial_number, status )`
+    )
     .eq('id', id)
     .single()
 
   if (error || !data) return NextResponse.json({ error: 'RMA event not found' }, { status: 404 })
+  if (!ownerCaller && (data as any).direction !== 'from_customer') {
+    return NextResponse.json({ error: 'RMA event not found' }, { status: 404 })
+  }
   return NextResponse.json(data)
 }
 
@@ -47,8 +51,13 @@ export async function PATCH(
 ) {
   const { id } = await params
 
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const ownerCaller = isOwner(sessionUser)
+  if (!ownerCaller && !canEditPage(sessionUser, 'rma')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+  const user = { id: sessionUser.id, email: sessionUser.email }
 
   const { data: event } = await supabaseAdmin
     .from('asset_rma_events')
@@ -57,6 +66,11 @@ export async function PATCH(
     .single()
 
   if (!event) return NextResponse.json({ error: 'RMA event not found' }, { status: 404 })
+  // Non-owner rma-grant is scoped to from_customer, matching GET/POST -- a to_vendor
+  // event (vendor identity) is invisible to them, not just read-only.
+  if (!ownerCaller && event.direction !== 'from_customer') {
+    return NextResponse.json({ error: 'RMA event not found' }, { status: 404 })
+  }
   if (event.status === 'closed') {
     return NextResponse.json({ error: 'This RMA event is already closed' }, { status: 400 })
   }
@@ -92,7 +106,7 @@ export async function PATCH(
   }
 
   await logAuditEvent({
-    actor: { id: user.id, email: user.email, role: null },
+    actor: { id: user.id, email: user.email, role: sessionUser.role },
     actionType: 'status_change',
     module: 'rma',
     tableName: 'asset_rma_events',

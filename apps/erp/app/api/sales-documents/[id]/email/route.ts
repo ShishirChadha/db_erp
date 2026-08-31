@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, canEditPage } from '@/lib/auth/session'
 import { renderSalesDocumentPdf } from '@/lib/documents/renderSalesDocumentPdf'
 import { sendEmailWithAttachment } from '@/lib/email'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -10,7 +10,10 @@ const DOC_LABELS: Record<string, string> = { quotation: 'Quotation', proforma: '
 // ---------- POST: email a quotation/proforma PDF to the customer ----------
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canEditPage(sessionUser, 'quotations')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))

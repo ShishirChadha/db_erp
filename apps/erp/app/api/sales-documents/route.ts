@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { mintSalesDocumentNumber, computeLineGst } from '@/lib/sales-documents'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -8,7 +8,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 // ---------- GET: list quotations/proformas ----------
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'quotations')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
   const docType = searchParams.get('doc_type')
@@ -37,7 +37,10 @@ export async function GET(req: NextRequest) {
 // only conversion (via the Sell page, per line) does that.
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canEditPage(sessionUser, 'quotations')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
 
   const body = await req.json()
   const { doc_type, entity_key, customer_id, valid_until, notes, terms_conditions, items } = body

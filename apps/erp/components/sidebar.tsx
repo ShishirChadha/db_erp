@@ -97,7 +97,10 @@ const menuGroups = [
     children: [
       { href: '/dashboard/sales', label: 'Sales', pageKey: 'sales' },
       { href: '/dashboard/invoices', label: 'Invoices', pageKey: 'invoices' },
-      { href: '/dashboard/quotations', label: 'Quotations', ownerOnly: true },
+      { href: '/dashboard/quotations', label: 'Quotations', pageKey: 'quotations' },
+      // Price Cockpit stays owner-only -- its core data (price-intel) mixes vendor
+      // names/buying cost with competitor prices in one response with no safe
+      // employee-facing subset, unlike every other page-keyed area.
       { href: '/dashboard/pricing', label: 'Price Cockpit', ownerOnly: true },
     ],
   },
@@ -113,16 +116,18 @@ const menuGroups = [
     label: 'Service',
     icon: Wrench,
     children: [
-      { href: '/dashboard/rma', label: 'RMA (Vendor Returns)', ownerOnly: true },
+      { href: '/dashboard/rma', label: 'RMA (Vendor Returns)', pageKey: 'rma' },
     ],
   },
   {
     label: 'Finance',
     icon: Receipt,
-    ownerOnly: true,
+    // No group-level ownerOnly -- each child now has its own pageKey, and the
+    // "drop empty groups" step in canSee() already hides this group entirely for
+    // a role with neither grant (same pattern as Inventory/Live Stock/Sales).
     children: [
-      { href: '/dashboard/expenses', label: 'Expenses' },
-      { href: '/dashboard/reports', label: 'Reports' },
+      { href: '/dashboard/expenses', label: 'Expenses', pageKey: 'expenses' },
+      { href: '/dashboard/reports', label: 'Reports', pageKey: 'reports' },
     ],
   },
   {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
 const VALID_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'void']
@@ -8,7 +8,7 @@ const VALID_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'voi
 // ---------- GET: one quotation/proforma with its line items ----------
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'quotations')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
   const { data: document, error } = await supabaseAdmin.from('sales_documents').select('*').eq('id', id).single()
@@ -29,7 +29,10 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // as it was actually sent.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canEditPage(sessionUser, 'quotations')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
 
   const { id } = await params
   const body = await req.json()

@@ -19,27 +19,47 @@ interface AppUser {
 
 const ROLE_LABELS: Record<AppUser['role'], string> = { owner: 'Owner', manager: 'Manager', employee: 'Employee' }
 
-const PAGE_OPTIONS = [
-  { key: 'dashboard', label: 'Dashboard' },
-  { key: 'pending_tasks', label: 'Pending Tasks' },
-  { key: 'new_entry', label: 'New Entry' },
-  { key: 'accessories', label: 'Accessories' },
-  { key: 'repair_jobs', label: 'Repair Jobs' },
-  { key: 'replacement_jobs', label: 'Replacement Jobs' },
-  { key: 'sku_master', label: 'SKU Master' },
-  { key: 'live_stock', label: 'Live Stock' },
-  { key: 'invoices', label: 'Invoices' },
-  { key: 'customers', label: 'Customers' },
-  { key: 'activities', label: 'Activity Hub' },
-  { key: 'sales', label: 'Sales' },
-  { key: 'stock', label: 'Stock (Main ERP)' },
-  { key: 'website', label: 'Website' },
+// Grouped to match the sidebar's own category/sub-category structure
+// (components/sidebar.tsx's menuGroups) -- so granting "Expenses" without the rest of
+// "Finance" (or any other sub-item independent of its siblings) is visually obvious
+// here the same way it is in the nav itself.
+const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] = [
+  { label: 'Dashboard', keys: [{ key: 'dashboard', label: 'Dashboard' }] },
+  { label: 'Pending Tasks', keys: [{ key: 'pending_tasks', label: 'Pending Tasks' }] },
+  { label: 'New Entry', keys: [{ key: 'new_entry', label: 'New Entry' }] },
+  { label: 'Accessories', keys: [{ key: 'accessories', label: 'Accessories' }] },
+  { label: 'Inventory', keys: [
+    { key: 'sku_master', label: 'SKU Master' },
+    { key: 'stock', label: 'Stock (Main ERP)' },
+    { key: 'website', label: 'Website (SKU photos / publish)' },
+  ]},
+  { label: 'Live Stock', keys: [
+    { key: 'live_stock', label: 'Live Stock' },
+    { key: 'repair_jobs', label: 'Repair Jobs' },
+    { key: 'replacement_jobs', label: 'Replacement Jobs' },
+  ]},
+  { label: 'Sales', keys: [
+    { key: 'sales', label: 'Sales' },
+    { key: 'invoices', label: 'Invoices' },
+    { key: 'quotations', label: 'Quotations' },
+  ]},
+  { label: 'Contacts', keys: [{ key: 'customers', label: 'Customers' }] },
+  { label: 'Service', keys: [{ key: 'rma', label: 'RMA (Vendor Returns)' }] },
+  { label: 'Finance', keys: [
+    { key: 'expenses', label: 'Expenses' },
+    { key: 'reports', label: 'Reports' },
+  ]},
+  { label: 'Activity Hub', keys: [{ key: 'activities', label: 'Activity Hub' }] },
 ]
 
-// Dashboard/Pending Tasks are nav landing pages, not mutable resources -- they have no
-// "Can edit" concept and profile_page_actions.page_key's DB constraint rejects them.
-// Must match EDITABLE_PAGE_KEYS in app/api/users/route.ts and app/api/users/[id]/route.ts.
-const EDITABLE_PAGE_KEYS = ['new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website']
+// Dashboard/Pending Tasks/Reports are view-only nav/landing pages -- no "Can edit"
+// concept, and profile_page_actions.page_key's DB constraint rejects them. Must match
+// EDITABLE_PAGE_KEYS in app/api/users/route.ts and app/api/users/[id]/route.ts.
+const EDITABLE_PAGE_KEYS = [
+  'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
+  'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
+  'expenses', 'quotations', 'rma',
+]
 
 function generatePassword() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
@@ -66,19 +86,26 @@ function PageAccessCheckboxes({
     onEditChange(editKeys.includes(key) ? editKeys.filter(k => k !== key) : [...editKeys, key])
   }
   return (
-    <div className="grid grid-cols-2 gap-1 mt-2">
-      {PAGE_OPTIONS.map(opt => (
-        <div key={opt.key} className="flex items-center gap-3 text-sm">
-          <label className="flex items-center gap-2">
-            <Checkbox checked={selected.includes(opt.key)} onCheckedChange={() => toggle(opt.key)} />
-            {opt.label}
-          </label>
-          {selected.includes(opt.key) && EDITABLE_PAGE_KEYS.includes(opt.key) && (
-            <label className="flex items-center gap-1 text-xs text-gray-500">
-              <Checkbox checked={editKeys.includes(opt.key)} onCheckedChange={() => toggleEdit(opt.key)} />
-              Can edit
-            </label>
-          )}
+    <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-3">
+      {PAGE_GROUPS.map(group => (
+        <div key={group.label}>
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{group.label}</p>
+          <div className="space-y-1">
+            {group.keys.map(opt => (
+              <div key={opt.key} className="flex items-center gap-3 text-sm">
+                <label className="flex items-center gap-2">
+                  <Checkbox checked={selected.includes(opt.key)} onCheckedChange={() => toggle(opt.key)} />
+                  {opt.label}
+                </label>
+                {selected.includes(opt.key) && EDITABLE_PAGE_KEYS.includes(opt.key) && (
+                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                    <Checkbox checked={editKeys.includes(opt.key)} onCheckedChange={() => toggleEdit(opt.key)} />
+                    Can edit
+                  </label>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       ))}
     </div>

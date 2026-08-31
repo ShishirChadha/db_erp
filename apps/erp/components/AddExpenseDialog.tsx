@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiFetch } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -33,7 +33,6 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
     amount: null as number | null,
     remarks: "",
   });
-  const supabase = createClient();
 
   const handleChange = (field: string, value: string | number | null) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -41,9 +40,9 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
 
   const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
-    const { error } = await supabase.from("expenses").insert([formData]);
-    if (error) {
-      console.error(error);
+    const res = await apiFetch("/api/expenses", { method: "POST", body: JSON.stringify(formData) });
+    if (!res.ok) {
+      console.error(await res.json().catch(() => ({})));
       alert("Failed to add expense.");
     } else {
       setOpen(false);

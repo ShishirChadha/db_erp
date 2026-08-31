@@ -7,14 +7,17 @@ import { encryptPassword } from '@/lib/auth/password-vault'
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
   'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
+  'expenses', 'reports', 'quotations', 'rma',
 ]
 
 // Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches
 // profile_page_actions.page_key's CHECK constraint exactly. 'dashboard'/'pending_tasks'
 // are nav/landing keys with no mutable resource behind them, so they're valid for
 // allowed_pages (visibility) but must never be written to profile_page_actions.
+// 'reports' is also excluded -- it's pure view/analysis, no mutation exists to grant.
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
+  'expenses', 'quotations', 'rma',
 ]
 
 // ---------- PATCH: owner updates role/allowed_pages/is_active/full_name/contact_email/employee_id, and/or resets a password ----------

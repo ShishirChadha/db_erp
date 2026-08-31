@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation'
-import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
+import { getCookieSessionUser, hasPageAccess } from '@/lib/auth/session'
 import ReportsClient from './reports-client'
 
 // Reporting rebuild (2026-08-29): this page used to fetch five whole tables
@@ -10,7 +10,7 @@ import ReportsClient from './reports-client'
 // migrations and docs/current-progress.md). No data is fetched here.
 export default async function ReportsPage() {
   const sessionUser = await getCookieSessionUser()
-  if (!isOwner(sessionUser)) redirect('/dashboard')
+  if (!hasPageAccess(sessionUser, 'reports')) redirect('/dashboard')
 
   return <ReportsClient />
 }

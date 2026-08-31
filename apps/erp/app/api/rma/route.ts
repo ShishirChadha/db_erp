@@ -1,26 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { processCustomerReturn } from '@/lib/rma'
 import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list RMA events ----------
-// Owner-only -- to_vendor rows join vendor company names, which employees never see.
+// An 'rma' grant (non-owner) is scoped to from_customer returns only -- to_vendor rows
+// join vendor company names, which employees never see (CLAUDE.md: cost/vendor identity
+// is owner-only everywhere). direction is force-set to from_customer and the vendors
+// join is dropped entirely for that path, rather than merely omitted per-field, so a
+// non-owner can never even see that a to_vendor row exists.
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'rma')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { searchParams } = new URL(req.url)
-  const direction = searchParams.get('direction')
   const status = searchParams.get('status')
+  const ownerCaller = isOwner(sessionUser)
+  const direction = ownerCaller ? searchParams.get('direction') : 'from_customer'
 
   let query = supabaseAdmin
     .from('asset_rma_events')
-    .select(`
-      id, asset_id, direction, reason, vendor_id, status, opened_at, closed_at, notes,
-      asset_ledger ( asset_number, serial_number, status ),
-      vendors ( company_name )
-    `)
+    .select(
+      ownerCaller
+        ? `id, asset_id, direction, reason, vendor_id, status, opened_at, closed_at, notes,
+           asset_ledger ( asset_number, serial_number, status ),
+           vendors ( company_name )`
+        : `id, asset_id, direction, reason, status, opened_at, closed_at, notes,
+           asset_ledger ( asset_number, serial_number, status )`
+    )
     .order('opened_at', { ascending: false })
 
   if (direction) query = query.eq('direction', direction)
@@ -36,6 +44,9 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isOwner(sessionUser) && !canEditPage(sessionUser, 'rma')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
   const user = { id: sessionUser.id }
 
   const body = await req.json()

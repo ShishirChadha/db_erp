@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
-import RequireOwner from '@/components/RequireOwner'
+import RequirePageAccess from '@/components/RequirePageAccess'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -443,8 +443,8 @@ function QuotationsPage() {
 
 export default function QuotationsPageGuarded() {
   return (
-    <RequireOwner>
+    <RequirePageAccess pageKey="quotations">
       <QuotationsPage />
-    </RequireOwner>
+    </RequirePageAccess>
   )
 }

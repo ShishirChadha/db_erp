@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
-import RequireOwner from '@/components/RequireOwner'
+import RequirePageAccess from '@/components/RequirePageAccess'
 
 interface RmaEvent {
   id: string
@@ -317,8 +317,8 @@ function RmaPage() {
 
 export default function RmaPageGuarded() {
   return (
-    <RequireOwner>
+    <RequirePageAccess pageKey="rma">
       <RmaPage />
-    </RequireOwner>
+    </RequirePageAccess>
   )
 }

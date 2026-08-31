@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
+import { apiFetch } from "@/lib/api-client";
 import {
   Dialog,
   DialogContent,
@@ -43,7 +43,6 @@ export default function EditExpenseDialog({
   onUpdate: () => void;
 }) {
   const [formData, setFormData] = useState<Partial<Expense>>({});
-  const supabase = createClient();
 
   useEffect(() => {
     setFormData(expense);
@@ -56,12 +55,9 @@ const handleChange = (field: keyof Expense, value: string | number | null) => {
   const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
     const { id, ...updateData } = formData;
-    const { error } = await supabase
-      .from("expenses")
-      .update(updateData)
-      .eq("id", expense.id);
-    if (error) {
-      console.error(error);
+    const res = await apiFetch(`/api/expenses/${expense.id}`, { method: "PATCH", body: JSON.stringify(updateData) });
+    if (!res.ok) {
+      console.error(await res.json().catch(() => ({})));
       alert("Update failed.");
     } else {
       onOpenChange(false);

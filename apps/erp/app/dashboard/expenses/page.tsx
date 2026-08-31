@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { createClient } from "@/lib/supabase/client";
-import RequireOwner from "@/components/RequireOwner";
+import { apiFetch } from "@/lib/api-client";
+import RequirePageAccess from "@/components/RequirePageAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,10 +35,13 @@ import AddExpenseDialog from "@/components/AddExpenseDialog";
 import BulkAddDialog from "@/components/BulkAddDialog";
 import EditExpenseDialog from "@/components/EditExpenseDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
+import { useRole } from "@/lib/auth/useRole";
 
 type SortField = "expense_date" | "type" | "amount";
 
 function ExpensesPage() {
+  const { isOwner, canEditPage } = useRole();
+  const canEdit = isOwner || canEditPage("expenses");
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingExpense, setEditingExpense] = useState<any | null>(null);
@@ -47,7 +50,6 @@ function ExpensesPage() {
   const [expenseToDelete, setExpenseToDelete] = useState<any>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
-  const supabase = createClient();
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
@@ -57,33 +59,20 @@ function ExpensesPage() {
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from("expenses").select("*");
+    const params = new URLSearchParams();
+    if (showDeleted) params.set("show_deleted", "true");
+    if (searchTerm) params.set("search", searchTerm);
+    if (typeFilter && typeFilter !== "all") params.set("type", typeFilter);
+    if (dateFrom) params.set("date_from", format(dateFrom, "yyyy-MM-dd"));
+    if (dateTo) params.set("date_to", format(dateTo, "yyyy-MM-dd"));
+    params.set("sort", sortField);
+    params.set("order", sortOrder);
 
-    if (showDeleted) query = query.eq("is_deleted", true);
-    else query = query.eq("is_deleted", false);
-
-    // GLOBAL SEARCH across multiple columns
-    if (searchTerm) {
-      query = query.or(
-        `description.ilike.%${searchTerm}%,` +
-        `type.ilike.%${searchTerm}%,` +
-        `from_location.ilike.%${searchTerm}%,` +
-        `to_location.ilike.%${searchTerm}%,` +
-        `remarks.ilike.%${searchTerm}%`
-      );
-    }
-
-    if (typeFilter && typeFilter !== "all") query = query.eq("type", typeFilter);
-    if (dateFrom) query = query.gte("expense_date", format(dateFrom, "yyyy-MM-dd"));
-    if (dateTo) query = query.lte("expense_date", format(dateTo, "yyyy-MM-dd"));
-
-    query = query.order(sortField, { ascending: sortOrder === "asc" });
-
-    const { data, error } = await query;
-    if (error) console.error(error);
-    else setExpenses(data || []);
+    const res = await apiFetch(`/api/expenses?${params.toString()}`);
+    if (!res.ok) console.error(await res.json().catch(() => ({})));
+    else setExpenses(await res.json());
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder, supabase]);
+  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 
@@ -95,7 +84,7 @@ function ExpensesPage() {
   const handleEditClick = (e: any) => { setEditingExpense(e); setDialogOpen(true); };
   const handleSoftDelete = async (remarks: string) => {
     if (!expenseToDelete) return;
-    await supabase.from("expenses").update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() }).eq("id", expenseToDelete.id);
+    await apiFetch(`/api/expenses/${expenseToDelete.id}`, { method: "PATCH", body: JSON.stringify({ is_deleted: true, deleted_remarks: remarks }) });
     fetchExpenses();
     setExpenseToDelete(null);
   };
@@ -109,7 +98,7 @@ function ExpensesPage() {
     restoringRef.current.add(e.id);
     setRestoringId(e.id);
     try {
-      await supabase.from("expenses").update({ is_deleted: false, deleted_remarks: null, deleted_at: null }).eq("id", e.id);
+      await apiFetch(`/api/expenses/${e.id}`, { method: "PATCH", body: JSON.stringify({ is_deleted: false }) });
       fetchExpenses();
     } finally {
       restoringRef.current.delete(e.id);
@@ -121,23 +110,25 @@ function ExpensesPage() {
     <div className="space-y-4">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Expenses</h1>
-        <div className="space-x-2">
-          <AddExpenseDialog onAdd={fetchExpenses} />
-          <BulkAddDialog
-            tableName="expenses"
-            onAdd={fetchExpenses}
-            transformRow={(row: any) => ({
-              expense_date: row.expense_date,
-              description: row.description,
-              type: row.type,
-              from_location: row.from_location,
-              to_location: row.to_location,
-              amount: row.amount ? parseFloat(row.amount) : null,
-              remarks: row.remarks,
-              is_deleted: false,
-            })}
-          />
-        </div>
+        {canEdit && (
+          <div className="space-x-2">
+            <AddExpenseDialog onAdd={fetchExpenses} />
+            <BulkAddDialog
+              tableName="expenses"
+              onAdd={fetchExpenses}
+              transformRow={(row: any) => ({
+                expense_date: row.expense_date,
+                description: row.description,
+                type: row.type,
+                from_location: row.from_location,
+                to_location: row.to_location,
+                amount: row.amount ? parseFloat(row.amount) : null,
+                remarks: row.remarks,
+                is_deleted: false,
+              })}
+            />
+          </div>
+        )}
       </div>
 
       {/* Filters Bar */}
@@ -223,7 +214,7 @@ function ExpensesPage() {
                 <TableCell>{e.remarks}</TableCell>
                 <TableCell>{e.deleted_remarks}</TableCell>
                 <TableCell className="text-right space-x-2">
-                  {e.is_deleted ? (
+                  {canEdit && (e.is_deleted ? (
                     <>
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(e)}>Edit</Button>
                       <Button variant="default" size="sm" onClick={() => handleRestore(e)} disabled={restoringId === e.id}>
@@ -236,7 +227,7 @@ function ExpensesPage() {
                       <Button variant="outline" size="sm" onClick={() => handleEditClick(e)}>Edit</Button>
                       <Button variant="destructive" size="sm" onClick={() => { setExpenseToDelete(e); setDeleteDialogOpen(true); }}>Delete</Button>
                     </>
-                  )}
+                  ))}
                 </TableCell>
               </TableRow>
             ))}
@@ -252,8 +243,8 @@ function ExpensesPage() {
 
 export default function ExpensesPageGuarded() {
   return (
-    <RequireOwner>
+    <RequirePageAccess pageKey="expenses">
       <ExpensesPage />
-    </RequireOwner>
+    </RequirePageAccess>
   );
 }
