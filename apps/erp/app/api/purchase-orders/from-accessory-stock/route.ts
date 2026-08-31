@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { logAuditEvent } from '@/lib/audit-log'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { claimAccessoryBacklog } from '@/lib/accessory-movements'
 
 // ---------- GET: owner's backlog of accessory SKUs with stock received but no PO yet ----------
 // Same "needs paperwork" concept as /api/stock-intake's GET, just for quantity-only
@@ -52,45 +53,89 @@ export async function GET(req: NextRequest) {
 // Mirrors /api/purchase-orders/from-intake's "employee stock-in now, owner paperwork
 // later" pattern, but for fungible/quantity-only SKUs (RAM/SSD/CPU/GPU/KBD/MOUSE/ACC)
 // that have no per-unit asset_ledger row -- so there's no reserve_assets() call and no
-// asset numbers to mint, just one purchase_order_items line with quantity = the sum of
-// whatever 'receipt' movements are still unattached (po_id IS NULL) for this SKU.
+// asset numbers to mint, just one purchase_order_items line per SKU with quantity =
+// the sum of whatever 'receipt' movements are still unattached (po_id IS NULL) for it.
+//
+// Accepts either the original single-SKU shape ({ sku_id, cost_price, gst_percentage })
+// -- unchanged, still used by the Accessories page's one-SKU-at-a-time dialog -- or a
+// multi-line { sku_inputs: [{ sku_id, cost_price, gst_percentage }] } shape, added so
+// one vendor invoice covering several accessory SKUs can land on a single PO (see
+// docs/decisions.md, reconciliation invoice-recon commit path) instead of the invoice
+// recon flow having to create one PO per accessory SKU, which would then be unable to
+// attach a single PI to the invoice's one real invoice_number (globally UNIQUE on
+// `invoices`, so it can never be reused across more than one PI/PO).
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
   const {
-    sku_id, vendor_id, po_date, purchase_type,
+    sku_id, cost_price, gst_percentage, quantity, // legacy single-SKU shape
+    sku_inputs, // new multi-SKU shape: [{ sku_id, cost_price, gst_percentage, quantity? }]
+    vendor_id, po_date, purchase_type,
     purchased_by_type, purchased_by_other,
-    cost_price, gst_percentage,
   } = body
 
-  if (!sku_id) return NextResponse.json({ error: 'sku_id is required.' }, { status: 400 })
+  const lineInputs: { sku_id: string; cost_price: number; gst_percentage?: number; quantity?: number }[] =
+    Array.isArray(sku_inputs) && sku_inputs.length > 0
+      ? sku_inputs
+      : sku_id
+        ? [{ sku_id, cost_price, gst_percentage, quantity }]
+        : []
+
+  if (lineInputs.length === 0) return NextResponse.json({ error: 'sku_id (or sku_inputs) is required.' }, { status: 400 })
   if (!vendor_id) return NextResponse.json({ error: 'vendor_id is required.' }, { status: 400 })
   if (!po_date) return NextResponse.json({ error: 'po_date is required.' }, { status: 400 })
-  if (cost_price === undefined || cost_price === null || cost_price < 0) {
-    return NextResponse.json({ error: 'A valid cost_price is required.' }, { status: 400 })
+  for (const li of lineInputs) {
+    if (li.cost_price === undefined || li.cost_price === null || li.cost_price < 0) {
+      return NextResponse.json({ error: `A valid cost_price is required for SKU ${li.sku_id}.` }, { status: 400 })
+    }
+  }
+  const skuIds = lineInputs.map((li) => li.sku_id)
+  const duplicateSkuIds = skuIds.filter((id, i) => skuIds.indexOf(id) !== i)
+  if (duplicateSkuIds.length > 0) {
+    return NextResponse.json({ error: 'Each SKU can only appear once per call.' }, { status: 400 })
   }
 
-  const { data: movements, error: movementsErr } = await supabaseAdmin
-    .from('stock_movements')
-    .select('id, quantity_change')
-    .eq('sku_id', sku_id)
-    .eq('movement_type', 'receipt')
-    .is('po_id', null)
+  // Resolve unattached quantity + SKU code per line up front, so the whole request
+  // fails before any PO is created if any one SKU has nothing to attach. `quantity`
+  // is optional -- omitted (or >= the full backlog) attaches everything unattached,
+  // same as before; a smaller value formalizes only part of the backlog, leaving the
+  // rest for a later PO.
+  const resolvedLines: { sku_id: string; cost_price: number; gst_percentage: number; qty: number; base_sku_code: string; variant_number: number }[] = []
+  for (const li of lineInputs) {
+    const { data: movements, error: movementsErr } = await supabaseAdmin
+      .from('stock_movements')
+      .select('quantity_change')
+      .eq('sku_id', li.sku_id)
+      .eq('movement_type', 'receipt')
+      .is('po_id', null)
+    if (movementsErr) return NextResponse.json({ error: movementsErr.message }, { status: 500 })
+    const available = (movements || []).reduce((sum, m) => sum + m.quantity_change, 0)
+    if (!movements || movements.length === 0 || available <= 0) {
+      return NextResponse.json({ error: `Nothing unattached to a PO for SKU ${li.sku_id}.` }, { status: 400 })
+    }
+    const qty = li.quantity ? Number(li.quantity) : available
+    if (qty <= 0 || qty > available) {
+      return NextResponse.json({ error: `Requested quantity for SKU ${li.sku_id} must be between 1 and ${available}.` }, { status: 400 })
+    }
 
-  if (movementsErr) return NextResponse.json({ error: movementsErr.message }, { status: 500 })
-  const qty = (movements || []).reduce((sum, m) => sum + m.quantity_change, 0)
-  if (!movements || movements.length === 0 || qty <= 0) {
-    return NextResponse.json({ error: 'Nothing unattached to a PO for this SKU.' }, { status: 400 })
+    const { data: skuRow, error: skuErr } = await supabaseAdmin
+      .from('sku_master')
+      .select('base_sku_code, variant_number')
+      .eq('id', li.sku_id)
+      .single()
+    if (skuErr || !skuRow) return NextResponse.json({ error: `SKU not found: ${li.sku_id}.` }, { status: 404 })
+
+    resolvedLines.push({
+      sku_id: li.sku_id,
+      cost_price: li.cost_price,
+      gst_percentage: li.gst_percentage ?? 18,
+      qty,
+      base_sku_code: skuRow.base_sku_code,
+      variant_number: skuRow.variant_number,
+    })
   }
-
-  const { data: skuRow, error: skuErr } = await supabaseAdmin
-    .from('sku_master')
-    .select('base_sku_code, variant_number')
-    .eq('id', sku_id)
-    .single()
-  if (skuErr || !skuRow) return NextResponse.json({ error: 'SKU not found.' }, { status: 404 })
 
   const purchasedByType = purchased_by_type || 'Digitalbluez'
   const { data: poNumber, error: numErr } = await supabaseAdmin.rpc('generate_po_number')
@@ -116,43 +161,44 @@ export async function POST(req: NextRequest) {
 
   if (poErr) return NextResponse.json({ error: poErr.message }, { status: 500 })
 
-  const gstPct = gst_percentage ?? 18
-  const unitTotal = cost_price * qty
-  const gstAmount = unitTotal * gstPct / 100
-  const lineTotal = unitTotal + gstAmount
+  let lineItemNumber = 1
+  for (const line of resolvedLines) {
+    const unitTotal = line.cost_price * line.qty
+    const gstAmount = unitTotal * line.gst_percentage / 100
+    const lineTotal = unitTotal + gstAmount
 
-  const { data: item, error: itemErr } = await supabaseAdmin
-    .from('purchase_order_items')
-    .insert({
-      po_id: po.id,
-      line_item_number: 1,
-      sku_id,
-      base_sku_code: skuRow.base_sku_code,
-      variant_number: skuRow.variant_number,
-      quantity: qty,
-      base_price: cost_price,
-      unit_price: cost_price,
-      gst_percentage: gstPct,
-      gst_amount: gstAmount,
-      line_total: lineTotal,
-    })
-    .select('id')
-    .single()
+    const { data: item, error: itemErr } = await supabaseAdmin
+      .from('purchase_order_items')
+      .insert({
+        po_id: po.id,
+        line_item_number: lineItemNumber++,
+        sku_id: line.sku_id,
+        base_sku_code: line.base_sku_code,
+        variant_number: line.variant_number,
+        quantity: line.qty,
+        base_price: line.cost_price,
+        unit_price: line.cost_price,
+        gst_percentage: line.gst_percentage,
+        gst_amount: gstAmount,
+        line_total: lineTotal,
+      })
+      .select('id')
+      .single()
 
-  if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
+    if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
 
-  // Link every previously-unattached movement to this PO/line so it stops showing
-  // up in the "needs PO" backlog, and record the now-known cost on the SKU itself
-  // (accessories have no per-unit cost_price to update, unlike asset_ledger).
-  await supabaseAdmin
-    .from('stock_movements')
-    .update({ po_id: po.id, po_item_id: item.id })
-    .in('id', movements.map((m) => m.id))
+    // Claim exactly `line.qty` of previously-unattached movements for this PO/line
+    // (splitting a movement row if `qty` doesn't land on a row boundary), and record
+    // the now-known cost on the SKU itself (accessories have no per-unit cost_price
+    // to update, unlike asset_ledger).
+    const claim = await claimAccessoryBacklog(line.sku_id, line.qty, { poId: po.id, poItemId: item.id, createdBy: sessionUser.id })
+    if (claim.error) return NextResponse.json({ error: claim.error }, { status: 500 })
 
-  await supabaseAdmin
-    .from('sku_master')
-    .update({ base_cost: cost_price })
-    .eq('id', sku_id)
+    await supabaseAdmin
+      .from('sku_master')
+      .update({ base_cost: line.cost_price })
+      .eq('id', line.sku_id)
+  }
 
   await recalcPOTotals(po.id)
 

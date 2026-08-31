@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { recalcPOTotals } from '@/lib/purchase-utils'
 import { logAuditEvent } from '@/lib/audit-log'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { claimAccessoryBacklog } from '@/lib/accessory-movements'
 
 // ---------- POST: owner attaches a fungible/quantity-only SKU's still-unattached ----------
 // ---------- stock-in movements onto an ALREADY-CREATED PO ----------
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: poId } = await params
   const body = await req.json()
-  const { sku_id, cost_price, gst_percentage, confirm_despite_invoice } = body
+  const { sku_id, cost_price, gst_percentage, quantity, confirm_despite_invoice } = body
 
   if (!sku_id) return NextResponse.json({ error: 'sku_id is required.' }, { status: 400 })
   if (cost_price === undefined || cost_price === null || cost_price < 0) {
@@ -54,14 +55,21 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: movements, error: movementsErr } = await supabaseAdmin
     .from('stock_movements')
-    .select('id, quantity_change')
+    .select('quantity_change')
     .eq('sku_id', sku_id)
     .eq('movement_type', 'receipt')
     .is('po_id', null)
   if (movementsErr) return NextResponse.json({ error: movementsErr.message }, { status: 500 })
-  const qty = (movements || []).reduce((sum, m) => sum + m.quantity_change, 0)
-  if (!movements || movements.length === 0 || qty <= 0) {
+  const available = (movements || []).reduce((sum, m) => sum + m.quantity_change, 0)
+  if (!movements || movements.length === 0 || available <= 0) {
     return NextResponse.json({ error: 'Nothing unattached to a PO for this SKU.' }, { status: 400 })
+  }
+  // `quantity` is optional -- omitted (or >= the full backlog) attaches everything
+  // unattached, same as before; a smaller value formalizes only part of the backlog
+  // (e.g. 50 of 100 already-received units), leaving the rest for a later PO.
+  const qty = quantity ? Number(quantity) : available
+  if (qty <= 0 || qty > available) {
+    return NextResponse.json({ error: `Requested quantity must be between 1 and ${available}.` }, { status: 400 })
   }
 
   const { data: skuRow, error: skuErr } = await supabaseAdmin
@@ -109,10 +117,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .single()
   if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
 
-  await supabaseAdmin
-    .from('stock_movements')
-    .update({ po_id: poId, po_item_id: item.id })
-    .in('id', movements.map((m) => m.id))
+  const claim = await claimAccessoryBacklog(sku_id, qty, { poId, poItemId: item.id, createdBy: sessionUser.id })
+  if (claim.error) return NextResponse.json({ error: claim.error }, { status: 500 })
 
   await supabaseAdmin.from('sku_master').update({ base_cost: cost_price }).eq('id', sku_id)
 

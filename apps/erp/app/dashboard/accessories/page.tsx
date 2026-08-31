@@ -257,6 +257,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
   const [poDate, setPoDate] = useState(new Date().toISOString().slice(0, 10))
+  const [quantity, setQuantity] = useState<number | ''>(backlogQty)
   const [costPrice, setCostPrice] = useState<number | ''>('')
   const [gstPercentage, setGstPercentage] = useState<number>(18)
   const [poSearch, setPoSearch] = useState('')
@@ -285,6 +286,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
   const { run: attach, pending: busy } = useAsyncAction(async () => {
     setErr('')
     if (costPrice === '' || costPrice < 0) { setErr('Enter a valid cost.'); return }
+    if (quantity === '' || quantity <= 0 || quantity > backlogQty) { setErr(`Enter a quantity between 1 and ${backlogQty}.`); return }
 
     if (mode === 'new') {
       if (!vendorId) { setErr('Select a vendor.'); return }
@@ -292,7 +294,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
         method: 'POST',
         body: JSON.stringify({
           sku_id: skuId, vendor_id: vendorId, po_date: poDate,
-          cost_price: costPrice, gst_percentage: gstPercentage,
+          cost_price: costPrice, gst_percentage: gstPercentage, quantity,
         }),
       })
       if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to attach PO.'); return }
@@ -302,7 +304,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
     }
 
     if (!selectedPo) { setErr('Select a PO to attach to.'); return }
-    const attachBody = { sku_id: skuId, cost_price: costPrice, gst_percentage: gstPercentage }
+    const attachBody = { sku_id: skuId, cost_price: costPrice, gst_percentage: gstPercentage, quantity }
     let res = await apiFetch(`/api/purchase-orders/${selectedPo.id}/attach-accessory-stock`, {
       method: 'POST',
       body: JSON.stringify(attachBody),
@@ -387,6 +389,17 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
         </>
       )}
 
+      <div>
+        <label className="text-xs text-gray-500">Quantity to attach (of {backlogQty} available)</label>
+        <input
+          type="number"
+          min={1}
+          max={backlogQty}
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value === '' ? '' : Number(e.target.value))}
+          className="border p-1 w-full rounded text-xs"
+        />
+      </div>
       <div className="flex gap-1">
         <input type="number" value={costPrice} onChange={(e) => setCostPrice(e.target.value === '' ? '' : Number(e.target.value))} placeholder="Unit cost" className="border p-1 w-full rounded text-xs" />
         <input type="number" value={gstPercentage} onChange={(e) => setGstPercentage(Number(e.target.value))} placeholder="GST%" className="border p-1 w-16 rounded text-xs" />
@@ -395,7 +408,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
         <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100 flex-1">Cancel</button>
         <button onClick={() => attach()} disabled={busy} className="text-xs px-2 py-1 rounded bg-blue-600 text-white flex-1 inline-flex items-center justify-center gap-1">
           {busy && <Loader2 className="size-3 animate-spin" />}
-          Attach
+          Attach {quantity || ''}
         </button>
       </div>
     </div>
