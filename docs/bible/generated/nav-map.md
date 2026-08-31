@@ -19,13 +19,16 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Live Stock > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
 | Sales > Sales | `/dashboard/sales` | sales |  |
 | Sales > Invoices | `/dashboard/invoices` | invoices |  |
-| Sales > Quotations | `/dashboard/quotations` |  | yes |
+| Sales > Quotations | `/dashboard/quotations` | quotations |  |
 | Sales > Price Cockpit | `/dashboard/pricing` |  | yes |
 | Contacts > Customers | `/dashboard/customers` | customers |  |
 | Contacts > Vendors | `/dashboard/vendors` |  | yes |
-| Service > RMA (Vendor Returns) | `/dashboard/rma` |  | yes |
-| Finance > Expenses | `/dashboard/expenses` |  | yes |
-| Finance > Reports | `/dashboard/reports` |  | yes |
+| Service > RMA (Vendor Returns) | `/dashboard/rma` | rma |  |
+| Finance > Expenses | `/dashboard/expenses` | expenses |  |
+| Finance > Reports | `/dashboard/reports` | reports |  |
+| Finance > Vendor Reconciliation | `/dashboard/recon/vendors` |  | yes |
+| Finance > Bank Reconciliation | `/dashboard/recon/bank` |  | yes |
+| Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |
 | Activity Hub | `/dashboard/activities` | activities |  |
 | Audit Log | `/dashboard/settings/audit-log` |  |  |
 | Backup | `/dashboard/settings/backup` |  | yes |

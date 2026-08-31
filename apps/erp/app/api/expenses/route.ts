@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list expenses ----------
 // The 'expenses' page key -- previously this table had no API route at all (the page
@@ -46,11 +47,16 @@ export async function POST(req: NextRequest) {
   if (!canEditPage(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
-  const { expense_date, description, type, from_location, to_location, amount, remarks } = body
+  const { expense_date, description, type, from_location, to_location, amount, remarks, payment_account, vendor_id } = body
 
   if (!expense_date || !description || amount === undefined || amount === null) {
     return NextResponse.json({ error: 'expense_date, description, and amount are required.' }, { status: 400 })
   }
+
+  // entity_key derives from payment_account rather than asking for both --
+  // business_profiles.key values are the lowercase form of the *_account text
+  // columns used everywhere else (Digitalbluez -> digitalbluez).
+  const entityKey = payment_account ? payment_account.toLowerCase() : null
 
   const { data, error } = await supabaseAdmin
     .from('expenses')
@@ -63,10 +69,25 @@ export async function POST(req: NextRequest) {
       amount: Number(amount) || 0,
       remarks: remarks || null,
       is_deleted: false,
+      payment_account: payment_account || null,
+      entity_key: entityKey,
+      vendor_id: vendor_id || null,
+      created_by: sessionUser.id,
+      source: body.source === 'bank_recon' ? 'bank_recon' : 'manual',
     })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'expenses',
+    tableName: 'expenses',
+    recordId: data.id,
+    recordLabel: `${data.type || 'Expense'}: ${data.description} (₹${data.amount})`,
+  })
+
   return NextResponse.json(data, { status: 201 })
 }

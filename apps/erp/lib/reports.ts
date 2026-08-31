@@ -8,8 +8,19 @@
 // an Indian business's YTD/FY-to-date figures.
 import { financialYear } from '@db/shared'
 
+// Formats using the Date object's LOCAL fields, not toISOString() (UTC). Every
+// period boundary in this file is deliberately constructed at local midnight
+// (`new Date(y, m, d)`) to match this file's "server-local time" contract -- for
+// IST (UTC+5:30), local midnight on the 1st is 18:30 UTC the day BEFORE, so a
+// UTC-based toISOString().slice(0,10) silently shifted every month/fortnight/week
+// boundary back by one calendar day (e.g. "month to date" starting on the 31st of
+// the prior month instead of the 1st). Formatting from local fields is immune to
+// that regardless of what the server's OS timezone happens to be.
 export function toDateStr(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
 
 export function today(): { from: string; to: string } {
@@ -47,6 +58,19 @@ export function lastMonthFull(ref = new Date()): { from: string; to: string } {
   const from = new Date(ref.getFullYear(), ref.getMonth() - 1, 1)
   const to = new Date(ref.getFullYear(), ref.getMonth(), 0)
   return { from: toDateStr(from), to: toDateStr(to) }
+}
+
+// Monday-Sunday, the most recently fully-closed week (not "last 7 rolling days") --
+// mirrors the same closed-calendar-period pattern as previousFortnight() below.
+export function previousWeek(ref = new Date()): { from: string; to: string } {
+  const day = ref.getDay() // 0=Sun..6=Sat
+  const daysSinceMonday = (day + 6) % 7
+  const thisMonday = new Date(ref.getFullYear(), ref.getMonth(), ref.getDate() - daysSinceMonday)
+  const prevMonday = new Date(thisMonday)
+  prevMonday.setDate(thisMonday.getDate() - 7)
+  const prevSunday = new Date(thisMonday)
+  prevSunday.setDate(thisMonday.getDate() - 1)
+  return { from: toDateStr(prevMonday), to: toDateStr(prevSunday) }
 }
 
 // Fixed half-months, since cron has no "every 15 days" primitive -- 1st-15th and

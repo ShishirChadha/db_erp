@@ -10,6 +10,7 @@ import { EditPoItemDialog } from '@/components/EditPoItemDialog'
 import { EditPoVendorDialog } from '@/components/EditPoVendorDialog'
 import { AttachUnitsDialog } from '@/components/AttachUnitsDialog'
 import { MoveUnitDialog } from '@/components/MoveUnitDialog'
+import { AddVendorPaymentDialog } from '@/components/AddVendorPaymentDialog'
 
 interface POItem {
   id: string
@@ -51,7 +52,21 @@ interface PurchaseOrder {
   total_amount: number
   gst_total: number
   grand_total: number
+  amount_paid: number
+  payment_status: string
   items: POItem[]
+}
+
+interface VendorPayment {
+  id: string
+  amount: number
+  payment_account: string | null
+  paid_on: string
+  method: string | null
+  reference: string | null
+  note: string | null
+  recorded_at: string
+  recorded_by_name: string | null
 }
 
 function PODetailPage() {
@@ -68,6 +83,8 @@ function PODetailPage() {
   const [editingVendor, setEditingVendor] = useState(false)
   const [attachingUnits, setAttachingUnits] = useState(false)
   const [movingUnit, setMovingUnit] = useState<{ assetNumber: string; serialNumber: string | null; entryDate: string | null; skuLabel: string } | null>(null)
+  const [payments, setPayments] = useState<VendorPayment[]>([])
+  const [showAddPayment, setShowAddPayment] = useState(false)
 
   const fetchPO = async () => {
     setLoading(true)
@@ -81,9 +98,24 @@ function PODetailPage() {
     setLoading(false)
   }
 
+  const loadPayments = async () => {
+    const res = await apiFetch(`/api/purchase-orders/${poId}/payments`)
+    if (res.ok) setPayments(await res.json())
+  }
+
   useEffect(() => {
     fetchPO()
+    loadPayments()
   }, [poId])
+
+  const deletePayment = async (paymentId: string) => {
+    if (!confirm('Remove this payment entry?')) return
+    const res = await apiFetch(`/api/purchase-orders/${poId}/payments/${paymentId}`, { method: 'DELETE' })
+    if (res.ok) {
+      loadPayments()
+      fetchPO()
+    }
+  }
 
   const { run: handleReceiveSubmit, pending: receiving } = useAsyncAction(async () => {
     if (!po) return
@@ -304,6 +336,43 @@ function PODetailPage() {
         Grand Total: ₹{(po.grand_total ?? 0).toFixed(2)}
       </div>
 
+      <div className="border rounded p-3 space-y-2 mt-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="font-medium">Vendor Payment</p>
+            <div className="text-sm capitalize">
+              {po.payment_status} · ₹{(po.amount_paid ?? 0).toFixed(2)} of ₹{(po.grand_total ?? 0).toFixed(2)}
+            </div>
+          </div>
+          {po.payment_status !== 'paid' && (
+            <button
+              onClick={() => setShowAddPayment(true)}
+              className="border rounded px-3 py-1.5 text-sm hover:bg-gray-50"
+            >
+              Add Payment
+            </button>
+          )}
+        </div>
+        {payments.length > 0 && (
+          <ul className="text-xs border-t pt-2 divide-y max-h-32 overflow-y-auto">
+            {payments.map((p) => (
+              <li key={p.id} className="py-1 flex items-center justify-between gap-2">
+                <div>
+                  ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ''}{p.method ? ` · ${p.method}` : ''}
+                  {p.note ? ` · ${p.note}` : ''}
+                  <div className="text-gray-400">
+                    {new Date(p.paid_on).toLocaleDateString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ''}
+                  </div>
+                </div>
+                <button type="button" onClick={() => deletePayment(p.id)} className="text-red-600 underline shrink-0">
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
       {/* Buttons (unchanged, but make sure they also handle undefined status) */}
       {['submitted', 'partially_received'].includes(po.po_status || '') && (
         <div className="mt-4">
@@ -451,6 +520,18 @@ function PODetailPage() {
           skuLabel={movingUnit.skuLabel}
           onClose={() => setMovingUnit(null)}
           onSaved={fetchPO}
+        />
+      )}
+
+      {showAddPayment && po && (
+        <AddVendorPaymentDialog
+          poId={poId}
+          balanceDue={(po.grand_total ?? 0) - (po.amount_paid ?? 0)}
+          onClose={() => setShowAddPayment(false)}
+          onSaved={() => {
+            loadPayments()
+            fetchPO()
+          }}
         />
       )}
     </div>

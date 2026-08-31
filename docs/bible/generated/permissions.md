@@ -21,13 +21,16 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Live Stock > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
 | Sales > Sales | if granted `sales` | if granted `sales` |
 | Sales > Invoices | if granted `invoices` | if granted `invoices` |
-| Sales > Quotations | owner-only | owner-only |
+| Sales > Quotations | if granted `quotations` | if granted `quotations` |
 | Sales > Price Cockpit | owner-only | owner-only |
 | Contacts > Customers | if granted `customers` | if granted `customers` |
 | Contacts > Vendors | owner-only | owner-only |
-| Service > RMA (Vendor Returns) | owner-only | owner-only |
-| Finance > Expenses | owner-only | owner-only |
-| Finance > Reports | owner-only | owner-only |
+| Service > RMA (Vendor Returns) | if granted `rma` | if granted `rma` |
+| Finance > Expenses | if granted `expenses` | if granted `expenses` |
+| Finance > Reports | if granted `reports` | if granted `reports` |
+| Finance > Vendor Reconciliation | owner-only | owner-only |
+| Finance > Bank Reconciliation | owner-only | owner-only |
+| Finance > Recon Sessions | owner-only | owner-only |
 | Activity Hub | if granted `activities` | if granted `activities` |
 | Audit Log | visible to all signed-in staff | visible to all signed-in staff |
 | Backup | owner-only | owner-only |

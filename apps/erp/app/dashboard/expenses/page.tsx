@@ -36,6 +36,7 @@ import BulkAddDialog from "@/components/BulkAddDialog";
 import EditExpenseDialog from "@/components/EditExpenseDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import { useRole } from "@/lib/auth/useRole";
+import { useCustomOptions } from "@/lib/useCustomOptions";
 
 type SortField = "expense_date" | "type" | "amount";
 
@@ -52,6 +53,7 @@ function ExpensesPage() {
   const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
+  const { values: expenseTypes } = useCustomOptions("expense_types");
   const [dateFrom, setDateFrom] = useState<Date | undefined>(undefined);
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   const [sortField, setSortField] = useState<SortField>("expense_date");
@@ -149,11 +151,7 @@ function ExpensesPage() {
             <SelectTrigger><SelectValue placeholder="All types" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">All</SelectItem>
-              <SelectItem value="Food">Food</SelectItem>
-              <SelectItem value="Transport">Transport</SelectItem>
-              <SelectItem value="Stationary">Stationary</SelectItem>
-              <SelectItem value="Water">Water</SelectItem>
-              <SelectItem value="Birthday">Birthday</SelectItem>
+              {expenseTypes.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
             </SelectContent>
           </Select>
         </div>

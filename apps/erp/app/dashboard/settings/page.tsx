@@ -225,6 +225,7 @@ function SettingsPage() {
           {activeCategory === 'activity_tags' && <TagsManager />}
           {activeCategory === 'website_admin' && <WebsiteAdminManager />}
           {activeCategory === 'field_redaction' && <FieldRedactionManager />}
+          {activeCategory === 'digests' && <DigestsManager />}
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { encryptPassword } from '@/lib/auth/password-vault'
+import { sanitizeBlocks, DIGEST_BLOCKS } from '@/lib/digests/blocks'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -36,6 +37,7 @@ export async function GET(req: NextRequest) {
     subscriptions: subsRes.data || [],
     profiles: profilesRes.data || [],
     recentRuns: runsRes.data || [],
+    blockCatalog: DIGEST_BLOCKS,
   })
 }
 
@@ -77,13 +79,8 @@ export async function PUT(req: NextRequest) {
       // Role-appropriate blocks enforced server-side -- a manager/employee
       // subscription can never carry a financial block even via a crafted request.
       const { data: profile } = await supabaseAdmin.from('profiles').select('role').eq('id', s.profile_id).single()
-      const role = profile?.role || 'employee'
-      const allowedBlocks = role === 'owner'
-        ? ['kpis', 'inventory', 'receivables', 'data_health']
-        : role === 'manager'
-          ? ['kpis', 'inventory', 'receivables']
-          : ['inventory']
-      const blocks = Array.isArray(s.blocks) ? s.blocks.filter((b: string) => allowedBlocks.includes(b)) : allowedBlocks
+      const role = (profile?.role || 'employee') as 'owner' | 'manager' | 'employee'
+      const blocks = sanitizeBlocks(s.blocks, role)
 
       const { error } = await supabaseAdmin.from('digest_subscriptions').upsert({
         profile_id: s.profile_id,

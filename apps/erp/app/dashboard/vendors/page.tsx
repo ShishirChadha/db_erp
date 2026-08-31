@@ -29,6 +29,7 @@ type Vendor = {
   spoc_name: string
   owner_name: string
   phone: string
+  alt_phone: string | null
   address: string
   address_line1: string | null
   address_line2: string | null
@@ -144,6 +145,7 @@ function VendorsPage() {
       spoc_name: vendor.spoc_name || '',
       owner_name: vendor.owner_name || '',
       phone: vendor.phone || '',
+      alt_phone: vendor.alt_phone || '',
       address_line1: vendor.address_line1 || '',
       address_line2: vendor.address_line2 || '',
       city: vendor.city || '',
@@ -171,6 +173,7 @@ function VendorsPage() {
       spoc_name: form.spoc_name,
       owner_name: form.owner_name,
       phone: form.phone,
+      alt_phone: form.alt_phone,
       address_line1: form.address_line1,
       address_line2: form.address_line2,
       city: form.city,
@@ -424,6 +427,7 @@ function VendorsPage() {
                 ['SPOC Name', viewItem.spoc_name],
                 ['Owner Name', viewItem.owner_name],
                 ['Phone', viewItem.phone],
+                ['Alt Phone', viewItem.alt_phone],
                 ['Email', viewItem.email],
                 ['Address', [
                   viewItem.address_line1,

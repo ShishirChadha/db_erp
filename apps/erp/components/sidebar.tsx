@@ -128,6 +128,13 @@ const menuGroups = [
     children: [
       { href: '/dashboard/expenses', label: 'Expenses', pageKey: 'expenses' },
       { href: '/dashboard/reports', label: 'Reports', pageKey: 'reports' },
+      // Reconciliation pages are always cost/vendor-bearing (an uploaded vendor
+      // invoice, bank transaction contents) -- ownerOnly rather than a pageKey
+      // grant, same posture as Vendors/RMA/Quotations, not the broader
+      // manager/employee-grantable pattern the rest of Finance now uses.
+      { href: '/dashboard/recon/vendors', label: 'Vendor Reconciliation', ownerOnly: true },
+      { href: '/dashboard/recon/bank', label: 'Bank Reconciliation', ownerOnly: true },
+      { href: '/dashboard/recon/sessions', label: 'Recon Sessions', ownerOnly: true },
     ],
   },
   {

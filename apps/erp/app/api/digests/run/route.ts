@@ -52,7 +52,7 @@ async function runSubscription(subscriptionId: string, preview: boolean) {
 
   const role = await resolveRole(sub.profile_id)
   const { from } = periodRange(period)
-  const payload = await buildDigestPayload(period, role)
+  const payload = await buildDigestPayload(period, role, sub.blocks)
 
   const channels = sub.channels || {}
   const results: Record<string, any> = {}

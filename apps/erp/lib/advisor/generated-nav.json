@@ -83,7 +83,8 @@
   {
     "label": "Sales > Quotations",
     "route": "/dashboard/quotations",
-    "ownerOnly": true
+    "pageKey": "quotations",
+    "ownerOnly": false
   },
   {
     "label": "Sales > Price Cockpit",
@@ -104,16 +105,34 @@
   {
     "label": "Service > RMA (Vendor Returns)",
     "route": "/dashboard/rma",
-    "ownerOnly": true
+    "pageKey": "rma",
+    "ownerOnly": false
   },
   {
     "label": "Finance > Expenses",
     "route": "/dashboard/expenses",
-    "ownerOnly": true
+    "pageKey": "expenses",
+    "ownerOnly": false
   },
   {
     "label": "Finance > Reports",
     "route": "/dashboard/reports",
+    "pageKey": "reports",
+    "ownerOnly": false
+  },
+  {
+    "label": "Finance > Vendor Reconciliation",
+    "route": "/dashboard/recon/vendors",
+    "ownerOnly": true
+  },
+  {
+    "label": "Finance > Bank Reconciliation",
+    "route": "/dashboard/recon/bank",
+    "ownerOnly": true
+  },
+  {
+    "label": "Finance > Recon Sessions",
+    "route": "/dashboard/recon/sessions",
     "ownerOnly": true
   },
   {

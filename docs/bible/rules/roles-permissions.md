@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-08-30
+updated: 2026-08-31
 ---
 
 ## The three roles
@@ -37,6 +37,14 @@ Owner sets both in **Settings → Users**. For the exact current matrix, see
 `generated/permissions.md` — it's built live from these two tables plus the
 nav structure, so it's always accurate to what's actually configured today,
 not what was configured when this chapter was last written.
+
+The three Reconciliation pages under Finance (`/dashboard/recon/vendors`,
+`/dashboard/recon/bank`, `/dashboard/recon/sessions`)
+are `ownerOnly: true` at the nav level (matching Vendors/RMA/Quotations), not a
+grantable `pageKey` like the rest of Finance — every one of them is cost/
+vendor-bearing (an uploaded vendor invoice's cost lines, a bank transaction's
+counterpart) — and every API route underneath them checks `isOwner()` directly
+regardless of the nav gate. See **reconciliation** for the module itself.
 
 ## Field redaction is a third, independent axis
 

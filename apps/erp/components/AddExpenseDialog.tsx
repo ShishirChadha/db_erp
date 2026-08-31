@@ -21,13 +21,19 @@ import {
 } from "@/components/ui/select";
 import { Plus } from "lucide-react";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { useCustomOptions } from "@/lib/useCustomOptions";
+import { SearchableSelect } from "@/components/SearchableSelect";
+
+const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
 export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
   const [open, setOpen] = useState(false);
+  const { values: expenseTypes, addOption: addExpenseType } = useCustomOptions("expense_types");
   const [formData, setFormData] = useState({
     expense_date: "",
     description: "",
-    type: "Food",
+    type: "",
+    payment_account: "",
     from_location: "",
     to_location: "",
     amount: null as number | null,
@@ -50,7 +56,8 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
       setFormData({
         expense_date: "",
         description: "",
-        type: "Food",
+        type: "",
+        payment_account: "",
         from_location: "",
         to_location: "",
         amount: null,
@@ -72,7 +79,23 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
           <div className="grid grid-cols-2 gap-4">
             <div><Label>Expense Date *</Label><Input type="date" required value={formData.expense_date} onChange={(e) => handleChange("expense_date", e.target.value)} /></div>
             <div><Label>Description</Label><Input value={formData.description} onChange={(e) => handleChange("description", e.target.value)} /></div>
-            <div><Label>Type</Label><Select value={formData.type} onValueChange={(val) => handleChange("type", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Food">Food</SelectItem><SelectItem value="Transport">Transport</SelectItem><SelectItem value="Stationary">Stationary</SelectItem><SelectItem value="Water">Water</SelectItem><SelectItem value="Birthday">Birthday</SelectItem></SelectContent></Select></div>
+            <div>
+              <Label>Type</Label>
+              <SearchableSelect
+                options={expenseTypes}
+                value={formData.type}
+                onChange={(val) => handleChange("type", val)}
+                placeholder="Select type..."
+                onOtherCommit={(val) => addExpenseType(val)}
+              />
+            </div>
+            <div>
+              <Label>Paid From</Label>
+              <Select value={formData.payment_account} onValueChange={(val) => handleChange("payment_account", val)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>{PAYMENT_ACCOUNTS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>
             <div><Label>From</Label><Input value={formData.from_location} onChange={(e) => handleChange("from_location", e.target.value)} /></div>
             <div><Label>To</Label><Input value={formData.to_location} onChange={(e) => handleChange("to_location", e.target.value)} /></div>
             <div><Label>Amount</Label><Input type="number" step="0.01" value={formData.amount ?? ""} onChange={(e) => handleChange("amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>

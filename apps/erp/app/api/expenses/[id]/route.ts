@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- PATCH: edit an expense, or soft-delete/restore it ----------
 // Soft-delete/restore are just field updates on this table (is_deleted +
@@ -15,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const {
     expense_date, description, type, from_location, to_location, amount, remarks,
-    is_deleted, deleted_remarks,
+    is_deleted, deleted_remarks, payment_account, vendor_id,
   } = body
 
   const updates: Record<string, any> = {}
@@ -26,6 +27,11 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (to_location !== undefined) updates.to_location = to_location
   if (amount !== undefined) updates.amount = Number(amount) || 0
   if (remarks !== undefined) updates.remarks = remarks
+  if (payment_account !== undefined) {
+    updates.payment_account = payment_account
+    updates.entity_key = payment_account ? String(payment_account).toLowerCase() : null
+  }
+  if (vendor_id !== undefined) updates.vendor_id = vendor_id
   if (is_deleted !== undefined) {
     updates.is_deleted = !!is_deleted
     updates.deleted_remarks = is_deleted ? (deleted_remarks || null) : null
@@ -44,5 +50,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: is_deleted !== undefined ? (is_deleted ? 'soft_delete' : 'restore') : 'update',
+    module: 'expenses',
+    tableName: 'expenses',
+    recordId: id,
+    recordLabel: `${data.type || 'Expense'}: ${data.description} (₹${data.amount})`,
+  })
+
   return NextResponse.json(data)
 }

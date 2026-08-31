@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { restoreAssetLedgerHardDelete, restorePurchaseOrderHardDelete, restoreSalePaymentHardDelete } from '@/lib/audit-log-restore'
+import { restoreAssetLedgerHardDelete, restorePurchaseOrderHardDelete, restoreSalePaymentHardDelete, restoreVendorPaymentHardDelete } from '@/lib/audit-log-restore'
 
 // Best-effort recovery of a hard-deleted record from its stored snapshot. This can
 // legitimately fail cleanly (a serial/asset number was since reused, a referenced SKU
@@ -32,6 +32,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     result = await restorePurchaseOrderHardDelete(entry.snapshot)
   } else if (entry.table_name === 'sale_payments') {
     result = await restoreSalePaymentHardDelete(entry.snapshot)
+  } else if (entry.table_name === 'vendor_payments') {
+    result = await restoreVendorPaymentHardDelete(entry.snapshot)
   } else {
     return NextResponse.json({ error: `No hard-delete restore handler for table "${entry.table_name}"` }, { status: 400 })
   }

@@ -29,6 +29,12 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | backup_settings | id | backup_settings_singleton | `CHECK ((id = true))` |
 | backup_snapshots | status | backup_snapshots_status_check | `CHECK ((status = ANY (ARRAY['complete'::text, 'failed'::text])))` |
 | backup_snapshots | trigger_type | backup_snapshots_trigger_type_check | `CHECK ((trigger_type = ANY (ARRAY['scheduled'::text, 'manual'::text, 'pre_restore_safety'::text])))` |
+| bank_column_profiles | amount_style | bank_column_profiles_amount_style_check | `CHECK ((amount_style = ANY (ARRAY['split_dr_cr'::text, 'signed'::text])))` |
+| bank_column_profiles | source_format | bank_column_profiles_source_format_check | `CHECK ((source_format = ANY (ARRAY['csv'::text, 'pdf'::text])))` |
+| bank_statements | continuity_status | bank_statements_continuity_status_check | `CHECK ((continuity_status = ANY (ARRAY['ok'::text, 'gap'::text, 'mismatch'::text])))` |
+| bank_transaction_matches | amount_applied | bank_transaction_matches_amount_applied_check | `CHECK ((amount_applied > (0)::numeric))` |
+| bank_transaction_matches | match_type | bank_transaction_matches_match_type_check | `CHECK ((match_type = ANY (ARRAY['sale_payment'::text, 'vendor_payment'::text, 'expense'::text, 'transfer_pair'::text])))` |
+| bank_transactions | recon_status | bank_transactions_recon_status_check | `CHECK ((recon_status = ANY (ARRAY['open'::text, 'matched'::text, 'split'::text, 'explained'::text, 'transfer'::text, 'ignored'::text])))` |
 | blog_posts | status | blog_posts_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | business_profiles | invoicing_mode | business_profiles_invoicing_mode_check | `CHECK ((invoicing_mode = ANY (ARRAY['erp'::text, 'external'::text])))` |
 | business_profiles | key | business_profiles_key_check | `CHECK ((key = ANY (ARRAY['digitalbluez'::text, 'techtenth'::text, 'cash'::text])))` |
@@ -40,11 +46,13 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | digest_runs | channel | digest_runs_channel_check | `CHECK ((channel = ANY (ARRAY['email'::text, 'whatsapp'::text, 'in_app'::text])))` |
 | digest_runs | status | digest_runs_status_check | `CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text, 'skipped'::text])))` |
 | digest_subscriptions | hour_local | digest_subscriptions_hour_local_check | `CHECK (((hour_local >= 0) AND (hour_local <= 23)))` |
-| digest_subscriptions | period | digest_subscriptions_period_check | `CHECK ((period = ANY (ARRAY['daily'::text, 'fortnightly'::text, 'monthly'::text])))` |
+| digest_subscriptions | period | digest_subscriptions_period_check | `CHECK ((period = ANY (ARRAY['daily'::text, 'weekly'::text, 'fortnightly'::text, 'monthly'::text])))` |
 | document_sends | channel | document_sends_channel_check | `CHECK ((channel = ANY (ARRAY['email'::text, 'whatsapp'::text])))` |
 | document_sends | document_type | document_sends_document_type_check | `CHECK ((document_type = ANY (ARRAY['invoice'::text, 'sales_document'::text])))` |
 | document_sends | status | document_sends_status_check | `CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text])))` |
-| expenses | type | expenses_type_check | `CHECK ((type = ANY (ARRAY['Food'::text, 'Transport'::text, 'Stationary'::text, 'Water'::text, 'Birthday'::text])))` |
+| expenses | payment_account | expenses_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| expenses | source | expenses_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'bank_recon'::text])))` |
+| extraction_templates | template_kind | extraction_templates_template_kind_check | `CHECK ((template_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
 | invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text])))` |
 | invoices | invoice_type | invoices_invoice_type_check | `CHECK ((invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])))` |
@@ -52,8 +60,8 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | kb_chapters | kind | kb_chapters_kind_check | `CHECK ((kind = ANY (ARRAY['module'::text, 'process'::text, 'rule'::text, 'generated'::text])))` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
-| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text])))` |
-| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text]))` |
+| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text])))` |
+| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text]))` |
 | profiles | role | profiles_role_check | `CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'employee'::text])))` |
 | promotions | promo_type | promotions_check | `CHECK ((((promo_type = 'percent_off'::text) AND (discount_percent IS NOT NULL)) OR ((promo_type = 'flat_off'::text) AND (discount_flat IS NOT NULL)) OR ((promo_type = 'free_gift'::text) AND (free_gift_sku_id IS NOT NULL)) OR (promo_type = 'coupon_code'::text)))` |
 | promotions | ends_at | promotions_check1 | `CHECK ((ends_at > starts_at))` |
@@ -61,11 +69,13 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | promotions | scope_type | promotions_scope_type_check | `CHECK ((scope_type = ANY (ARRAY['product'::text, 'brand'::text, 'category'::text, 'sitewide'::text])))` |
 | purchase_files | file_type | purchase_files_file_type_check | `CHECK ((file_type = ANY (ARRAY['invoice'::text, 'eway_bill'::text, 'receipt'::text, 'other'::text])))` |
 | purchase_order_items | quantity | purchase_order_items_quantity_check | `CHECK ((quantity > 0))` |
+| purchase_orders | payment_status | purchase_orders_payment_status_check | `CHECK ((payment_status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text])))` |
 | purchase_orders | po_status | purchase_orders_po_status_check | `CHECK ((po_status = ANY (ARRAY['draft'::text, 'submitted'::text, 'partially_received'::text, 'received'::text, 'invoiced'::text, 'cancelled'::text])))` |
 | purchase_orders | purchase_type | purchase_orders_purchase_type_check | `CHECK ((purchase_type = ANY (ARRAY['GST'::text, 'Cash'::text])))` |
 | purchase_orders | purchased_by_type | purchase_orders_purchased_by_type_check | `CHECK ((purchased_by_type = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text, 'Other'::text])))` |
 | purchases | category | purchases_category_check | `CHECK ((category = ANY (ARRAY['New'::text, 'Preowned'::text])))` |
 | purchases | purchase_type | purchases_purchase_type_check | `CHECK ((purchase_type = ANY (ARRAY['Cash'::text, 'GST'::text])))` |
+| recon_sessions | status | recon_sessions_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'closed'::text])))` |
 | reorder_rules | reorder_quantity | reorder_rules_reorder_quantity_check | `CHECK ((reorder_quantity > 0))` |
 | repair_jobs | job_type | repair_jobs_job_type_check | `CHECK ((job_type = ANY (ARRAY['repair'::text, 'replacement'::text])))` |
 | repair_jobs | payment_account | repair_jobs_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
@@ -83,3 +93,11 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | sku_master | status | sku_master_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])))` |
 | sku_upgrade_rules | field_name | sku_upgrade_rules_field_name_check | `CHECK ((field_name = ANY (ARRAY['ram'::text, 'ssd'::text, 'warranty_months'::text])))` |
 | sku_upgrade_rules | price_delta | sku_upgrade_rules_price_delta_check | `CHECK ((price_delta >= (0)::numeric))` |
+| uploaded_documents | doc_kind | uploaded_documents_doc_kind_check | `CHECK ((doc_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
+| uploaded_documents | extraction_status | uploaded_documents_extraction_status_check | `CHECK ((extraction_status = ANY (ARRAY['pending'::text, 'probed'::text, 'parsed'::text, 'needs_review'::text, 'ai_pending_approval'::text, 'failed'::text, 'confirmed'::text])))` |
+| uploaded_documents | extraction_tier | uploaded_documents_extraction_tier_check | `CHECK ((extraction_tier = ANY (ARRAY['0_probe'::text, '1_template'::text, '2_ai'::text, '3_manual'::text])))` |
+| vendor_correction_proposals | change_kind | vendor_correction_proposals_change_kind_check | `CHECK ((change_kind = ANY (ARRAY['fill_missing'::text, 'conflict'::text, 'derived'::text])))` |
+| vendor_correction_proposals | confidence | vendor_correction_proposals_confidence_check | `CHECK ((confidence = ANY (ARRAY['high'::text, 'medium'::text, 'low'::text])))` |
+| vendor_correction_proposals | status | vendor_correction_proposals_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))` |
+| vendor_payments | amount | vendor_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
+| vendor_payments | payment_account | vendor_payments_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |

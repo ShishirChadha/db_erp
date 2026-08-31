@@ -17,6 +17,7 @@ export interface VendorFormState {
   spoc_name: string
   owner_name: string
   phone: string
+  alt_phone: string
   address_line1: string
   address_line2: string
   city: string
@@ -35,6 +36,7 @@ export const emptyVendorForm: VendorFormState = {
   spoc_name: '',
   owner_name: '',
   phone: '',
+  alt_phone: '',
   address_line1: '',
   address_line2: '',
   city: '',
@@ -100,6 +102,15 @@ export function VendorFormFields({
           placeholder="+91 98765 43210"
           value={form.phone}
           onChange={(e) => onChange({ phone: e.target.value })}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label>Alt Phone</Label>
+        <Input
+          placeholder="+91 98765 43210"
+          value={form.alt_phone}
+          onChange={(e) => onChange({ alt_phone: e.target.value })}
         />
       </div>
 

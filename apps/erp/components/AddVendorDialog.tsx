@@ -51,6 +51,7 @@ export function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor
         spoc_name: form.spoc_name,
         owner_name: form.owner_name,
         phone: form.phone,
+        alt_phone: form.alt_phone,
         address_line1: form.address_line1,
         address_line2: form.address_line2,
         city: form.city,

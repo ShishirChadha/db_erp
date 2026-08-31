@@ -118,3 +118,15 @@ export async function restoreSalePaymentHardDelete(snapshot: any): Promise<HardD
   if (error) return { success: false, failedStep: 'insert sale_payments', error: error.message }
   return { success: true }
 }
+
+// vendor_payments hard-delete restore mirrors sale_payments -- a plain single-row
+// insert-back, with purchase_orders.amount_paid/payment_status recomputed
+// automatically by trg_sync_po_payment_totals off the re-inserted row.
+export async function restoreVendorPaymentHardDelete(snapshot: any): Promise<HardDeleteRestoreResult> {
+  if (!snapshot || snapshot.kind !== 'row' || snapshot.table !== 'vendor_payments') {
+    return { success: false, error: 'Snapshot is missing or not a single-row vendor_payments snapshot' }
+  }
+  const { error } = await supabaseAdmin.from('vendor_payments').insert(snapshot.row)
+  if (error) return { success: false, failedStep: 'insert vendor_payments', error: error.message }
+  return { success: true }
+}

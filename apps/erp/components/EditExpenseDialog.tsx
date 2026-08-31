@@ -19,12 +19,17 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { useCustomOptions } from "@/lib/useCustomOptions";
+import { SearchableSelect } from "@/components/SearchableSelect";
+
+const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
 interface Expense {
   id: string;
   expense_date: string;
   description: string;
   type: string;
+  payment_account?: string | null;
   from_location: string;
   to_location: string;
   amount: number | null;
@@ -43,6 +48,7 @@ export default function EditExpenseDialog({
   onUpdate: () => void;
 }) {
   const [formData, setFormData] = useState<Partial<Expense>>({});
+  const { values: expenseTypes, addOption: addExpenseType } = useCustomOptions("expense_types");
 
   useEffect(() => {
     setFormData(expense);
@@ -90,20 +96,19 @@ const handleChange = (field: keyof Expense, value: string | number | null) => {
             </div>
             <div>
               <Label>Type</Label>
-              <Select
+              <SearchableSelect
+                options={expenseTypes}
                 value={formData.type || ""}
-                onValueChange={(val) => handleChange("type", val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Food">Food</SelectItem>
-                  <SelectItem value="Transport">Transport</SelectItem>
-                  <SelectItem value="Stationary">Stationary</SelectItem>
-                  <SelectItem value="Water">Water</SelectItem>
-                  <SelectItem value="Birthday">Birthday</SelectItem>
-                </SelectContent>
+                onChange={(val) => handleChange("type", val)}
+                placeholder="Select type..."
+                onOtherCommit={(val) => addExpenseType(val)}
+              />
+            </div>
+            <div>
+              <Label>Paid From</Label>
+              <Select value={formData.payment_account || ""} onValueChange={(val) => handleChange("payment_account", val)}>
+                <SelectTrigger><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>{PAYMENT_ACCOUNTS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div>
