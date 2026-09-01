@@ -76,7 +76,10 @@ this session's work began.
   **When no vendor resolves confidently**, the page offers a live search across
   every vendor (not just trigram candidates) plus an inline "Create new vendor"
   (reuses `AddVendorDialog`) — added 2026-08-31 so an unmatched invoice never
-  dead-ends at "go create one elsewhere."
+  dead-ends at "go create one elsewhere." The dialog is pre-filled (2026-09-01)
+  from the invoice's own AI/template extraction (`buildVendorPrefill` in the
+  vendor-recon page) — only non-empty extracted fields are set, so the owner
+  corrects a mostly-right form instead of retyping the vendor's letterhead.
 - **Bank reconciliation** (`/dashboard/recon/bank`, `/dashboard/recon/sessions`)
   imports a statement (`bank_statements`/`bank_transactions`), deduplicating on
   a server-computed hash of the row's own values (never a client-supplied key)
