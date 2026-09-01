@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-08-29
+updated: 2026-09-01
 ---
 
 ## What this covers
@@ -31,6 +31,14 @@ sold — all keyed by `serial_number`, not by a PO/asset number (see
 
 A unit can move through all of this without ever having a PO or asset number —
 that paperwork is attached later, independently, via **attach-units-to-po**.
+
+The lifecycle isn't strictly one-way: a unit in `ready_for_sale` can be sent
+back to `qc_pending` (`POST /api/asset-ledger/[id]/send-back-to-qc`) if a
+defect is noticed after it was marked ready. Open to both owner and employees,
+same as intake/QC itself. This resets `qc_status` to `pending` alongside
+`status` so the two never disagree, but leaves the prior QC checklist/grade in
+place as history rather than clearing it — a fresh QC pass overwrites them the
+normal way (see **qc-a-unit**).
 
 ## Live Stock vs. main ERP Stock
 

@@ -199,7 +199,7 @@ Live schema snapshot -- 78 tables. Regenerate with `npm run bible:generate`.
 
 DB advisor miss log -- every question asked, whether a resolver matched, and how long it took. Feeds the Bible backlog (unmatched questions -> which chapter/keyword to add next).
 
-~5 rows (estimate)
+~15 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -316,7 +316,7 @@ DB advisor miss log -- every question asked, whether a resolver matched, and how
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~879 rows (estimate)
+~982 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -712,7 +712,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## field_corrections
 
-~541 rows (estimate)
+~578 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1457,7 +1457,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## sku_master
 
-~265 rows (estimate)
+~267 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
