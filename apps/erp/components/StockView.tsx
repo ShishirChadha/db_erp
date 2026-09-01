@@ -465,6 +465,24 @@ export default function StockView({
     }
   }
 
+  const sendBackToQc = async (asset: { id: string }, label: string) => {
+    if (pendingRowKey) return
+    if (!confirm(`Send ${label} back to QC? It will no longer show as Ready for Sale until re-QC'd.`)) return
+    setPendingRowKey(`${asset.id}:send-back-to-qc`)
+    try {
+      const res = await apiFetch(`/api/asset-ledger/${asset.id}/send-back-to-qc`, { method: 'POST' })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to send back to QC.')
+        return
+      }
+      fetchAssets()
+      fetchCounts()
+    } finally {
+      setPendingRowKey(null)
+    }
+  }
+
   const handleForceDelete = async (reason: string) => {
     if (!forceDeleteAsset) return
     setForceDeleteErr('')
@@ -921,6 +939,16 @@ export default function StockView({
                           Sell
                         </button>
                       )}
+                      {asset.status === 'ready_for_sale' && (
+                        <button
+                          onClick={() => sendBackToQc(asset, identifier(asset))}
+                          disabled={!!pendingRowKey}
+                          className="text-amber-700 underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+                        >
+                          {pendingRowKey === `${asset.id}:send-back-to-qc` && <Loader2 className="size-3 animate-spin" />}
+                          Send to QC
+                        </button>
+                      )}
                       {showServiceActions && (
                         <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">
                           Repair
@@ -1086,6 +1114,9 @@ export default function StockView({
                 )}
                 {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
                   <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">Sell</button>
+                )}
+                {tab === 'current' && asset.status === 'ready_for_sale' && (
+                  <button onClick={() => sendBackToQc(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-amber-700 underline text-xs disabled:opacity-50">Send to QC</button>
                 )}
                 {tab === 'current' && showServiceActions && (
                   <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">Repair</button>
