@@ -9,10 +9,12 @@ interface Option {
   value: string
   is_active: boolean
   sort_order: number
+  owner_only: boolean
 }
 
 const KNOWN_CATEGORIES = [
   { key: 'stock_intake_type', label: 'Stock Intake Type' },
+  { key: 'expense_types', label: 'Expense Types' },
   { key: 'brand', label: 'Brand' },
   { key: 'model_laptop', label: 'Model (Laptop)' },
   { key: 'model_desktop', label: 'Model (Desktop)' },
@@ -99,6 +101,26 @@ export default function DropdownOptionsManager() {
     }
   }
 
+  // "Owner only" -- a non-owner never even sees this value in the dropdown (not
+  // just redacted after the fact). Useful for sensitive categories like
+  // expense_types (Salaries, Bank Charges, GST Payment) where the value itself
+  // is fine to show the owner but shouldn't be offered to staff at all.
+  const toggleOwnerOnly = async (opt: Option) => {
+    if (busyRef.current) return
+    busyRef.current = true
+    setBusy(true)
+    try {
+      await apiFetch(`/api/custom-options/${opt.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ owner_only: !opt.owner_only }),
+      })
+      await fetchOptions()
+    } finally {
+      busyRef.current = false
+      setBusy(false)
+    }
+  }
+
   return (
     <div>
       <p className="text-sm text-muted-foreground mb-4">
@@ -128,15 +150,27 @@ export default function DropdownOptionsManager() {
         <div className="border rounded divide-y mb-3">
           {options.length === 0 && <p className="text-sm text-muted-foreground p-2">No values yet.</p>}
           {options.map(opt => (
-            <div key={opt.id} className="flex justify-between items-center p-2">
-              <span className={opt.is_active ? '' : 'text-muted-foreground line-through'}>{opt.value}</span>
-              <button
-                onClick={() => toggleActive(opt)}
-                disabled={busy}
-                className={`text-xs px-2 py-1 rounded ${opt.is_active ? 'bg-destructive/10 text-destructive' : 'bg-success/15 text-success'}`}
-              >
-                {opt.is_active ? 'Deactivate' : 'Activate'}
-              </button>
+            <div key={opt.id} className="flex justify-between items-center p-2 gap-2">
+              <span className={opt.is_active ? '' : 'text-muted-foreground line-through'}>
+                {opt.value}
+                {opt.owner_only && <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-700">Owner only</span>}
+              </span>
+              <span className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => toggleOwnerOnly(opt)}
+                  disabled={busy}
+                  className={`text-xs px-2 py-1 rounded ${opt.owner_only ? 'bg-amber-500/15 text-amber-700' : 'bg-muted text-muted-foreground'}`}
+                >
+                  {opt.owner_only ? 'Make visible to all' : 'Make owner only'}
+                </button>
+                <button
+                  onClick={() => toggleActive(opt)}
+                  disabled={busy}
+                  className={`text-xs px-2 py-1 rounded ${opt.is_active ? 'bg-destructive/10 text-destructive' : 'bg-success/15 text-success'}`}
+                >
+                  {opt.is_active ? 'Deactivate' : 'Activate'}
+                </button>
+              </span>
             </div>
           ))}
         </div>

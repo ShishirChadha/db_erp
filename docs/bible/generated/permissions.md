@@ -39,8 +39,10 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Page key | Roles with edit access |
 |---|---|
 | accessories | employee |
+| expenses | employee |
 | live_stock | employee |
 | new_entry | employee |
+| quotations | employee |
 | repair_jobs | employee |
 | replacement_jobs | employee |
 | sku_master | employee |

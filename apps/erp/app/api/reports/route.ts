@@ -91,14 +91,14 @@ export async function GET(req: NextRequest) {
       }
       case 'expenses': {
         if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
-        const { data, error } = await supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to })
+        const { data, error } = await supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to, p_include_financials: includeFinancials })
         if (error) throw error
         return NextResponse.json(data)
       }
       case 'expense_timeseries': {
         if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
         const grain = sp.get('grain') || 'day'
-        const { data, error } = await supabaseAdmin.rpc('report_expense_timeseries', { p_from: from, p_to: to, p_grain: grain })
+        const { data, error } = await supabaseAdmin.rpc('report_expense_timeseries', { p_from: from, p_to: to, p_grain: grain, p_include_financials: includeFinancials })
         if (error) throw error
         return NextResponse.json(data)
       }

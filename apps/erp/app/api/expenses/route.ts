@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
 
 // ---------- GET: list expenses ----------
 // The 'expenses' page key -- previously this table had no API route at all (the page
@@ -39,11 +40,23 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
+  let rows = data || []
+
+  // Owner-only expense types (Settings -> Dropdown Options, e.g. Salaries/Bank
+  // Charges/GST Payment by default) are dropped entirely for a non-owner --
+  // not just the type value, the whole row (amount, description, everything).
+  // `type` is free text, so a sensitive-type row can exist regardless of how it
+  // was entered; filtering only the dropdown option wouldn't hide it.
+  if (!ownerCaller) {
+    const ownerOnlyTypes = await getOwnerOnlyExpenseTypes()
+    rows = rows.filter((r: any) => !isOwnerOnlyType(r.type, ownerOnlyTypes))
+  }
+
   // Vendor identity is owner-only for expenses (same default posture as every
   // other vendor-linked record in this app, minus the one narrow accessory-receipt
   // exception, which doesn't apply here) -- strip the joined vendor name server-side
   // rather than relying on the UI to simply not render it.
-  const rows = ownerCaller ? (data || []) : (data || []).map(({ vendors, ...rest }: any) => rest)
+  rows = ownerCaller ? rows : rows.map(({ vendors, ...rest }: any) => rest)
   return NextResponse.json(rows)
 }
 
@@ -58,6 +71,13 @@ export async function POST(req: NextRequest) {
 
   if (!expense_date || !description || amount === undefined || amount === null) {
     return NextResponse.json({ error: 'expense_date, description, and amount are required.' }, { status: 400 })
+  }
+
+  if (!isOwner(sessionUser)) {
+    const ownerOnlyTypes = await getOwnerOnlyExpenseTypes()
+    if (isOwnerOnlyType(type, ownerOnlyTypes)) {
+      return NextResponse.json({ error: 'This expense type is owner-only.' }, { status: 403 })
+    }
   }
 
   // entity_key derives from payment_account rather than asking for both --

@@ -558,6 +558,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | created_at | timestamp with time zone | yes | `now()` |  |  |
 | is_active | boolean | no | `true` |  |  |
 | sort_order | integer | no | `0` |  |  |
+| owner_only | boolean | no | `false` |  |  |
 
 ## customer_profiles
 
@@ -900,7 +901,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## notifications
 
-~711 rows (estimate)
+~740 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -980,7 +981,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## profile_page_actions
 
-~5 rows (estimate)
+~9 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1617,7 +1618,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## vendor_correction_proposals
 
-~0 rows (estimate)
+~17 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1644,5 +1645,4 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 | id | uuid | no | `gen_random_uuid()` | PK |  |
 | po_id | uuid | no |  | FK -> purchase_orders.id |  |
 | purchase_invoice_id | uuid | yes |  | FK -> invoices.id |  |
-| amount | numeric | no |  |  |  |
 

@@ -57,7 +57,7 @@
 | `/api/documents` | POST, GET | session | owner-only, service-role |
 | `/api/expenses/[id]/reimbursements/[reimbursementId]` | DELETE | session | owner-only, service-role |
 | `/api/expenses/[id]/reimbursements` | GET, POST | session | page-access, edit-grant, service-role |
-| `/api/expenses/[id]` | PATCH | session | edit-grant, service-role |
+| `/api/expenses/[id]` | PATCH | session | owner-only, edit-grant, service-role |
 | `/api/expenses` | GET, POST | session | owner-only, page-access, edit-grant, service-role |
 | `/api/gst` | GET | session | — |
 | `/api/inventory/check-low-stock` | POST | none found | service-role |

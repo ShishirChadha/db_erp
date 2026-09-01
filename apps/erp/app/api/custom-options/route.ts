@@ -15,12 +15,15 @@ export async function GET(req: NextRequest) {
 
   let query = supabaseAdmin
     .from('custom_options')
-    .select('id, category, value, is_active, sort_order')
+    .select('id, category, value, is_active, sort_order, owner_only')
     .order('sort_order')
     .order('value')
 
   if (category) query = query.eq('category', category)
   if (!includeInactive) query = query.eq('is_active', true)
+  // An owner-only value (e.g. expense_types "Salaries"/"Bank Charges"/"GST Payment")
+  // is never even offered to a non-owner -- not just redacted after the fact.
+  if (!isOwner(sessionUser)) query = query.eq('owner_only', false)
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

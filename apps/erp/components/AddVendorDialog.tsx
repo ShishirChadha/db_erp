@@ -18,8 +18,19 @@ export interface Vendor {
 // resolves by name against any existing vendor rather than risking a near-duplicate (see
 // docs/decisions.md, 2026-08-24). The owner can still edit/delete it normally afterward
 // from the Vendors page, which stays the only place to manage vendors beyond this.
-export function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor) => void; onClose: () => void }) {
-  const [form, setForm] = useState<VendorFormState>(emptyVendorForm)
+export function AddVendorDialog({
+  onAdded,
+  onClose,
+  initialForm,
+}: {
+  onAdded: (vendor: Vendor) => void
+  onClose: () => void
+  // Lets a caller that already has structured data about the vendor (e.g. an AI-read
+  // invoice header in Vendor Reconciliation) prefill the form instead of starting
+  // blank -- still a normal editable form, owner reviews/corrects before saving.
+  initialForm?: Partial<VendorFormState>
+}) {
+  const [form, setForm] = useState<VendorFormState>(() => ({ ...emptyVendorForm, ...initialForm }))
   const [fetchingGst, setFetchingGst] = useState(false)
   const [err, setErr] = useState('')
 
@@ -74,6 +85,9 @@ export function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor
         <DialogHeader>
           <DialogTitle>Add New Vendor</DialogTitle>
         </DialogHeader>
+        {initialForm && (
+          <div className="text-xs text-muted-foreground -mt-2">Prefilled from the invoice's AI read — review before saving.</div>
+        )}
         <VendorFormFields
           form={form}
           onChange={(patch) => setForm((prev) => ({ ...prev, ...patch }))}

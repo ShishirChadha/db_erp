@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, canEditPage, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
 
 // ---------- PATCH: edit an expense, or soft-delete/restore it ----------
 // Soft-delete/restore are just field updates on this table (is_deleted +
@@ -18,6 +19,22 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     expense_date, description, type, from_location, to_location, amount, remarks,
     is_deleted, deleted_remarks, payment_account, vendor_id, attachments, paid_by_staff,
   } = body
+
+  // A non-owner is fully denied access to a row whose CURRENT type is owner-only
+  // (they can't legitimately have reached it -- GET already excludes it), and
+  // can't set/change the type to one either, matching the same rule POST enforces.
+  if (!isOwner(sessionUser)) {
+    const ownerOnlyTypes = await getOwnerOnlyExpenseTypes()
+    if (ownerOnlyTypes.length > 0) {
+      const { data: existing } = await supabaseAdmin.from('expenses').select('type').eq('id', id).maybeSingle()
+      if (existing && isOwnerOnlyType(existing.type, ownerOnlyTypes)) {
+        return NextResponse.json({ error: 'Not found' }, { status: 404 })
+      }
+    }
+    if (type !== undefined && isOwnerOnlyType(type, ownerOnlyTypes)) {
+      return NextResponse.json({ error: 'This expense type is owner-only.' }, { status: 403 })
+    }
+  }
 
   const updates: Record<string, any> = {}
   if (expense_date !== undefined) updates.expense_date = expense_date

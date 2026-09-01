@@ -4,17 +4,20 @@ title: Expenses
 kind: module
 audience: [owner, manager, employee]
 routes: [/dashboard/expenses]
-keywords: [expense, electricity, rent, transport, food, porter, freight, shipping, receipt, attachment, recurring expense, expense type, vendor, staff reimbursement, paid by staff, out of pocket, dues, settle]
+keywords: [expense, electricity, rent, transport, food, porter, freight, shipping, receipt, attachment, recurring expense, expense type, vendor, staff reimbursement, paid by staff, out of pocket, dues, settle, owner only, salary, salaries, bank charges, gst payment, sensitive]
 sources:
   - apps/erp/app/api/expenses/**
   - apps/erp/app/api/recurring-expenses/**
+  - apps/erp/app/api/custom-options/**
   - apps/erp/components/AddExpenseDialog.tsx
   - apps/erp/components/EditExpenseDialog.tsx
   - apps/erp/components/ExpenseAttachmentsField.tsx
   - apps/erp/components/RecurringExpensesManager.tsx
   - apps/erp/components/StaffReimbursementsManager.tsx
   - apps/erp/components/AddVendorDialog.tsx
+  - apps/erp/components/DropdownOptionsManager.tsx
   - apps/erp/lib/expense-type-rules.ts
+  - apps/erp/lib/owner-only-expense-types.ts
   - apps/erp/app/dashboard/expenses/page.tsx
 updated: 2026-09-01
 ---
@@ -27,7 +30,39 @@ charges, salaries, and anything else. Any role granted the `expenses` page
 key can log/edit/soft-delete an expense; the category list
 (`custom_options` category `expense_types`) is fully open-ended — anyone with
 edit access can add a new type inline, no owner approval needed, same
-"immediately real" posture as the rest of this app.
+"immediately real" posture as the rest of this app. **Except** the handful of
+types the owner has marked owner-only (see below) — those are never offered
+to, or visible to, a non-owner at all.
+
+## Owner-only types
+
+Some `expense_types` values are sensitive enough that no non-owner role
+should see them at all — not just be unable to pick them, but not know a
+matching row even exists. `custom_options` gained a generic `owner_only`
+boolean (2026-09-01, Settings → Dropdown Options → "Make owner only" — a
+cross-category capability, not expense-specific, though `expense_types` is
+its first real use). Seeded `true` on `Salaries`, `Bank Charges`, `GST
+Payment`; the owner can mark/unmark any other value the same way.
+
+This is enforced at every layer, not just the dropdown:
+- `GET /api/custom-options` never returns an `owner_only` row to a non-owner
+  — the type simply isn't offered in the Type selector or the list page's
+  Type filter.
+- `GET /api/expenses` drops the **entire row** (amount, description,
+  everything) for a non-owner when its `type` matches an owner-only value —
+  `type` is free text, so a matching row can exist regardless of how it was
+  entered, and hiding only the dropdown option wouldn't hide data already on
+  disk. `POST`/`PATCH /api/expenses[/[id]]` reject a non-owner trying to
+  set/change `type` to an owner-only value (403), and `PATCH` 404s a
+  non-owner attempting to touch an existing row whose *current* type is
+  owner-only (they couldn't have legitimately reached it via the list, which
+  already excludes it).
+- The reporting layer excludes owner-only-type rows from non-owner-visible
+  aggregates too (see Reporting below) — otherwise a total or a type
+  breakdown would leak what the hidden rows themselves don't.
+- `lib/owner-only-expense-types.ts` (`getOwnerOnlyExpenseTypes()`/
+  `isOwnerOnlyType()`) is the one shared helper behind all of the above —
+  matching is case-insensitive, trimmed.
 
 ## Data model
 
@@ -173,13 +208,19 @@ one definition of "what counts as recurring," not two. See
 `/dashboard/reports` → Expenses tab, added 2026-09-01, purely additive to the
 existing reporting layer (see **finance-gst-reports**): `report_expenses`
 (total/count/average for a period), `report_expense_timeseries` (daily
-trend), and two new `report_breakdown` dimensions — `expense_type` (visible
-to any `reports`-access role, matching the Expenses page's own visibility)
-and `expense_vendor` (owner-only, matching the `vendor` dimension's existing
+trend), and two new `report_breakdown` dimensions — `expense_type` and
+`expense_vendor` (owner-only, matching the `vendor` dimension's existing
 purchasing-spend posture). All read from a new `v_report_expense_lines`
 view. **Not included**: a combined revenue-minus-expenses P&L figure inside
 `report_kpis` — a bigger, riskier change to a heavily-relied-on function with
 its own "costed units" margin semantics, deliberately left as a follow-up.
+
+All three (`report_expenses`, `report_expense_timeseries`, and the
+`expense_type` breakdown) take `p_include_financials` and exclude any
+owner-only type's rows entirely when it's `false` — otherwise a non-owner
+could still read off e.g. total salary spend from an aggregate even though
+the individual rows are hidden from the Expenses list itself (see
+Owner-only types below).
 
 ## Related
 

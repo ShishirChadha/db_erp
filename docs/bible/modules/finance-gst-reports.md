@@ -31,11 +31,16 @@ for the owner, matching the redaction rule everywhere else. `gst_summary` and
 **Expenses reporting** (Reports page → Expenses tab) is purely additive on top
 of this same dispatcher: `report_expenses`/`report_expense_timeseries` read
 from a new `v_report_expense_lines` view, and `report_breakdown` gained two
-new dimensions — `expense_type` (visible to any `reports`-access role, same
-as the Expenses page itself) and `expense_vendor` (gated behind
+new dimensions — `expense_type` and `expense_vendor` (fully gated behind
 `p_include_financials`, owner-only, exactly like the existing `vendor`
 dimension's purchasing-spend branch). None of the four original RPCs' sales/
 margin logic changed. See **expenses** for the underlying data model.
+`report_expenses`/`report_expense_timeseries`/the `expense_type` breakdown
+also (2026-09-01) exclude any row whose `type` is one of the owner's
+`custom_options.owner_only` expense types when `p_include_financials` is
+false — otherwise an aggregate would leak what those hidden rows themselves
+don't, e.g. total salary spend showing up in a non-owner's period total even
+though no individual `Salaries` row is ever visible to them.
 
 ## Periods
 

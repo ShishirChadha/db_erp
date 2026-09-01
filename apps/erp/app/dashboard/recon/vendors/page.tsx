@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/StatusBadge'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
+import type { VendorFormState } from '@/components/VendorFormFields'
 
 interface DocRow {
   id: string
@@ -59,6 +60,32 @@ const FIELD_LABELS: Record<string, string> = {
   alt_phone: 'Alt Phone',
   email: 'Email',
   has_gst: 'GST Registered',
+}
+
+// Prefills "Create new vendor" from whatever the invoice's own AI/template read
+// already extracted, so the owner corrects a mostly-right form instead of retyping
+// a vendor's own letterhead by hand. Only non-empty extracted values are set --
+// undefined keys fall through to emptyVendorForm's defaults in AddVendorDialog.
+function buildVendorPrefill(extraction: any): Partial<VendorFormState> {
+  if (!extraction) return {}
+  const has = (v: unknown): v is string => typeof v === 'string' && v.trim() !== ''
+  const prefill: Partial<VendorFormState> = {}
+  if (has(extraction.vendor_name)) {
+    prefill.company_name = extraction.vendor_name
+    prefill.gst_company_name = extraction.vendor_name
+  }
+  if (has(extraction.vendor_gstin)) {
+    prefill.gst_number = extraction.vendor_gstin
+    prefill.has_gst = 'true'
+  }
+  if (has(extraction.vendor_phone)) prefill.phone = extraction.vendor_phone
+  if (has(extraction.vendor_phone_2)) prefill.alt_phone = extraction.vendor_phone_2
+  if (has(extraction.vendor_email)) prefill.email = extraction.vendor_email
+  if (has(extraction.vendor_address)) prefill.address_line1 = extraction.vendor_address
+  if (has(extraction.vendor_city)) prefill.city = extraction.vendor_city
+  if (has(extraction.vendor_state)) prefill.state = extraction.vendor_state
+  if (has(extraction.vendor_pincode)) prefill.pincode = extraction.vendor_pincode
+  return prefill
 }
 
 function VendorReconPage() {
@@ -374,7 +401,11 @@ function VendorReconPage() {
               )}
 
               {showAddVendor && (
-                <AddVendorDialog onAdded={handleVendorCreated} onClose={() => setShowAddVendor(false)} />
+                <AddVendorDialog
+                  onAdded={handleVendorCreated}
+                  onClose={() => setShowAddVendor(false)}
+                  initialForm={buildVendorPrefill(activeDoc?.raw_extraction)}
+                />
               )}
 
               {vendorName && (
@@ -386,6 +417,30 @@ function VendorReconPage() {
                       <Save className="size-4 mr-1" /> Save layout for this vendor
                     </Button>
                   )}
+                </div>
+              )}
+
+              {/* Always shown once something has been extracted, independent of whether
+                  any corrections were proposed -- a vendor that already matches every
+                  field (e.g. one just created via the AI-prefilled "Create new vendor"
+                  form) produces zero proposals, and without this the page would show
+                  nothing at all for what the AI/template actually read. */}
+              {activeDoc.raw_extraction && (
+                <div className="border rounded p-3 text-sm space-y-2 bg-muted/30">
+                  <div className="font-medium text-xs uppercase tracking-wide text-muted-foreground">Extracted from this invoice</div>
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                    <div><span className="text-muted-foreground">Invoice #:</span> {activeDoc.raw_extraction.invoice_number || '—'}</div>
+                    <div><span className="text-muted-foreground">Date:</span> {activeDoc.raw_extraction.invoice_date || '—'}</div>
+                    <div><span className="text-muted-foreground">Vendor:</span> {activeDoc.raw_extraction.vendor_name || '—'}</div>
+                    <div><span className="text-muted-foreground">GSTIN:</span> {activeDoc.raw_extraction.vendor_gstin || '—'}</div>
+                    <div><span className="text-muted-foreground">Phone:</span> {activeDoc.raw_extraction.vendor_phone || '—'}{activeDoc.raw_extraction.vendor_phone_2 ? ` / ${activeDoc.raw_extraction.vendor_phone_2}` : ''}</div>
+                    <div><span className="text-muted-foreground">Email:</span> {activeDoc.raw_extraction.vendor_email || '—'}</div>
+                    <div className="col-span-2"><span className="text-muted-foreground">Address:</span> {[activeDoc.raw_extraction.vendor_address, activeDoc.raw_extraction.vendor_city, activeDoc.raw_extraction.vendor_state, activeDoc.raw_extraction.vendor_pincode].filter(Boolean).join(', ') || '—'}</div>
+                    <div><span className="text-muted-foreground">Subtotal:</span> ₹{Number(activeDoc.raw_extraction.subtotal ?? 0).toFixed(2)}</div>
+                    <div><span className="text-muted-foreground">GST:</span> ₹{Number(activeDoc.raw_extraction.total_gst ?? 0).toFixed(2)}</div>
+                    <div><span className="text-muted-foreground">Grand Total:</span> ₹{Number(activeDoc.raw_extraction.grand_total ?? 0).toFixed(2)}</div>
+                    <div><span className="text-muted-foreground">Line items:</span> {activeDoc.raw_extraction.lines?.length ?? 0}</div>
+                  </div>
                 </div>
               )}
 
