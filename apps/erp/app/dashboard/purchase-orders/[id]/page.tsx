@@ -207,26 +207,26 @@ function PODetailPage() {
   })
 
   if (loading) return <div className="p-4">Loading PO...</div>
-  if (!po) return <div className="p-4 text-red-600">Purchase Order not found.</div>
+  if (!po) return <div className="p-4 text-destructive">Purchase Order not found.</div>
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
-      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-muted-foreground hover:text-foreground mb-2">
         ← Back to Purchase Orders
       </button>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">{po.po_number}</h1>
-        <span className={`px-2 py-1 rounded text-white capitalize ${po.po_status === 'draft' ? 'bg-gray-500' : 'bg-green-600'}`}>
+        <span className={`px-2 py-1 rounded text-primary-foreground capitalize ${po.po_status === 'draft' ? 'bg-muted-foreground' : 'bg-success'}`}>
           {(po.po_status || '').replace('_', ' ')}
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-4 mb-6 bg-white p-4 shadow rounded">
+      <div className="grid grid-cols-2 gap-4 mb-6 bg-card p-4 shadow rounded">
         <div>
           <p>
             <strong>Vendor:</strong> {po.vendor_name}
             {po.po_status !== 'cancelled' && (
-              <button onClick={() => setEditingVendor(true)} className="ml-2 text-xs text-blue-600 underline">Edit</button>
+              <button onClick={() => setEditingVendor(true)} className="ml-2 text-xs text-primary underline">Edit</button>
             )}
           </p>
           <p><strong>PO Date:</strong> {po.po_date}</p>
@@ -242,7 +242,7 @@ function PODetailPage() {
       <div className="flex justify-between items-center mb-2">
         <h2 className="text-lg font-semibold">Line Items</h2>
         {po.po_status !== 'cancelled' && (
-          <button onClick={() => setAttachingUnits(true)} className="text-sm text-blue-600 underline">
+          <button onClick={() => setAttachingUnits(true)} className="text-sm text-primary underline">
             + Add Units from Stock
           </button>
         )}
@@ -279,9 +279,9 @@ function PODetailPage() {
                 <td className="border p-2">{item.line_item_number}</td>
                 <td className="border p-2">
                   <div className="font-medium">{item.sku_code || `${item.base_sku_code}-${String(item.variant_number).padStart(3, '0')}`}</div>
-                  <div className="text-xs text-gray-500">{item.sku_description}</div>
+                  <div className="text-xs text-muted-foreground">{item.sku_description}</div>
                 </td>
-                <td className="border p-2 text-xs text-gray-600">{specsSummary}</td>
+                <td className="border p-2 text-xs text-muted-foreground">{specsSummary}</td>
                 <td className="border p-2 text-xs">{item.hsn_code || '—'}</td>
                 <td className="border p-2">{item.quantity}</td>
                 <td className="border p-2">₹{(item.unit_price ?? 0).toFixed(2)}</td>
@@ -294,7 +294,7 @@ function PODetailPage() {
                         {item.units.map((unit) => (
                           <div key={unit.asset_number} className="flex items-center gap-1">
                             <span>{unit.asset_number}</span>
-                            <span className="text-xs text-gray-400">
+                            <span className="text-xs text-muted-foreground">
                               ({unit.entry_date ? unit.entry_date.slice(0, 10) : 'no entry date'})
                             </span>
                             {po.po_status !== 'cancelled' && (
@@ -305,7 +305,7 @@ function PODetailPage() {
                                   entryDate: unit.entry_date,
                                   skuLabel: item.sku_code,
                                 })}
-                                className="text-xs text-gray-400 hover:text-blue-600 underline"
+                                className="text-xs text-muted-foreground hover:text-primary/80 underline"
                               >
                                 Move
                               </button>
@@ -314,7 +314,7 @@ function PODetailPage() {
                         ))}
                       </div>
                     ) : '-'
-                  ) : <span className="text-gray-400">quantity item</span>}
+                  ) : <span className="text-muted-foreground">quantity item</span>}
                 </td>
                 <td className="border p-2 text-sm">
                   {item.is_serialized
@@ -323,7 +323,7 @@ function PODetailPage() {
                 </td>
                 {po.po_status !== 'cancelled' && (
                   <td className="border p-2 text-center">
-                    <button onClick={() => setEditingItemId(item.id)} className="text-xs text-blue-600 underline">Edit</button>
+                    <button onClick={() => setEditingItemId(item.id)} className="text-xs text-primary underline">Edit</button>
                   </td>
                 )}
               </tr>
@@ -347,7 +347,7 @@ function PODetailPage() {
           {po.payment_status !== 'paid' && (
             <button
               onClick={() => setShowAddPayment(true)}
-              className="border rounded px-3 py-1.5 text-sm hover:bg-gray-50"
+              className="border rounded px-3 py-1.5 text-sm hover:bg-muted"
             >
               Add Payment
             </button>
@@ -360,11 +360,11 @@ function PODetailPage() {
                 <div>
                   ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ''}{p.method ? ` · ${p.method}` : ''}
                   {p.note ? ` · ${p.note}` : ''}
-                  <div className="text-gray-400">
+                  <div className="text-muted-foreground">
                     {new Date(p.paid_on).toLocaleDateString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ''}
                   </div>
                 </div>
-                <button type="button" onClick={() => deletePayment(p.id)} className="text-red-600 underline shrink-0">
+                <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
                   Remove
                 </button>
               </li>
@@ -376,7 +376,7 @@ function PODetailPage() {
       {/* Buttons (unchanged, but make sure they also handle undefined status) */}
       {['submitted', 'partially_received'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={() => setShowReceiveModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded">
+          <button onClick={() => setShowReceiveModal(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded">
             Receive Goods
           </button>
         </div>
@@ -384,7 +384,7 @@ function PODetailPage() {
 
       {po.po_status === 'draft' && (
         <div className="mt-4">
-          <button onClick={() => handleSubmitPO()} disabled={submittingPO} className="bg-green-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+          <button onClick={() => handleSubmitPO()} disabled={submittingPO} className="bg-success text-success-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
             {submittingPO && <Loader2 className="size-4 animate-spin" />}
             Submit PO
           </button>
@@ -393,7 +393,7 @@ function PODetailPage() {
 
       {['draft', 'submitted'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={() => handleCancelPO()} disabled={cancellingPO} className="bg-red-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+          <button onClick={() => handleCancelPO()} disabled={cancellingPO} className="bg-destructive text-destructive-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
             {cancellingPO && <Loader2 className="size-4 animate-spin" />}
             Cancel PO
           </button>
@@ -402,7 +402,7 @@ function PODetailPage() {
 
       {['draft', 'cancelled'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={() => handleDeletePO()} disabled={deletingPO} className="bg-red-700 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+          <button onClick={() => handleDeletePO()} disabled={deletingPO} className="bg-destructive text-destructive-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
             {deletingPO && <Loader2 className="size-4 animate-spin" />}
             Delete PO
           </button>
@@ -411,7 +411,7 @@ function PODetailPage() {
 
       {['submitted', 'partially_received', 'received', 'invoiced'].includes(po.po_status || '') && (
         <div className="mt-4">
-          <button onClick={() => router.push(`/dashboard/purchase-invoices/new?po_id=${poId}`)} className="bg-purple-600 text-white px-4 py-2 rounded">
+          <button onClick={() => router.push(`/dashboard/purchase-invoices/new?po_id=${poId}`)} className="bg-purple text-primary-foreground px-4 py-2 rounded">
             Create Invoice
           </button>
         </div>
@@ -420,9 +420,9 @@ function PODetailPage() {
       {/* Receive Modal (unchanged) */}
       {showReceiveModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded shadow-lg max-w-lg w-full">
+          <div className="bg-card p-6 rounded shadow-lg max-w-lg w-full">
             <h2 className="text-xl font-bold mb-4">Receive Goods</h2>
-            <p className="mb-4 text-sm text-gray-600">
+            <p className="mb-4 text-sm text-muted-foreground">
               Enter serial numbers for serialized units, or a received quantity for accessory lines.
             </p>
             {po.items.map(item => {
@@ -432,7 +432,7 @@ function PODetailPage() {
                   <p className="font-medium">
                     {item.sku_code || `${item.base_sku_code}-${String(item.variant_number).padStart(3, '0')}`} (Qty: {item.quantity})
                     {!item.is_serialized && item.received_quantity > 0 && (
-                      <span className="text-xs text-gray-500"> — {item.received_quantity} already received</span>
+                      <span className="text-xs text-muted-foreground"> — {item.received_quantity} already received</span>
                     )}
                   </p>
                   {item.is_serialized ? (
@@ -462,7 +462,7 @@ function PODetailPage() {
                       />
                     </div>
                   ) : (
-                    <p className="text-xs text-green-700 mt-1">Fully received.</p>
+                    <p className="text-xs text-success mt-1">Fully received.</p>
                   )}
                 </div>
               )
@@ -471,7 +471,7 @@ function PODetailPage() {
               <button onClick={() => setShowReceiveModal(false)} className="px-4 py-2 border rounded">
                 Cancel
               </button>
-              <button onClick={() => handleReceiveSubmit()} disabled={receiving} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+              <button onClick={() => handleReceiveSubmit()} disabled={receiving} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50 inline-flex items-center gap-1.5">
                 {receiving && <Loader2 className="size-4 animate-spin" />}
                 Confirm Receipt
               </button>

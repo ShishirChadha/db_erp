@@ -500,7 +500,7 @@ export default function StockView({
     fetchCounts()
   }
 
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
+  if (error) return <div className="p-4 text-destructive">Error: {error}</div>
 
   return (
     <div className="p-4">
@@ -509,32 +509,32 @@ export default function StockView({
         {tab === 'accessories' ? (
           <Link
             href="/dashboard/accessories"
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0"
           >
             Manage Accessories →
           </Link>
         ) : (
           <Link
             href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(returnToPath)}`}
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0"
           >
             + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
           </Link>
         )}
       </div>
-      <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
+      <p className="text-sm text-muted-foreground mb-4">{subtitle}</p>
 
       <div className="flex mb-4 border rounded overflow-hidden w-fit">
-        <button onClick={() => changeTab('current')} className={`px-4 py-2 text-sm font-medium ${tab === 'current' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('current')} className={`px-4 py-2 text-sm font-medium ${tab === 'current' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
           Current Stock
         </button>
-        <button onClick={() => changeTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
           Sold Stock
         </button>
-        <button onClick={() => changeTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
           Accessories
         </button>
-        <button onClick={() => changeTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>
+        <button onClick={() => changeTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
           Sold Accessories
         </button>
       </div>
@@ -606,19 +606,19 @@ export default function StockView({
           </>
         )}
         {(statusFilter || searchInput || monthFilter || yearFilter) && (
-          <button onClick={() => { setStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-gray-500 underline self-center">
+          <button onClick={() => { setStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-muted-foreground underline self-center">
             Clear filters
           </button>
         )}
         {isOwner && (tab === 'current' || tab === 'sold') && selected.size > 0 && (
           <>
-            <button onClick={() => setShowPoForm(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
+            <button onClick={() => setShowPoForm(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">
               Create PO from Selected ({selected.size})
             </button>
             {/* Selection now persists across tab/filter/page changes (so a Current +
                 Sold combo can be built into one PO) -- give an explicit way to reset it
                 rather than relying on the old implicit "any fetch clears it" behavior. */}
-            <button onClick={() => setSelected(new Map())} className="text-sm text-gray-500 underline self-center">
+            <button onClick={() => setSelected(new Map())} className="text-sm text-muted-foreground underline self-center">
               Clear selection
             </button>
           </>
@@ -700,9 +700,9 @@ export default function StockView({
               {accessoryStock.length === 0 && <EmptyTableRow colSpan={isOwner ? 11 : 8} message="No accessories in stock." />}
               {accessoryStock.map((sku, idx) => (
                 <tr key={sku.id}>
-                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                   <td className="border p-2">
-                    <Link href={`/dashboard/accessories/${sku.id}`} className="text-blue-600 underline">
+                    <Link href={`/dashboard/accessories/${sku.id}`} className="text-primary underline">
                       {sku.sku_description || sku.model_name || sku.full_sku_code}
                     </Link>
                   </td>
@@ -714,8 +714,8 @@ export default function StockView({
                     {sku.last_entry_vendor ? (
                       <>
                         {sku.last_entry_vendor}
-                        {sku.last_entry_price != null && <span className="text-gray-500"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}
-                        {sku.last_entry_date && <div className="text-gray-400">{sku.last_entry_date.slice(0, 10)}</div>}
+                        {sku.last_entry_price != null && <span className="text-muted-foreground"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}
+                        {sku.last_entry_date && <div className="text-muted-foreground">{sku.last_entry_date.slice(0, 10)}</div>}
                       </>
                     ) : '—'}
                   </td>
@@ -723,11 +723,11 @@ export default function StockView({
                   {isOwner && <td className="border p-2">{sku.last_vendor || '—'}</td>}
                   {isOwner && (
                     <td className="border p-2 text-center">
-                      {sku.needs_po_qty ? <span className="text-amber-600">{sku.needs_po_qty} received, no PO</span> : <span className="text-green-600">✓</span>}
+                      {sku.needs_po_qty ? <span className="text-warning">{sku.needs_po_qty} received, no PO</span> : <span className="text-success">✓</span>}
                     </td>
                   )}
                   <td className="border p-2">
-                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
+                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
                       Sell
                     </button>
                   </td>
@@ -759,12 +759,12 @@ export default function StockView({
               {soldAccessories.length === 0 && <EmptyTableRow colSpan={12} message="No accessory sales found." />}
               {soldAccessories.map((sale, idx) => (
                 <tr key={sale.id}>
-                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                   <td className="border p-2">{sale.sale_date?.slice(0, 10)}</td>
                   <td className="border p-2">
                     {sale.sku_description || sale.full_sku_code}
                     {sale.sku_description && sale.full_sku_code && (
-                      <span className="text-gray-400"> · {sale.full_sku_code}</span>
+                      <span className="text-muted-foreground"> · {sale.full_sku_code}</span>
                     )}
                   </td>
                   <td className="border p-2 text-right tabular-nums">{sale.accessory_quantity}</td>
@@ -775,11 +775,11 @@ export default function StockView({
                   <td className="border p-2">{sale.customer_name || '—'}</td>
                   <td className="border p-2">{sale.sold_by || '—'}</td>
                   <td className="border p-2">
-                    {sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : '—'}
+                    {sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : '—'}
                   </td>
                   {canEdit && (
                     <td className="border p-2">
-                      <button onClick={() => setEditSaleId(sale.id)} className="text-blue-600 underline text-xs">Edit</button>
+                      <button onClick={() => setEditSaleId(sale.id)} className="text-primary underline text-xs">Edit</button>
                     </td>
                   )}
                 </tr>
@@ -843,13 +843,13 @@ export default function StockView({
                       )}
                     </td>
                   )}
-                  <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                   <td className="border p-2">
-                    <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-blue-600 underline">
+                    <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline">
                       {identifier(asset)}
                     </Link>
                     {asset.under_repair_job_number && (
-                      <span className="ml-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs whitespace-nowrap" title={`Repair job ${asset.under_repair_job_number}`}>
+                      <span className="ml-1 px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap" title={`Repair job ${asset.under_repair_job_number}`}>
                         Under Repair
                       </span>
                     )}
@@ -861,14 +861,14 @@ export default function StockView({
                   <td className="border p-2">
                     {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
                     {asset.asset_number && asset.serial_number && (
-                      <span className="text-gray-400"> · SN: {asset.serial_number}</span>
+                      <span className="text-muted-foreground"> · SN: {asset.serial_number}</span>
                     )}
                   </td>
                   <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
                   {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
                   {isOwner && tab === 'current' && visibleColumns.po && (
                     <td className="border p-2 text-center">
-                      {asset.po_id ? <span className="text-green-600">✓ {asset.po_number}</span> : <span className="text-amber-600">✗ missing</span>}
+                      {asset.po_id ? <span className="text-success">✓ {asset.po_number}</span> : <span className="text-warning">✗ missing</span>}
                     </td>
                   )}
                   {isOwner && tab === 'current' && visibleColumns.vendorCost && (
@@ -891,16 +891,16 @@ export default function StockView({
                     <td className="border p-2">
                       <div className="capitalize">{asset.payment_status || '—'}</div>
                       {typeof asset.amount_paid === 'number' && (
-                        <div className="text-xs text-gray-500 tabular-nums">₹{asset.amount_paid.toFixed(2)} of ₹{(asset.sale_total || 0).toFixed(2)}</div>
+                        <div className="text-xs text-muted-foreground tabular-nums">₹{asset.amount_paid.toFixed(2)} of ₹{(asset.sale_total || 0).toFixed(2)}</div>
                       )}
                     </td>
                   )}
                   {isOwner && tab === 'sold' && visibleColumns.invoice && (
                     <td className="border p-2 text-center">
                       {asset.invoice_finalized ? (
-                        <span className="text-green-600">✓ {asset.invoice_number}</span>
+                        <span className="text-success">✓ {asset.invoice_number}</span>
                       ) : (
-                        <button onClick={() => generateInvoice(asset.id)} disabled={!!pendingRowKey} className="text-amber-700 underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
+                        <button onClick={() => generateInvoice(asset.id)} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
                           {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
                           Generate Invoice
                         </button>
@@ -909,14 +909,14 @@ export default function StockView({
                   )}
                   {canEdit && (
                     <td className="border p-2 space-x-2">
-                      <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">
+                      <button onClick={() => setFixSkuAssetId(asset.id)} className="text-primary underline text-xs">
                         Fix SKU
                       </button>
                       {isOwner && tab === 'current' && !asset.po_id && (
                         <button
                           onClick={() => deleteAsset(asset, identifier(asset))}
                           disabled={!!pendingRowKey}
-                          className="text-red-600 underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+                          className="text-destructive underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
                         >
                           {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
                           Delete
@@ -925,7 +925,7 @@ export default function StockView({
                       {isOwner && tab === 'sold' && (
                         <button
                           onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }}
-                          className="text-red-600 underline text-xs"
+                          className="text-destructive underline text-xs"
                         >
                           Delete
                         </button>
@@ -935,7 +935,7 @@ export default function StockView({
                   {tab === 'current' && (
                     <td className="border p-2 space-x-2">
                       {['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
                           Sell
                         </button>
                       )}
@@ -943,14 +943,14 @@ export default function StockView({
                         <button
                           onClick={() => sendBackToQc(asset, identifier(asset))}
                           disabled={!!pendingRowKey}
-                          className="text-amber-700 underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+                          className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
                         >
                           {pendingRowKey === `${asset.id}:send-back-to-qc` && <Loader2 className="size-3 animate-spin" />}
                           Send to QC
                         </button>
                       )}
                       {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-primary underline text-xs">
                           Repair
                         </button>
                       )}
@@ -961,13 +961,13 @@ export default function StockView({
                       {asset.sale_id && asset.payment_status !== 'paid' && (
                         <button
                           onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
-                          className="text-green-700 underline text-xs"
+                          className="text-success underline text-xs"
                         >
                           Add Payment
                         </button>
                       )}
                       {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-amber-700 underline text-xs">
+                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-warning underline text-xs">
                           Return
                         </button>
                       )}
@@ -986,23 +986,23 @@ export default function StockView({
       {!loading && tab === 'sold_accessories' && (
         <div className="md:hidden space-y-2">
           {soldAccessories.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-6">No accessory sales found.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">No accessory sales found.</p>
           )}
           {soldAccessories.map((sale) => (
             <div key={sale.id} className="border rounded-lg p-3 space-y-2">
               <div className="min-w-0">
                 <div className="font-medium break-words">{sale.sku_description || sale.full_sku_code}</div>
-                <div className="text-xs text-gray-500">{sale.full_sku_code} · Qty {sale.accessory_quantity}</div>
+                <div className="text-xs text-muted-foreground">{sale.full_sku_code} · Qty {sale.accessory_quantity}</div>
               </div>
-              <div className="text-xs text-gray-600 space-y-0.5">
+              <div className="text-xs text-muted-foreground space-y-0.5">
                 <div>Sold {sale.sale_date?.slice(0, 10)} to {sale.customer_name || '—'}</div>
                 <div className="tabular-nums">₹{sale.sale_total?.toFixed(2)} · {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} paid</div>
                 {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
-                <div>{sale.finalized ? <span className="text-green-600">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
+                <div>{sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
               </div>
               {canEdit && (
                 <div className="pt-1 border-t">
-                  <button onClick={() => setEditSaleId(sale.id)} className="text-blue-600 underline text-xs">Edit</button>
+                  <button onClick={() => setEditSaleId(sale.id)} className="text-primary underline text-xs">Edit</button>
                 </div>
               )}
             </div>
@@ -1012,34 +1012,34 @@ export default function StockView({
       {!loading && tab === 'accessories' && (
         <div className="md:hidden space-y-2">
           {accessoryStock.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-6">No accessories in stock.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">No accessories in stock.</p>
           )}
           {accessoryStock.map((sku) => (
             <div key={sku.id} className="border rounded-lg p-3 space-y-2">
               <div className="min-w-0">
-                <Link href={`/dashboard/accessories/${sku.id}`} className="text-blue-600 underline font-medium break-words">
+                <Link href={`/dashboard/accessories/${sku.id}`} className="text-primary underline font-medium break-words">
                   {sku.sku_description || sku.model_name || sku.full_sku_code}
                 </Link>
-                <div className="text-xs text-gray-500">{sku.category}{sku.brand ? ` · ${sku.brand}` : ''}</div>
+                <div className="text-xs text-muted-foreground">{sku.category}{sku.brand ? ` · ${sku.brand}` : ''}</div>
               </div>
               <div className="text-sm tabular-nums">
                 In stock: {sku.quantity_in_stock}
                 {sku.selling_price_default != null && ` · ₹${sku.selling_price_default.toFixed(2)}`}
               </div>
               {sku.last_entry_vendor && (
-                <div className="text-xs text-gray-600">
+                <div className="text-xs text-muted-foreground">
                   Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ₹${sku.last_entry_price.toFixed(2)}`}
                   {sku.last_entry_date && ` (${sku.last_entry_date.slice(0, 10)})`}
                 </div>
               )}
               {isOwner && (
-                <div className="text-xs text-gray-600 space-y-0.5">
+                <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>Cost: {sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}{sku.last_vendor ? ` · ${sku.last_vendor}` : ''}</div>
-                  {!!sku.needs_po_qty && <div className="text-amber-600">{sku.needs_po_qty} received, no PO yet</div>}
+                  {!!sku.needs_po_qty && <div className="text-warning">{sku.needs_po_qty} received, no PO yet</div>}
                 </div>
               )}
               <div className="pt-1 border-t">
-                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">
+                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
                   Sell
                 </button>
               </div>
@@ -1050,16 +1050,16 @@ export default function StockView({
       {!loading && tab !== 'sold_accessories' && tab !== 'accessories' && (
         <div className="md:hidden space-y-2">
           {displayedAssets.length === 0 && (
-            <p className="text-sm text-gray-400 text-center py-6">No assets found.</p>
+            <p className="text-sm text-muted-foreground text-center py-6">No assets found.</p>
           )}
           {displayedAssets.map((asset) => (
             <div key={asset.id} className="border rounded-lg p-3 space-y-2">
               <div className="flex justify-between items-start gap-2">
                 <div className="min-w-0">
-                  <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-blue-600 underline font-medium break-all">
+                  <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline font-medium break-all">
                     {identifier(asset)}
                   </Link>
-                  <div className="text-xs text-gray-500">{asset.sku_code}</div>
+                  <div className="text-xs text-muted-foreground">{asset.sku_code}</div>
                 </div>
                 {isOwner && (tab === 'current' || tab === 'sold') && !asset.po_id && (
                   <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset)} />
@@ -1068,24 +1068,24 @@ export default function StockView({
               <div className="text-sm">
                 {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
                 {asset.asset_number && asset.serial_number && (
-                  <span className="text-gray-400"> · SN: {asset.serial_number}</span>
+                  <span className="text-muted-foreground"> · SN: {asset.serial_number}</span>
                 )}
               </div>
               {asset.created_at || asset.po_date ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                   {asset.created_at && <span>Added {asset.created_at.slice(0, 10)}</span>}
                   {asset.po_date && <span>Purchased {asset.po_date.slice(0, 10)}</span>}
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
                 <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
-                {asset.qc_grade && <span className="text-xs text-gray-500">Grade {asset.qc_grade}</span>}
+                {asset.qc_grade && <span className="text-xs text-muted-foreground">Grade {asset.qc_grade}</span>}
                 {asset.under_repair_job_number && (
-                  <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 text-xs">Under Repair</span>
+                  <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs">Under Repair</span>
                 )}
               </div>
               {tab === 'sold' && (
-                <div className="text-xs text-gray-600 space-y-0.5">
+                <div className="text-xs text-muted-foreground space-y-0.5">
                   <div>Sold {asset.sold_at?.slice(0, 10)} to {asset.customer_name || '—'}</div>
                   <div className="tabular-nums">₹{asset.sale_total?.toFixed(2)}</div>
                   <div className="capitalize">
@@ -1098,45 +1098,45 @@ export default function StockView({
                     </div>
                   )}
                   {isOwner && (
-                    <div>{asset.invoice_finalized ? <span className="text-green-600">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
+                    <div>{asset.invoice_finalized ? <span className="text-success">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
                   )}
                 </div>
               )}
               {isOwner && tab === 'current' && (
-                <div className="text-xs text-gray-600">
-                  {asset.po_id ? <span className="text-green-600">✓ PO {asset.po_number}</span> : <span className="text-amber-600">✗ missing PO</span>}
+                <div className="text-xs text-muted-foreground">
+                  {asset.po_id ? <span className="text-success">✓ PO {asset.po_number}</span> : <span className="text-warning">✗ missing PO</span>}
                   {asset.vendor_name && ` · ${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}`}
                 </div>
               )}
               <div className="flex flex-wrap gap-3 pt-1 border-t">
                 {canEdit && (
-                  <button onClick={() => setFixSkuAssetId(asset.id)} className="text-blue-600 underline text-xs">Fix SKU</button>
+                  <button onClick={() => setFixSkuAssetId(asset.id)} className="text-primary underline text-xs">Fix SKU</button>
                 )}
                 {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-green-700 underline text-xs">Sell</button>
+                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">Sell</button>
                 )}
                 {tab === 'current' && asset.status === 'ready_for_sale' && (
-                  <button onClick={() => sendBackToQc(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-amber-700 underline text-xs disabled:opacity-50">Send to QC</button>
+                  <button onClick={() => sendBackToQc(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50">Send to QC</button>
                 )}
                 {tab === 'current' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-blue-700 underline text-xs">Repair</button>
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-primary underline text-xs">Repair</button>
                 )}
                 {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
                   <button
                     onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
-                    className="text-green-700 underline text-xs"
+                    className="text-success underline text-xs"
                   >
                     Add Payment
                   </button>
                 )}
                 {tab === 'sold' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-amber-700 underline text-xs">Return</button>
+                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-warning underline text-xs">Return</button>
                 )}
                 {isOwner && tab === 'current' && !asset.po_id && (
-                  <button onClick={() => deleteAsset(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-red-600 underline text-xs disabled:opacity-50">Delete</button>
+                  <button onClick={() => deleteAsset(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-destructive underline text-xs disabled:opacity-50">Delete</button>
                 )}
                 {isOwner && tab === 'sold' && (
-                  <button onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }} className="text-red-600 underline text-xs">Delete</button>
+                  <button onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }} className="text-destructive underline text-xs">Delete</button>
                 )}
               </div>
             </div>
@@ -1253,14 +1253,14 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
   }
 
   return (
-    <div className="border rounded p-4 mb-4 bg-gray-50">
+    <div className="border rounded p-4 mb-4 bg-muted">
       <h3 className="font-semibold mb-2">Create Purchase Order from {assetIds.length} selected unit(s)</h3>
       {soldCount > 0 && (
-        <div className="text-xs text-gray-600 mb-2">
+        <div className="text-xs text-muted-foreground mb-2">
           Includes {soldCount} already-sold unit{soldCount > 1 ? 's' : ''} -- their sale record is unaffected, this only attaches the purchase paperwork (vendor/cost/GST).
         </div>
       )}
-      {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+      {error && <div className="text-destructive text-sm mb-2">{error}</div>}
       <div className="grid grid-cols-3 gap-4 mb-3">
         <div>
           <label className="block text-sm font-medium mb-1">Vendor</label>
@@ -1335,7 +1335,7 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
 
       <div className="flex justify-end gap-2">
         <button onClick={onClose} className="px-4 py-2 rounded border">Cancel</button>
-        <button onClick={handleSubmit} disabled={submitting} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+        <button onClick={handleSubmit} disabled={submitting} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
           {submitting && <Loader2 className="size-4 animate-spin" />}
           {submitting ? 'Creating...' : 'Create PO'}
         </button>

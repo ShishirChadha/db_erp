@@ -24,7 +24,7 @@ export function Pagination({
   if (total === 0) return null;
 
   return (
-    <div className="flex items-center justify-between gap-3 text-sm text-gray-600 py-2">
+    <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground py-2">
       <span>
         Showing <span className="tabular-nums">{rangeStart}</span>–<span className="tabular-nums">{rangeEnd}</span> of{" "}
         <span className="tabular-nums">{total}</span>
@@ -40,7 +40,7 @@ export function Pagination({
           <ChevronLeft className="h-4 w-4" />
           Prev
         </Button>
-        <span className="tabular-nums text-xs text-gray-500">
+        <span className="tabular-nums text-xs text-muted-foreground">
           Page {page} of {totalPages}
         </span>
         <Button

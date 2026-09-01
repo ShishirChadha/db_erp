@@ -211,7 +211,7 @@ function InvoicesPage() {
             ) : (
               invoices.map((inv, idx) => (
                 <TableRow key={inv.id} className={inv.is_deleted ? "opacity-50" : ""}>
-                  <TableCell className="text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
+                  <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                   <TableCell>{format(new Date(inv.invoice_date), "dd/MM/yyyy")}</TableCell>
                   <TableCell className="font-medium">
                     {inv.invoice_number}
@@ -266,7 +266,7 @@ function InvoicesPage() {
                             setDeleteDialogOpen(true);
                           }}
                         >
-                          <Trash2 className="h-4 w-4 text-red-500" />
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </>
                     ) : (

@@ -18,11 +18,11 @@ export default function RequireOwner({ children }: { children: React.ReactNode }
   }, [loading, isOwner, router])
 
   if (loading) {
-    return <div className="p-4 text-sm text-gray-500">Loading...</div>
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>
   }
 
   if (!isOwner) {
-    return <div className="p-4 text-sm text-gray-500">Redirecting...</div>
+    return <div className="p-4 text-sm text-muted-foreground">Redirecting...</div>
   }
 
   return <>{children}</>

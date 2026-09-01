@@ -2,6 +2,17 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from 'sonner';
+import ThemeProvider from '@/components/ThemeProvider';
+
+// Runs before hydration so the theme is correct on first paint -- ThemeProvider's
+// own React state sync (localStorage -> data-theme attribute) would otherwise
+// flash the default theme for a frame on every load.
+const THEME_INIT_SCRIPT = `
+try {
+  var t = localStorage.getItem('db-erp-theme');
+  if (t && t !== 'slate') document.documentElement.setAttribute('data-theme', t);
+} catch (e) {}
+`;
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -25,9 +36,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+      </head>
       <body className="min-h-full flex flex-col">
-        {children}
-        <Toaster position="top-right" />
+        <ThemeProvider>
+          {children}
+          <Toaster position="top-right" />
+        </ThemeProvider>
       </body>
     </html>
   );

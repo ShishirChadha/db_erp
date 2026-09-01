@@ -18,23 +18,17 @@
     "ownerOnly": false
   },
   {
-    "label": "Accessories",
-    "route": "/dashboard/accessories",
-    "pageKey": "accessories",
-    "ownerOnly": false
-  },
-  {
-    "label": "Purchases > Purchase Orders",
+    "label": "Purchasing > Purchase Orders",
     "route": "/dashboard/purchase-orders",
     "ownerOnly": true
   },
   {
-    "label": "Purchases > Purchase Invoices",
+    "label": "Purchasing > Purchase Invoices",
     "route": "/dashboard/purchase-invoices",
     "ownerOnly": true
   },
   {
-    "label": "Purchases > OLD Purchase IN",
+    "label": "Purchasing > OLD Purchase IN",
     "route": "/dashboard/purchases",
     "ownerOnly": true
   },
@@ -51,21 +45,33 @@
     "ownerOnly": false
   },
   {
-    "label": "Live Stock > Live Stock",
+    "label": "Inventory > Accessories",
+    "route": "/dashboard/accessories",
+    "pageKey": "accessories",
+    "ownerOnly": false
+  },
+  {
+    "label": "Operations > Live Stock",
     "route": "/dashboard/live-stock",
     "pageKey": "live_stock",
     "ownerOnly": false
   },
   {
-    "label": "Live Stock > Repair Jobs",
+    "label": "Operations > Repair Jobs",
     "route": "/dashboard/repair-jobs",
     "pageKey": "repair_jobs",
     "ownerOnly": false
   },
   {
-    "label": "Live Stock > Replacement Jobs",
+    "label": "Operations > Replacement Jobs",
     "route": "/dashboard/replacement-jobs",
     "pageKey": "replacement_jobs",
+    "ownerOnly": false
+  },
+  {
+    "label": "Operations > RMA (Vendor Returns)",
+    "route": "/dashboard/rma",
+    "pageKey": "rma",
     "ownerOnly": false
   },
   {
@@ -103,12 +109,6 @@
     "ownerOnly": true
   },
   {
-    "label": "Service > RMA (Vendor Returns)",
-    "route": "/dashboard/rma",
-    "pageKey": "rma",
-    "ownerOnly": false
-  },
-  {
     "label": "Finance > Expenses",
     "route": "/dashboard/expenses",
     "pageKey": "expenses",
@@ -142,18 +142,8 @@
     "ownerOnly": false
   },
   {
-    "label": "Audit Log",
-    "route": "/dashboard/settings/audit-log",
-    "ownerOnly": false
-  },
-  {
-    "label": "Backup",
-    "route": "/dashboard/settings/backup",
-    "ownerOnly": true
-  },
-  {
     "label": "Settings",
     "route": "/dashboard/settings",
-    "ownerOnly": true
+    "ownerOnly": false
   }
 ]

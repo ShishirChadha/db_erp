@@ -89,7 +89,7 @@ const COLUMNS: ColumnDef[] = [
     label: "#",
     className: "border p-2 text-right",
     defaultWidth: 50,
-    render: (_s, ctx) => <span className="text-gray-400 tabular-nums">{(ctx.page - 1) * ctx.pageSize + ctx.index + 1}</span>,
+    render: (_s, ctx) => <span className="text-muted-foreground tabular-nums">{(ctx.page - 1) * ctx.pageSize + ctx.index + 1}</span>,
   },
   {
     key: "sale_date",
@@ -131,7 +131,7 @@ const COLUMNS: ColumnDef[] = [
       <>
         {s.sku_description || s.full_sku_code || s.repair_description || "—"}
         {s.sku_description && s.full_sku_code && (
-          <span className="text-gray-400"> · {s.full_sku_code}</span>
+          <span className="text-muted-foreground"> · {s.full_sku_code}</span>
         )}
       </>
     ),
@@ -194,7 +194,7 @@ const COLUMNS: ColumnDef[] = [
     render: (s) => (
       <>
         <span className="capitalize">{s.payment_status}</span>
-        {s.is_deleted && <span className="ml-1 text-red-600 text-xs font-medium">VOIDED</span>}
+        {s.is_deleted && <span className="ml-1 text-destructive text-xs font-medium">VOIDED</span>}
       </>
     ),
     optional: true,
@@ -258,7 +258,7 @@ function CustomerCell({ sale, onDone, canReassign }: { sale: Sale; onDone: () =>
   if (!sale.customer_id) return <>{sale.customer_name || "—"}</>;
   return (
     <>
-      <button type="button" onClick={() => setShowDetail(true)} className="text-blue-600 underline text-left">
+      <button type="button" onClick={() => setShowDetail(true)} className="text-primary underline text-left">
         {sale.customer_name || "—"}
       </button>
       {showDetail && (
@@ -291,21 +291,21 @@ function ItemCell({ sale }: { sale: Sale }) {
   const label = item(sale);
   if (sale.asset_ledger_id) {
     return (
-      <Link href={`/dashboard/stock/${sale.asset_ledger_id}`} className="text-blue-600 underline">
+      <Link href={`/dashboard/stock/${sale.asset_ledger_id}`} className="text-primary underline">
         {label}
       </Link>
     );
   }
   if (sale.accessory_id) {
     return (
-      <Link href={`/dashboard/accessories/${sale.accessory_id}`} className="text-blue-600 underline">
+      <Link href={`/dashboard/accessories/${sale.accessory_id}`} className="text-primary underline">
         {label}
       </Link>
     );
   }
   if (sale.repair_job_id) {
     return (
-      <Link href="/dashboard/repair-jobs" className="text-blue-600 underline">
+      <Link href="/dashboard/repair-jobs" className="text-primary underline">
         {label}
       </Link>
     );
@@ -330,26 +330,26 @@ function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; 
   return (
     <>
       {sale.finalized ? (
-        <span className="text-green-600 inline-flex items-center gap-1.5">
+        <span className="text-success inline-flex items-center gap-1.5">
           ✓ {sale.invoice_number}
           {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
               one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
           {isExternal && isOwner && sale.invoice_id && (
-            <button onClick={() => setShowAttachDialog(true)} className="text-blue-600 underline text-xs">
+            <button onClick={() => setShowAttachDialog(true)} className="text-primary underline text-xs">
               File
             </button>
           )}
         </span>
       ) : sale.is_deleted ? (
-        <span className="text-gray-400 text-xs">Voided -- not invoiceable</span>
+        <span className="text-muted-foreground text-xs">Voided -- not invoiceable</span>
       ) : !isOwner ? (
-        <span className="text-gray-400 text-xs">Awaiting invoice</span>
+        <span className="text-muted-foreground text-xs">Awaiting invoice</span>
       ) : isExternal ? (
-        <button onClick={() => setShowZohoDialog(true)} className="text-amber-700 underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
+        <button onClick={() => setShowZohoDialog(true)} className="text-warning underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
           Record Zoho Invoice #
         </button>
       ) : (
-        <button onClick={() => generateInvoice()} disabled={generating} className="text-amber-700 underline text-xs inline-flex items-center gap-1">
+        <button onClick={() => generateInvoice()} disabled={generating} className="text-warning underline text-xs inline-flex items-center gap-1">
           {generating && <Loader2 className="size-3 animate-spin" />}
           Generate Invoice
         </button>
@@ -374,7 +374,7 @@ function ActionsCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: b
   return (
     <>
       {canEditSale && (
-        <button onClick={() => setShowEdit(true)} className="text-blue-600 underline text-xs">
+        <button onClick={() => setShowEdit(true)} className="text-primary underline text-xs">
           Edit
         </button>
       )}
@@ -417,9 +417,9 @@ function ColumnSelector({ visible, onChange }: { visible: Set<string>; onChange:
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 z-20 bg-white border rounded shadow-md p-2 w-48">
+          <div className="absolute right-0 mt-1 z-20 bg-card border rounded shadow-md p-2 w-48">
             {optionalColumns.map((col) => (
-              <label key={col.key} className="flex items-center gap-2 text-sm py-1 px-1 cursor-pointer hover:bg-gray-50 rounded">
+              <label key={col.key} className="flex items-center gap-2 text-sm py-1 px-1 cursor-pointer hover:bg-muted rounded">
                 <Checkbox
                   checked={visible.has(col.key)}
                   onCheckedChange={(checked) => {
@@ -639,7 +639,7 @@ function SalesLedgerPage() {
   return (
     <div className="p-4">
       <h1 className="text-2xl font-bold mb-4">Sales Ledger</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
         Select 2 or more un-invoiced sales for the same customer and account to combine them into one invoice.
       </p>
@@ -670,33 +670,33 @@ function SalesLedgerPage() {
 
       {/* Sticky toolbar: search/filters + horizontal scroll controls stay pinned
           to the top of the page while scrolling down through rows. */}
-      <div ref={toolbarRef} className="sticky top-0 z-30 bg-gray-50 pb-3">
+      <div ref={toolbarRef} className="sticky top-0 z-30 bg-muted pb-3">
         <div className="flex gap-4 flex-wrap items-center pt-1">
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search customer, asset, serial, invoice..."
-            className="border p-2 rounded bg-white"
+            className="border p-2 rounded bg-card"
           />
-          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded bg-white">
+          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded bg-card">
             <option value="">All Payment Statuses</option>
             <option value="pending">Payment Pending</option>
             <option value="partial">Partial</option>
             <option value="paid">Paid</option>
           </select>
-          <select value={receivedIntoFilter} onChange={(e) => setReceivedIntoFilter(e.target.value)} className="border p-2 rounded bg-white">
+          <select value={receivedIntoFilter} onChange={(e) => setReceivedIntoFilter(e.target.value)} className="border p-2 rounded bg-card">
             <option value="">All Received Into</option>
             {PAYMENT_ACCOUNTS.map((acc) => (
               <option key={acc} value={acc}>{acc}</option>
             ))}
           </select>
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border p-2 rounded bg-white">
+          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border p-2 rounded bg-card">
             {PAGE_SIZE_OPTIONS.map((n) => (
               <option key={n} value={n}>{n} / page</option>
             ))}
           </select>
           <ColumnSelector visible={visibleColumnKeys} onChange={setVisibleColumnKeys} />
-          <label className="flex items-center gap-1.5 text-sm border p-2 rounded bg-white cursor-pointer">
+          <label className="flex items-center gap-1.5 text-sm border p-2 rounded bg-card cursor-pointer">
             <Checkbox checked={showVoided} onCheckedChange={(v) => setShowVoided(!!v)} />
             Show voided sales
           </label>
@@ -704,7 +704,7 @@ function SalesLedgerPage() {
             allSelectedExternal ? (
               <button
                 onClick={() => setShowBatchZoho(true)}
-                className="bg-amber-600 text-white px-3 py-2 rounded text-sm"
+                className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm"
               >
                 Record Combined Zoho Invoice # ({selected.size} sales)
               </button>
@@ -712,30 +712,30 @@ function SalesLedgerPage() {
               <button
                 onClick={() => generateCombinedInvoice()}
                 disabled={batchBusy}
-                className="bg-amber-600 text-white px-3 py-2 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
               >
                 {batchBusy && <Loader2 className="size-4 animate-spin" />}
                 {batchBusy ? "Generating…" : `Generate Combined Invoice (${selected.size} sales)`}
               </button>
             )
           )}
-          {batchErr && <span className="text-red-600 text-xs">{batchErr}</span>}
+          {batchErr && <span className="text-destructive text-xs">{batchErr}</span>}
         </div>
 
         {!loading && (
           <div className="flex justify-between items-center gap-2 pt-2">
             <div className="flex gap-2">
-              <button onClick={fitColumnsToScreen} className="border rounded px-2 py-1 text-xs text-gray-600 bg-white hover:bg-gray-100">
+              <button onClick={fitColumnsToScreen} className="border rounded px-2 py-1 text-xs text-muted-foreground bg-card hover:bg-muted">
                 Fit Columns to Screen
               </button>
-              <button onClick={resetColumnWidths} className="border rounded px-2 py-1 text-xs text-gray-600 bg-white hover:bg-gray-100">
+              <button onClick={resetColumnWidths} className="border rounded px-2 py-1 text-xs text-muted-foreground bg-card hover:bg-muted">
                 Reset Widths
               </button>
             </div>
             <div className="flex gap-1">
               <button
                 onClick={() => scrollBy(-300)}
-                className="border rounded p-1 text-gray-500 bg-white hover:bg-gray-100"
+                className="border rounded p-1 text-muted-foreground bg-card hover:bg-muted"
                 title="Scroll left"
                 aria-label="Scroll table left"
               >
@@ -743,7 +743,7 @@ function SalesLedgerPage() {
               </button>
               <button
                 onClick={() => scrollBy(300)}
-                className="border rounded p-1 text-gray-500 bg-white hover:bg-gray-100"
+                className="border rounded p-1 text-muted-foreground bg-card hover:bg-muted"
                 title="Scroll right"
                 aria-label="Scroll table right"
               >
@@ -782,7 +782,7 @@ function SalesLedgerPage() {
               <thead>
                 <tr>
                   <th
-                    className="border p-2 text-center sticky top-0 z-20 bg-white"
+                    className="border p-2 text-center sticky top-0 z-20 bg-card"
                   >
                     {isOwner && selectableIds.length > 0 && (
                       <Checkbox
@@ -830,7 +830,7 @@ function SalesLedgerPage() {
                   />
                 ))}
                 {displayedSales.length === 0 && (
-                  <tr><td colSpan={visibleColumns.length + 1} className="border p-4 text-center text-gray-400">No sales found.</td></tr>
+                  <tr><td colSpan={visibleColumns.length + 1} className="border p-4 text-center text-muted-foreground">No sales found.</td></tr>
                 )}
               </tbody>
             </table>

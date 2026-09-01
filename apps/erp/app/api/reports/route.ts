@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { REPORT_DIMENSIONS, type ReportDimension } from '@/lib/reports'
 
-const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health'] as const
+const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -86,6 +86,19 @@ export async function GET(req: NextRequest) {
       case 'data_health': {
         if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
         const { data, error } = await supabaseAdmin.rpc('report_data_health')
+        if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'expenses': {
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const { data, error } = await supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to })
+        if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'expense_timeseries': {
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const grain = sp.get('grain') || 'day'
+        const { data, error } = await supabaseAdmin.rpc('report_expense_timeseries', { p_from: from, p_to: to, p_grain: grain })
         if (error) throw error
         return NextResponse.json(data)
       }

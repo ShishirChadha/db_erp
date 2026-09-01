@@ -185,23 +185,23 @@ function StockIntakePage() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground hover:text-foreground mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Stock Intake</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Register a unit you just received. No price or vendor info needed here — the owner will fill that in.
       </p>
 
       {done && (
-        <div className="bg-green-50 border border-green-200 text-green-800 rounded p-3 mb-4 flex justify-between items-center">
+        <div className="bg-success/15 border border-success/20 text-success rounded p-3 mb-4 flex justify-between items-center">
           <span>Added to stock — pending QC before it can be sold.</span>
           <button onClick={() => setDone(false)} className="text-sm underline">Add another</button>
         </div>
       )}
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+      {error && <div className="text-destructive mb-4">{error}</div>}
 
-      <div className="space-y-4 bg-white p-4 rounded shadow">
+      <div className="space-y-4 bg-card p-4 rounded shadow">
         <div>
           <label className="block font-medium text-sm mb-1">Date Received</label>
           <input
@@ -211,7 +211,7 @@ function StockIntakePage() {
             onChange={(e) => setReceivedDate(e.target.value)}
             className="border p-2 w-full rounded"
           />
-          <p className="text-xs text-gray-400 mt-1">Backdate this if the unit was actually received earlier.</p>
+          <p className="text-xs text-muted-foreground mt-1">Backdate this if the unit was actually received earlier.</p>
         </div>
 
         <div>
@@ -276,7 +276,7 @@ function StockIntakePage() {
           <button
             onClick={() => openReview()}
             disabled={submitting}
-            className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded disabled:opacity-50"
           >
             {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
             {submitting ? 'Saving...' : 'Review & Save Entry'}

@@ -63,7 +63,7 @@ export function AccessoryBundlePicker({
       {options.length > 0 && (
         <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
           {options.map((a) => (
-            <li key={a.id} onClick={() => add(a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
+            <li key={a.id} onClick={() => add(a)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0">
               {a.accessory_name}
             </li>
           ))}
@@ -72,7 +72,7 @@ export function AccessoryBundlePicker({
       {bundled.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {bundled.map((b, idx) => (
-            <span key={b.accessory_id} className="bg-gray-100 text-sm px-2 py-1 rounded flex items-center gap-1">
+            <span key={b.accessory_id} className="bg-muted text-sm px-2 py-1 rounded flex items-center gap-1">
               {b.accessory_name}
               <input
                 type="number"
@@ -81,7 +81,7 @@ export function AccessoryBundlePicker({
                 onChange={(e) => onChange(bundled.map((p, i) => (i === idx ? { ...p, quantity: Number(e.target.value) } : p)))}
                 className="w-12 border rounded text-center"
               />
-              <button onClick={() => onChange(bundled.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
+              <button onClick={() => onChange(bundled.filter((_, i) => i !== idx))} className="text-destructive">✕</button>
             </span>
           ))}
         </div>

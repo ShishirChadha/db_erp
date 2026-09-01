@@ -10,31 +10,29 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Dashboard | if granted `dashboard` | if granted `dashboard` |
 | Pending Tasks | if granted `pending_tasks` | if granted `pending_tasks` |
 | New Entry | if granted `new_entry` | if granted `new_entry` |
-| Accessories | if granted `accessories` | if granted `accessories` |
-| Purchases > Purchase Orders | owner-only | owner-only |
-| Purchases > Purchase Invoices | owner-only | owner-only |
-| Purchases > OLD Purchase IN | owner-only | owner-only |
+| Purchasing > Purchase Orders | owner-only | owner-only |
+| Purchasing > Purchase Invoices | owner-only | owner-only |
+| Purchasing > OLD Purchase IN | owner-only | owner-only |
 | Inventory > SKU Master | if granted `sku_master` | if granted `sku_master` |
 | Inventory > Stock / Assets (Main ERP) | if granted `stock` | if granted `stock` |
-| Live Stock > Live Stock | if granted `live_stock` | if granted `live_stock` |
-| Live Stock > Repair Jobs | if granted `repair_jobs` | if granted `repair_jobs` |
-| Live Stock > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
+| Inventory > Accessories | if granted `accessories` | if granted `accessories` |
+| Operations > Live Stock | if granted `live_stock` | if granted `live_stock` |
+| Operations > Repair Jobs | if granted `repair_jobs` | if granted `repair_jobs` |
+| Operations > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
+| Operations > RMA (Vendor Returns) | if granted `rma` | if granted `rma` |
 | Sales > Sales | if granted `sales` | if granted `sales` |
 | Sales > Invoices | if granted `invoices` | if granted `invoices` |
 | Sales > Quotations | if granted `quotations` | if granted `quotations` |
 | Sales > Price Cockpit | owner-only | owner-only |
 | Contacts > Customers | if granted `customers` | if granted `customers` |
 | Contacts > Vendors | owner-only | owner-only |
-| Service > RMA (Vendor Returns) | if granted `rma` | if granted `rma` |
 | Finance > Expenses | if granted `expenses` | if granted `expenses` |
 | Finance > Reports | if granted `reports` | if granted `reports` |
 | Finance > Vendor Reconciliation | owner-only | owner-only |
 | Finance > Bank Reconciliation | owner-only | owner-only |
 | Finance > Recon Sessions | owner-only | owner-only |
 | Activity Hub | if granted `activities` | if granted `activities` |
-| Audit Log | visible to all signed-in staff | visible to all signed-in staff |
-| Backup | owner-only | owner-only |
-| Settings | owner-only | owner-only |
+| Settings | visible to all signed-in staff | visible to all signed-in staff |
 
 ## Edit grants currently configured (`profile_page_actions`)
 

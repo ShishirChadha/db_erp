@@ -103,7 +103,7 @@ function ImportInvoicePage() {
   if (done) {
     return (
       <div className="p-4 max-w-2xl mx-auto">
-        <div className="bg-green-50 border border-green-200 text-green-800 rounded p-4 mb-4">{done}</div>
+        <div className="bg-success/15 border border-success/20 text-success rounded p-4 mb-4">{done}</div>
         <div className="flex gap-2">
           <Button onClick={() => router.push('/dashboard/invoices')}>Back to Invoices</Button>
           <Button variant="outline" onClick={() => window.location.reload()}>Import Another</Button>
@@ -114,15 +114,15 @@ function ImportInvoicePage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.push('/dashboard/invoices')} className="text-sm text-gray-500 mb-2">&larr; Back</button>
+      <button onClick={() => router.push('/dashboard/invoices')} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
       <h1 className="text-2xl font-bold mb-1">Import Historical Invoice</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Record an invoice already issued by Zoho (or another prior system) with its real number preserved exactly.
         This does not mint a new number -- it will never collide with or affect this system's own invoice series.
       </p>
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+      {error && <div className="text-destructive mb-4">{error}</div>}
 
-      <div className="space-y-4 bg-white p-4 rounded shadow">
+      <div className="space-y-4 bg-card p-4 rounded shadow">
         <div className="grid grid-cols-3 gap-4">
           <div>
             <Label>Entity *</Label>
@@ -186,7 +186,7 @@ function ImportInvoicePage() {
           <div className="border rounded mt-1">
             <table className="min-w-full text-sm">
               <thead>
-                <tr className="bg-gray-50">
+                <tr className="bg-muted">
                   <th className="p-2 text-left">Description</th>
                   <th className="p-2 text-left w-24">HSN</th>
                   <th className="p-2 text-left w-20">Qty</th>
@@ -207,7 +207,7 @@ function ImportInvoicePage() {
                     )}
                     <td className="p-1 text-center">
                       {items.length > 1 && (
-                        <button onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
+                        <button onClick={() => setItems(prev => prev.filter((_, i) => i !== idx))} className="text-destructive">✕</button>
                       )}
                     </td>
                   </tr>
@@ -215,7 +215,7 @@ function ImportInvoicePage() {
               </tbody>
             </table>
           </div>
-          <button onClick={() => setItems(prev => [...prev, emptyItem()])} className="text-blue-600 underline text-sm mt-2">
+          <button onClick={() => setItems(prev => [...prev, emptyItem()])} className="text-primary underline text-sm mt-2">
             + Add line
           </button>
         </div>

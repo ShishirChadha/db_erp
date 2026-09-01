@@ -121,8 +121,8 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
                   {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
                 </Button>
               </div>
-              {gstError && <p className="text-xs text-red-500 mt-1">{gstError}</p>}
-              {formData.state && <p className="text-xs text-gray-400 mt-1">State: {formData.state} ({formData.state_code})</p>}
+              {gstError && <p className="text-xs text-destructive mt-1">{gstError}</p>}
+              {formData.state && <p className="text-xs text-muted-foreground mt-1">State: {formData.state} ({formData.state_code})</p>}
             </div>
             <div><Label>Address</Label><Input value={formData.address} onChange={(e) => handleChange("address", e.target.value)} /></div>
             <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>

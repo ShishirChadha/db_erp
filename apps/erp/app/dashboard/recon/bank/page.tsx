@@ -163,21 +163,21 @@ function BankReconPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Bank Reconciliation</h1>
-        <p className="text-sm text-gray-500">Import a bank statement CSV. Map columns once per account — every later statement from that account reuses the mapping.</p>
+        <p className="text-sm text-muted-foreground">Import a bank statement CSV. Map columns once per account — every later statement from that account reuses the mapping.</p>
       </div>
 
-      {err && <div className="text-red-600 text-sm border border-red-200 bg-red-50 rounded p-3 whitespace-pre-wrap">{err}</div>}
+      {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3 whitespace-pre-wrap">{err}</div>}
 
       <div className="grid md:grid-cols-[16rem_1fr] gap-4">
         <div className="space-y-2">
           <div className="border rounded divide-y">
             {accounts.map((a) => (
-              <button key={a.id} onClick={() => setActiveAccountId(a.id)} className={`w-full text-left p-3 text-sm hover:bg-gray-50 ${activeAccountId === a.id ? 'bg-gray-100' : ''}`}>
+              <button key={a.id} onClick={() => setActiveAccountId(a.id)} className={`w-full text-left p-3 text-sm hover:bg-muted ${activeAccountId === a.id ? 'bg-muted' : ''}`}>
                 <div className="font-medium">{a.label}</div>
-                <div className="text-xs text-gray-400">{a.entity_key} {a.account_number_last4 ? `· ...${a.account_number_last4}` : ''}</div>
+                <div className="text-xs text-muted-foreground">{a.entity_key} {a.account_number_last4 ? `· ...${a.account_number_last4}` : ''}</div>
               </button>
             ))}
-            {accounts.length === 0 && <div className="p-3 text-sm text-gray-400">No accounts yet.</div>}
+            {accounts.length === 0 && <div className="p-3 text-sm text-muted-foreground">No accounts yet.</div>}
           </div>
           <Button size="sm" variant="outline" className="w-full" onClick={() => setShowAddAccount((v) => !v)}>
             <Plus className="size-4 mr-1" /> Add account
@@ -208,7 +208,7 @@ function BankReconPage() {
                   <div className="grid sm:grid-cols-2 gap-2">
                     {TARGET_FIELDS.map((f) => (
                       <div key={f.key}>
-                        <label className="text-xs text-gray-500 block">{f.label}{f.required ? ' *' : ''}</label>
+                        <label className="text-xs text-muted-foreground block">{f.label}{f.required ? ' *' : ''}</label>
                         <select value={mapping[f.key] || ''} onChange={(e) => setMapping({ ...mapping, [f.key]: e.target.value })} className="border rounded px-2 py-1 text-sm w-full">
                           <option value="">—</option>
                           {csvHeaders.map((h) => <option key={h} value={h}>{h}</option>)}
@@ -217,7 +217,7 @@ function BankReconPage() {
                     ))}
                   </div>
                   <div className="flex items-center gap-3">
-                    <label className="text-xs text-gray-500">Date format</label>
+                    <label className="text-xs text-muted-foreground">Date format</label>
                     <select value={dateFormat} onChange={(e) => setDateFormat(e.target.value)} className="border rounded px-2 py-1 text-sm">
                       <option value="DD/MM/YYYY">DD/MM/YYYY</option>
                       <option value="ISO">YYYY-MM-DD (ISO)</option>
@@ -225,14 +225,14 @@ function BankReconPage() {
                   </div>
 
                   <div className="grid sm:grid-cols-4 gap-2">
-                    <div><label className="text-xs text-gray-500 block">Period start</label><input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
-                    <div><label className="text-xs text-gray-500 block">Period end</label><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
-                    <div><label className="text-xs text-gray-500 block">Opening balance</label><input type="number" value={openingBalance} onChange={(e) => setOpeningBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
-                    <div><label className="text-xs text-gray-500 block">Closing balance</label><input type="number" value={closingBalance} onChange={(e) => setClosingBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                    <div><label className="text-xs text-muted-foreground block">Period start</label><input type="date" value={periodStart} onChange={(e) => setPeriodStart(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                    <div><label className="text-xs text-muted-foreground block">Period end</label><input type="date" value={periodEnd} onChange={(e) => setPeriodEnd(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                    <div><label className="text-xs text-muted-foreground block">Opening balance</label><input type="number" value={openingBalance} onChange={(e) => setOpeningBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                    <div><label className="text-xs text-muted-foreground block">Closing balance</label><input type="number" value={closingBalance} onChange={(e) => setClosingBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
                   </div>
 
                   {mappingComplete && (
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-muted-foreground">
                       Preview: {mappedRows.length} of {csvRows.length} rows parsed successfully.
                       <div className="border rounded mt-1 max-h-40 overflow-y-auto">
                         {mappedRows.slice(0, 5).map((r, i) => (
@@ -242,7 +242,7 @@ function BankReconPage() {
                     </div>
                   )}
 
-                  <label className="flex items-center gap-2 text-xs text-gray-500">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     <input type="checkbox" checked={saveMapping} onChange={(e) => setSaveMapping(e.target.checked)} />
                     Save this mapping for future statements from this account
                   </label>
@@ -259,7 +259,7 @@ function BankReconPage() {
           {activeAccountId && (
             <div className="border rounded overflow-x-auto">
               <table className="w-full text-sm">
-                <thead className="bg-gray-50 text-xs text-gray-500">
+                <thead className="bg-muted text-xs text-muted-foreground">
                   <tr><th className="text-left p-2">Date</th><th className="text-left p-2">Narration</th><th className="text-right p-2">Debit</th><th className="text-right p-2">Credit</th><th className="text-left p-2">Status</th></tr>
                 </thead>
                 <tbody className="divide-y">
@@ -272,7 +272,7 @@ function BankReconPage() {
                       <td className="p-2"><StatusBadge tone={t.recon_status === 'matched' ? 'success' : t.recon_status === 'open' ? 'warning' : 'neutral'}>{t.recon_status}</StatusBadge></td>
                     </tr>
                   ))}
-                  {txns.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-gray-400">No transactions imported yet.</td></tr>}
+                  {txns.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-muted-foreground">No transactions imported yet.</td></tr>}
                 </tbody>
               </table>
             </div>

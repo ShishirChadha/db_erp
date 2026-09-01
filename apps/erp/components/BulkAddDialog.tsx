@@ -87,7 +87,7 @@ export default function BulkAddDialog({
           <p className="text-sm text-muted-foreground">
             CSV must have a header row. 
             {templateLink && (
-              <a href={templateLink} target="_blank" rel="noopener noreferrer" className="ml-2 text-blue-500">
+              <a href={templateLink} target="_blank" rel="noopener noreferrer" className="ml-2 text-info">
                 Download template
               </a>
             )}

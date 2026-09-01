@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { Sparkles } from 'lucide-react'
 
@@ -11,7 +11,17 @@ import { Sparkles } from 'lucide-react'
 // docs/decisions.md (2026-08-29): DB must never make the ERP itself feel slower.
 const AdvisorPalette = dynamic(() => import('./AdvisorPalette'), { ssr: false })
 
-export default function AdvisorLauncher() {
+// Shared open-state, provided once at the dashboard layout level (wraps both
+// <Sidebar> and <AdvisorLauncher>) so the sidebar's own "Search ⌘K" button (a
+// discoverability affordance for people who don't know the shortcut exists)
+// opens the exact same dialog instance as the global ⌘K listener below.
+const NavPaletteContext = createContext<{ open: () => void }>({ open: () => {} })
+
+export function useNavPalette() {
+  return useContext(NavPaletteContext)
+}
+
+export function NavPaletteProvider({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false)
   const [everOpened, setEverOpened] = useState(false)
 
@@ -31,18 +41,26 @@ export default function AdvisorLauncher() {
   }, [open])
 
   return (
-    <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-lg hover:bg-blue-700 md:bottom-6 md:right-6"
-        aria-label="Ask DB"
-      >
-        <Sparkles className="h-4 w-4" />
-        <span className="hidden sm:inline">Ask DB</span>
-        <kbd className="hidden rounded bg-blue-700/60 px-1.5 py-0.5 text-xs md:inline">⌘K</kbd>
-      </button>
+    <NavPaletteContext.Provider value={{ open: () => setOpen(true) }}>
+      {children}
       {everOpened && <AdvisorPalette open={open} onOpenChange={setOpen} />}
-    </>
+    </NavPaletteContext.Provider>
+  )
+}
+
+export default function AdvisorLauncher() {
+  const { open } = useNavPalette()
+
+  return (
+    <button
+      type="button"
+      onClick={open}
+      className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 md:bottom-6 md:right-6"
+      aria-label="Ask DB"
+    >
+      <Sparkles className="h-4 w-4" />
+      <span className="hidden sm:inline">Ask DB</span>
+      <kbd className="hidden rounded bg-primary-foreground/20 px-1.5 py-0.5 text-xs md:inline">⌘K</kbd>
+    </button>
   )
 }

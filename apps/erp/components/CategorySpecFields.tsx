@@ -46,7 +46,7 @@ export function CategorySpecFields({
   onChange: (name: string, value: any) => void
 }) {
   if (fields.length === 0) {
-    return <p className="text-sm text-gray-500 mb-3">No additional specs for this category.</p>
+    return <p className="text-sm text-muted-foreground mb-3">No additional specs for this category.</p>
   }
 
   return (
@@ -89,7 +89,7 @@ export function CategorySpecFields({
                 ))}
               </select>
             ) : null}
-            <span className="text-xs text-gray-500">{field.required ? 'Required' : 'Optional'}</span>
+            <span className="text-xs text-muted-foreground">{field.required ? 'Required' : 'Optional'}</span>
           </div>
         )
       })}

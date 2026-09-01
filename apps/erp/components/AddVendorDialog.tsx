@@ -80,9 +80,9 @@ export function AddVendorDialog({ onAdded, onClose }: { onAdded: (vendor: Vendor
           fetchingGst={fetchingGst}
           onGstBlur={handleGstBlur}
         />
-        {err && <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">{err}</div>}
+        {err && <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg mt-2">{err}</div>}
         <div className="flex gap-3 mt-4">
-          <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => submit()} loading={busy}>
+          <Button className="flex-1 bg-primary hover:bg-primary/90" onClick={() => submit()} loading={busy}>
             Save Vendor
           </Button>
           <Button variant="outline" onClick={onClose} disabled={busy}>

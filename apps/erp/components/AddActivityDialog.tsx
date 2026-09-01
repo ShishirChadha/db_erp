@@ -65,8 +65,8 @@ export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
             </div>
             <div className="flex flex-wrap gap-1 mt-2">
               {form.tags.map(t => (
-                <span key={t} className="bg-gray-200 px-2 py-0.5 rounded text-sm flex items-center gap-1">
-                  {t} <button onClick={() => removeTag(t)} className="text-red-500">×</button>
+                <span key={t} className="bg-muted px-2 py-0.5 rounded text-sm flex items-center gap-1">
+                  {t} <button onClick={() => removeTag(t)} className="text-destructive">×</button>
                 </span>
               ))}
             </div>

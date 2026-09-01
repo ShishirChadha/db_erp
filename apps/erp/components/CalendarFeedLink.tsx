@@ -48,7 +48,7 @@ export default function CalendarFeedLink() {
       <Button variant="outline" size="sm" onClick={handleOpen}>Sync to Calendar</Button>
       <SimpleModal isOpen={open} onClose={() => setOpen(false)} title="Sync Your Tasks to a Calendar">
         <div className="space-y-3 text-sm">
-          <p className="text-gray-600">
+          <p className="text-muted-foreground">
             Subscribe to this link in Google Calendar, Outlook, or your phone&apos;s calendar app to see your Activity Hub tasks
             (with due dates) automatically kept up to date. This link is personal to you -- keep it private.
           </p>
@@ -56,13 +56,13 @@ export default function CalendarFeedLink() {
             <input readOnly value={loading ? 'Loading...' : url || ''} className="flex-1 border rounded p-2 text-xs font-mono" onFocus={e => e.target.select()} />
             <Button variant="outline" size="sm" onClick={copyUrl} disabled={!url}>Copy</Button>
           </div>
-          <ul className="text-xs text-gray-500 list-disc pl-4 space-y-1">
+          <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-1">
             <li><strong>Google Calendar:</strong> Settings → Add calendar → From URL, paste the link above.</li>
             <li><strong>Outlook:</strong> Add calendar → Subscribe from web, paste the link above.</li>
             <li><strong>Apple Calendar:</strong> File → New Calendar Subscription, paste the link above.</li>
           </ul>
           <div className="flex justify-between items-center pt-2">
-            <p className="text-xs text-gray-400">Leaked or shared by mistake? Regenerate to invalidate it immediately.</p>
+            <p className="text-xs text-muted-foreground">Leaked or shared by mistake? Regenerate to invalidate it immediately.</p>
             <Button variant="outline" size="sm" onClick={regenerate} disabled={regenerating || loading}>
               {regenerating ? 'Regenerating...' : 'Regenerate Link'}
             </Button>

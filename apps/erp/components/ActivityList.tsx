@@ -84,8 +84,8 @@ const RELATED_TYPE_LINK_BASE: Partial<Record<RelatedType, string>> = {
 };
 
 const PRIORITY_STYLES: Record<Priority, string> = {
-  low: 'bg-gray-100 text-gray-600', normal: 'bg-blue-50 text-blue-700',
-  high: 'bg-orange-100 text-orange-700', urgent: 'bg-red-100 text-red-700',
+  low: 'bg-muted text-muted-foreground', normal: 'bg-info/15 text-info',
+  high: 'bg-warning/15 text-warning', urgent: 'bg-destructive/10 text-destructive',
 };
 
 function userLabel(u: { id: string; full_name: string | null; role?: string }) {
@@ -198,31 +198,31 @@ function TaskForm({
       <div>
         <label className="block text-sm font-medium mb-1">Assign to</label>
         <div className="border rounded p-2 max-h-32 overflow-y-auto space-y-1">
-          {assignableUsers.length === 0 && <p className="text-xs text-gray-400">No other users found.</p>}
+          {assignableUsers.length === 0 && <p className="text-xs text-muted-foreground">No other users found.</p>}
           {assignableUsers.map(u => (
             <label key={u.id} className="flex items-center gap-2 text-sm">
               <Checkbox checked={form.assignee_ids.includes(u.id)} onCheckedChange={() => toggleAssignee(u.id)} />
-              {userLabel(u)} <span className="text-xs text-gray-400">({u.role})</span>
+              {userLabel(u)} <span className="text-xs text-muted-foreground">({u.role})</span>
             </label>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">Leave empty for a personal task (only you and the owner will see it).</p>
+        <p className="text-xs text-muted-foreground mt-1">Leave empty for a personal task (only you and the owner will see it).</p>
       </div>
 
       <div>
         <label className="block text-sm font-medium mb-1">Watchers (CC — can see the task, not assigned to do it)</label>
         <div className="border rounded p-2 max-h-32 overflow-y-auto space-y-1">
           {assignableUsers.filter(u => !form.assignee_ids.includes(u.id)).length === 0 && (
-            <p className="text-xs text-gray-400">No other users available to watch.</p>
+            <p className="text-xs text-muted-foreground">No other users available to watch.</p>
           )}
           {assignableUsers.filter(u => !form.assignee_ids.includes(u.id)).map(u => (
             <label key={u.id} className="flex items-center gap-2 text-sm">
               <Checkbox checked={form.watcher_ids.includes(u.id)} onCheckedChange={() => toggleWatcher(u.id)} />
-              {userLabel(u)} <span className="text-xs text-gray-400">({u.role})</span>
+              {userLabel(u)} <span className="text-xs text-muted-foreground">({u.role})</span>
             </label>
           ))}
         </div>
-        <p className="text-xs text-gray-400 mt-1">e.g. a manager who should see this task without owning the work — they get visibility and a notification, but the task stays assigned to whoever&apos;s checked above.</p>
+        <p className="text-xs text-muted-foreground mt-1">e.g. a manager who should see this task without owning the work — they get visibility and a notification, but the task stays assigned to whoever&apos;s checked above.</p>
       </div>
 
       <div>
@@ -243,7 +243,7 @@ function TaskForm({
           {form.tags.map(tag => (
             <span key={tag} style={{ backgroundColor: getTagColor(tag) }} className="px-2 py-1 rounded flex items-center gap-1">
               {tag}
-              <button onClick={() => removeTag(tag)} className="text-red-500">×</button>
+              <button onClick={() => removeTag(tag)} className="text-destructive">×</button>
             </span>
           ))}
         </div>
@@ -340,7 +340,7 @@ function AddActivityModal({
       <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-        <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
+        <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
           {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
           Save
         </button>
@@ -405,7 +405,7 @@ function EditActivityModal({
       <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
-        <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50">
+        <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
           {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
           Update
         </button>
@@ -426,7 +426,7 @@ function DeleteConfirmModal({
       <p>Are you sure you want to delete this task? It can only be recovered by an owner from the database.</p>
       <div className="flex justify-end gap-2 mt-4">
         <button onClick={onClose} disabled={deleting} className="px-4 py-2 border rounded disabled:opacity-50">Cancel</button>
-        <button onClick={handleConfirm} disabled={deleting} className="px-4 py-2 bg-red-600 text-white rounded disabled:opacity-50">
+        <button onClick={handleConfirm} disabled={deleting} className="px-4 py-2 bg-destructive text-destructive-foreground rounded disabled:opacity-50">
           {deleting && <Loader2 className="inline size-4 animate-spin mr-1" />}
           Delete
         </button>
@@ -486,15 +486,15 @@ function ChecklistSection({
   return (
     <div>
       <h4 className="font-medium text-sm mb-1">
-        Checklist {items.length > 0 && <span className="text-xs text-gray-400">({doneCount}/{items.length})</span>}
+        Checklist {items.length > 0 && <span className="text-xs text-muted-foreground">({doneCount}/{items.length})</span>}
       </h4>
-      {items.length === 0 && <p className="text-xs text-gray-400 mb-1">No checklist items yet.</p>}
+      {items.length === 0 && <p className="text-xs text-muted-foreground mb-1">No checklist items yet.</p>}
       <ul className="space-y-1 mb-2">
         {items.map(item => (
           <li key={item.id} className="flex items-center gap-2 text-sm group">
             <Checkbox checked={item.is_done} onCheckedChange={() => toggleItem(item)} disabled={busyId === item.id} />
-            <span className={item.is_done ? 'line-through text-gray-400 flex-1' : 'flex-1'}>{item.text}</span>
-            <button onClick={() => deleteItem(item)} disabled={busyId === item.id} className="text-gray-300 hover:text-red-600 opacity-0 group-hover:opacity-100">
+            <span className={item.is_done ? 'line-through text-muted-foreground flex-1' : 'flex-1'}>{item.text}</span>
+            <button onClick={() => deleteItem(item)} disabled={busyId === item.id} className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100">
               <Trash2 className="h-3.5 w-3.5" />
             </button>
           </li>
@@ -576,18 +576,18 @@ function DetailModal({
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Task Details" wide closeOnBackdropClick={false}>
-      {loading && <p className="text-sm text-gray-500">Loading...</p>}
+      {loading && <p className="text-sm text-muted-foreground">Loading...</p>}
       {!loading && detail && (
         <div className="space-y-4">
           <div className="flex items-start justify-between gap-2">
             <div>
               <h3 className="font-semibold text-lg">{detail.title}</h3>
-              <p className="text-sm text-gray-600 whitespace-pre-wrap">{detail.description || '—'}</p>
+              <p className="text-sm text-muted-foreground whitespace-pre-wrap">{detail.description || '—'}</p>
             </div>
             {detail.due_date && (
               <button
                 onClick={handleDownloadIcs} disabled={downloadingIcs}
-                className="shrink-0 text-xs px-2 py-1 border rounded text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+                className="shrink-0 text-xs px-2 py-1 border rounded text-muted-foreground hover:bg-muted disabled:opacity-50"
               >
                 {downloadingIcs ? 'Exporting...' : 'Add to Calendar'}
               </button>
@@ -608,7 +608,7 @@ function DetailModal({
               <strong>Related record:</strong>{' '}
               {detail.related_type && detail.related_id ? (
                 linkBase
-                  ? <Link href={`${linkBase}/${detail.related_id}`} className="text-blue-600 hover:underline" target="_blank">{RELATED_TYPE_LABELS[detail.related_type]}: {detail.related_id}</Link>
+                  ? <Link href={`${linkBase}/${detail.related_id}`} className="text-primary hover:underline" target="_blank">{RELATED_TYPE_LABELS[detail.related_type]}: {detail.related_id}</Link>
                   : <span>{RELATED_TYPE_LABELS[detail.related_type]}: {detail.related_id}</span>
               ) : '—'}
             </p>
@@ -616,7 +616,7 @@ function DetailModal({
               <strong>Reviewed:</strong>{' '}
               {detail.reviewed_at ? `${format(new Date(detail.reviewed_at), 'dd/MM/yyyy HH:mm')} by ${detail.reviewed_by_name || '—'}` : 'Not yet reviewed'}
               {isOwner && detail.status === 'done' && !detail.reviewed_at && (
-                <button onClick={markReviewed} disabled={reviewing} className="ml-2 text-xs px-2 py-1 bg-green-600 text-white rounded disabled:opacity-50">
+                <button onClick={markReviewed} disabled={reviewing} className="ml-2 text-xs px-2 py-1 bg-success text-success-foreground rounded disabled:opacity-50">
                   {reviewing ? 'Marking...' : 'Mark Reviewed'}
                 </button>
               )}
@@ -627,11 +627,11 @@ function DetailModal({
 
           <div>
             <h4 className="font-medium text-sm mb-1">History</h4>
-            {detail.history.length === 0 && <p className="text-xs text-gray-400">No changes recorded yet.</p>}
+            {detail.history.length === 0 && <p className="text-xs text-muted-foreground">No changes recorded yet.</p>}
             <ul className="text-xs space-y-1 border-l-2 pl-3">
               {detail.history.map((h, i) => (
                 <li key={i}>
-                  <span className="text-gray-400">{format(new Date(h.changed_at), 'dd/MM/yyyy HH:mm')}</span>{' '}
+                  <span className="text-muted-foreground">{format(new Date(h.changed_at), 'dd/MM/yyyy HH:mm')}</span>{' '}
                   — <strong>{h.changed_by_name || 'Unknown'}</strong> changed <em>{h.field_name}</em>: &quot;{h.old_value || '—'}&quot; → &quot;{h.new_value || '—'}&quot;
                 </li>
               ))}
@@ -796,50 +796,50 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
             </div>
           </div>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700">
+        <button onClick={() => setShowAddModal(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded hover:bg-primary/90">
           + New Task
         </button>
       </div>
 
-      {isOwner && <p className="text-xs text-gray-500">Showing every task (owner view). Employees only see tasks they created or are assigned to.</p>}
+      {isOwner && <p className="text-xs text-muted-foreground">Showing every task (owner view). Employees only see tasks they created or are assigned to.</p>}
 
       <div className="border rounded overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200">
-          <thead className="bg-gray-50">
+        <table className="min-w-full divide-y divide-border">
+          <thead className="bg-muted">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('due_date')}>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted" onClick={() => handleSort('due_date')}>
                 Due Date <SortIcon column="due_date" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('title')}>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted" onClick={() => handleSort('title')}>
                 Title <SortIcon column="title" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('priority')}>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted" onClick={() => handleSort('priority')}>
                 Priority <SortIcon column="priority" />
               </th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Assigned To</th>
-              {isOwner && <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created By</th>}
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer hover:bg-gray-100" onClick={() => handleSort('status')}>
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Assigned To</th>
+              {isOwner && <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase">Created By</th>}
+              <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase cursor-pointer hover:bg-muted" onClick={() => handleSort('status')}>
                 Status <SortIcon column="status" />
               </th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+              <th className="px-4 py-3 text-right text-xs font-medium text-muted-foreground uppercase">Actions</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="bg-card divide-y divide-border">
             {activities.map(act => {
               const overdue = act.due_date && act.status !== 'done' && act.status !== 'cancelled' && new Date(act.due_date) < new Date();
               const canDelete = isOwner || act.created_by === myId;
               return (
-                <tr key={act.id} className={act.status === 'done' ? 'opacity-50' : overdue ? 'bg-red-50' : ''}>
+                <tr key={act.id} className={act.status === 'done' ? 'opacity-50' : overdue ? 'bg-destructive/10' : ''}>
                   <td className="px-4 py-3">
                     {act.due_date ? format(new Date(act.due_date), 'dd/MM/yyyy') : '-'}
-                    {overdue && <span className="ml-1 text-xs text-red-600 font-medium">overdue</span>}
+                    {overdue && <span className="ml-1 text-xs text-destructive font-medium">overdue</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <button onClick={() => setSelectedActivityId(act.id)} className="text-blue-600 hover:underline text-left">
+                    <button onClick={() => setSelectedActivityId(act.id)} className="text-primary hover:underline text-left">
                       {act.title}
                     </button>
                     {!!act.checklist_total && (
-                      <span className="ml-1.5 text-xs text-gray-400 align-middle">({act.checklist_done}/{act.checklist_total})</span>
+                      <span className="ml-1.5 text-xs text-muted-foreground align-middle">({act.checklist_done}/{act.checklist_total})</span>
                     )}
                     {act.tags?.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-1">
@@ -850,16 +850,16 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
                     )}
                   </td>
                   <td className="px-4 py-3"><span className={`px-1.5 py-0.5 rounded text-xs ${PRIORITY_STYLES[act.priority]}`}>{act.priority}</span></td>
-                  <td className="px-4 py-3 text-sm">{act.assignee_names.length > 0 ? act.assignee_names.join(', ') : <span className="text-gray-400">—</span>}</td>
+                  <td className="px-4 py-3 text-sm">{act.assignee_names.length > 0 ? act.assignee_names.join(', ') : <span className="text-muted-foreground">—</span>}</td>
                   {isOwner && <td className="px-4 py-3 text-sm">{act.created_by_name || '—'}</td>}
                   <td className="px-4 py-3 capitalize">{act.status.replace('_', ' ')}</td>
                   <td className="px-4 py-3 text-right space-x-2">
-                    <button onClick={() => setEditingActivity(act)} className="text-gray-600 hover:text-blue-600"><Edit className="h-4 w-4 inline" /></button>
-                    <button onClick={() => handleDuplicate(act)} disabled={duplicatingId === act.id} className="text-gray-600 hover:text-green-600 disabled:opacity-50">
+                    <button onClick={() => setEditingActivity(act)} className="text-muted-foreground hover:text-primary"><Edit className="h-4 w-4 inline" /></button>
+                    <button onClick={() => handleDuplicate(act)} disabled={duplicatingId === act.id} className="text-muted-foreground hover:text-success disabled:opacity-50">
                       {duplicatingId === act.id ? <Loader2 className="h-4 w-4 inline animate-spin" /> : <Copy className="h-4 w-4 inline" />}
                     </button>
                     {canDelete && (
-                      <button onClick={() => setDeleteId(act.id)} className="text-gray-600 hover:text-red-600"><Trash2 className="h-4 w-4 inline" /></button>
+                      <button onClick={() => setDeleteId(act.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4 inline" /></button>
                     )}
                   </td>
                 </tr>

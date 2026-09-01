@@ -150,11 +150,11 @@ export default function BusinessProfileManager() {
     window.open(url, '_blank')
   }
 
-  if (loading) return <p className="text-sm text-gray-400">Loading...</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>
 
   return (
     <div className="space-y-6">
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-muted-foreground">
         Each entity drives its own invoice branding, GST rules, and numbering series.
         Digitalbluez is GST-registered; Techtenth and Cash issue a non-GST Bill of Supply.
       </p>
@@ -164,7 +164,7 @@ export default function BusinessProfileManager() {
         return (
           <div key={p.key} className="border rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">{KEY_LABELS[p.key] || p.key}</h3>
+              <h3 className="font-semibold text-foreground">{KEY_LABELS[p.key] || p.key}</h3>
               <label className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={!!e.is_gst_registered}
@@ -174,15 +174,15 @@ export default function BusinessProfileManager() {
               </label>
             </div>
 
-            <div className="bg-amber-50 border border-amber-200 rounded p-3 space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-amber-900">
+            <div className="bg-warning/15 border border-warning/20 rounded p-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-medium text-warning">
                 <Checkbox
                   checked={e.invoicing_mode === 'external'}
                   onCheckedChange={(v) => updateField(p.key, 'invoicing_mode', v ? 'external' : 'erp')}
                 />
                 Invoices still generated in Zoho (transition mode)
               </label>
-              <p className="text-xs text-amber-800">
+              <p className="text-xs text-warning">
                 While ON, the ERP will <strong>not</strong> generate invoices for this entity — you record the Zoho
                 invoice number instead (Sales Ledger → "Record Zoho Invoice #"). Turn OFF at cutover so the ERP takes over.
                 <strong> Before turning OFF</strong>, set the counter below to the last Zoho invoice's sequence number so
@@ -190,7 +190,7 @@ export default function BusinessProfileManager() {
               </p>
               <div className="flex items-end gap-2">
                 <div>
-                  <label className="block text-xs text-amber-800 mb-1">Last Zoho invoice # (sequence only, e.g. 695)</label>
+                  <label className="block text-xs text-warning mb-1">Last Zoho invoice # (sequence only, e.g. 695)</label>
                   <input
                     type="number"
                     value={counterInputs[p.key] ?? ''}
@@ -203,7 +203,7 @@ export default function BusinessProfileManager() {
                   type="button"
                   onClick={() => handleSetCounter(p.key)}
                   disabled={settingCounter === p.key}
-                  className="text-xs px-3 py-1.5 rounded bg-amber-700 text-white disabled:opacity-50 inline-flex items-center gap-1"
+                  className="text-xs px-3 py-1.5 rounded bg-warning text-warning-foreground disabled:opacity-50 inline-flex items-center gap-1"
                 >
                   {settingCounter === p.key && <Loader2 className="h-3 w-3 animate-spin" />}
                   Set ERP counter
@@ -213,28 +213,28 @@ export default function BusinessProfileManager() {
 
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Legal Name</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Legal Name</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.legal_name || ''} onChange={(ev) => updateField(p.key, 'legal_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Invoice Prefix</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Invoice Prefix</label>
                 <input className="border p-2 w-full rounded text-sm font-mono" value={e.invoice_prefix || ''} onChange={(ev) => updateField(p.key, 'invoice_prefix', ev.target.value.toUpperCase())} />
               </div>
               <div className="col-span-2">
-                <label className="block text-xs font-medium text-gray-600 mb-1">Address</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Address</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.address || ''} onChange={(ev) => updateField(p.key, 'address', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">State</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">State</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.state || ''} onChange={(ev) => updateField(p.key, 'state', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">State Code</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">State Code</label>
                 <input className="border p-2 w-full rounded text-sm font-mono" maxLength={2} value={e.state_code || ''} onChange={(ev) => updateField(p.key, 'state_code', ev.target.value)} />
               </div>
               {e.is_gst_registered && (
                 <div className="col-span-2">
-                  <label className="block text-xs font-medium text-gray-600 mb-1">GSTIN</label>
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">GSTIN</label>
                   <input className="border p-2 w-full rounded text-sm font-mono" value={e.gstin || ''} onChange={(ev) => updateField(p.key, 'gstin', ev.target.value.toUpperCase())} />
                 </div>
               )}
@@ -242,19 +242,19 @@ export default function BusinessProfileManager() {
 
             <div className="grid grid-cols-4 gap-3">
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Bank Name</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Bank Name</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.bank_name || ''} onChange={(ev) => updateBankField(p.key, 'bank_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">A/c Holder</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">A/c Holder</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.account_holder_name || ''} onChange={(ev) => updateBankField(p.key, 'account_holder_name', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">Account No.</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Account No.</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.account_number || ''} onChange={(ev) => updateBankField(p.key, 'account_number', ev.target.value)} />
               </div>
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">IFSC</label>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">IFSC</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.ifsc_code || ''} onChange={(ev) => updateBankField(p.key, 'ifsc_code', ev.target.value)} />
               </div>
             </div>
@@ -265,15 +265,15 @@ export default function BusinessProfileManager() {
                 const busy = uploading === `${p.key}:${field}`
                 return (
                   <div key={field} className="flex items-center gap-2">
-                    <span className="text-xs text-gray-500 w-16">{label}:</span>
+                    <span className="text-xs text-muted-foreground w-16">{label}:</span>
                     {value ? (
-                      <button type="button" className="text-xs text-blue-600 flex items-center gap-1" onClick={() => handleView(value)}>
+                      <button type="button" className="text-xs text-primary flex items-center gap-1" onClick={() => handleView(value)}>
                         <Eye className="h-3 w-3" /> View
                       </button>
                     ) : (
-                      <span className="text-xs text-gray-400">Not set</span>
+                      <span className="text-xs text-muted-foreground">Not set</span>
                     )}
-                    <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer border rounded px-2 py-1 hover:bg-gray-50">
+                    <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer border rounded px-2 py-1 hover:bg-muted">
                       {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Upload className="h-3 w-3" />}
                       Upload
                       <input type="file" className="hidden" accept="image/*" disabled={busy} onChange={(ev) => {
@@ -290,7 +290,7 @@ export default function BusinessProfileManager() {
               <button
                 onClick={() => handleSave(p.key)}
                 disabled={saving === p.key}
-                className="bg-blue-600 text-white px-4 py-2 rounded text-sm disabled:opacity-50"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm disabled:opacity-50"
               >
                 {saving === p.key ? 'Saving…' : 'Save'}
               </button>

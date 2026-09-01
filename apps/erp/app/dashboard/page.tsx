@@ -33,54 +33,54 @@ async function DashboardPageContent() {
       value: kpis ? `₹${Math.round(kpis.revenue_incl).toLocaleString('en-IN')}` : '—',
       sub: kpis ? `${kpis.units} units` : undefined,
       icon: TrendingUp,
-      color: 'text-green-600',
-      bg: 'bg-green-50',
+      color: 'text-success',
+      bg: 'bg-success/15',
     },
     {
       title: 'Collections This Month',
       value: kpis ? `₹${Math.round(kpis.collections).toLocaleString('en-IN')}` : '—',
       sub: kpis ? `₹${Math.round(kpis.outstanding).toLocaleString('en-IN')} outstanding` : undefined,
       icon: IndianRupee,
-      color: 'text-emerald-600',
-      bg: 'bg-emerald-50',
+      color: 'text-success',
+      bg: 'bg-success/15',
     },
     {
       title: 'Ready for Sale',
       value: inv?.sellable_count ?? '—',
       sub: inv ? `${inv.on_hand_count} on hand, pre-QC` : undefined,
       icon: PackageCheck,
-      color: 'text-purple-600',
-      bg: 'bg-purple-50',
+      color: 'text-purple',
+      bg: 'bg-purple/15',
     },
     {
       title: 'On Hand (Stock)',
       value: inv?.on_hand_count ?? '—',
       sub: inv ? `${inv.qc_pending_count} awaiting QC` : undefined,
       icon: Package,
-      color: 'text-orange-600',
-      bg: 'bg-orange-50',
+      color: 'text-warning',
+      bg: 'bg-warning/15',
     },
     {
       title: 'Customers',
       value: customersRes.count ?? 0,
       icon: Users,
-      color: 'text-pink-600',
-      bg: 'bg-pink-50',
+      color: 'text-pink',
+      bg: 'bg-pink/15',
     },
     {
       title: 'Purchase Orders This Month',
       value: poRes.count ?? 0,
       icon: ShoppingCart,
-      color: 'text-blue-600',
-      bg: 'bg-blue-50',
+      color: 'text-primary',
+      bg: 'bg-info/15',
     },
   ]
 
   return (
     <div>
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-gray-500 text-sm mt-1">
+        <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
+        <p className="text-muted-foreground text-sm mt-1">
           Month to date ({new Date(from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} –{' '}
           {new Date(to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })})
         </p>
@@ -91,7 +91,7 @@ async function DashboardPageContent() {
           <Card key={stat.title}>
             <CardHeader className="pb-2">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-gray-500">
+                <CardTitle className="text-sm font-medium text-muted-foreground">
                   {stat.title}
                 </CardTitle>
                 <div className={`${stat.bg} p-2 rounded-lg`}>
@@ -100,15 +100,15 @@ async function DashboardPageContent() {
               </div>
             </CardHeader>
             <CardContent>
-              <p className="text-2xl font-semibold text-gray-900">{stat.value}</p>
-              {stat.sub && <p className="text-xs text-gray-400 mt-1">{stat.sub}</p>}
+              <p className="text-2xl font-semibold text-foreground">{stat.value}</p>
+              {stat.sub && <p className="text-xs text-muted-foreground mt-1">{stat.sub}</p>}
             </CardContent>
           </Card>
         ))}
       </div>
 
       {includeFinancials && kpis?.cost_coverage_pct !== null && kpis?.cost_coverage_pct !== undefined && (
-        <p className="text-xs text-gray-400 mt-4">
+        <p className="text-xs text-muted-foreground mt-4">
           Margin figures this month are based on {kpis.cost_coverage_pct}% of unit sales with known cost —
           see Reports → Profitability for the full cost-coverage breakdown.
         </p>

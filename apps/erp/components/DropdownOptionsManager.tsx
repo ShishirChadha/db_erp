@@ -101,7 +101,7 @@ export default function DropdownOptionsManager() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Values shown in searchable dropdowns across the app (e.g. Stock Intake's CPU, RAM, storage, screen size). Deactivating a value hides it from the picker without deleting history that already used it.
       </p>
 
@@ -120,20 +120,20 @@ export default function DropdownOptionsManager() {
         )}
       </div>
 
-      {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+      {error && <div className="text-destructive text-sm mb-2">{error}</div>}
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <div className="border rounded divide-y mb-3">
-          {options.length === 0 && <p className="text-sm text-gray-400 p-2">No values yet.</p>}
+          {options.length === 0 && <p className="text-sm text-muted-foreground p-2">No values yet.</p>}
           {options.map(opt => (
             <div key={opt.id} className="flex justify-between items-center p-2">
-              <span className={opt.is_active ? '' : 'text-gray-400 line-through'}>{opt.value}</span>
+              <span className={opt.is_active ? '' : 'text-muted-foreground line-through'}>{opt.value}</span>
               <button
                 onClick={() => toggleActive(opt)}
                 disabled={busy}
-                className={`text-xs px-2 py-1 rounded ${opt.is_active ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}
+                className={`text-xs px-2 py-1 rounded ${opt.is_active ? 'bg-destructive/10 text-destructive' : 'bg-success/15 text-success'}`}
               >
                 {opt.is_active ? 'Deactivate' : 'Activate'}
               </button>
@@ -150,7 +150,7 @@ export default function DropdownOptionsManager() {
           className="border p-2 rounded flex-1"
           onKeyDown={(e) => { if (e.key === 'Enter') addValue() }}
         />
-        <button onClick={addValue} disabled={busy || !activeCategory} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+        <button onClick={addValue} disabled={busy || !activeCategory} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
           Add
         </button>
       </div>

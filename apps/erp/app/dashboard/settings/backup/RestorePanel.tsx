@@ -136,7 +136,7 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
 
   return (
     <div className="max-w-3xl flex flex-col gap-4">
-      <p className="text-sm text-gray-600">
+      <p className="text-sm text-muted-foreground">
         Upload a previously downloaded backup file to see what's changed compared to the live database, then choose what to restore.
         Restore only inserts new records and updates existing ones — it never deletes anything.
       </p>
@@ -153,10 +153,10 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
       />
 
       {error && <ErrorBanner message={error} />}
-      {loading && <p className="text-sm text-gray-400">Comparing against the live database…</p>}
+      {loading && <p className="text-sm text-muted-foreground">Comparing against the live database…</p>}
 
       {result && (
-        <div className="rounded-md bg-green-50 border border-green-200 text-green-800 text-sm p-3">
+        <div className="rounded-md bg-success/15 border border-success/20 text-success text-sm p-3">
           Restore applied. A safety snapshot of the full database was saved to history first (id: {result.safetySnapshotId?.slice(0, 8)}).
           <button onClick={reset} className="ml-2 underline">Restore another file</button>
         </div>
@@ -174,7 +174,7 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
                 <div className="flex items-center justify-between mb-2">
                   <h3 className="font-medium">{TABLE_LABELS[table] || table}</h3>
                   {allIds.length > 0 && (
-                    <label className="flex items-center gap-2 text-xs text-gray-600">
+                    <label className="flex items-center gap-2 text-xs text-muted-foreground">
                       <Checkbox
                         checked={selectedInTable === allIds.length}
                         onCheckedChange={(v) => toggleAllInTable(table, allIds, !!v)}
@@ -185,13 +185,13 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
                 </div>
 
                 {d.toInsert.length === 0 && d.toUpdate.length === 0 && (
-                  <p className="text-sm text-gray-400">No new or changed records.</p>
+                  <p className="text-sm text-muted-foreground">No new or changed records.</p>
                 )}
 
                 {d.toInsert.map((row) => (
                   <label key={row.id} className="flex items-center gap-2 text-sm py-1">
                     <Checkbox checked={selection[table]?.has(row.id) ?? false} onCheckedChange={(v) => toggleRow(table, row.id, !!v)} />
-                    <span className="rounded bg-green-100 text-green-700 text-xs px-1.5 py-0.5">new</span>
+                    <span className="rounded bg-success/15 text-success text-xs px-1.5 py-0.5">new</span>
                     {row.label}
                   </label>
                 ))}
@@ -203,14 +203,14 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
                     <div key={row.id} className="py-1">
                       <label className="flex items-center gap-2 text-sm">
                         <Checkbox checked={selection[table]?.has(row.id) ?? false} onCheckedChange={(v) => toggleRow(table, row.id, !!v)} />
-                        <span className="rounded bg-amber-100 text-amber-700 text-xs px-1.5 py-0.5">changed</span>
+                        <span className="rounded bg-warning/15 text-warning text-xs px-1.5 py-0.5">changed</span>
                         {row.label}
-                        <button type="button" onClick={() => toggleExpanded(rowKey)} className="text-xs text-blue-600 hover:underline ml-1">
+                        <button type="button" onClick={() => toggleExpanded(rowKey)} className="text-xs text-primary hover:underline ml-1">
                           {isExpanded ? 'hide' : `${row.changedFields.length} field(s)`}
                         </button>
                       </label>
                       {isExpanded && (
-                        <div className="ml-7 mt-1 text-xs text-gray-600 flex flex-col gap-0.5">
+                        <div className="ml-7 mt-1 text-xs text-muted-foreground flex flex-col gap-0.5">
                           {row.changedFields.map((f) => (
                             <div key={f.field}>
                               <span className="font-mono">{f.field}</span>: {fmtValue(f.oldValue)} → {fmtValue(f.newValue)}
@@ -222,7 +222,7 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
                   )
                 })}
 
-                <p className="text-xs text-gray-400 mt-2">
+                <p className="text-xs text-muted-foreground mt-2">
                   {d.unchangedCount} unchanged, {d.dbOnlyCount} only in the live database (left untouched).
                 </p>
               </div>
@@ -232,7 +232,7 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
           <button
             onClick={() => setConfirmOpen(true)}
             disabled={selectedCounts === 0}
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 w-fit"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 w-fit"
           >
             Review & Apply ({selectedCounts} selected)
           </button>
@@ -247,10 +247,10 @@ export default function RestorePanel({ onApplied }: { onApplied: () => void }) {
               <li key={table}>{TABLE_LABELS[table] || table}: {ids.size}</li>
             ))}
           </ul>
-          <p className="text-gray-600">A full safety snapshot of the current database will be taken first, so this can be undone by restoring it again.</p>
+          <p className="text-muted-foreground">A full safety snapshot of the current database will be taken first, so this can be undone by restoring it again.</p>
           <div className="flex gap-2 justify-end">
-            <button onClick={() => setConfirmOpen(false)} className="bg-gray-200 px-4 py-2 rounded">Cancel</button>
-            <button onClick={handleApply} disabled={applying} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+            <button onClick={() => setConfirmOpen(false)} className="bg-muted px-4 py-2 rounded">Cancel</button>
+            <button onClick={handleApply} disabled={applying} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
               {applying ? 'Applying…' : 'Confirm & Apply'}
             </button>
           </div>

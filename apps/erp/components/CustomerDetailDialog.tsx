@@ -33,7 +33,7 @@ interface Customer {
 
 const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
   <div>
-    <div className="text-xs text-gray-400">{label}</div>
+    <div className="text-xs text-muted-foreground">{label}</div>
     <div className="text-sm">{value || "—"}</div>
   </div>
 );
@@ -87,9 +87,9 @@ export function CustomerDetailDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="py-6 text-center text-sm text-gray-400">Loading…</div>
+          <div className="py-6 text-center text-sm text-muted-foreground">Loading…</div>
         ) : !customer ? (
-          <div className="py-6 text-center text-sm text-red-600">Customer not found.</div>
+          <div className="py-6 text-center text-sm text-destructive">Customer not found.</div>
         ) : (
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
@@ -116,7 +116,7 @@ export function CustomerDetailDialog({
                   onChange={() => {}}
                   onCustomerData={(c) => c && handleReassign(c.id, c.customer_name)}
                 />
-                {reassigning && <div className="text-xs text-gray-400 flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Saving…</div>}
+                {reassigning && <div className="text-xs text-muted-foreground flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Saving…</div>}
                 <div className="flex justify-between items-center pt-1">
                   <AddCustomerDialog
                     onAdd={(created) => created && handleReassign(created.id, created.customer_name)}

@@ -115,5 +115,5 @@ export function prevPeriod(from: string, to: string): { from: string; to: string
   return { from: toDateStr(prevFrom), to: toDateStr(prevTo) }
 }
 
-export const REPORT_DIMENSIONS = ['brand', 'category', 'staff', 'entity', 'sale_type', 'customer', 'vendor'] as const
+export const REPORT_DIMENSIONS = ['brand', 'category', 'staff', 'entity', 'sale_type', 'customer', 'vendor', 'expense_type', 'expense_vendor'] as const
 export type ReportDimension = (typeof REPORT_DIMENSIONS)[number]

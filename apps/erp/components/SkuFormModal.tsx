@@ -165,7 +165,7 @@ export function SkuFormModal({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded shadow-lg max-w-xl w-full max-h-screen overflow-y-auto">
+      <div className="bg-card p-6 rounded shadow-lg max-w-xl w-full max-h-screen overflow-y-auto">
         <h2 className="text-xl font-bold mb-4">{existingSku ? 'Edit SKU' : 'New SKU'}</h2>
         <form onSubmit={handleSubmit}>
           <div className="mb-3">
@@ -192,11 +192,11 @@ export function SkuFormModal({
               type="text"
               value={skuCode}
               onChange={(e) => setSkuCode(e.target.value)}
-              className="border p-2 w-full rounded bg-gray-50"
+              className="border p-2 w-full rounded bg-muted"
               placeholder={generatedSku || 'Fill all required specs to auto-generate'}
             />
             {generatedSku && (
-              <p className="text-xs text-gray-500 mt-1">Auto: {generatedSku} (you can edit above)</p>
+              <p className="text-xs text-muted-foreground mt-1">Auto: {generatedSku} (you can edit above)</p>
             )}
           </div>
 
@@ -225,7 +225,7 @@ export function SkuFormModal({
 
           <div className="flex justify-end space-x-2 mt-4">
             <button type="button" onClick={onClose} disabled={submitting} className="px-4 py-2 border rounded disabled:opacity-50">Cancel</button>
-            <button type="submit" disabled={submitting} className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            <button type="submit" disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50 inline-flex items-center gap-1.5">
               {submitting && <Loader2 className="size-4 animate-spin" />}
               {existingSku ? 'Update' : 'Create'}
             </button>

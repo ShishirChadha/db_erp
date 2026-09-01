@@ -62,7 +62,7 @@ function ModuleChecklist({ selected, onChange }: { selected: string[]; onChange:
       </label>
       <div className="grid grid-cols-2 gap-2 pl-1">
         {MODULES.map((m) => (
-          <label key={m.key} className="flex items-center gap-2 text-sm text-gray-700">
+          <label key={m.key} className="flex items-center gap-2 text-sm text-muted-foreground">
             <Checkbox checked={isFull || selected.includes(m.key)} disabled={isFull} onCheckedChange={(v) => toggleModule(m.key, !!v)} />
             {m.label}
           </label>
@@ -128,7 +128,7 @@ function ScheduleSection() {
     }
   }
 
-  if (loading) return <p className="text-sm text-gray-400">Loading...</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>
   if (error || !settings) return <ErrorBanner message={error || 'Could not load settings'} onRetry={fetchSettings} />
 
   return (
@@ -169,7 +169,7 @@ function ScheduleSection() {
             <option key={h} value={h}>{`${h.toString().padStart(2, '0')}:00`}</option>
           ))}
         </select>
-        <span className="text-sm text-gray-500">{settings.timezone}</span>
+        <span className="text-sm text-muted-foreground">{settings.timezone}</span>
       </div>
 
       <div>
@@ -178,7 +178,7 @@ function ScheduleSection() {
       </div>
 
       <div className="flex items-center gap-3">
-        <label className="text-sm text-gray-600">Keep last</label>
+        <label className="text-sm text-muted-foreground">Keep last</label>
         <input
           type="number"
           min={1}
@@ -187,10 +187,10 @@ function ScheduleSection() {
           onChange={(e) => setSettings({ ...settings, retention_count: parseInt(e.target.value) || 1 })}
           className="border p-1 w-16 rounded text-sm"
         />
-        <span className="text-sm text-gray-600">scheduled backups</span>
+        <span className="text-sm text-muted-foreground">scheduled backups</span>
       </div>
 
-      <button onClick={handleSave} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 w-fit">
+      <button onClick={handleSave} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 w-fit">
         {saving ? 'Saving…' : 'Save Schedule'}
       </button>
     </div>
@@ -224,7 +224,7 @@ function BackupNowSection({ onCreated }: { onCreated: () => void }) {
   return (
     <div className="flex flex-col gap-3 max-w-xl">
       <ModuleChecklist selected={modules} onChange={setModules} />
-      <button onClick={handleRun} disabled={running || modules.length === 0} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 w-fit">
+      <button onClick={handleRun} disabled={running || modules.length === 0} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 w-fit">
         {running ? 'Backing up…' : 'Backup Now'}
       </button>
     </div>
@@ -289,7 +289,7 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
     <div>
       <div className="overflow-x-auto rounded-md border">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50">
+          <thead className="bg-muted">
             <tr>
               <th className="p-2 text-left">Created</th>
               <th className="p-2 text-left">Trigger</th>
@@ -302,10 +302,10 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={7} className="p-4 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">Loading...</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={7} className="p-4 text-center text-gray-400">No backups yet.</td></tr>
+              <tr><td colSpan={7} className="p-4 text-center text-muted-foreground">No backups yet.</td></tr>
             )}
             {!loading && rows.map((row) => {
               const isNew = row.trigger_type === 'scheduled' && !row.downloaded_at
@@ -314,7 +314,7 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
                 <tr key={row.id} className="border-t">
                   <td className="p-2 whitespace-nowrap">
                     {new Date(row.created_at).toLocaleString()}
-                    {isNew && <span className="ml-2 inline-block rounded-full bg-blue-600 text-white text-xs px-2 py-0.5">new</span>}
+                    {isNew && <span className="ml-2 inline-block rounded-full bg-primary text-primary-foreground text-xs px-2 py-0.5">new</span>}
                   </td>
                   <td className="p-2"><StatusBadge tone={triggerTone(row.trigger_type)}>{row.trigger_type.replace(/_/g, ' ')}</StatusBadge></td>
                   <td className="p-2">{row.modules.join(', ')}</td>
@@ -325,7 +325,7 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
                   </td>
                   <td className="p-2">
                     {row.status === 'complete' && (
-                      <button onClick={() => handleDownload(row)} className="text-blue-600 hover:underline">Download</button>
+                      <button onClick={() => handleDownload(row)} className="text-primary hover:underline">Download</button>
                     )}
                   </td>
                 </tr>

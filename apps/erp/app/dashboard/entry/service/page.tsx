@@ -106,12 +106,12 @@ function UnitPicker({
 
   if (selected) {
     return (
-      <div className="border p-2 rounded flex justify-between items-center bg-blue-50">
+      <div className="border p-2 rounded flex justify-between items-center bg-info/15">
         <div>
           <div className="font-medium">{unitLabel(selected)}</div>
-          <div className="text-xs text-gray-600">{selected.sku_code} — {selected.description}</div>
+          <div className="text-xs text-muted-foreground">{selected.sku_code} — {selected.description}</div>
         </div>
-        <button onClick={onClear} className="text-red-500 text-sm">✕ Change</button>
+        <button onClick={onClear} className="text-destructive text-sm">✕ Change</button>
       </div>
     )
   }
@@ -119,7 +119,7 @@ function UnitPicker({
   return (
     <>
       {browsable && (
-        <p className="text-xs text-gray-500 mb-1">
+        <p className="text-xs text-muted-foreground mb-1">
           Search here, or browse/select from <a href="/dashboard/live-stock" className="underline">Live Stock</a>.
         </p>
       )}
@@ -127,9 +127,9 @@ function UnitPicker({
       {options.length > 0 && (
         <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
           {options.map(u => (
-            <li key={u.id} onClick={() => { onSelect(u); setSearch(''); setOptions([]) }} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
+            <li key={u.id} onClick={() => { onSelect(u); setSearch(''); setOptions([]) }} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0">
               <div className="font-medium">{unitLabel(u)}</div>
-              <div className="text-xs text-gray-600">{u.sku_code} — {u.description}</div>
+              <div className="text-xs text-muted-foreground">{u.sku_code} — {u.description}</div>
             </li>
           ))}
         </ul>
@@ -137,9 +137,9 @@ function UnitPicker({
       {browsable && !search.trim() && browsableList.length > 0 && (
         <ul className="border rounded mt-2 max-h-64 overflow-y-auto">
           {browsableList.map(u => (
-            <li key={u.id} onClick={() => onSelect(u)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 flex justify-between">
+            <li key={u.id} onClick={() => onSelect(u)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 flex justify-between">
               <span className="font-medium">{unitLabel(u)}</span>
-              <span className="text-xs text-gray-600">{u.sku_code} — {u.description}</span>
+              <span className="text-xs text-muted-foreground">{u.sku_code} — {u.description}</span>
             </li>
           ))}
         </ul>
@@ -374,18 +374,18 @@ function ServicePageInner() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground hover:text-foreground mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Service</h1>
-      <p className="text-sm text-gray-500 mb-4">Repair, replacement, or return.</p>
+      <p className="text-sm text-muted-foreground mb-4">Repair, replacement, or return.</p>
 
       <div className="flex mb-4 border rounded overflow-hidden w-fit">
         {(['repair', 'replacement', 'return'] as const).map(t => (
           <button
             key={t}
             onClick={() => { setSubType(t); setError(''); setDone('') }}
-            className={`px-4 py-2 text-sm font-medium capitalize ${subType === t ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
+            className={`px-4 py-2 text-sm font-medium capitalize ${subType === t ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
           >
             {t}
           </button>
@@ -393,15 +393,15 @@ function ServicePageInner() {
       </div>
 
       {done && (
-        <div className="bg-green-50 border border-green-200 text-green-800 rounded p-3 mb-4 flex justify-between items-center">
+        <div className="bg-success/15 border border-success/20 text-success rounded p-3 mb-4 flex justify-between items-center">
           <span>{done}</span>
           <button onClick={() => setDone('')} className="text-sm underline">Add another</button>
         </div>
       )}
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+      {error && <div className="text-destructive mb-4">{error}</div>}
 
       {subType !== 'return' ? (
-        <div className="space-y-4 bg-white p-4 rounded shadow">
+        <div className="space-y-4 bg-card p-4 rounded shadow">
           <div>
             <label className="block font-medium text-sm mb-1">Date</label>
             <input
@@ -411,7 +411,7 @@ function ServicePageInner() {
               onChange={(e) => setServiceDate(e.target.value)}
               className="border p-2 w-full rounded"
             />
-            <p className="text-xs text-gray-400 mt-1">Backdate this if the job actually happened earlier.</p>
+            <p className="text-xs text-muted-foreground mt-1">Backdate this if the job actually happened earlier.</p>
           </div>
 
           <div>
@@ -443,7 +443,7 @@ function ServicePageInner() {
                 browsable
               />
               {subType === 'replacement' && oldSaleInfo && (
-                <p className="text-xs text-gray-600 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Sold to {oldSaleInfo.customer_name || 'unknown customer'}
                   {oldSaleInfo.sale_total != null && ` for ₹${oldSaleInfo.sale_total}`}
                   , ₹{oldSaleInfo.amount_paid} already paid — this will carry over automatically, and the unit returns to QC.
@@ -479,7 +479,7 @@ function ServicePageInner() {
             {partsOptions.length > 0 && (
               <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
                 {partsOptions.map(p => (
-                  <li key={p.id} onClick={() => addPart(p)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0">
+                  <li key={p.id} onClick={() => addPart(p)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0">
                     {p.label}
                   </li>
                 ))}
@@ -488,7 +488,7 @@ function ServicePageInner() {
             {partsUsed.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {partsUsed.map((p, idx) => (
-                  <span key={p.sku_id} className="bg-gray-100 text-sm px-2 py-1 rounded flex items-center gap-1">
+                  <span key={p.sku_id} className="bg-muted text-sm px-2 py-1 rounded flex items-center gap-1">
                     {p.label}
                     <input
                       type="number"
@@ -497,7 +497,7 @@ function ServicePageInner() {
                       onChange={(e) => setPartsUsed(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Number(e.target.value) } : x))}
                       className="w-12 border rounded text-center"
                     />
-                    <button onClick={() => setPartsUsed(prev => prev.filter((_, i) => i !== idx))} className="text-red-500">✕</button>
+                    <button onClick={() => setPartsUsed(prev => prev.filter((_, i) => i !== idx))} className="text-destructive">✕</button>
                   </span>
                 ))}
               </div>
@@ -530,7 +530,7 @@ function ServicePageInner() {
               {bundleOptions.length > 0 && (
                 <ul className="border rounded mt-1 max-h-40 overflow-y-auto">
                   {bundleOptions.map(a => (
-                    <li key={a.id} onClick={() => addBundled(a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 text-sm">
+                    <li key={a.id} onClick={() => addBundled(a)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
                       {a.accessory_name}
                     </li>
                   ))}
@@ -539,7 +539,7 @@ function ServicePageInner() {
               {bundled.length > 0 && (
                 <div className="mt-2 space-y-1">
                   {bundled.map((b, idx) => (
-                    <div key={b.accessory_id} className="flex items-center gap-2 text-sm bg-gray-50 border rounded p-2">
+                    <div key={b.accessory_id} className="flex items-center gap-2 text-sm bg-muted border rounded p-2">
                       <span className="flex-1">{b.accessory_name}</span>
                       <input
                         type="number"
@@ -556,12 +556,12 @@ function ServicePageInner() {
                         placeholder="₹"
                         className="w-20 border rounded text-center"
                       />
-                      <button onClick={() => removeBundled(idx)} className="text-red-500">✕</button>
+                      <button onClick={() => removeBundled(idx)} className="text-destructive">✕</button>
                     </div>
                   ))}
                 </div>
               )}
-              <p className="text-xs text-gray-400 mt-1">Prefilled from the old sale, if any — add, remove, or adjust as needed.</p>
+              <p className="text-xs text-muted-foreground mt-1">Prefilled from the old sale, if any — add, remove, or adjust as needed.</p>
             </div>
           )}
 
@@ -609,7 +609,7 @@ function ServicePageInner() {
                   className="border p-2 w-full rounded"
                 />
                 {oldSaleInfo && (oldSaleInfo.amount_paid || 0) > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">On top of the ₹{oldSaleInfo.amount_paid} already carried over from the old sale.</p>
+                  <p className="text-xs text-muted-foreground mt-1">On top of the ₹{oldSaleInfo.amount_paid} already carried over from the old sale.</p>
                 )}
               </div>
             </div>
@@ -623,14 +623,14 @@ function ServicePageInner() {
           )}
 
           <div className="flex justify-end">
-            <button onClick={() => handleSubmitRepairOrReplacement()} disabled={submittingRepair} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            <button onClick={() => handleSubmitRepairOrReplacement()} disabled={submittingRepair} className="bg-primary text-primary-foreground px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
               {submittingRepair && <Loader2 className="size-4 animate-spin" />}
               {submittingRepair ? 'Saving...' : `Save ${subType === 'repair' ? 'Repair' : 'Replacement'}`}
             </button>
           </div>
         </div>
       ) : (
-        <div className="space-y-4 bg-white p-4 rounded shadow">
+        <div className="space-y-4 bg-card p-4 rounded shadow">
           <div>
             <label className="block font-medium text-sm mb-1">Return Date</label>
             <input
@@ -640,7 +640,7 @@ function ServicePageInner() {
               onChange={(e) => setServiceDate(e.target.value)}
               className="border p-2 w-full rounded"
             />
-            <p className="text-xs text-gray-400 mt-1">Backdate this if the return actually happened earlier.</p>
+            <p className="text-xs text-muted-foreground mt-1">Backdate this if the return actually happened earlier.</p>
           </div>
 
           <div>
@@ -665,7 +665,7 @@ function ServicePageInner() {
             <textarea value={returnNotes} onChange={(e) => setReturnNotes(e.target.value)} rows={2} className="border p-2 w-full rounded" />
           </div>
           <div className="flex justify-end">
-            <button onClick={() => handleSubmitReturn()} disabled={submittingReturn} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            <button onClick={() => handleSubmitReturn()} disabled={submittingReturn} className="bg-primary text-primary-foreground px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
               {submittingReturn && <Loader2 className="size-4 animate-spin" />}
               {submittingReturn ? 'Saving...' : 'Record Return'}
             </button>

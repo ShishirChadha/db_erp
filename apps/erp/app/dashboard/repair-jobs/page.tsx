@@ -79,12 +79,12 @@ function JobRow({ job, canEdit, onDone, index, variant = 'row' }: { job: RepairJ
 
   const actions = canEdit ? (
     <div className="flex items-center gap-3">
-      {err && <div className="text-red-600 text-xs">{err}</div>}
-      <button onClick={() => savePayment()} disabled={busy} className="text-blue-600 underline text-xs flex items-center gap-1">
+      {err && <div className="text-destructive text-xs">{err}</div>}
+      <button onClick={() => savePayment()} disabled={busy} className="text-primary underline text-xs flex items-center gap-1">
         {saving && <Loader2 className="size-3 animate-spin" />}Save
       </button>
       {job.status !== 'done' && (
-        <button onClick={() => markDone()} disabled={busy} className="text-green-700 underline text-xs flex items-center gap-1">
+        <button onClick={() => markDone()} disabled={busy} className="text-success underline text-xs flex items-center gap-1">
           {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
         </button>
       )}
@@ -96,16 +96,16 @@ function JobRow({ job, canEdit, onDone, index, variant = 'row' }: { job: RepairJ
       <div className="border rounded-lg p-3 space-y-2">
         <div className="flex justify-between items-start gap-2">
           <div>
-            <div className="text-xs text-gray-500">{job.job_date?.slice(0, 10) || '—'}</div>
+            <div className="text-xs text-muted-foreground">{job.job_date?.slice(0, 10) || '—'}</div>
             <div className="font-medium">{job.job_number}</div>
-            {job.is_own_stock && <div className="text-xs text-gray-500">Our stock</div>}
+            {job.is_own_stock && <div className="text-xs text-muted-foreground">Our stock</div>}
           </div>
           <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
         </div>
         <div className="text-sm">{job.customers?.customer_name || '—'}</div>
-        <div className="text-sm text-gray-600">{job.problem_description || job.customer_device_description || '—'}</div>
+        <div className="text-sm text-muted-foreground">{job.problem_description || job.customer_device_description || '—'}</div>
         {canEdit ? paymentEditor : (
-          <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, job.payment_status)}>{job.payment_status}</StatusBadge>
             <span className="tabular-nums">₹{job.amount_paid?.toFixed(2)}</span>
             <span>{job.payment_account || '—'}</span>
@@ -118,7 +118,7 @@ function JobRow({ job, canEdit, onDone, index, variant = 'row' }: { job: RepairJ
 
   return (
     <tr>
-      <td className="border p-2 text-right tabular-nums text-gray-400">{index + 1}</td>
+      <td className="border p-2 text-right tabular-nums text-muted-foreground">{index + 1}</td>
       <td className="border p-2 whitespace-nowrap">{job.job_date?.slice(0, 10) || '—'}</td>
       <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
       <td className="border p-2">{job.customers?.customer_name || '—'}</td>
@@ -192,7 +192,7 @@ function RepairJobsPage() {
     <div className="p-4">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Repair Jobs</h1>
-        <Link href="/dashboard/entry/service?return_to=%2Fdashboard%2Frepair-jobs" className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0">
+        <Link href="/dashboard/entry/service?return_to=%2Fdashboard%2Frepair-jobs" className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
           + New Service Entry
         </Link>
       </div>
@@ -226,7 +226,7 @@ function RepairJobsPage() {
             <tbody>
               {jobs.map((job, idx) => <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
               {jobs.length === 0 && (
-                <tr><td colSpan={canEdit ? 10 : 9} className="border p-4 text-center text-gray-400">No repair jobs found.</td></tr>
+                <tr><td colSpan={canEdit ? 10 : 9} className="border p-4 text-center text-muted-foreground">No repair jobs found.</td></tr>
               )}
             </tbody>
           </table>
@@ -235,7 +235,7 @@ function RepairJobsPage() {
 
       {!loading && (
         <div className="md:hidden space-y-2">
-          {jobs.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No repair jobs found.</p>}
+          {jobs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No repair jobs found.</p>}
           {jobs.map((job, idx) => (
             <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
           ))}

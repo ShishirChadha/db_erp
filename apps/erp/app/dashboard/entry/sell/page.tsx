@@ -409,47 +409,47 @@ function SellPageInner() {
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
-      <button onClick={() => router.push(backHref)} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground hover:text-foreground mb-2">
         ← Back
       </button>
       <h1 className="text-2xl font-bold mb-1">Sell</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Everything in the cart leaves stock immediately once submitted. The GST invoice is generated separately by the owner.
       </p>
 
       {sourceDocumentItemId && (
-        <div className="bg-blue-50 border border-blue-200 text-blue-800 rounded p-3 mb-4 text-sm">
+        <div className="bg-info/15 border border-primary/20 text-info rounded p-3 mb-4 text-sm">
           Converting one line from a quotation/proforma — customer and price carried over. Pick the specific unit to sell below.
         </div>
       )}
       {done && (
-        <div className="bg-green-50 border border-green-200 text-green-800 rounded p-3 mb-4 flex justify-between items-center">
+        <div className="bg-success/15 border border-success/20 text-success rounded p-3 mb-4 flex justify-between items-center">
           <span>Sale recorded — stock updated. Invoice will be generated later.</span>
           <button onClick={() => setDone(false)} className="text-sm underline">Record another</button>
         </div>
       )}
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+      {error && <div className="text-destructive mb-4">{error}</div>}
 
       <div className="flex mb-4 border rounded overflow-hidden w-fit">
         <button
           onClick={() => setMode('unit')}
-          className={`px-4 py-2 text-sm font-medium ${mode === 'unit' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
+          className={`px-4 py-2 text-sm font-medium ${mode === 'unit' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
         >
           Add Laptop / Desktop / Monitor
         </button>
         <button
           onClick={() => setMode('accessory')}
-          className={`px-4 py-2 text-sm font-medium ${mode === 'accessory' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}
+          className={`px-4 py-2 text-sm font-medium ${mode === 'accessory' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}
         >
           Add Accessory
         </button>
       </div>
 
-      <div className="space-y-4 bg-white p-4 rounded shadow">
+      <div className="space-y-4 bg-card p-4 rounded shadow">
         {mode === 'unit' ? (
           <div className="relative">
             <label className="block font-medium text-sm mb-1">Search for a unit to add</label>
-            <p className="text-xs text-gray-500 mb-1">
+            <p className="text-xs text-muted-foreground mb-1">
               Search here, or go to <a href="/dashboard/live-stock" className="underline">Live Stock</a> and click "Sell" on a unit.
             </p>
             <input
@@ -458,17 +458,17 @@ function SellPageInner() {
               placeholder="Search by asset number, serial, or model..."
               className="border p-2 w-full rounded"
             />
-            {loadingUnits && <div className="text-xs text-gray-400 mt-1">Searching...</div>}
+            {loadingUnits && <div className="text-xs text-muted-foreground mt-1">Searching...</div>}
             {units.length > 0 && (
               <ul className="border rounded mt-1 max-h-48 overflow-y-auto">
                 {units.map(u => (
                   <li
                     key={u.id}
                     onClick={() => addUnitLine(u)}
-                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                    className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0"
                   >
                     <div className="font-medium">{unitLabel(u)}</div>
-                    <div className="text-xs text-gray-600">{u.sku_code} — {unitConfigSummary(u)}</div>
+                    <div className="text-xs text-muted-foreground">{u.sku_code} — {unitConfigSummary(u)}</div>
                   </li>
                 ))}
               </ul>
@@ -477,7 +477,7 @@ function SellPageInner() {
         ) : (
           <div className="relative">
             <label className="block font-medium text-sm mb-1">Search for an accessory to add</label>
-            <p className="text-xs text-gray-500 mb-1">
+            <p className="text-xs text-muted-foreground mb-1">
               Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
             </p>
             <input
@@ -492,10 +492,10 @@ function SellPageInner() {
                   <li
                     key={a.id}
                     onClick={() => addAccessoryLine(a)}
-                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0"
+                    className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0"
                   >
                     <div className="font-medium">{a.accessory_name}</div>
-                    <div className="text-xs text-gray-600">{a.quantity} in stock</div>
+                    <div className="text-xs text-muted-foreground">{a.quantity} in stock</div>
                   </li>
                 ))}
               </ul>
@@ -506,10 +506,10 @@ function SellPageInner() {
                   <li
                     key={a.id}
                     onClick={() => addAccessoryLine(a)}
-                    className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 flex justify-between"
+                    className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 flex justify-between"
                   >
                     <span className="font-medium">{a.accessory_name}</span>
-                    <span className="text-xs text-gray-500">{a.quantity} in stock</span>
+                    <span className="text-xs text-muted-foreground">{a.quantity} in stock</span>
                   </li>
                 ))}
               </ul>
@@ -524,17 +524,17 @@ function SellPageInner() {
             </label>
             <div className="space-y-3">
               {cartItems.map(line => (
-                <div key={line.id} className="border rounded p-3 bg-gray-50">
+                <div key={line.id} className="border rounded p-3 bg-muted">
                   <div className="flex justify-between items-start gap-2">
                     <div className="flex-1">
                       {line.kind === 'unit' ? (
                         <>
                           <div className="font-medium">{unitLabel(line.unit)}</div>
-                          <div className="text-xs text-gray-600">{line.unit.sku_code} — {unitConfigSummary(line.unit)}</div>
+                          <div className="text-xs text-muted-foreground">{line.unit.sku_code} — {unitConfigSummary(line.unit)}</div>
                           <button
                             type="button"
                             onClick={() => setShowChangeSkuForLineId(line.id)}
-                            className="text-blue-600 underline text-xs mt-1"
+                            className="text-primary underline text-xs mt-1"
                           >
                             Wrong, upgraded, or downgraded spec? Change SKU
                           </button>
@@ -543,12 +543,12 @@ function SellPageInner() {
                         <div className="font-medium">{line.accessory.accessory_name}</div>
                       )}
                     </div>
-                    <button onClick={() => removeLine(line.id)} className="text-red-500 text-sm">✕ Remove</button>
+                    <button onClick={() => removeLine(line.id)} className="text-destructive text-sm">✕ Remove</button>
                   </div>
 
                   <div className="flex gap-3 items-end mt-2">
                     <div>
-                      <label className="block text-xs text-gray-600 mb-1">
+                      <label className="block text-xs text-muted-foreground mb-1">
                         Price {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST)' : '(GST-Incl.)') : ''} (₹)
                       </label>
                       <input
@@ -560,7 +560,7 @@ function SellPageInner() {
                     </div>
                     {line.kind === 'accessory' && (
                       <div>
-                        <label className="block text-xs text-gray-600 mb-1">Quantity</label>
+                        <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
                         <input
                           type="number"
                           min={1}
@@ -587,15 +587,15 @@ function SellPageInner() {
                           <button
                             type="button"
                             onClick={() => { setBundlingForLineId(null); setBundleSearch(''); setBundleOptions([]) }}
-                            className="text-xs text-gray-500 underline mt-1"
+                            className="text-xs text-muted-foreground underline mt-1"
                           >
                             Done adding accessories
                           </button>
                           {bundleOptions.length > 0 && (
-                            <ul className="border rounded mt-1 max-h-40 overflow-y-auto bg-white">
+                            <ul className="border rounded mt-1 max-h-40 overflow-y-auto bg-card">
                               {bundleOptions.map(a => (
-                                <li key={a.id} onClick={() => addBundledAccessory(line.id, a)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 text-sm">
-                                  {a.accessory_name} <span className="text-xs text-gray-500">({a.quantity} in stock)</span>
+                                <li key={a.id} onClick={() => addBundledAccessory(line.id, a)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
+                                  {a.accessory_name} <span className="text-xs text-muted-foreground">({a.quantity} in stock)</span>
                                 </li>
                               ))}
                             </ul>
@@ -605,7 +605,7 @@ function SellPageInner() {
                         <button
                           type="button"
                           onClick={() => setBundlingForLineId(line.id)}
-                          className="text-blue-600 underline text-xs"
+                          className="text-primary underline text-xs"
                         >
                           + Add bundled accessory (free by default, or set a price if the customer pays extra)
                         </button>
@@ -613,7 +613,7 @@ function SellPageInner() {
                       {line.bundled.length > 0 && (
                         <div className="mt-2 flex flex-wrap gap-2">
                           {line.bundled.map((b, idx) => (
-                            <span key={b.accessory_id} className="bg-white border text-sm px-2 py-1 rounded flex items-center gap-1">
+                            <span key={b.accessory_id} className="bg-card border text-sm px-2 py-1 rounded flex items-center gap-1">
                               {b.accessory_name}
                               <input
                                 type="number"
@@ -632,7 +632,7 @@ function SellPageInner() {
                                 className="w-20 border rounded text-center"
                                 title="Extra charge per unit"
                               />
-                              <button onClick={() => removeBundled(line.id, idx)} className="text-red-500">✕</button>
+                              <button onClick={() => removeBundled(line.id, idx)} className="text-destructive">✕</button>
                             </span>
                           ))}
                         </div>
@@ -708,7 +708,7 @@ function SellPageInner() {
               onChange={(e) => setSaleDate(e.target.value)}
               className="border p-2 w-full rounded"
             />
-            <p className="text-xs text-gray-400 mt-1">Backdate if this sale actually happened earlier.</p>
+            <p className="text-xs text-muted-foreground mt-1">Backdate if this sale actually happened earlier.</p>
           </div>
           <div>
             <label className="block font-medium text-sm mb-1">Invoice Entity</label>
@@ -719,7 +719,7 @@ function SellPageInner() {
             >
               {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
             </select>
-            <p className="text-xs text-gray-400 mt-1">Drives the GST invoice this sale is issued under.</p>
+            <p className="text-xs text-muted-foreground mt-1">Drives the GST invoice this sale is issued under.</p>
           </div>
           <div>
             <label className="block font-medium text-sm mb-1">Sold By</label>
@@ -730,7 +730,7 @@ function SellPageInner() {
         <div>
           <label className="block font-medium text-sm mb-1">
             Payment received as{' '}
-            <span className="font-normal text-gray-500">
+            <span className="font-normal text-muted-foreground">
               — {derivedPaymentStatus === 'paid' ? 'Paid in full' : derivedPaymentStatus === 'partial' ? `Partial — ₹${legsTotal.toFixed(2)} of ₹${cartTotal.toFixed(2)}` : 'Payment Pending'}
             </span>
           </label>
@@ -758,16 +758,16 @@ function SellPageInner() {
                   className="border p-2 flex-1 rounded"
                 />
                 {paymentLegs.length > 1 && (
-                  <button type="button" onClick={() => removePaymentLeg(leg.id)} className="text-red-500">✕</button>
+                  <button type="button" onClick={() => removePaymentLeg(leg.id)} className="text-destructive">✕</button>
                 )}
               </div>
             ))}
           </div>
-          <button type="button" onClick={addPaymentLeg} className="text-blue-600 underline text-xs mt-2">
+          <button type="button" onClick={addPaymentLeg} className="text-primary underline text-xs mt-2">
             + Add another payment method
           </button>
           {legsTotal > cartTotal + 0.01 && (
-            <p className="text-red-600 text-xs mt-1">
+            <p className="text-destructive text-xs mt-1">
               Payment total (₹{legsTotal.toFixed(2)}) exceeds the cart total (₹{cartTotal.toFixed(2)}).
             </p>
           )}
@@ -787,14 +787,14 @@ function SellPageInner() {
           {saleType === 'GST' && priceMode === 'post_gst' && <p>Pre-GST: ₹{cartSubtotal.toFixed(2)}</p>}
           {saleType === 'GST' && <p>GST: ₹{cartGstAmount.toFixed(2)}</p>}
           <p className="font-bold text-base">Total: ₹{cartTotal.toFixed(2)}</p>
-          {derivedPaymentStatus !== 'paid' && <p className="text-amber-700">Balance due: ₹{balanceDue.toFixed(2)}</p>}
+          {derivedPaymentStatus !== 'paid' && <p className="text-warning">Balance due: ₹{balanceDue.toFixed(2)}</p>}
         </div>
 
         <div className="flex justify-end">
           <button
             onClick={() => openReview()}
             disabled={submitting}
-            className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50"
+            className="bg-primary text-primary-foreground px-6 py-2 rounded disabled:opacity-50"
           >
             {submitting && <Loader2 className="inline size-4 animate-spin mr-1" />}
             {submitting ? 'Saving...' : `Review & Record Sale (${cartItems.length} item${cartItems.length === 1 ? '' : 's'})`}
@@ -829,7 +829,7 @@ function SellPageInner() {
                         ? `${unitLabel(line.unit)} — ${line.unit.sku_code} · ₹${line.salePrice.toFixed(2)}`
                         : `${line.accessory.accessory_name} ×${line.quantity} — ₹${line.salePrice.toFixed(2)}`}
                       {line.kind === 'unit' && line.bundled.length > 0 && (
-                        <div className="text-xs text-gray-500">
+                        <div className="text-xs text-muted-foreground">
                           + {line.bundled.map(b => `${b.accessory_name} ×${b.quantity}${b.price ? ` (+₹${b.price})` : ''}`).join(', ')}
                         </div>
                       )}
@@ -847,7 +847,7 @@ function SellPageInner() {
                 <div>
                   <div>{derivedPaymentStatus === 'paid' ? 'Paid in full' : derivedPaymentStatus === 'partial' ? `Partial — ₹${legsTotal.toFixed(2)} of ₹${cartTotal.toFixed(2)}` : 'Payment Pending'}</div>
                   {paymentLegs.filter(l => l.amount > 0).map(l => (
-                    <div key={l.id} className="text-xs text-gray-500">₹{l.amount.toFixed(2)} — {l.account}</div>
+                    <div key={l.id} className="text-xs text-muted-foreground">₹{l.amount.toFixed(2)} — {l.account}</div>
                   ))}
                 </div>
               ),

@@ -6,7 +6,7 @@
 export function EmptyTableRow({ colSpan, message = "No results found." }: { colSpan: number; message?: string }) {
   return (
     <tr>
-      <td colSpan={colSpan} className="p-4 text-center text-sm text-gray-400">
+      <td colSpan={colSpan} className="p-4 text-center text-sm text-muted-foreground">
         {message}
       </td>
     </tr>

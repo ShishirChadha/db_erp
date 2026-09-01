@@ -192,11 +192,11 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
             id="invoice_number"
             readOnly
             disabled
-            className="bg-gray-50 text-gray-500"
+            className="bg-muted text-muted-foreground"
             value={watch("invoice_number") || "Assigned on save"}
           />
           <input type="hidden" {...register("invoice_number")} />
-          {errors.invoice_number && <p className="text-sm text-red-500">{errors.invoice_number.message}</p>}
+          {errors.invoice_number && <p className="text-sm text-destructive">{errors.invoice_number.message}</p>}
         </div>
         <div>
           <Label>Invoice Date</Label>

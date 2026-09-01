@@ -31,13 +31,13 @@ export function ReviewSummaryDialog({
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-lg shadow-lg max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
+      <div className="bg-card rounded-lg shadow-lg max-w-lg w-full max-h-[85vh] overflow-y-auto p-6">
         <h2 className="text-lg font-bold mb-1">{title}</h2>
-        <p className="text-sm text-gray-500 mb-4">Please review before submitting -- you can still go back and edit.</p>
+        <p className="text-sm text-muted-foreground mb-4">Please review before submitting -- you can still go back and edit.</p>
         <dl className="divide-y">
           {visibleRows.map((r) => (
             <div key={r.label} className="py-2 flex justify-between gap-4 text-sm">
-              <dt className="text-gray-500">{r.label}</dt>
+              <dt className="text-muted-foreground">{r.label}</dt>
               <dd className="font-medium text-right">{r.value}</dd>
             </div>
           ))}
@@ -50,7 +50,7 @@ export function ReviewSummaryDialog({
             type="button"
             onClick={onConfirm}
             disabled={confirming}
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
           >
             {confirming && <Loader2 className="size-4 animate-spin" />}
             {confirming ? 'Submitting...' : confirmLabel}

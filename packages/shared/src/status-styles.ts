@@ -5,12 +5,12 @@
 export type Tone = 'success' | 'warning' | 'danger' | 'info' | 'neutral' | 'purple'
 
 export const TONE_CLASSES: Record<Tone, string> = {
-  success: 'bg-green-100 text-green-700',
-  warning: 'bg-amber-100 text-amber-700',
-  danger: 'bg-red-100 text-red-700',
-  info: 'bg-blue-100 text-blue-700',
-  neutral: 'bg-gray-100 text-gray-600',
-  purple: 'bg-purple-100 text-purple-700',
+  success: 'bg-success/15 text-success',
+  warning: 'bg-warning/15 text-warning',
+  danger: 'bg-destructive/15 text-destructive',
+  info: 'bg-info/15 text-info',
+  neutral: 'bg-muted text-muted-foreground',
+  purple: 'bg-purple/15 text-purple',
 }
 
 export function toneClasses(tone: Tone): string {

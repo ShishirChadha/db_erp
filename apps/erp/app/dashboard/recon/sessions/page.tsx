@@ -143,20 +143,20 @@ function SessionsPage() {
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Reconciliation Sessions</h1>
-        <p className="text-sm text-gray-500">Match every bank line for a period — a session closes only when nothing is left open.</p>
+        <p className="text-sm text-muted-foreground">Match every bank line for a period — a session closes only when nothing is left open.</p>
       </div>
 
-      {err && <div className="text-red-600 text-sm border border-red-200 bg-red-50 rounded p-3">{err}</div>}
+      {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3">{err}</div>}
 
       <div className="flex flex-wrap items-end gap-3">
         <div>
-          <label className="text-xs text-gray-500 block">Account</label>
+          <label className="text-xs text-muted-foreground block">Account</label>
           <select value={accountId} onChange={(e) => setAccountId(e.target.value)} className="border rounded px-2 py-1 text-sm">
             {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
           </select>
         </div>
         <div>
-          <label className="text-xs text-gray-500 block">Month</label>
+          <label className="text-xs text-muted-foreground block">Month</label>
           <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className="border rounded px-2 py-1 text-sm" />
         </div>
         {session && (
@@ -177,15 +177,15 @@ function SessionsPage() {
 
       {summary && (
         <div className="grid sm:grid-cols-4 gap-3">
-          <div className="border rounded p-3"><div className="text-xs text-gray-500">Total transactions</div><div className="text-xl font-bold">{summary.total_count}</div></div>
-          <div className="border rounded p-3"><div className="text-xs text-gray-500">Open</div><div className="text-xl font-bold text-amber-600">{summary.open_count}</div></div>
-          <div className="border rounded p-3"><div className="text-xs text-gray-500">Total debits</div><div className="text-xl font-bold tabular-nums">₹{summary.total_debit?.toFixed(2)}</div></div>
-          <div className="border rounded p-3"><div className="text-xs text-gray-500">Total credits</div><div className="text-xl font-bold tabular-nums">₹{summary.total_credit?.toFixed(2)}</div></div>
+          <div className="border rounded p-3"><div className="text-xs text-muted-foreground">Total transactions</div><div className="text-xl font-bold">{summary.total_count}</div></div>
+          <div className="border rounded p-3"><div className="text-xs text-muted-foreground">Open</div><div className="text-xl font-bold text-warning">{summary.open_count}</div></div>
+          <div className="border rounded p-3"><div className="text-xs text-muted-foreground">Total debits</div><div className="text-xl font-bold tabular-nums">₹{summary.total_debit?.toFixed(2)}</div></div>
+          <div className="border rounded p-3"><div className="text-xs text-muted-foreground">Total credits</div><div className="text-xl font-bold tabular-nums">₹{summary.total_credit?.toFixed(2)}</div></div>
         </div>
       )}
 
       {summary?.recurring_expense_watch?.length > 0 && (
-        <div className="border border-amber-200 bg-amber-50 rounded p-3 text-sm">
+        <div className="border border-warning/20 bg-warning/15 rounded p-3 text-sm">
           <div className="font-medium mb-1">Recurring expenses expected but not seen this period:</div>
           <ul className="list-disc pl-5">
             {summary.recurring_expense_watch.map((w: any) => <li key={w.type}>{w.type} — last seen {w.last_seen_period}</li>)}
@@ -198,7 +198,7 @@ function SessionsPage() {
           <div key={t.id} className="border rounded p-3 space-y-2">
             <div className="flex items-center justify-between">
               <div className="text-sm">
-                <span className="tabular-nums text-gray-500">{t.txn_date}</span> · {t.narration}
+                <span className="tabular-nums text-muted-foreground">{t.txn_date}</span> · {t.narration}
                 <span className="ml-2 font-medium tabular-nums">{t.debit ? `Dr ₹${t.debit.toFixed(2)}` : `Cr ₹${t.credit?.toFixed(2)}`}</span>
               </div>
               <StatusBadge tone="warning">{t.recon_status}</StatusBadge>
@@ -207,7 +207,7 @@ function SessionsPage() {
             {t.credit && t.credit_candidates && t.credit_candidates.length > 0 && (
               <div className="space-y-1">
                 {t.credit_candidates.slice(0, 3).map((c) => (
-                  <div key={c.sale_payment_id} className="flex items-center justify-between text-sm p-1.5 rounded hover:bg-gray-50">
+                  <div key={c.sale_payment_id} className="flex items-center justify-between text-sm p-1.5 rounded hover:bg-muted">
                     <span>₹{c.amount.toFixed(2)} · {c.customer_name || 'unknown customer'} · {Math.round(c.date_delta_days)}d away</span>
                     <Button size="sm" variant="outline" onClick={() => matchCredit(t.id, c)}><Check className="size-4 mr-1" /> Match</Button>
                   </div>
@@ -234,8 +234,8 @@ function SessionsPage() {
             </div>
           </div>
         ))}
-        {openTxns.length === 0 && txns.length > 0 && <div className="text-sm text-gray-400 border rounded p-4 text-center">Everything in this period is matched or explained.</div>}
-        {txns.length === 0 && <div className="text-sm text-gray-400 border rounded p-4 text-center">No transactions in this period. Import a statement on the Bank Reconciliation page first.</div>}
+        {openTxns.length === 0 && txns.length > 0 && <div className="text-sm text-muted-foreground border rounded p-4 text-center">Everything in this period is matched or explained.</div>}
+        {txns.length === 0 && <div className="text-sm text-muted-foreground border rounded p-4 text-center">No transactions in this period. Import a statement on the Bank Reconciliation page first.</div>}
       </div>
     </div>
   )

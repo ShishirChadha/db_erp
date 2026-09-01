@@ -247,14 +247,14 @@ export function EditSaleDialog({
         </DialogHeader>
 
         {loading ? (
-          <div className="py-6 text-center text-sm text-gray-400">Loading…</div>
+          <div className="py-6 text-center text-sm text-muted-foreground">Loading…</div>
         ) : !sale ? (
-          <div className="py-6 text-center text-sm text-red-600">{err || "Sale not found."}</div>
+          <div className="py-6 text-center text-sm text-destructive">{err || "Sale not found."}</div>
         ) : (
           <div className="space-y-4">
-            {err && <div className="text-red-600 text-sm">{err}</div>}
+            {err && <div className="text-destructive text-sm">{err}</div>}
             {sale.is_deleted && (
-              <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded p-2">
+              <div className="bg-destructive/10 border border-destructive/20 text-destructive text-sm rounded p-2">
                 This sale was voided and is read-only -- kept here for reference only. See correction history below for the reason.
               </div>
             )}
@@ -315,7 +315,7 @@ export function EditSaleDialog({
               </>
             )}
 
-            <div className="border rounded p-3 text-right text-sm space-y-1 bg-gray-50">
+            <div className="border rounded p-3 text-right text-sm space-y-1 bg-muted">
               {saleType === "GST" && priceMode === "post_gst" && <p>Pre-GST: ₹{interimSubtotal.toFixed(2)}</p>}
               {saleType === "GST" && <p>GST: ₹{interimGst.toFixed(2)}</p>}
               <p className="font-bold text-base">Total: ₹{interimTotal.toFixed(2)}</p>
@@ -356,7 +356,7 @@ export function EditSaleDialog({
                     {bundleOptions.map((a) => (
                       <li
                         key={a.id}
-                        className="p-2 hover:bg-gray-50 cursor-pointer"
+                        className="p-2 hover:bg-muted cursor-pointer"
                         onClick={() => {
                           if (bundled.some((b) => b.accessory_id === a.id)) return;
                           setBundled((prev) => [...prev, { accessory_id: a.id, quantity: 1, accessory_name: a.sku_description }]);
@@ -384,7 +384,7 @@ export function EditSaleDialog({
                               setBundled((prev) => prev.map((x, i) => (i === idx ? { ...x, quantity: Number(e.target.value) || 1 } : x)))
                             }
                           />
-                          <button type="button" className="text-red-600 underline text-xs" onClick={() => setBundled((prev) => prev.filter((_, i) => i !== idx))}>
+                          <button type="button" className="text-destructive underline text-xs" onClick={() => setBundled((prev) => prev.filter((_, i) => i !== idx))}>
                             Remove
                           </button>
                         </div>
@@ -424,11 +424,11 @@ export function EditSaleDialog({
                       <div>
                         ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ""}
                         {p.note ? ` · ${p.note}` : ""}
-                        <div className="text-gray-400">
+                        <div className="text-muted-foreground">
                           {new Date(p.recorded_at).toLocaleString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ""}
                         </div>
                       </div>
-                      <button type="button" onClick={() => deletePayment(p.id)} className="text-red-600 underline shrink-0">
+                      <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
                         Remove
                       </button>
                     </li>
@@ -439,7 +439,7 @@ export function EditSaleDialog({
 
             {sale.history.length > 0 && (
               <div>
-                <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs text-blue-600 underline">
+                <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs text-primary underline">
                   {showHistory ? "Hide" : "Show"} correction history ({sale.history.length})
                 </button>
                 {showHistory && (
@@ -447,8 +447,8 @@ export function EditSaleDialog({
                     {sale.history.map((h, i) => (
                       <li key={i} className="p-2">
                         <span className="font-medium">{h.field_name}</span>: {h.old_value ?? "—"} → {h.new_value ?? "—"}
-                        {h.reason && <div className="text-gray-500">Reason: {h.reason}</div>}
-                        <div className="text-gray-400">{new Date(h.changed_at).toLocaleString()}</div>
+                        {h.reason && <div className="text-muted-foreground">Reason: {h.reason}</div>}
+                        <div className="text-muted-foreground">{new Date(h.changed_at).toLocaleString()}</div>
                       </li>
                     ))}
                   </ul>
@@ -461,7 +461,7 @@ export function EditSaleDialog({
                 <Button variant="destructive" size="sm" onClick={() => setVoidOpen(true)}>
                   Void this sale
                 </Button>
-                <p className="text-xs text-gray-500 mt-1">
+                <p className="text-xs text-muted-foreground mt-1">
                   Reverses stock and marks this sale voided. Does not touch an already-generated invoice.
                 </p>
               </div>

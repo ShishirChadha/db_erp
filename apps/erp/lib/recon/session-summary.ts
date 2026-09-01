@@ -14,8 +14,6 @@ export interface SessionSummary {
   recurring_expense_watch: { type: string; last_seen_period: string }[]
 }
 
-const RECURRING_TYPES = ['Rent', 'Electricity', 'Internet']
-
 export async function computeSessionSummary(bankAccountId: string, periodStart: string, periodEnd: string): Promise<SessionSummary> {
   const { data: txns } = await supabaseAdmin
     .from('bank_transactions')
@@ -35,14 +33,24 @@ export async function computeSessionSummary(bankAccountId: string, periodStart: 
   const openCount = (byStatus.open || 0) + (byStatus.split || 0)
   const matchedCount = rows.length - openCount
 
-  // Recurring-expense watch: a category (Rent/Electricity/Internet) that has a real
-  // expense history in an EARLIER period for this account's entity, but no
-  // corresponding expense row landing inside the current period, is flagged --
-  // a missing recurring cost is much easier to overlook than an unexpected one.
+  // Recurring-expense watch: a type with an active recurring_expense_rules entry
+  // for this account's entity (Phase 3's real schedule -- scan_recurring_expenses()
+  // reminds separately, on its own cadence) that also has real expense history in
+  // an EARLIER period but no corresponding expense row landing inside the current
+  // period is flagged here too -- a missing recurring cost is easier to overlook
+  // than an unexpected one. Previously a hardcoded ['Rent','Electricity','Internet']
+  // array; now sourced from the same rules table so there's one definition of
+  // "what counts as recurring," not two independent lists.
   const { data: account } = await supabaseAdmin.from('bank_accounts').select('entity_key').eq('id', bankAccountId).single()
   const watch: { type: string; last_seen_period: string }[] = []
   if (account) {
-    for (const type of RECURRING_TYPES) {
+    const { data: rules } = await supabaseAdmin
+      .from('recurring_expense_rules')
+      .select('type')
+      .eq('entity_key', account.entity_key)
+      .eq('is_active', true)
+    const recurringTypes = [...new Set((rules || []).map((r) => r.type))]
+    for (const type of recurringTypes) {
       const { data: history } = await supabaseAdmin
         .from('expenses')
         .select('expense_date')

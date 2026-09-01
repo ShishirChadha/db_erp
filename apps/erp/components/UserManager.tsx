@@ -89,7 +89,7 @@ function PageAccessCheckboxes({
     <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-3">
       {PAGE_GROUPS.map(group => (
         <div key={group.label}>
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1">{group.label}</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">{group.label}</p>
           <div className="space-y-1">
             {group.keys.map(opt => (
               <div key={opt.key} className="flex items-center gap-3 text-sm">
@@ -98,7 +98,7 @@ function PageAccessCheckboxes({
                   {opt.label}
                 </label>
                 {selected.includes(opt.key) && EDITABLE_PAGE_KEYS.includes(opt.key) && (
-                  <label className="flex items-center gap-1 text-xs text-gray-500">
+                  <label className="flex items-center gap-1 text-xs text-muted-foreground">
                     <Checkbox checked={editKeys.includes(opt.key)} onCheckedChange={() => toggleEdit(opt.key)} />
                     Can edit
                   </label>
@@ -290,42 +290,42 @@ export default function UserManager() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Create logins for owner/employee accounts and choose exactly which tabs each employee can see. Owners always have full access.
       </p>
 
-      {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+      {error && <div className="text-destructive text-sm mb-3">{error}</div>}
 
       <div className="border rounded p-4 mb-6">
         <h3 className="font-medium text-sm mb-3">Create User</h3>
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">User ID</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">User ID</label>
             <input value={username} onChange={(e) => setUsername(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. ShishirCH, Rohit" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Display Name</label>
             <input value={fullName} onChange={(e) => setFullName(e.target.value)} className="border p-2 w-full rounded" placeholder="e.g. Rohit Sharma" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID (optional)</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Employee ID (optional)</label>
             <input value={employeeId} onChange={(e) => setEmployeeId(e.target.value)} className="border p-2 w-full rounded" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email (optional, for notifications)</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Contact Email (optional, for notifications)</label>
             <input value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} className="border p-2 w-full rounded" placeholder="employee@digitalbluez.com" />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Password</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Password</label>
             <div className="flex gap-2">
               <input value={password} onChange={(e) => setPassword(e.target.value)} className="border p-2 w-full rounded" />
-              <button type="button" onClick={() => setPassword(generatePassword())} className="text-xs px-2 py-1 rounded bg-gray-100 whitespace-nowrap">
+              <button type="button" onClick={() => setPassword(generatePassword())} className="text-xs px-2 py-1 rounded bg-muted whitespace-nowrap">
                 Generate
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Role</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Role</label>
             <select value={role} onChange={(e) => setRole(e.target.value as AppUser['role'])} className="border p-2 w-full rounded">
               <option value="employee">Employee</option>
               <option value="manager">Manager</option>
@@ -336,23 +336,23 @@ export default function UserManager() {
 
         {role !== 'owner' && (
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Page Access</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Page Access</label>
             <PageAccessCheckboxes selected={allowedPages} onChange={setAllowedPages} editKeys={editKeysNew} onEditChange={setEditKeysNew} />
           </div>
         )}
 
-        <button onClick={createUser} disabled={busy} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+        <button onClick={createUser} disabled={busy} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
           {busy ? 'Creating...' : 'Create User'}
         </button>
       </div>
 
       <h3 className="font-medium text-sm mb-3">Existing Users</h3>
       {loading ? (
-        <p className="text-sm text-gray-400">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <>
           <div className="border rounded divide-y">
-            {activeUsers.length === 0 && <p className="text-sm text-gray-400 p-2">No active users found.</p>}
+            {activeUsers.length === 0 && <p className="text-sm text-muted-foreground p-2">No active users found.</p>}
             {activeUsers.map(u => renderUserRow(u))}
           </div>
 
@@ -360,7 +360,7 @@ export default function UserManager() {
             <div className="mt-4">
               <button
                 onClick={() => setShowDeactivated(v => !v)}
-                className="text-sm font-medium text-gray-600 flex items-center gap-1"
+                className="text-sm font-medium text-muted-foreground flex items-center gap-1"
               >
                 {showDeactivated ? '▾' : '▸'} Deactivated Users ({deactivatedUsers.length})
               </button>
@@ -382,25 +382,25 @@ export default function UserManager() {
         <div className="flex justify-between items-center">
           <div>
             <div className="text-sm font-medium">{u.full_name || u.username || u.email}</div>
-            <div className="text-xs text-gray-500">
+            <div className="text-xs text-muted-foreground">
               {u.username ? `ID: ${u.username}` : u.email} · {ROLE_LABELS[u.role]}
               {u.employee_id && <> · Emp #{u.employee_id}</>}
-              {!u.is_active && <span className="text-red-500"> · Inactive</span>}
+              {!u.is_active && <span className="text-destructive"> · Inactive</span>}
             </div>
           </div>
           <div className="flex gap-2 items-center">
-            <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+            <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
               Edit name / ID
             </button>
             {u.role !== 'owner' && (
-              <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+              <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
                 Edit access
               </button>
             )}
             <button
               onClick={() => toggleActive(u)}
               disabled={busy}
-              className={`text-xs px-2 py-1 rounded ${u.is_active ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}
+              className={`text-xs px-2 py-1 rounded ${u.is_active ? 'bg-destructive/10 text-destructive' : 'bg-success/15 text-success'}`}
             >
               {u.is_active ? 'Deactivate' : 'Activate'}
             </button>
@@ -410,7 +410,7 @@ export default function UserManager() {
         {editingProfileId === u.id && (
           <div className="mt-2 border-t pt-2 grid grid-cols-3 gap-2">
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Display Name</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Display Name</label>
               <input
                 value={editProfile.fullName}
                 onChange={(e) => setEditProfile(prev => ({ ...prev, fullName: e.target.value }))}
@@ -418,7 +418,7 @@ export default function UserManager() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Employee ID</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Employee ID</label>
               <input
                 value={editProfile.employeeId}
                 onChange={(e) => setEditProfile(prev => ({ ...prev, employeeId: e.target.value }))}
@@ -426,7 +426,7 @@ export default function UserManager() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-600 mb-1">Contact Email</label>
+              <label className="block text-xs font-medium text-muted-foreground mb-1">Contact Email</label>
               <input
                 value={editProfile.contactEmail}
                 onChange={(e) => setEditProfile(prev => ({ ...prev, contactEmail: e.target.value }))}
@@ -434,10 +434,10 @@ export default function UserManager() {
               />
             </div>
             <div className="col-span-3 flex gap-2 mt-1">
-              <button onClick={() => saveProfile(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
+              <button onClick={() => saveProfile(u.id)} disabled={busy} className="bg-primary text-primary-foreground text-xs px-3 py-1 rounded disabled:opacity-50">
                 Save
               </button>
-              <button onClick={() => setEditingProfileId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
+              <button onClick={() => setEditingProfileId(null)} className="text-xs px-3 py-1 rounded bg-muted">
                 Cancel
               </button>
             </div>
@@ -448,10 +448,10 @@ export default function UserManager() {
           <div className="mt-2 border-t pt-2">
             <PageAccessCheckboxes selected={editPages} onChange={setEditPages} editKeys={editKeys} onEditChange={setEditKeys} />
             <div className="flex gap-2 mt-2">
-              <button onClick={() => saveAccess(u.id)} disabled={busy} className="bg-blue-600 text-white text-xs px-3 py-1 rounded disabled:opacity-50">
+              <button onClick={() => saveAccess(u.id)} disabled={busy} className="bg-primary text-primary-foreground text-xs px-3 py-1 rounded disabled:opacity-50">
                 Save Access
               </button>
-              <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1 rounded bg-gray-100">
+              <button onClick={() => setEditingId(null)} className="text-xs px-3 py-1 rounded bg-muted">
                 Cancel
               </button>
             </div>
@@ -466,7 +466,7 @@ export default function UserManager() {
             placeholder="Set new password..."
             className="border p-1 text-sm rounded flex-1 max-w-xs"
           />
-          <button onClick={() => setNewPassword(u.id)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100">
+          <button onClick={() => setNewPassword(u.id)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
             Set Password
           </button>
           {u.role !== 'owner' && (
@@ -474,12 +474,12 @@ export default function UserManager() {
               <button
                 onClick={() => toggleViewPassword(u.id)}
                 disabled={viewPasswordLoadingId === u.id}
-                className="text-xs px-2 py-1 rounded bg-gray-100"
+                className="text-xs px-2 py-1 rounded bg-muted"
               >
                 {viewPasswordLoadingId === u.id ? 'Loading...' : (u.id in viewedPasswordById ? 'Hide password' : 'View password')}
               </button>
               {u.id in viewedPasswordById && (
-                <span className="text-xs font-mono bg-yellow-50 border border-yellow-200 px-2 py-1 rounded">
+                <span className="text-xs font-mono bg-warning/15 border border-warning/30 px-2 py-1 rounded">
                   {viewedPasswordById[u.id] ?? 'No password on file yet — set one above.'}
                 </span>
               )}

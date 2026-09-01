@@ -8,28 +8,26 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Dashboard | `/dashboard` | dashboard |  |
 | Pending Tasks | `/dashboard/pending-tasks` | pending_tasks |  |
 | New Entry | `/dashboard/entry` | new_entry |  |
-| Accessories | `/dashboard/accessories` | accessories |  |
-| Purchases > Purchase Orders | `/dashboard/purchase-orders` |  | yes |
-| Purchases > Purchase Invoices | `/dashboard/purchase-invoices` |  | yes |
-| Purchases > OLD Purchase IN | `/dashboard/purchases` |  | yes |
+| Purchasing > Purchase Orders | `/dashboard/purchase-orders` |  | yes |
+| Purchasing > Purchase Invoices | `/dashboard/purchase-invoices` |  | yes |
+| Purchasing > OLD Purchase IN | `/dashboard/purchases` |  | yes |
 | Inventory > SKU Master | `/dashboard/sku-master` | sku_master |  |
 | Inventory > Stock / Assets (Main ERP) | `/dashboard/stock` | stock |  |
-| Live Stock > Live Stock | `/dashboard/live-stock` | live_stock |  |
-| Live Stock > Repair Jobs | `/dashboard/repair-jobs` | repair_jobs |  |
-| Live Stock > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
+| Inventory > Accessories | `/dashboard/accessories` | accessories |  |
+| Operations > Live Stock | `/dashboard/live-stock` | live_stock |  |
+| Operations > Repair Jobs | `/dashboard/repair-jobs` | repair_jobs |  |
+| Operations > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
+| Operations > RMA (Vendor Returns) | `/dashboard/rma` | rma |  |
 | Sales > Sales | `/dashboard/sales` | sales |  |
 | Sales > Invoices | `/dashboard/invoices` | invoices |  |
 | Sales > Quotations | `/dashboard/quotations` | quotations |  |
 | Sales > Price Cockpit | `/dashboard/pricing` |  | yes |
 | Contacts > Customers | `/dashboard/customers` | customers |  |
 | Contacts > Vendors | `/dashboard/vendors` |  | yes |
-| Service > RMA (Vendor Returns) | `/dashboard/rma` | rma |  |
 | Finance > Expenses | `/dashboard/expenses` | expenses |  |
 | Finance > Reports | `/dashboard/reports` | reports |  |
 | Finance > Vendor Reconciliation | `/dashboard/recon/vendors` |  | yes |
 | Finance > Bank Reconciliation | `/dashboard/recon/bank` |  | yes |
 | Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |
 | Activity Hub | `/dashboard/activities` | activities |  |
-| Audit Log | `/dashboard/settings/audit-log` |  |  |
-| Backup | `/dashboard/settings/backup` |  | yes |
-| Settings | `/dashboard/settings` |  | yes |
+| Settings | `/dashboard/settings` |  |  |

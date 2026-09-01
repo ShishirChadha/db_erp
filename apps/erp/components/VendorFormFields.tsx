@@ -191,11 +191,11 @@ export function VendorFormFields({
               onChange={(e) => onChange({ gst_number: e.target.value.toUpperCase() })}
               onBlur={onGstBlur}
             />
-            {fetchingGst && <p className="text-xs text-blue-500">Fetching company details...</p>}
+            {fetchingGst && <p className="text-xs text-info">Fetching company details...</p>}
           </div>
           <div className="space-y-2 md:col-span-2">
             <Label>Auto-filled Company Name (from GST)</Label>
-            <Input value={form.gst_company_name} readOnly className="bg-gray-50" />
+            <Input value={form.gst_company_name} readOnly className="bg-muted" />
           </div>
         </>
       )}

@@ -200,7 +200,7 @@ export function SkuWebPublishDialog({
   return (
     <SimpleModal isOpen onClose={onClose} title={`Website — ${sku.full_sku_code}`} wide>
       {loading ? (
-        <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-gray-400" /></div>
+        <div className="flex justify-center py-8"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>
       ) : (
         <div className="space-y-4">
           <label className="flex items-center gap-2 text-sm font-medium">
@@ -216,7 +216,7 @@ export function SkuWebPublishDialog({
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={publicImageUrl(img.storage_path)} alt={img.alt_text || ''} className="w-full h-full object-cover" />
                   {img.is_primary && (
-                    <span className="absolute top-1 left-1 bg-amber-400 text-white rounded-full p-0.5">
+                    <span className="absolute top-1 left-1 bg-warning text-warning-foreground rounded-full p-0.5">
                       <Star className="size-3" fill="currentColor" />
                     </span>
                   )}
@@ -238,7 +238,7 @@ export function SkuWebPublishDialog({
                   </div>
                 </div>
               ))}
-              <label className="w-24 h-24 flex flex-col items-center justify-center rounded-md border-2 border-dashed text-gray-400 cursor-pointer hover:border-blue-300">
+              <label className="w-24 h-24 flex flex-col items-center justify-center rounded-md border-2 border-dashed text-muted-foreground cursor-pointer hover:border-primary/40">
                 {uploading ? <Loader2 className="size-5 animate-spin" /> : <Upload className="size-5" />}
                 <span className="text-xs mt-1">{uploading ? 'Uploading' : 'Add'}</span>
                 <input type="file" multiple accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
@@ -248,39 +248,39 @@ export function SkuWebPublishDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Web Price (₹)</label>
+              <label className="block text-xs text-muted-foreground mb-1">Web Price (₹)</label>
               <input type="number" value={webPrice} onChange={(e) => setWebPrice(e.target.value)}
                 placeholder={sku.selling_price_default != null ? String(sku.selling_price_default) : ''}
                 className="border p-2 w-full rounded" />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">MRP / Market Price (₹)</label>
+              <label className="block text-xs text-muted-foreground mb-1">MRP / Market Price (₹)</label>
               <input type="number" value={marketPrice} onChange={(e) => setMarketPrice(e.target.value)} className="border p-2 w-full rounded" />
             </div>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">URL slug</label>
+            <label className="block text-xs text-muted-foreground mb-1">URL slug</label>
             <input type="text" value={webSlug} onChange={(e) => setWebSlug(slugify(e.target.value))} className="border p-2 w-full rounded font-mono text-sm" />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Title</label>
+            <label className="block text-xs text-muted-foreground mb-1">Title</label>
             <input type="text" value={webTitle} onChange={(e) => setWebTitle(e.target.value)} className="border p-2 w-full rounded" />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Description</label>
+            <label className="block text-xs text-muted-foreground mb-1">Description</label>
             <textarea value={webDescription} onChange={(e) => setWebDescription(e.target.value)} rows={3} className="border p-2 w-full rounded" />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Highlights (one per line)</label>
+            <label className="block text-xs text-muted-foreground mb-1">Highlights (one per line)</label>
             <textarea value={webHighlights} onChange={(e) => setWebHighlights(e.target.value)} rows={3} className="border p-2 w-full rounded" placeholder={'Fast SSD storage\n6 month warranty\nFree delivery'} />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Condition grade</label>
+            <label className="block text-xs text-muted-foreground mb-1">Condition grade</label>
             <select value={conditionGrade} onChange={(e) => setConditionGrade(e.target.value)} className="border p-2 w-full rounded">
               <option value="">Not set</option>
               {CONDITION_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
@@ -293,7 +293,7 @@ export function SkuWebPublishDialog({
               type="button"
               onClick={handleSave}
               disabled={saving}
-              className="px-4 py-2 rounded bg-blue-600 text-white disabled:opacity-50 inline-flex items-center gap-2"
+              className="px-4 py-2 rounded bg-primary text-primary-foreground disabled:opacity-50 inline-flex items-center gap-2"
             >
               {saving && <Loader2 className="size-4 animate-spin" />}
               Save

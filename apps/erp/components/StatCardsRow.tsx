@@ -20,12 +20,12 @@ export function StatCardsRow({ cards }: { cards: StatCard[] }) {
           type="button"
           onClick={c.onClick}
           disabled={!c.onClick}
-          className={`text-left border rounded-lg p-3 bg-white shadow-sm transition ${
-            c.onClick ? 'hover:border-blue-400 cursor-pointer' : 'cursor-default'
-          } ${c.active ? 'border-blue-500 ring-1 ring-blue-200' : ''}`}
+          className={`text-left border rounded-lg p-3 bg-card shadow-sm transition ${
+            c.onClick ? 'hover:border-primary/40 cursor-pointer' : 'cursor-default'
+          } ${c.active ? 'border-primary ring-1 ring-primary/20' : ''}`}
         >
-          <div className="text-xs text-gray-500">{c.label}</div>
-          <div className="text-xl font-semibold text-gray-900">{c.value}</div>
+          <div className="text-xs text-muted-foreground">{c.label}</div>
+          <div className="text-xl font-semibold text-foreground">{c.value}</div>
         </button>
       ))}
     </div>

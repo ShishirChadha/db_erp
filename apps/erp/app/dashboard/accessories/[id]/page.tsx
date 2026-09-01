@@ -90,7 +90,7 @@ function EditableNote({ movementId, notes, onSaved }: { movementId: string; note
     return (
       <button
         onClick={() => { setValue(notes || ''); setEditing(true) }}
-        className="text-left text-gray-500 hover:text-gray-900 hover:underline w-full"
+        className="text-left text-muted-foreground hover:text-foreground hover:underline w-full"
         title="Click to edit"
       >
         {notes || '—'}
@@ -100,7 +100,7 @@ function EditableNote({ movementId, notes, onSaved }: { movementId: string; note
 
   return (
     <div className="space-y-1 min-w-[10rem]">
-      {err && <div className="text-red-600 text-xs">{err}</div>}
+      {err && <div className="text-destructive text-xs">{err}</div>}
       <input
         type="text"
         value={value}
@@ -109,8 +109,8 @@ function EditableNote({ movementId, notes, onSaved }: { movementId: string; note
         autoFocus
       />
       <div className="flex gap-1">
-        <button onClick={() => setEditing(false)} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-gray-100">Cancel</button>
-        <button onClick={save} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-blue-600 text-white">Save</button>
+        <button onClick={() => setEditing(false)} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-muted">Cancel</button>
+        <button onClick={save} disabled={busy} className="text-xs px-2 py-0.5 rounded bg-primary text-primary-foreground">Save</button>
       </div>
     </div>
   )
@@ -161,8 +161,8 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
             <DialogTitle>Edit Receipt</DialogTitle>
           </DialogHeader>
           <div className="space-y-2">
-            {err && <div className="text-red-600 text-xs">{err}</div>}
-            <label className="block text-xs text-gray-500">
+            {err && <div className="text-destructive text-xs">{err}</div>}
+            <label className="block text-xs text-muted-foreground">
               Purchase date
               <input
                 type="date"
@@ -171,17 +171,17 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
                 className="border p-1 w-full rounded text-sm mt-0.5"
               />
             </label>
-            <label className="block text-xs text-gray-500">
+            <label className="block text-xs text-muted-foreground">
               Vendor
               <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-1 w-full rounded text-sm mt-0.5">
                 <option value="">No vendor</option>
                 {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setAddVendorOpen(true)} className="text-blue-600 underline text-xs">
+            <button type="button" onClick={() => setAddVendorOpen(true)} className="text-primary underline text-xs">
               + Add new vendor
             </button>
-            <label className="block text-xs text-gray-500">
+            <label className="block text-xs text-muted-foreground">
               Unit price
               <input
                 type="number"
@@ -191,13 +191,13 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
                 className="border p-1 w-full rounded text-sm mt-0.5"
               />
             </label>
-            <label className="block text-xs text-gray-500">
+            <label className="block text-xs text-muted-foreground">
               Payment account
               <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 w-full rounded text-sm mt-0.5">
                 {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
               </select>
             </label>
-            <label className="block text-xs text-gray-500">
+            <label className="block text-xs text-muted-foreground">
               Notes
               <input
                 type="text"
@@ -208,7 +208,7 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
             </label>
           </div>
           <div className="flex gap-3 mt-4">
-            <Button className="flex-1 bg-blue-600 hover:bg-blue-700" onClick={() => submit()} loading={busy}>
+            <Button className="flex-1 bg-primary hover:bg-primary/90" onClick={() => submit()} loading={busy}>
               Save
             </Button>
             <Button variant="outline" onClick={onClose} disabled={busy}>
@@ -258,7 +258,7 @@ function AccessoryDetailPage() {
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
   if (loading) return <div className="p-4">Loading…</div>
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
+  if (error) return <div className="p-4 text-destructive">Error: {error}</div>
   if (!data) return null
 
   const { sku, summary, movements, purchases, cost_price, last_vendor } = data
@@ -266,11 +266,11 @@ function AccessoryDetailPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.back()} className="text-sm text-gray-500 mb-2">&larr; Back</button>
+      <button onClick={() => router.back()} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
       <h1 className="text-2xl font-bold mb-1">{displayName}</h1>
-      <p className="text-gray-600 mb-4">
+      <p className="text-muted-foreground mb-4">
         {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
-        {sku.status !== 'active' && <span className="ml-2 text-xs text-gray-400 capitalize">({sku.status})</span>}
+        {sku.status !== 'active' && <span className="ml-2 text-xs text-muted-foreground capitalize">({sku.status})</span>}
       </p>
 
       {/* Reconciliation summary -- the "why does in-stock show this number" answer,
@@ -278,23 +278,23 @@ function AccessoryDetailPage() {
           can never disagree with quantity_in_stock itself. */}
       <div className="grid grid-cols-4 gap-3 mb-6">
         <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-gray-500">Received</div>
+          <div className="text-xs text-muted-foreground">Received</div>
           <div className="text-lg font-semibold tabular-nums">{summary.received}</div>
         </div>
         <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-gray-500">Sold</div>
+          <div className="text-xs text-muted-foreground">Sold</div>
           <div className="text-lg font-semibold tabular-nums">{summary.sold}</div>
         </div>
         <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-gray-500">Adjusted</div>
+          <div className="text-xs text-muted-foreground">Adjusted</div>
           <div className="text-lg font-semibold tabular-nums">{summary.adjusted >= 0 ? '+' : ''}{summary.adjusted}</div>
         </div>
-        <div className="border rounded-lg p-3 text-center bg-blue-50">
-          <div className="text-xs text-gray-500">In Stock</div>
+        <div className="border rounded-lg p-3 text-center bg-info/15">
+          <div className="text-xs text-muted-foreground">In Stock</div>
           <div className="text-lg font-semibold tabular-nums">{summary.in_stock}</div>
         </div>
       </div>
-      <p className="text-xs text-gray-400 mb-6">
+      <p className="text-xs text-muted-foreground mb-6">
         In stock = received + adjusted − sold. "Received" counts everything ever bought,
         regardless of how much has since sold — a purchase order for this item should
         reflect Received, not the current In Stock number.
@@ -303,7 +303,7 @@ function AccessoryDetailPage() {
       {isOwner && (
         <div className="border rounded-lg p-4 mb-6">
           <h2 className="font-semibold mb-2">Cost &amp; Last Vendor</h2>
-          <p className="text-sm text-gray-600">
+          <p className="text-sm text-muted-foreground">
             Current cost: {cost_price != null ? `₹${cost_price.toFixed(2)}` : '—'}
             {last_vendor && <> — Last purchased from <span className="font-medium">{last_vendor}</span></>}
           </p>
@@ -314,7 +314,7 @@ function AccessoryDetailPage() {
         <div className="border rounded-lg p-4 mb-6">
           <h2 className="font-semibold mb-3">Purchase History</h2>
           {!purchases || purchases.length === 0 ? (
-            <p className="text-sm text-gray-400">No purchase orders recorded yet for this item.</p>
+            <p className="text-sm text-muted-foreground">No purchase orders recorded yet for this item.</p>
           ) : (
             <div className="overflow-x-auto">
               <table className="min-w-full text-sm border">
@@ -351,7 +351,7 @@ function AccessoryDetailPage() {
       <div className="border rounded-lg p-4">
         <h2 className="font-semibold mb-3">Movement Ledger</h2>
         {movements.length === 0 ? (
-          <p className="text-sm text-gray-400">No stock movements recorded yet.</p>
+          <p className="text-sm text-muted-foreground">No stock movements recorded yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="min-w-full text-sm border">
@@ -375,10 +375,10 @@ function AccessoryDetailPage() {
                     <td className="border p-2">{(m.purchase_date || m.created_at)?.slice(0, 10)}</td>
                     <td className="border p-2">{MOVEMENT_LABELS[m.movement_type] || m.movement_type}</td>
                     <td className="border p-2 text-right tabular-nums">{m.quantity_change > 0 ? '+' : ''}{m.quantity_change}</td>
-                    <td className="border p-2 text-right tabular-nums text-gray-500">
+                    <td className="border p-2 text-right tabular-nums text-muted-foreground">
                       {m.quantity_before ?? '—'} → {m.quantity_after ?? '—'}
                     </td>
-                    <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-amber-600">awaiting PO</span> : '—')}</td>
+                    <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-warning">awaiting PO</span> : '—')}</td>
                     <td className="border p-2">{m.vendor_name || '—'}</td>
                     <td className="border p-2 text-right tabular-nums">{m.unit_price != null ? `₹${m.unit_price.toFixed(2)}` : '—'}</td>
                     <td className="border p-2">{m.payment_account || '—'}</td>
@@ -397,7 +397,7 @@ function AccessoryDetailPage() {
                     </td>
                     <td className="border p-2">
                       {m.movement_type === 'receipt' && (
-                        <button onClick={() => setEditingMovement(m)} className="text-blue-600 underline text-xs whitespace-nowrap">
+                        <button onClick={() => setEditingMovement(m)} className="text-primary underline text-xs whitespace-nowrap">
                           Edit
                         </button>
                       )}

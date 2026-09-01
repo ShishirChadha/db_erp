@@ -5,6 +5,7 @@ export const ACTIVITY_PRIORITIES = ['low', 'normal', 'high', 'urgent'] as const
 export const ACTIVITY_STATUSES = ['pending', 'in_progress', 'done', 'cancelled'] as const
 export const ACTIVITY_RELATED_TYPES = [
   'customer', 'sale', 'purchase_order', 'asset', 'repair_job', 'invoice', 'vendor',
+  'recurring_expense',
 ] as const
 
 // Fixed palette rather than free-text emoji -- keeps reactions lightweight and

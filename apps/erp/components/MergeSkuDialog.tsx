@@ -125,14 +125,14 @@ export function MergeSkuDialog({
   return (
     <SimpleModal isOpen onClose={onClose} title="Merge duplicate SKUs" wide>
       <div className="space-y-4">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Pick the SKU to keep, then uncheck any row below that's actually a different config
           (e.g. different RAM/SSD) rather than a real duplicate. Checked rows will have their
           stock, assets, and sale/purchase history moved onto the kept SKU, then be archived
           (not deleted).
         </p>
 
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        {error && <div className="text-destructive text-sm">{error}</div>}
 
         <div className="border rounded divide-y">
           {candidates.map((c) => {
@@ -140,7 +140,7 @@ export function MergeSkuDialog({
             const isTarget = targetId === c.id
             const configDiff = buildConfigDiff(c.category, c.specifications, templates)
             return (
-              <div key={c.id} className="flex items-start gap-3 p-3 hover:bg-gray-50">
+              <div key={c.id} className="flex items-start gap-3 p-3 hover:bg-muted">
                 <input
                   type="radio"
                   name="merge-target"
@@ -159,17 +159,17 @@ export function MergeSkuDialog({
                   />
                 )}
                 <div className="flex-1">
-                  <div className="font-medium">{c.full_sku_code}{isTarget && <span className="ml-2 text-xs text-blue-600 font-normal">(keep)</span>}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="font-medium">{c.full_sku_code}{isTarget && <span className="ml-2 text-xs text-primary font-normal">(keep)</span>}</div>
+                  <div className="text-xs text-muted-foreground">
                     {c.brand} {c.model_name} -- {c.quantity_in_stock ?? 0} in stock
-                    {configDiff && <span className="font-medium text-gray-700"> -- {configDiff}</span>}
+                    {configDiff && <span className="font-medium text-muted-foreground"> -- {configDiff}</span>}
                   </div>
-                  <div className="text-[11px] text-gray-400">{c.base_sku_code}</div>
+                  <div className="text-[11px] text-muted-foreground">{c.base_sku_code}</div>
                   {!isTarget && excludedIds.has(c.id) && (
-                    <div className="text-xs text-amber-600 mt-1">Excluded -- will stay as its own SKU, untouched.</div>
+                    <div className="text-xs text-warning mt-1">Excluded -- will stay as its own SKU, untouched.</div>
                   )}
                   {!isTarget && !excludedIds.has(c.id) && (
-                    <div className="text-xs text-gray-500 mt-1">
+                    <div className="text-xs text-muted-foreground mt-1">
                       {loadingPreview && !preview ? (
                         <span className="inline-flex items-center gap-1"><Loader2 className="size-3 animate-spin" /> Checking...</span>
                       ) : preview ? (
@@ -177,7 +177,7 @@ export function MergeSkuDialog({
                           Will move: {preview.quantity_in_stock ?? 0} stock, {preview.asset_count} asset(s)
                           {preview.invoiced_asset_count > 0 && `, ${preview.invoiced_asset_count} already invoiced`}
                           {preview.reorder_rule_count > 0 && `, ${preview.reorder_rule_count} reorder rule(s)`}
-                          {preview.category_mismatch && <span className="text-amber-600 font-medium"> -- different category, cannot merge</span>}
+                          {preview.category_mismatch && <span className="text-warning font-medium"> -- different category, cannot merge</span>}
                         </span>
                       ) : null}
                     </div>
@@ -207,7 +207,7 @@ export function MergeSkuDialog({
             type="button"
             onClick={handleMerge}
             disabled={submitting || sourceIds.length === 0 || previews?.some((p) => p.category_mismatch)}
-            className="px-4 py-2 bg-blue-600 text-white rounded disabled:opacity-50 inline-flex items-center gap-2"
+            className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50 inline-flex items-center gap-2"
           >
             {submitting && <Loader2 className="size-4 animate-spin" />}
             Merge {sourceIds.length > 0 ? `${sourceIds.length} ` : ''}into {target?.full_sku_code || '...'}

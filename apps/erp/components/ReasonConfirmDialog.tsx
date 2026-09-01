@@ -48,7 +48,7 @@ export function ReasonConfirmDialog({
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-destructive text-sm">{error}</div>}
           <div>
             <Label htmlFor="reason">Reason (required)</Label>
             <Textarea

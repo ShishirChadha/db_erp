@@ -13,10 +13,10 @@ import RequirePageAccess from "@/components/RequirePageAccess";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 
 const statusColors: Record<string, string> = {
-  draft: "bg-gray-500",
-  pending_approval: "bg-yellow-500",
-  approved: "bg-blue-500",
-  paid: "bg-green-500",
+  draft: "bg-muted-foreground",
+  pending_approval: "bg-warning",
+  approved: "bg-primary",
+  paid: "bg-success",
 };
 
 function ViewInvoicePage() {

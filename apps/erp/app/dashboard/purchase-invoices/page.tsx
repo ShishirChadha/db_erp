@@ -92,7 +92,7 @@ function PurchaseInvoicesPage() {
 
   if (error) {
     return (
-      <div className="p-4 text-red-600">
+      <div className="p-4 text-destructive">
         <p>Error: {error}</p>
         <button
           onClick={fetchInvoices}
@@ -110,7 +110,7 @@ function PurchaseInvoicesPage() {
         <h1 className="text-2xl font-bold">Purchase Invoices</h1>
         <button
           onClick={() => router.push('/dashboard/purchase-invoices/new')}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded"
         >
           + New Invoice
         </button>
@@ -118,7 +118,7 @@ function PurchaseInvoicesPage() {
 
       <div className="flex flex-wrap gap-4 mb-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Payment Status</label>
+          <label className="block text-xs text-muted-foreground mb-1">Payment Status</label>
           <select
             value={paymentStatusFilter}
             onChange={(e) => setPaymentStatusFilter(e.target.value)}
@@ -131,15 +131,15 @@ function PurchaseInvoicesPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
+          <label className="block text-xs text-muted-foreground mb-1">From</label>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border p-2 rounded" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
+          <label className="block text-xs text-muted-foreground mb-1">To</label>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border p-2 rounded" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Search Invoice #</label>
+          <label className="block text-xs text-muted-foreground mb-1">Search Invoice #</label>
           <input
             type="text"
             placeholder="Search invoice number..."
@@ -151,7 +151,7 @@ function PurchaseInvoicesPage() {
         {(paymentStatusFilter || search || dateFrom || dateTo) && (
           <button
             onClick={() => { setPaymentStatusFilter(''); setSearch(''); setDateFrom(''); setDateTo('') }}
-            className="text-sm text-gray-500 underline"
+            className="text-sm text-muted-foreground underline"
           >
             Clear filters
           </button>
@@ -159,7 +159,7 @@ function PurchaseInvoicesPage() {
       </div>
 
       {invoices.length === 0 ? (
-        <div className="text-gray-500">No purchase invoices found.</div>
+        <div className="text-muted-foreground">No purchase invoices found.</div>
       ) : (
         <table className="min-w-full border">
           <thead>
@@ -186,7 +186,7 @@ function PurchaseInvoicesPage() {
             {sortedInvoices.map((inv) => (
               <tr
                 key={inv.id}
-                className="cursor-pointer hover:bg-gray-50"
+                className="cursor-pointer hover:bg-muted"
                 onClick={() => router.push(`/dashboard/purchase-invoices/${inv.id}`)}
               >
                 <td className="border p-2">{inv.invoice_date}</td>

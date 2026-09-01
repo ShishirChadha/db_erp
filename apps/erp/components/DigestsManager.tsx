@@ -192,7 +192,7 @@ export default function DigestsManager() {
     setTestStatus((prev) => ({ ...prev, [key]: summary || 'Done' }))
   }
 
-  if (loading) return <p className="text-sm text-gray-500">Loading…</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
 
   const emailStatus = config?.email_enabled
     ? `Email on${config.email_from_override ? ` · ${config.email_from_override}` : ''}`
@@ -201,7 +201,7 @@ export default function DigestsManager() {
 
   return (
     <div className="max-w-3xl">
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Scheduled daily / fortnightly (1st &amp; 16th) / monthly insight nuggets, built on the same numbers as
         Dashboard → Reports. Click a section below to expand it.
       </p>
@@ -214,9 +214,9 @@ export default function DigestsManager() {
           <CardHeader className="flex flex-row items-center justify-between py-3">
             <div>
               <CardTitle className="text-sm">Channels</CardTitle>
-              <p className="text-xs text-gray-400 mt-0.5">{emailStatus} · {whatsappStatus}</p>
+              <p className="text-xs text-muted-foreground mt-0.5">{emailStatus} · {whatsappStatus}</p>
             </div>
-            {channelsOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+            {channelsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
           </CardHeader>
         </button>
         {channelsOpen && (
@@ -226,7 +226,7 @@ export default function DigestsManager() {
               <label className="text-sm">Email enabled (uses RESEND_API_KEY / RESEND_FROM_EMAIL from the server environment)</label>
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">From-address override (optional)</label>
+              <label className="block text-sm text-muted-foreground mb-1">From-address override (optional)</label>
               <input className="w-full border rounded-md h-8 px-2 text-sm" value={config?.email_from_override || ''}
                 onChange={(e) => setConfig((c) => c && { ...c, email_from_override: e.target.value })} placeholder="reports@yourdomain.com" />
             </div>
@@ -237,31 +237,31 @@ export default function DigestsManager() {
               <Checkbox checked={config?.whatsapp_enabled ?? false} onCheckedChange={(v) => setConfig((c) => c && { ...c, whatsapp_enabled: !!v })} />
               <label className="text-sm">WhatsApp enabled (Meta WhatsApp Cloud API)</label>
             </div>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-muted-foreground">
               Free tier: up to 5 test recipients, 250 conversations/day. Create a free Meta developer app + WhatsApp
               product, use a spare number (or Meta's free test number) as the sender, and get an approved template
               with body placeholders in this order: period label, revenue, units, collections, outstanding.
             </p>
             <div className="grid sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Phone Number ID</label>
+                <label className="block text-sm text-muted-foreground mb-1">Phone Number ID</label>
                 <input className="w-full border rounded-md h-8 px-2 text-sm" value={config?.whatsapp_phone_number_id || ''}
                   onChange={(e) => setConfig((c) => c && { ...c, whatsapp_phone_number_id: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Template name</label>
+                <label className="block text-sm text-muted-foreground mb-1">Template name</label>
                 <input className="w-full border rounded-md h-8 px-2 text-sm" value={config?.whatsapp_template_name || ''}
                   onChange={(e) => setConfig((c) => c && { ...c, whatsapp_template_name: e.target.value })} />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">
+                <label className="block text-sm text-muted-foreground mb-1">
                   Access token {config?.whatsapp_has_token && <Badge variant="secondary" className="ml-1 text-xs">stored</Badge>}
                 </label>
                 <input type="password" className="w-full border rounded-md h-8 px-2 text-sm" value={whatsappToken}
                   onChange={(e) => setWhatsappToken(e.target.value)} placeholder={config?.whatsapp_has_token ? 'Leave blank to keep current' : ''} />
               </div>
               <div>
-                <label className="block text-sm text-gray-600 mb-1">Graph API version</label>
+                <label className="block text-sm text-muted-foreground mb-1">Graph API version</label>
                 <input className="w-full border rounded-md h-8 px-2 text-sm" value={config?.whatsapp_graph_api_version || 'v21.0'}
                   onChange={(e) => setConfig((c) => c && { ...c, whatsapp_graph_api_version: e.target.value })} />
               </div>
@@ -270,20 +270,20 @@ export default function DigestsManager() {
             <hr />
 
             <div>
-              <label className="block text-sm text-gray-600 mb-1">Deployed URL (for the scheduled cron trigger)</label>
+              <label className="block text-sm text-muted-foreground mb-1">Deployed URL (for the scheduled cron trigger)</label>
               <input className="w-full border rounded-md h-8 px-2 text-sm" value={config?.dispatch_url || ''}
                 onChange={(e) => setConfig((c) => c && { ...c, dispatch_url: e.target.value })} placeholder="https://your-app.vercel.app/api/digests/run" />
-              <p className="text-xs text-gray-400 mt-1">Leave blank to keep automatic scheduling off — "Send now" still works without it.</p>
+              <p className="text-xs text-muted-foreground mt-1">Leave blank to keep automatic scheduling off — "Send now" still works without it.</p>
             </div>
             <div>
-              <label className="block text-sm text-gray-600 mb-1">
+              <label className="block text-sm text-muted-foreground mb-1">
                 Dispatch secret {config?.dispatch_has_secret && <Badge variant="secondary" className="ml-1 text-xs">stored</Badge>}
               </label>
               <input type="password" className="w-full border rounded-md h-8 px-2 text-sm" value={dispatchSecret}
                 onChange={(e) => setDispatchSecret(e.target.value)} placeholder={config?.dispatch_has_secret ? 'Leave blank to keep current' : 'A random shared secret'} />
             </div>
 
-            <button onClick={saveChannelConfig} disabled={saving} className="h-8 px-4 rounded-md bg-blue-600 text-white text-sm disabled:opacity-50">
+            <button onClick={saveChannelConfig} disabled={saving} className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50">
               Save Channels
             </button>
           </CardContent>
@@ -304,9 +304,9 @@ export default function DigestsManager() {
               <button className="w-full text-left" onClick={() => setExpandedProfileId(isExpanded ? null : profile.id)}>
                 <CardHeader className="flex flex-row items-center justify-between py-3">
                   <div className="flex items-center gap-2 min-w-0">
-                    {isExpanded ? <ChevronDown className="h-4 w-4 text-gray-400 shrink-0" /> : <ChevronRight className="h-4 w-4 text-gray-400 shrink-0" />}
+                    {isExpanded ? <ChevronDown className="h-4 w-4 text-muted-foreground shrink-0" /> : <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />}
                     <div>
-                      <CardTitle className="text-sm">{profile.full_name} <span className="text-xs font-normal text-gray-400 capitalize">({profile.role})</span></CardTitle>
+                      <CardTitle className="text-sm">{profile.full_name} <span className="text-xs font-normal text-muted-foreground capitalize">({profile.role})</span></CardTitle>
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
@@ -318,14 +318,14 @@ export default function DigestsManager() {
                           key={period}
                           onClick={(e) => e.stopPropagation()}
                           className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full border ${
-                            s.enabled ? 'border-green-300 bg-green-50 text-green-700' : 'border-gray-200 bg-gray-50 text-gray-400'
+                            s.enabled ? 'border-success/20 bg-success/15 text-success' : 'border-border bg-muted text-muted-foreground'
                           }`}
                         >
                           {PERIOD_LABEL[period]}{s.enabled ? ` · ${hourLabel(s.hour_local)}` : ''}
                           <button
                             title={`Send a test ${period} digest now`}
                             onClick={() => sendNow(idx)}
-                            className="ml-0.5 text-gray-400 hover:text-blue-600"
+                            className="ml-0.5 text-muted-foreground hover:text-primary"
                           >
                             <Send className="h-3 w-3" />
                           </button>
@@ -349,7 +349,7 @@ export default function DigestsManager() {
                       const availableBlocks = blockCatalog.filter((b) => b.roles.includes(profile.role))
                       return (
                         <TabsContent key={period} value={period} className="space-y-4">
-                          <p className="text-xs text-gray-500">{PERIOD_HINT[period]}</p>
+                          <p className="text-xs text-muted-foreground">{PERIOD_HINT[period]}</p>
                           <div className="flex flex-wrap items-center gap-4">
                             <label className="flex items-center gap-2 text-sm">
                               <Checkbox checked={s.enabled} onCheckedChange={(v) => updateSub(idx, { enabled: !!v })} />
@@ -359,23 +359,23 @@ export default function DigestsManager() {
                               Hour
                               <input type="number" min={0} max={23} value={s.hour_local} className="w-14 border rounded-md h-8 px-1 text-sm"
                                 onChange={(e) => updateSub(idx, { hour_local: parseInt(e.target.value, 10) || 0 })} />
-                              <span className="text-xs text-gray-400">({s.timezone})</span>
+                              <span className="text-xs text-muted-foreground">({s.timezone})</span>
                             </label>
                           </div>
 
                           <div className="flex flex-wrap gap-3">
                             <label className="flex items-center gap-1.5 text-sm border rounded-md px-2 py-1">
-                              <Mail className="h-3.5 w-3.5 text-gray-400" />
+                              <Mail className="h-3.5 w-3.5 text-muted-foreground" />
                               <Checkbox checked={s.channels.email} onCheckedChange={(v) => updateSub(idx, { channels: { ...s.channels, email: !!v } })} />
                               Email
                             </label>
                             <label className="flex items-center gap-1.5 text-sm border rounded-md px-2 py-1">
-                              <MessageCircle className="h-3.5 w-3.5 text-gray-400" />
+                              <MessageCircle className="h-3.5 w-3.5 text-muted-foreground" />
                               <Checkbox checked={s.channels.whatsapp} onCheckedChange={(v) => updateSub(idx, { channels: { ...s.channels, whatsapp: !!v } })} />
                               WhatsApp
                             </label>
                             <label className="flex items-center gap-1.5 text-sm border rounded-md px-2 py-1">
-                              <Bell className="h-3.5 w-3.5 text-gray-400" />
+                              <Bell className="h-3.5 w-3.5 text-muted-foreground" />
                               <Checkbox checked={s.channels.in_app} onCheckedChange={(v) => updateSub(idx, { channels: { ...s.channels, in_app: !!v } })} />
                               In-app
                             </label>
@@ -383,7 +383,7 @@ export default function DigestsManager() {
 
                           {s.channels.email && (
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">Email recipients (comma-separated; blank = this person's account email)</label>
+                              <label className="block text-xs text-muted-foreground mb-1">Email recipients (comma-separated; blank = this person's account email)</label>
                               <input value={s.email_override || ''} placeholder="a@x.com, b@y.com"
                                 className="w-full max-w-sm border rounded-md h-8 px-2 text-sm"
                                 onChange={(e) => updateSub(idx, { email_override: e.target.value })} />
@@ -391,7 +391,7 @@ export default function DigestsManager() {
                           )}
                           {s.channels.whatsapp && (
                             <div>
-                              <label className="block text-xs text-gray-500 mb-1">WhatsApp number (with country code, no +)</label>
+                              <label className="block text-xs text-muted-foreground mb-1">WhatsApp number (with country code, no +)</label>
                               <input value={s.whatsapp_number || ''} placeholder="919991111193"
                                 className="w-full max-w-sm border rounded-md h-8 px-2 text-sm"
                                 onChange={(e) => updateSub(idx, { whatsapp_number: e.target.value })} />
@@ -399,7 +399,7 @@ export default function DigestsManager() {
                           )}
 
                           <div>
-                            <p className="text-xs text-gray-500 mb-2">
+                            <p className="text-xs text-muted-foreground mb-2">
                               Sections in this digest ({s.blocks.length} of {availableBlocks.length} selected)
                             </p>
                             <div className="flex flex-wrap gap-x-5 gap-y-1.5">
@@ -419,13 +419,13 @@ export default function DigestsManager() {
                           </div>
 
                           <div className="flex items-center gap-3 pt-1">
-                            <button onClick={saveSubscriptions} disabled={saving} className="h-8 px-4 rounded-md bg-blue-600 text-white text-sm disabled:opacity-50">
+                            <button onClick={saveSubscriptions} disabled={saving} className="h-8 px-4 rounded-md bg-primary text-primary-foreground text-sm disabled:opacity-50">
                               Save
                             </button>
-                            <button onClick={() => sendNow(idx)} className="h-8 px-3 rounded-md border text-sm inline-flex items-center gap-1.5 text-gray-700 hover:bg-gray-50">
+                            <button onClick={() => sendNow(idx)} className="h-8 px-3 rounded-md border text-sm inline-flex items-center gap-1.5 text-muted-foreground hover:bg-muted">
                               <Send className="h-3.5 w-3.5" /> Send test now
                             </button>
-                            {testStatus[key] && <span className="text-xs text-gray-500">{testStatus[key]}</span>}
+                            {testStatus[key] && <span className="text-xs text-muted-foreground">{testStatus[key]}</span>}
                           </div>
                         </TabsContent>
                       )
@@ -442,22 +442,22 @@ export default function DigestsManager() {
       <Card>
         <button className="w-full text-left" onClick={() => setRunsOpen((v) => !v)}>
           <CardHeader className="flex flex-row items-center justify-between py-3">
-            <CardTitle className="text-sm">Recent Sends {runs.length > 0 && <span className="text-xs font-normal text-gray-400">({runs.length})</span>}</CardTitle>
-            {runsOpen ? <ChevronDown className="h-4 w-4 text-gray-400" /> : <ChevronRight className="h-4 w-4 text-gray-400" />}
+            <CardTitle className="text-sm">Recent Sends {runs.length > 0 && <span className="text-xs font-normal text-muted-foreground">({runs.length})</span>}</CardTitle>
+            {runsOpen ? <ChevronDown className="h-4 w-4 text-muted-foreground" /> : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
           </CardHeader>
         </button>
         {runsOpen && (
           <CardContent className="pt-0">
-            {runs.length === 0 ? <p className="text-sm text-gray-500">No digests sent yet.</p> : (
+            {runs.length === 0 ? <p className="text-sm text-muted-foreground">No digests sent yet.</p> : (
               <div className="overflow-x-auto rounded-md border">
                 <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
+                  <thead className="bg-muted">
                     <tr>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500">Sent</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500">Period</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500">Channel</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500">Status</th>
-                      <th className="text-left px-3 py-2 font-medium text-gray-500">Error</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Sent</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Period</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Channel</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Error</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -467,7 +467,7 @@ export default function DigestsManager() {
                         <td className="px-3 py-2 capitalize">{r.period} ({r.period_start})</td>
                         <td className="px-3 py-2 capitalize">{r.channel}</td>
                         <td className="px-3 py-2"><Badge variant={r.status === 'sent' ? 'secondary' : 'destructive'}>{r.status}</Badge></td>
-                        <td className="px-3 py-2 text-xs text-gray-500">{r.error_message || '—'}</td>
+                        <td className="px-3 py-2 text-xs text-muted-foreground">{r.error_message || '—'}</td>
                       </tr>
                     ))}
                   </tbody>

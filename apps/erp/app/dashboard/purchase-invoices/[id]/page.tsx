@@ -90,19 +90,19 @@ function InvoiceDetailPage() {
   }, [invoiceId])
 
   if (loading) return <div className="p-4">Loading invoice…</div>
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
-  if (!invoice) return <div className="p-4 text-red-600">Invoice not found.</div>
+  if (error) return <div className="p-4 text-destructive">Error: {error}</div>
+  if (!invoice) return <div className="p-4 text-destructive">Invoice not found.</div>
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">{invoice.invoice_number}</h1>
-        <span className="px-2 py-1 rounded bg-gray-100 text-gray-700 capitalize">
+        <span className="px-2 py-1 rounded bg-muted text-muted-foreground capitalize">
           {invoice.payment_status}
         </span>
       </div>
 
-      <div className="bg-white p-4 shadow rounded mb-6 grid grid-cols-2 gap-4">
+      <div className="bg-card p-4 shadow rounded mb-6 grid grid-cols-2 gap-4">
         <div>
           <p><strong>Invoice Date:</strong> {invoice.invoice_date}</p>
           <p><strong>Total Amount:</strong> ₹{invoice.total_amount?.toFixed(2)}</p>
@@ -156,12 +156,12 @@ function InvoiceDetailPage() {
                             <div key={i}>
                               <strong>{asset.asset_number}</strong>
                               {asset.serial_number ? ` (${asset.serial_number})` : ''}
-                              <span className="ml-1 text-gray-400">[{asset.status}]</span>
+                              <span className="ml-1 text-muted-foreground">[{asset.status}]</span>
                             </div>
                           ))}
                         </div>
                       ) : (
-                        <span className="text-gray-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                   </tr>
@@ -175,7 +175,7 @@ function InvoiceDetailPage() {
       {invoice.notes && (
         <div className="mb-4">
           <h3 className="font-semibold mb-1">Notes</h3>
-          <p className="text-gray-700">{invoice.notes}</p>
+          <p className="text-muted-foreground">{invoice.notes}</p>
         </div>
       )}
       {invoice.attachment_urls && invoice.attachment_urls.length > 0 && (
@@ -197,7 +197,7 @@ function InvoiceDetailPage() {
                 const { url } = await res.json()
                 window.open(url, '_blank')
               }}
-              className="text-blue-600 underline block text-left"
+              className="text-primary underline block text-left"
             >
               View Attachment {idx + 1}
             </button>
@@ -209,12 +209,12 @@ function InvoiceDetailPage() {
         <button
           onClick={() => handleDelete()}
           disabled={deleting}
-          className="bg-red-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
+          className="bg-destructive text-destructive-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
         >
           {deleting && <Loader2 className="size-4 animate-spin" />}
           Delete Invoice
         </button>
-        <button onClick={() => router.back()} disabled={deleting} className="bg-gray-200 px-4 py-2 rounded disabled:opacity-50">Back</button>
+        <button onClick={() => router.back()} disabled={deleting} className="bg-muted px-4 py-2 rounded disabled:opacity-50">Back</button>
       </div>
     </div>
   )

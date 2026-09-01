@@ -94,15 +94,15 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-blue-600 underline text-xs whitespace-nowrap">
+      <button onClick={() => setOpen(true)} className="text-primary underline text-xs whitespace-nowrap">
         Receive Stock
       </button>
     )
   }
 
   return (
-    <div className="border rounded p-2 bg-gray-50 space-y-1 w-56">
-      {err && <div className="text-red-600 text-xs">{err}</div>}
+    <div className="border rounded p-2 bg-muted space-y-1 w-56">
+      {err && <div className="text-destructive text-xs">{err}</div>}
       <input
         type="number"
         min={1}
@@ -111,7 +111,7 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         placeholder="Qty"
         className="border p-1 w-full rounded text-xs"
       />
-      <label className="block text-[10px] text-gray-500">
+      <label className="block text-[10px] text-muted-foreground">
         Purchase date
         <input
           type="date"
@@ -124,7 +124,7 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         <option value="">Vendor (optional)...</option>
         {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
       </select>
-      <button onClick={() => setAddVendorOpen(true)} className="text-blue-600 underline text-xs">
+      <button onClick={() => setAddVendorOpen(true)} className="text-primary underline text-xs">
         + Add new vendor
       </button>
       <input
@@ -146,8 +146,8 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         className="border p-1 w-full rounded text-xs"
       />
       <div className="flex gap-1">
-        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100 flex-1">Cancel</button>
-        <button onClick={() => receive()} disabled={busy} className="text-xs px-2 py-1 rounded bg-blue-600 text-white flex-1 inline-flex items-center justify-center gap-1">
+        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted flex-1">Cancel</button>
+        <button onClick={() => receive()} disabled={busy} className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground flex-1 inline-flex items-center justify-center gap-1">
           {busy && <Loader2 className="size-3 animate-spin" />}
           Receive
         </button>
@@ -189,15 +189,15 @@ function AdjustQuantityControl({ skuId, onDone }: { skuId: string; onDone: () =>
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-gray-600 underline text-xs whitespace-nowrap">
+      <button onClick={() => setOpen(true)} className="text-muted-foreground underline text-xs whitespace-nowrap">
         Correct Quantity
       </button>
     )
   }
 
   return (
-    <div className="border rounded p-2 bg-gray-50 space-y-1 w-56">
-      {err && <div className="text-red-600 text-xs">{err}</div>}
+    <div className="border rounded p-2 bg-muted space-y-1 w-56">
+      {err && <div className="text-destructive text-xs">{err}</div>}
       <input
         type="number"
         value={delta}
@@ -213,8 +213,8 @@ function AdjustQuantityControl({ skuId, onDone }: { skuId: string; onDone: () =>
         className="border p-1 w-full rounded text-xs"
       />
       <div className="flex gap-1">
-        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100 flex-1">Cancel</button>
-        <button onClick={() => adjust()} disabled={busy} className="text-xs px-2 py-1 rounded bg-blue-600 text-white flex-1 inline-flex items-center justify-center gap-1">
+        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted flex-1">Cancel</button>
+        <button onClick={() => adjust()} disabled={busy} className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground flex-1 inline-flex items-center justify-center gap-1">
           {busy && <Loader2 className="size-3 animate-spin" />}
           Apply
         </button>
@@ -238,7 +238,7 @@ function ArchiveControl({ sku, onDone }: { sku: AccessorySku; onDone: () => void
   })
 
   return (
-    <button onClick={() => toggle()} disabled={busy} className="text-gray-600 underline text-xs whitespace-nowrap inline-flex items-center gap-1">
+    <button onClick={() => toggle()} disabled={busy} className="text-muted-foreground underline text-xs whitespace-nowrap inline-flex items-center gap-1">
       {busy && <Loader2 className="size-3 animate-spin" />}
       {sku.status === 'active' ? 'Archive' : 'Reactivate'}
     </button>
@@ -331,7 +331,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
     return (
       <button
         onClick={() => setOpen(true)}
-        className="text-amber-700 underline text-xs whitespace-nowrap"
+        className="text-warning underline text-xs whitespace-nowrap"
         title="Units received but not yet on a purchase order -- independent of how many have since sold. This count only ever grows when stock is received, never shrinks when stock sells."
       >
         {backlogQty} received, awaiting PO -- Attach
@@ -340,11 +340,11 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
   }
 
   return (
-    <div className="border rounded p-2 bg-gray-50 space-y-1 w-64">
-      {err && <div className="text-red-600 text-xs">{err}</div>}
+    <div className="border rounded p-2 bg-muted space-y-1 w-64">
+      {err && <div className="text-destructive text-xs">{err}</div>}
       <div className="flex gap-1 text-xs">
-        <button onClick={() => setMode('new')} className={`flex-1 px-2 py-1 rounded ${mode === 'new' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>New PO</button>
-        <button onClick={() => setMode('existing')} className={`flex-1 px-2 py-1 rounded ${mode === 'existing' ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>Existing PO</button>
+        <button onClick={() => setMode('new')} className={`flex-1 px-2 py-1 rounded ${mode === 'new' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>New PO</button>
+        <button onClick={() => setMode('existing')} className={`flex-1 px-2 py-1 rounded ${mode === 'existing' ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>Existing PO</button>
       </div>
 
       {mode === 'new' ? (
@@ -358,9 +358,9 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
       ) : (
         <>
           {selectedPo ? (
-            <div className="flex items-center justify-between border rounded p-1 text-xs bg-white">
+            <div className="flex items-center justify-between border rounded p-1 text-xs bg-card">
               <span>{selectedPo.po_number}</span>
-              <button onClick={() => setSelectedPo(null)} className="text-gray-500 underline">Change</button>
+              <button onClick={() => setSelectedPo(null)} className="text-muted-foreground underline">Change</button>
             </div>
           ) : (
             <>
@@ -372,12 +372,12 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
                 className="border p-1 w-full rounded text-xs"
               />
               {poResults.length > 0 && (
-                <div className="border rounded max-h-28 overflow-y-auto bg-white">
+                <div className="border rounded max-h-28 overflow-y-auto bg-card">
                   {poResults.map((po) => (
                     <button
                       key={po.id}
                       onClick={() => { setSelectedPo({ id: po.id, po_number: po.po_number }); setPoResults([]) }}
-                      className="block w-full text-left px-2 py-1 text-xs hover:bg-gray-100 border-b last:border-b-0"
+                      className="block w-full text-left px-2 py-1 text-xs hover:bg-muted border-b last:border-b-0"
                     >
                       {po.po_number} — {po.vendor_name} ({po.po_status.replace(/_/g, ' ')})
                     </button>
@@ -390,7 +390,7 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
       )}
 
       <div>
-        <label className="text-xs text-gray-500">Quantity to attach (of {backlogQty} available)</label>
+        <label className="text-xs text-muted-foreground">Quantity to attach (of {backlogQty} available)</label>
         <input
           type="number"
           min={1}
@@ -405,8 +405,8 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
         <input type="number" value={gstPercentage} onChange={(e) => setGstPercentage(Number(e.target.value))} placeholder="GST%" className="border p-1 w-16 rounded text-xs" />
       </div>
       <div className="flex gap-1">
-        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-gray-100 flex-1">Cancel</button>
-        <button onClick={() => attach()} disabled={busy} className="text-xs px-2 py-1 rounded bg-blue-600 text-white flex-1 inline-flex items-center justify-center gap-1">
+        <button onClick={() => setOpen(false)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted flex-1">Cancel</button>
+        <button onClick={() => attach()} disabled={busy} className="text-xs px-2 py-1 rounded bg-primary text-primary-foreground flex-1 inline-flex items-center justify-center gap-1">
           {busy && <Loader2 className="size-3 animate-spin" />}
           Attach {quantity || ''}
         </button>
@@ -486,7 +486,7 @@ function AccessoriesPage() {
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Accessories</h1>
-        <button onClick={() => setModalOpen(true)} className="bg-blue-600 text-white px-4 py-2 rounded text-sm">
+        <button onClick={() => setModalOpen(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">
           + New Accessory Type
         </button>
       </div>
@@ -499,7 +499,7 @@ function AccessoriesPage() {
           className="border p-2 rounded"
         />
         {isOwner && (
-          <label className="flex items-center gap-2 text-sm text-gray-600">
+          <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <Checkbox checked={showArchived} onCheckedChange={(v) => setShowArchived(!!v)} />
             Show archived
           </label>
@@ -528,16 +528,16 @@ function AccessoriesPage() {
               </thead>
               <tbody className="divide-y">
                 {skus.length === 0 && (
-                  <tr><td colSpan={isOwner ? 10 : 8} className="p-4 text-center text-sm text-gray-400">No accessories found.</td></tr>
+                  <tr><td colSpan={isOwner ? 10 : 8} className="p-4 text-center text-sm text-muted-foreground">No accessories found.</td></tr>
                 )}
                 {skus.map((s, idx) => (
                   <tr key={s.id} className={s.status !== 'active' ? 'opacity-50' : ''}>
-                    <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                    <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                     <td className="p-2">
-                      <Link href={`/dashboard/accessories/${s.id}`} className="text-blue-600 underline">
+                      <Link href={`/dashboard/accessories/${s.id}`} className="text-primary underline">
                         {displayName(s)}
                       </Link>
-                      {s.status !== 'active' && <span className="ml-2 text-xs text-gray-400 capitalize">({s.status})</span>}
+                      {s.status !== 'active' && <span className="ml-2 text-xs text-muted-foreground capitalize">({s.status})</span>}
                     </td>
                     <td className="p-2">{s.category}</td>
                     <td className="p-2">{s.brand || '—'}</td>
@@ -548,10 +548,10 @@ function AccessoriesPage() {
                         <>
                           {lastEntries.get(s.id)!.vendor_name}
                           {lastEntries.get(s.id)!.unit_price != null && (
-                            <span className="text-gray-500"> @ ₹{lastEntries.get(s.id)!.unit_price!.toFixed(2)}</span>
+                            <span className="text-muted-foreground"> @ ₹{lastEntries.get(s.id)!.unit_price!.toFixed(2)}</span>
                           )}
                           {lastEntries.get(s.id)!.purchase_date && (
-                            <div className="text-gray-400">{lastEntries.get(s.id)!.purchase_date!.slice(0, 10)}</div>
+                            <div className="text-muted-foreground">{lastEntries.get(s.id)!.purchase_date!.slice(0, 10)}</div>
                           )}
                         </>
                       ) : '—'}
@@ -562,7 +562,7 @@ function AccessoriesPage() {
                       <div className="flex flex-col gap-1 items-start">
                         {s.status === 'active' && <ReceiveStockControl skuId={s.id} onDone={fetchAll} />}
                         {s.status === 'active' && s.quantity_in_stock > 0 && (
-                          <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-green-700 underline text-xs">
+                          <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-success underline text-xs">
                             Sell
                           </button>
                         )}

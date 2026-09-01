@@ -16,7 +16,7 @@ function sanitizePath(path: string) {
   return path.split('/').map(sanitizeSegment).filter(Boolean).join('/');
 }
 
-const ALLOWED_BUCKETS = ['purchase-files', 'product-images', 'documents'] as const;
+const ALLOWED_BUCKETS = ['purchase-files', 'product-images', 'documents', 'expense-receipts'] as const;
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -43,6 +43,14 @@ export async function POST(req: NextRequest) {
     if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
+  // expense-receipts holds attachments on expense records -- gated by the same
+  // 'expenses' edit grant as the rest of the module (receipts aren't cost/vendor/
+  // margin data, unlike documents/product-images above).
+  if (bucket === 'expense-receipts') {
+    const sessionUser = await getCookieSessionUser();
+    if (!canEditPage(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  }
+
   const timestamp = Date.now();
   const ext = fileName.split('.').pop();
   // `folder` is the generic form (e.g. "purchase-invoices/PO-2026-001"); `assetNumber`
@@ -50,12 +58,12 @@ export async function POST(req: NextRequest) {
   const prefix = folder ? sanitizePath(folder) : `purchases/${sanitizeSegment(assetNumber)}`;
   const key = `${prefix}/${sanitizeSegment(fileType)}-${timestamp}.${ext}`;
 
-  // product-images and documents have no storage.objects RLS policy for writes --
-  // the canEditPage/isOwner check above is the real gate, so the signed URL itself
-  // is minted via the service-role client for those buckets. purchase-files keeps
-  // using the cookie-session client unchanged (it has its own authenticated-role
-  // RLS policy).
-  const storageClient = bucket === 'product-images' || bucket === 'documents' ? supabaseAdmin.storage : supabase.storage;
+  // product-images, documents, and expense-receipts have no storage.objects RLS
+  // policy for writes -- the canEditPage/isOwner check above is the real gate, so
+  // the signed URL itself is minted via the service-role client for those buckets.
+  // purchase-files keeps using the cookie-session client unchanged (it has its own
+  // authenticated-role RLS policy).
+  const storageClient = ['product-images', 'documents', 'expense-receipts'].includes(bucket) ? supabaseAdmin.storage : supabase.storage;
   const { data, error } = await storageClient
     .from(bucket)
     .createSignedUploadUrl(key);

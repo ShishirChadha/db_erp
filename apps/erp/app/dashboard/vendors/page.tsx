@@ -262,17 +262,17 @@ function VendorsPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Vendors</h1>
-          <p className="text-sm text-gray-500 mt-1">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
+          <h1 className="text-2xl font-semibold text-foreground">Vendors</h1>
+          <p className="text-sm text-muted-foreground mt-1">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700" onClick={() => { resetForm(); setShowForm(true) }}>
+        <Button className="bg-primary hover:bg-primary/90" onClick={() => { resetForm(); setShowForm(true) }}>
           <Plus className="h-4 w-4 mr-2" />Add Vendor
         </Button>
       </div>
 
       <div className="flex gap-4 mb-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by company, SPOC, owner, phone, GST, email..."
             className="pl-9"
@@ -291,8 +291,8 @@ function VendorsPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-right px-4 py-3 font-medium text-gray-600 w-10">#</th>
+                <tr className="border-b border-border bg-muted">
+                  <th className="text-right px-4 py-3 font-medium text-muted-foreground w-10">#</th>
                   {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Accessories', 'Actions'] as const).map((label, i) => {
                     const sortableField: Partial<Record<typeof label, VendorSortField>> = {
                       Company: 'company_name',
@@ -311,7 +311,7 @@ function VendorsPage() {
                           newWidths[i] = Math.max(60, newWidth)
                           setColWidths(newWidths)
                         }}
-                        className="text-left px-4 py-3 font-medium text-gray-600"
+                        className="text-left px-4 py-3 font-medium text-muted-foreground"
                         onSort={field ? () => toggleSort(field) : undefined}
                         sortIndicator={field ? sortIndicatorFor(field) : undefined}
                       />
@@ -322,42 +322,42 @@ function VendorsPage() {
               <tbody>
                 {vendors.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
                       No vendors found. Add your first vendor.
                     </td>
                   </tr>
                 ) : (
                   vendors.map((v, idx) => (
-                    <tr key={v.id} className={`border-b hover:bg-gray-50 ${v.is_deleted ? 'opacity-50' : ''}`}>
-  <td className="px-4 py-3 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-  <td className="px-4 py-3 font-medium text-gray-900">{v.company_name}</td>
-  <td className="px-4 py-3 text-gray-700">{v.spoc_name || '—'}</td>
-  <td className="px-4 py-3 text-gray-700">
+                    <tr key={v.id} className={`border-b hover:bg-muted ${v.is_deleted ? 'opacity-50' : ''}`}>
+  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+  <td className="px-4 py-3 font-medium text-foreground">{v.company_name}</td>
+  <td className="px-4 py-3 text-muted-foreground">{v.spoc_name || '—'}</td>
+  <td className="px-4 py-3 text-muted-foreground">
     {v.has_gst ? (
       <span className="block truncate max-w-full" title={v.gst_number}>
         {v.gst_number}
       </span>
     ) : 'No'}
   </td>
-  <td className="px-4 py-3 text-gray-700">{v.phone || '—'}</td>
-  <td className="px-4 py-3 text-gray-700">{v.city || '—'}</td>
-  <td className="px-4 py-3 text-gray-700 max-w-xs truncate">{v.remarks || '—'}</td>
-  <td className="px-4 py-3 text-gray-700" title="Whether employees can select this vendor when receiving accessory stock">
+  <td className="px-4 py-3 text-muted-foreground">{v.phone || '—'}</td>
+  <td className="px-4 py-3 text-muted-foreground">{v.city || '—'}</td>
+  <td className="px-4 py-3 text-muted-foreground max-w-xs truncate">{v.remarks || '—'}</td>
+  <td className="px-4 py-3 text-muted-foreground" title="Whether employees can select this vendor when receiving accessory stock">
     {v.supplies_accessories ? '✓' : '—'}
   </td>
   <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-    <button onClick={() => setViewItem(v)} title="View" className="text-gray-500 hover:text-gray-900 inline-flex align-middle p-1">
+    <button onClick={() => setViewItem(v)} title="View" className="text-muted-foreground hover:text-foreground inline-flex align-middle p-1">
       <Eye className="h-4 w-4" />
     </button>
     {!v.is_deleted ? (
       <>
-        <button onClick={() => handleEdit(v)} title="Edit" className="text-gray-500 hover:text-blue-600 inline-flex align-middle p-1">
+        <button onClick={() => handleEdit(v)} title="Edit" className="text-muted-foreground hover:text-primary inline-flex align-middle p-1">
           <Pencil className="h-4 w-4" />
         </button>
         <button
           onClick={() => { setVendorToDelete(v); setDeleteDialogOpen(true) }}
           title="Delete"
-          className="text-gray-500 hover:text-red-600 inline-flex align-middle p-1"
+          className="text-muted-foreground hover:text-destructive inline-flex align-middle p-1"
         >
           <Trash2 className="h-4 w-4" />
         </button>
@@ -367,7 +367,7 @@ function VendorsPage() {
         onClick={() => handleRestore(v)}
         disabled={restoringId === v.id}
         title="Restore"
-        className="text-gray-500 hover:text-green-600 inline-flex align-middle p-1 disabled:opacity-50"
+        className="text-muted-foreground hover:text-success inline-flex align-middle p-1 disabled:opacity-50"
       >
         {restoringId === v.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
       </button>
@@ -398,11 +398,11 @@ function VendorsPage() {
           />
 
           {error && (
-            <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">{error}</div>
+            <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg mt-2">{error}</div>
           )}
           <div className="flex gap-3 mt-4">
             <Button
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1 bg-primary hover:bg-primary/90"
               onClick={() => handleSubmit()}
               loading={loading}
             >
@@ -440,8 +440,8 @@ function VendorsPage() {
                 ['Remarks', viewItem.remarks || '—'],
               ].map(([label, value]) => (
                 <div key={label} className={label === 'Address' ? 'col-span-2' : ''}>
-                  <p className="text-gray-400 text-xs">{label}</p>
-                  <p className="font-medium text-gray-900 mt-0.5 break-words">{value || '—'}</p>
+                  <p className="text-muted-foreground text-xs">{label}</p>
+                  <p className="font-medium text-foreground mt-0.5 break-words">{value || '—'}</p>
                 </div>
               ))}
             </div>

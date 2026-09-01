@@ -9,14 +9,18 @@ sources:
   - apps/erp/app/api/activities/**
   - apps/erp/lib/notifications.ts
   - apps/erp/lib/activities.ts
-updated: 2026-08-29
+updated: 2026-09-01
 ---
 
 ## `activities` is the single reusable task/collaboration model
 
 Any module that needs a "someone should do X" item creates an `activities` row
 (optionally linked to a business record via `related_type`/`related_id`) —
-never a new per-module task table. Supports assignment, shared visibility,
+never a new per-module task table. `related_type` gained `recurring_expense`
+on 2026-09-01: `scan_recurring_expenses()` (a `pg_cron` job, see **expenses**)
+creates one of these when a recurring-expense rule comes due, linking
+`related_id` to the rule, not to a real `expenses` row (which doesn't exist
+until someone actually logs it). Supports assignment, shared visibility,
 comments with @mentions, checklists, attachments, reactions/pinning, and
 `pg_cron`-driven due-soon/overdue reminders (in-app only, not emailed).
 

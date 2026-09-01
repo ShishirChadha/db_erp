@@ -166,7 +166,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
           <div className="border rounded p-3 space-y-2">
             <div className="flex justify-between items-center">
               <label className="text-sm font-medium">Line Items</label>
-              <button type="button" onClick={addCustomLine} className="text-xs text-blue-600 underline">+ Custom line</button>
+              <button type="button" onClick={addCustomLine} className="text-xs text-primary underline">+ Custom line</button>
             </div>
             <div className="relative">
               <input
@@ -176,11 +176,11 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
                 className="border p-2 w-full rounded text-sm"
               />
               {skuResults.length > 0 && (
-                <ul className="border rounded mt-1 max-h-40 overflow-y-auto absolute bg-white w-full z-10 shadow">
+                <ul className="border rounded mt-1 max-h-40 overflow-y-auto absolute bg-card w-full z-10 shadow">
                   {skuResults.map((sku) => (
-                    <li key={sku.id} onClick={() => addSkuLine(sku)} className="p-2 hover:bg-gray-100 cursor-pointer border-b last:border-b-0 text-sm">
+                    <li key={sku.id} onClick={() => addSkuLine(sku)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
                       <div className="font-medium">{sku.full_sku_code}</div>
-                      <div className="text-xs text-gray-500">{sku.sku_description} — {sku.quantity_in_stock} in stock</div>
+                      <div className="text-xs text-muted-foreground">{sku.sku_description} — {sku.quantity_in_stock} in stock</div>
                     </li>
                   ))}
                 </ul>
@@ -190,7 +190,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
             {items.length > 0 && (
               <table className="w-full text-xs mt-2">
                 <thead>
-                  <tr className="text-left text-gray-500">
+                  <tr className="text-left text-muted-foreground">
                     <th className="pb-1">Description</th>
                     <th className="pb-1 w-16">Qty</th>
                     <th className="pb-1 w-24">Rate</th>
@@ -207,7 +207,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
                       <td className="py-1 pr-2"><input type="number" value={it.quantity} onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
                       <td className="py-1 pr-2"><input type="number" value={it.rate} onChange={(e) => updateItem(idx, 'rate', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
                       <td className="py-1 pr-2"><input type="number" value={it.gst_rate} onChange={(e) => updateItem(idx, 'gst_rate', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
-                      <td className="py-1"><button onClick={() => removeItem(idx)} className="text-red-500">✕</button></td>
+                      <td className="py-1"><button onClick={() => removeItem(idx)} className="text-destructive">✕</button></td>
                     </tr>
                   ))}
                 </tbody>
@@ -232,7 +232,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: DocType; onCrea
             </div>
           </div>
 
-          {error && <p className="text-red-600 text-sm">{error}</p>}
+          {error && <p className="text-destructive text-sm">{error}</p>}
 
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
@@ -301,17 +301,17 @@ function ViewDocumentDialog({ docId, onClose, onChanged }: { docId: string; onCl
         <div className="space-y-4">
           <div className="flex flex-wrap gap-2 items-center text-sm">
             <StatusBadge tone={toneFor(SALES_DOCUMENT_STATUS_TONES, doc.status)}>{doc.status}</StatusBadge>
-            {doc.status === 'draft' && <button onClick={() => changeStatus('sent')} disabled={busy} className="text-blue-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Sent</button>}
-            {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('accepted')} disabled={busy} className="text-green-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Accepted</button>}
-            {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('rejected')} disabled={busy} className="text-red-600 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Rejected</button>}
-            {doc.status !== 'void' && <button onClick={() => changeStatus('void')} disabled={busy} className="text-gray-500 underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Void</button>}
-            <button onClick={() => downloadPdf()} disabled={busy} className="text-gray-700 underline text-xs ml-auto inline-flex items-center gap-1">{downloading && <Loader2 className="size-3 animate-spin" />}Download PDF</button>
-            <button onClick={() => emailDoc()} disabled={busy} className="text-gray-700 underline text-xs inline-flex items-center gap-1">{emailing && <Loader2 className="size-3 animate-spin" />}Email</button>
+            {doc.status === 'draft' && <button onClick={() => changeStatus('sent')} disabled={busy} className="text-primary underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Sent</button>}
+            {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('accepted')} disabled={busy} className="text-success underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Accepted</button>}
+            {['draft', 'sent'].includes(doc.status) && <button onClick={() => changeStatus('rejected')} disabled={busy} className="text-destructive underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Mark Rejected</button>}
+            {doc.status !== 'void' && <button onClick={() => changeStatus('void')} disabled={busy} className="text-muted-foreground underline text-xs inline-flex items-center gap-1">{changingStatus && <Loader2 className="size-3 animate-spin" />}Void</button>}
+            <button onClick={() => downloadPdf()} disabled={busy} className="text-muted-foreground underline text-xs ml-auto inline-flex items-center gap-1">{downloading && <Loader2 className="size-3 animate-spin" />}Download PDF</button>
+            <button onClick={() => emailDoc()} disabled={busy} className="text-muted-foreground underline text-xs inline-flex items-center gap-1">{emailing && <Loader2 className="size-3 animate-spin" />}Email</button>
           </div>
 
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-500 border-b">
+              <tr className="text-left text-muted-foreground border-b">
                 <th className="py-1">Description</th>
                 <th className="py-1">Qty</th>
                 <th className="py-1">Rate</th>
@@ -328,9 +328,9 @@ function ViewDocumentDialog({ docId, onClose, onChanged }: { docId: string; onCl
                   <td className="py-1.5">₹{Number(item.amount).toFixed(2)}</td>
                   <td className="py-1.5">
                     {item.converted ? (
-                      <span className="text-green-600 text-xs">✓ Converted</span>
+                      <span className="text-success text-xs">✓ Converted</span>
                     ) : (
-                      <button onClick={() => convertLine(item)} className="text-amber-700 underline text-xs">Convert →</button>
+                      <button onClick={() => convertLine(item)} className="text-warning underline text-xs">Convert →</button>
                     )}
                   </td>
                 </tr>
@@ -379,14 +379,14 @@ function QuotationsPage() {
   return (
     <div className="p-4 max-w-5xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">Quotations & Proforma Invoices</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Non-committal price offers and pre-sale documents. Converting a line hands off to the normal Sell flow — a real sale and (later) a real GST invoice are always created there, never here.
       </p>
 
       <div className="flex justify-between items-center mb-4">
         <div className="flex border rounded overflow-hidden w-fit">
-          <button onClick={() => setDocType('quotation')} className={`px-4 py-2 text-sm font-medium ${docType === 'quotation' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>Quotations</button>
-          <button onClick={() => setDocType('proforma')} className={`px-4 py-2 text-sm font-medium ${docType === 'proforma' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600'}`}>Proforma Invoices</button>
+          <button onClick={() => setDocType('quotation')} className={`px-4 py-2 text-sm font-medium ${docType === 'quotation' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Quotations</button>
+          <button onClick={() => setDocType('proforma')} className={`px-4 py-2 text-sm font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
         </div>
         <CreateDocumentDialog docType={docType} onCreated={fetchDocs} />
       </div>
@@ -413,7 +413,7 @@ function QuotationsPage() {
                 const converted = d.sales_document_items.filter((i) => i.converted).length
                 return (
                   <tr key={d.id}>
-                    <td className="border p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                    <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                     <td className="border p-2">{d.document_date}</td>
                     <td className="border p-2 font-mono text-xs">{d.document_number}</td>
                     <td className="border p-2">{d.customer_name}</td>
@@ -421,12 +421,12 @@ function QuotationsPage() {
                     <td className="border p-2 text-right tabular-nums">₹{Number(d.grand_total).toFixed(2)}</td>
                     <td className="border p-2"><StatusBadge tone={toneFor(SALES_DOCUMENT_STATUS_TONES, d.status)}>{d.status}</StatusBadge></td>
                     <td className="border p-2 text-center tabular-nums">{converted}/{total}</td>
-                    <td className="border p-2"><button onClick={() => setViewingId(d.id)} className="text-blue-600 underline text-xs">View</button></td>
+                    <td className="border p-2"><button onClick={() => setViewingId(d.id)} className="text-primary underline text-xs">View</button></td>
                   </tr>
                 )
               })}
               {docs.length === 0 && (
-                <tr><td colSpan={9} className="border p-4 text-center text-gray-400">No {docType}s yet.</td></tr>
+                <tr><td colSpan={9} className="border p-4 text-center text-muted-foreground">No {docType}s yet.</td></tr>
               )}
             </tbody>
           </table>

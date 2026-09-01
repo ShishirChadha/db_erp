@@ -43,18 +43,18 @@ export default function RequirePageAccess({ pageKey, children }: { pageKey: stri
   }, [loading, allowed, fallbackPath, router])
 
   if (loading) {
-    return <div className="p-4 text-sm text-gray-500">Loading...</div>
+    return <div className="p-4 text-sm text-muted-foreground">Loading...</div>
   }
 
   if (!allowed) {
     if (!fallbackPath) {
       return (
-        <div className="p-4 text-sm text-gray-500">
+        <div className="p-4 text-sm text-muted-foreground">
           Your account doesn't have access to any pages yet. Contact the owner to get set up.
         </div>
       )
     }
-    return <div className="p-4 text-sm text-gray-500">Redirecting...</div>
+    return <div className="p-4 text-sm text-muted-foreground">Redirecting...</div>
   }
 
   return <>{children}</>

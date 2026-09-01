@@ -89,7 +89,7 @@ export function AddVendorPaymentDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {err && <div className="text-red-600 text-sm">{err}</div>}
+          {err && <div className="text-destructive text-sm">{err}</div>}
           <div>
             <Label>Amount Paid (₹)</Label>
             <Input

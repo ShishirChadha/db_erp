@@ -50,11 +50,11 @@ export default function FieldRedactionManager() {
     return acc
   }, {})
 
-  if (loading) return <p className="text-sm text-gray-400">Loading...</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Choose which fields are hidden from Employee and Manager roles. The Owner always sees everything.
         Unchecking a box here reveals that field in the corresponding API responses immediately.
       </p>

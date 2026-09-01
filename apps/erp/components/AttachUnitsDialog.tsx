@@ -226,7 +226,7 @@ export function AttachUnitsDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-destructive text-sm">{error}</div>}
 
           <div>
             <Label>Search by serial number, model, or description</Label>
@@ -234,27 +234,27 @@ export function AttachUnitsDialog({
           </div>
 
           <div className="border rounded max-h-48 overflow-y-auto">
-            {loading && <div className="p-2 text-sm text-gray-500">Searching...</div>}
+            {loading && <div className="p-2 text-sm text-muted-foreground">Searching...</div>}
             {!loading && results.length === 0 && filteredAccessoryBacklog.length === 0 && (
-              <div className="p-2 text-sm text-gray-500">
+              <div className="p-2 text-sm text-muted-foreground">
                 {search ? 'No eligible units found (already on a PO, or not yet in stock).' : 'Type to search.'}
               </div>
             )}
             {results.map((u) => (
-              <label key={u.id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer text-sm">
+              <label key={u.id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-muted cursor-pointer text-sm">
                 <Checkbox checked={selected.has(u.id)} onCheckedChange={() => toggle(u)} />
                 <div>
                   <div className="font-medium">{u.serial_number || '(no serial)'} — {u.sku_code}</div>
-                  <div className="text-xs text-gray-500">{u.description}</div>
+                  <div className="text-xs text-muted-foreground">{u.description}</div>
                 </div>
               </label>
             ))}
             {filteredAccessoryBacklog.map((b) => (
-              <label key={b.sku_id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer text-sm">
+              <label key={b.sku_id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-muted cursor-pointer text-sm">
                 <Checkbox checked={selectedAccessorySkuIds.has(b.sku_id)} onCheckedChange={() => toggleAccessory(b.sku_id)} />
                 <div>
-                  <div className="font-medium">{b.quantity} × {b.full_sku_code} <span className="text-xs text-amber-700">(accessory backlog)</span></div>
-                  <div className="text-xs text-gray-500">{b.sku_description}</div>
+                  <div className="font-medium">{b.quantity} × {b.full_sku_code} <span className="text-xs text-warning">(accessory backlog)</span></div>
+                  <div className="text-xs text-muted-foreground">{b.sku_description}</div>
                 </div>
               </label>
             ))}

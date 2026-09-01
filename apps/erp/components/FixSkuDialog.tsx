@@ -196,10 +196,10 @@ export function FixSkuDialog({
   return (
     <SimpleModal isOpen onClose={onClose} title="Change SKU">
       <div>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-muted-foreground mb-3">
           Search for the correct SKU to reassign this unit to, or create a new one.
         </p>
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {error && <div className="text-destructive text-sm mb-2">{error}</div>}
         <input
           type="text"
           autoFocus
@@ -216,12 +216,12 @@ export function FixSkuDialog({
                   type="button"
                   disabled={submitting}
                   onClick={() => reassignTo(sku)}
-                  className="w-full text-left p-2 hover:bg-gray-50 disabled:opacity-50 flex items-center gap-2"
+                  className="w-full text-left p-2 hover:bg-muted disabled:opacity-50 flex items-center gap-2"
                 >
                   {submitting && <Loader2 className="size-4 animate-spin shrink-0" />}
                   <div>
                     <div className="font-medium">{sku.full_sku_code}</div>
-                    <div className="text-xs text-gray-500">{sku.sku_description}</div>
+                    <div className="text-xs text-muted-foreground">{sku.sku_description}</div>
                   </div>
                 </button>
               </li>
@@ -229,19 +229,19 @@ export function FixSkuDialog({
           </ul>
         )}
         {search.trim() && options.length === 0 && (
-          <p className="text-sm text-gray-500 mb-3">No matching SKU found.</p>
+          <p className="text-sm text-muted-foreground mb-3">No matching SKU found.</p>
         )}
         <button
           type="button"
           onClick={() => setShowCreateSku(true)}
-          className="text-blue-600 underline text-sm mb-3"
+          className="text-primary underline text-sm mb-3"
         >
           + Create new SKU
         </button>
 
         {isOwner && (
           <div className="border-t pt-3 mt-1 space-y-2">
-            <p className="text-xs text-gray-500">Optional -- record the cost of this upgrade (e.g. added RAM/SSD):</p>
+            <p className="text-xs text-muted-foreground">Optional -- record the cost of this upgrade (e.g. added RAM/SSD):</p>
             <div>
               <label className="block text-xs font-medium">Additional cost (₹)</label>
               <input
@@ -287,14 +287,14 @@ function ComponentStockFollowUp({
   return (
     <SimpleModal isOpen onClose={onDone} title="Change SKU">
       <div className="space-y-3">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Reassigned to <span className="font-medium">{newSkuLabel}</span>. This changed:
         </p>
         {changes.map((c) => (
           <ComponentStockRow key={c.field} change={c} />
         ))}
         <div className="flex justify-end pt-2">
-          <button type="button" onClick={onDone} className="px-4 py-2 bg-blue-600 text-white rounded">Done</button>
+          <button type="button" onClick={onDone} className="px-4 py-2 bg-primary text-primary-foreground rounded">Done</button>
         </div>
       </div>
     </SimpleModal>
@@ -350,16 +350,16 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
   }
 
   if (done) {
-    return <div className="border rounded p-2 text-sm text-green-600">✓ {label}: stock updated.</div>
+    return <div className="border rounded p-2 text-sm text-success">✓ {label}: stock updated.</div>
   }
   if (skipped) {
-    return <div className="border rounded p-2 text-sm text-gray-400">{label}: skipped.</div>
+    return <div className="border rounded p-2 text-sm text-muted-foreground">{label}: skipped.</div>
   }
 
   return (
     <div className="border rounded p-2 space-y-2">
       <p className="text-sm">{message}</p>
-      {err && <p className="text-xs text-red-600">{err}</p>}
+      {err && <p className="text-xs text-destructive">{err}</p>}
       {!selected ? (
         <input
           value={search}
@@ -377,10 +377,10 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
             onChange={(e) => setQty(e.target.value)}
             className="border p-1 w-16 rounded text-sm text-right"
           />
-          <button type="button" disabled={submitting} onClick={submit} className="text-xs bg-blue-600 text-white px-2 py-1 rounded disabled:opacity-50 shrink-0">
+          <button type="button" disabled={submitting} onClick={submit} className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded disabled:opacity-50 shrink-0">
             {submitting ? '...' : isDowngrade ? 'Receive to Stock' : 'Deduct from Stock'}
           </button>
-          <button type="button" onClick={() => setSelected(null)} className="text-xs text-gray-500 underline shrink-0">Change</button>
+          <button type="button" onClick={() => setSelected(null)} className="text-xs text-muted-foreground underline shrink-0">Change</button>
         </div>
       )}
       {!selected && options.length > 0 && (
@@ -389,7 +389,7 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
             <li
               key={o.id}
               onClick={() => { setSelected(o); setSearch(''); setOptions([]) }}
-              className="p-2 hover:bg-gray-50 cursor-pointer"
+              className="p-2 hover:bg-muted cursor-pointer"
             >
               {o.full_sku_code} — {o.sku_description}
             </li>
@@ -397,7 +397,7 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
         </ul>
       )}
       {!selected && (
-        <button type="button" onClick={() => setSkipped(true)} className="text-xs text-gray-500 underline">Skip</button>
+        <button type="button" onClick={() => setSkipped(true)} className="text-xs text-muted-foreground underline">Skip</button>
       )}
     </div>
   )

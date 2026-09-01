@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const body = await req.json()
   const {
     expense_date, description, type, from_location, to_location, amount, remarks,
-    is_deleted, deleted_remarks, payment_account, vendor_id,
+    is_deleted, deleted_remarks, payment_account, vendor_id, attachments, paid_by_staff,
   } = body
 
   const updates: Record<string, any> = {}
@@ -32,6 +32,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.entity_key = payment_account ? String(payment_account).toLowerCase() : null
   }
   if (vendor_id !== undefined) updates.vendor_id = vendor_id
+  if (attachments !== undefined) updates.attachments = Array.isArray(attachments) ? attachments : []
+  if (paid_by_staff !== undefined) updates.paid_by_staff = paid_by_staff || null
   if (is_deleted !== undefined) {
     updates.is_deleted = !!is_deleted
     updates.deleted_remarks = is_deleted ? (deleted_remarks || null) : null

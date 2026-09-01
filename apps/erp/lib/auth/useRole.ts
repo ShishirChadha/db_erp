@@ -5,10 +5,18 @@ import { createClient } from '@/lib/supabase/client'
 
 export type Role = 'owner' | 'manager' | 'employee'
 
+export interface UiPreferences {
+  theme?: string
+  hiddenItems?: string[]
+  pinnedItems?: string[]
+  groupOrder?: string[]
+}
+
 export function useRole() {
   const [role, setRole] = useState<Role | null>(null)
   const [allowedPages, setAllowedPages] = useState<string[]>([])
   const [pageEditKeys, setPageEditKeys] = useState<string[]>([])
+  const [uiPreferences, setUiPreferences] = useState<UiPreferences>({})
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -18,12 +26,12 @@ export function useRole() {
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) {
-        if (!cancelled) { setRole(null); setAllowedPages([]); setPageEditKeys([]); setLoading(false) }
+        if (!cancelled) { setRole(null); setAllowedPages([]); setPageEditKeys([]); setUiPreferences({}); setLoading(false) }
         return
       }
       const { data: profile } = await supabase
         .from('profiles')
-        .select('role, is_active, allowed_pages')
+        .select('role, is_active, allowed_pages, ui_preferences')
         .eq('id', user.id)
         .single()
 
@@ -39,6 +47,7 @@ export function useRole() {
         setRole(profile?.is_active ? (profile.role as Role) : null)
         setAllowedPages(profile?.is_active ? (profile.allowed_pages || []) : [])
         setPageEditKeys(profile?.is_active ? (editRows || []).map(r => r.page_key) : [])
+        setUiPreferences(profile?.is_active ? (profile.ui_preferences || {}) : {})
         setLoading(false)
       }
     }
@@ -56,5 +65,5 @@ export function useRole() {
   }
   const canEditPage = (key: string) => isOwner || pageEditKeys.includes(key)
 
-  return { role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, hasPageAccess, canEditPage }
+  return { role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, uiPreferences, hasPageAccess, canEditPage }
 }

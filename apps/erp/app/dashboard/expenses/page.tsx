@@ -35,6 +35,9 @@ import AddExpenseDialog from "@/components/AddExpenseDialog";
 import BulkAddDialog from "@/components/BulkAddDialog";
 import EditExpenseDialog from "@/components/EditExpenseDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
+import RecurringExpensesManager from "@/components/RecurringExpensesManager";
+import StaffReimbursementsManager from "@/components/StaffReimbursementsManager";
+import { Badge } from "@/components/ui/badge";
 import { useRole } from "@/lib/auth/useRole";
 import { useCustomOptions } from "@/lib/useCustomOptions";
 
@@ -114,6 +117,8 @@ function ExpensesPage() {
         <h1 className="text-2xl font-bold">Expenses</h1>
         {canEdit && (
           <div className="space-x-2">
+            {isOwner && <RecurringExpensesManager />}
+            <StaffReimbursementsManager onSettled={fetchExpenses} />
             <AddExpenseDialog onAdd={fetchExpenses} />
             <BulkAddDialog
               tableName="expenses"
@@ -125,8 +130,12 @@ function ExpensesPage() {
                 from_location: row.from_location,
                 to_location: row.to_location,
                 amount: row.amount ? parseFloat(row.amount) : null,
-                remarks: row.remarks,
                 is_deleted: false,
+                payment_account: row.payment_account || null,
+                entity_key: row.payment_account ? String(row.payment_account).toLowerCase() : null,
+                vendor_id: row.vendor_id || null,
+                source: "manual",
+                paid_by_staff: row.paid_by_staff || null,
               })}
             />
           </div>
@@ -195,13 +204,14 @@ function ExpensesPage() {
               <TableHead>From</TableHead>
               <TableHead>To</TableHead>
               <TableHead className="cursor-pointer text-right" onClick={() => handleSort("amount")}>Amount {sortField === "amount" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead>Remarks</TableHead>
+              {isOwner && <TableHead>Vendor</TableHead>}
+              <TableHead>Paid By</TableHead>
               <TableHead>Deleted Remarks</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? <TableRow><TableCell colSpan={9} className="text-center">Loading…</TableCell></TableRow> : expenses.length === 0 ? <TableRow><TableCell colSpan={9} className="text-center">No expenses found.</TableCell></TableRow> : expenses.map((e) => (
+            {loading ? <TableRow><TableCell colSpan={isOwner ? 10 : 9} className="text-center">Loading…</TableCell></TableRow> : expenses.length === 0 ? <TableRow><TableCell colSpan={isOwner ? 10 : 9} className="text-center">No expenses found.</TableCell></TableRow> : expenses.map((e) => (
               <TableRow key={e.id}>
                 <TableCell>{e.expense_date?.slice(0,10)}</TableCell>
                 <TableCell>{e.description}</TableCell>
@@ -209,7 +219,17 @@ function ExpensesPage() {
                 <TableCell>{e.from_location}</TableCell>
                 <TableCell>{e.to_location}</TableCell>
                 <TableCell className="text-right">₹{e.amount?.toFixed(2)}</TableCell>
-                <TableCell>{e.remarks}</TableCell>
+                {isOwner && <TableCell>{e.vendors?.company_name || "—"}</TableCell>}
+                <TableCell>
+                  {e.paid_by_staff ? (
+                    <span className="flex items-center gap-1.5">
+                      {e.paid_by_staff}
+                      {e.reimbursement_status === "pending" && <Badge variant="destructive" className="text-xs">Owed</Badge>}
+                      {e.reimbursement_status === "partial" && <Badge variant="secondary" className="text-xs">Partial</Badge>}
+                      {e.reimbursement_status === "reimbursed" && <Badge variant="outline" className="text-xs">Settled</Badge>}
+                    </span>
+                  ) : "—"}
+                </TableCell>
                 <TableCell>{e.deleted_remarks}</TableCell>
                 <TableCell className="text-right space-x-2">
                   {canEdit && (e.is_deleted ? (

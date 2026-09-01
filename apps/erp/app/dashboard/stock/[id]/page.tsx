@@ -315,7 +315,7 @@ function AssetQCPage() {
   }
 
   if (loading) return <div className="p-4">Loading…</div>
-  if (error) return <div className="p-4 text-red-600">Error: {error}</div>
+  if (error) return <div className="p-4 text-destructive">Error: {error}</div>
   if (!asset) return null
 
   const sku = asset.purchase_order_items?.sku_master
@@ -323,12 +323,12 @@ function AssetQCPage() {
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.push(backHref)} className="text-sm text-gray-500 mb-2">&larr; Back</button>
+      <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
       <h1 className="text-2xl font-bold mb-1">{asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}</h1>
-      <p className="text-gray-600 mb-1">
+      <p className="text-muted-foreground mb-1">
         {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
       </p>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         {asset.warranty_type || asset.warranty_expiry_date
           ? `Warranty: ${asset.warranty_type || '—'}${asset.warranty_expiry_date ? ` — expires ${asset.warranty_expiry_date.slice(0, 10)}` : ''}`
           : 'No warranty on file.'}
@@ -336,19 +336,19 @@ function AssetQCPage() {
 
       <div className="flex gap-4 mb-6 text-sm">
         <div>
-          <span className="text-gray-500">Serial:</span> {asset.serial_number || '—'}
+          <span className="text-muted-foreground">Serial:</span> {asset.serial_number || '—'}
         </div>
         <div>
-          <span className="text-gray-500">Status:</span>{' '}
+          <span className="text-muted-foreground">Status:</span>{' '}
           <span className="font-medium capitalize">{asset.status.replace(/_/g, ' ')}</span>
         </div>
         <div>
-          <span className="text-gray-500">QC Status:</span>{' '}
+          <span className="text-muted-foreground">QC Status:</span>{' '}
           <span className="font-medium capitalize">{asset.qc_status}</span>
         </div>
         {asset.qc_grade && (
           <div>
-            <span className="text-gray-500">Grade:</span> <span className="font-medium">{asset.qc_grade}</span>
+            <span className="text-muted-foreground">Grade:</span> <span className="font-medium">{asset.qc_grade}</span>
           </div>
         )}
       </div>
@@ -358,14 +358,14 @@ function AssetQCPage() {
           <div className="flex items-center justify-between mb-2">
             <h2 className="font-semibold">Unit Details</h2>
             {!editingTag && (
-              <button onClick={() => setEditingTag(true)} className="text-blue-600 underline text-sm">Edit</button>
+              <button onClick={() => setEditingTag(true)} className="text-primary underline text-sm">Edit</button>
             )}
           </div>
           {editingTag ? (
             <div className="space-y-2">
-              {tagErr && <div className="text-red-600 text-sm">{tagErr}</div>}
+              {tagErr && <div className="text-destructive text-sm">{tagErr}</div>}
               {lockedStatus && (
-                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                <p className="text-xs text-warning bg-warning/15 border border-warning/20 rounded p-2">
                   This unit is &apos;{asset.status}&apos; — editing it requires a reason (logged to its correction history).
                 </p>
               )}
@@ -423,7 +423,7 @@ function AssetQCPage() {
                 <button
                   onClick={saveTag}
                   disabled={savingTag}
-                  className="bg-blue-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+                  className="bg-primary text-primary-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
                 >
                   {savingTag && <Loader2 className="size-4 animate-spin" />}
                   Save
@@ -445,9 +445,9 @@ function AssetQCPage() {
               </div>
             </div>
           ) : (
-            <div className="text-sm text-gray-600 space-y-1">
+            <div className="text-sm text-muted-foreground space-y-1">
               <p>{asset.asset_number || '—'} · {asset.serial_number || '—'}</p>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Entry: {asset.created_at?.slice(0, 10) || '—'}
                 {asset.notes && <> · {asset.notes}</>}
               </p>
@@ -460,10 +460,10 @@ function AssetQCPage() {
         <div className="border rounded-lg p-4 mb-6">
           <div className="flex items-center justify-between">
             <h2 className="font-semibold">Sale Details</h2>
-            <button onClick={() => setShowEditSale(true)} className="text-blue-600 underline text-sm">Edit Sale</button>
+            <button onClick={() => setShowEditSale(true)} className="text-primary underline text-sm">Edit Sale</button>
           </div>
           {asset.sale_summary ? (
-            <div className="text-sm text-gray-600 mt-2 space-y-1">
+            <div className="text-sm text-muted-foreground mt-2 space-y-1">
               <p>
                 {asset.sale_summary.customer_name || '—'} · ₹{asset.sale_summary.sale_total?.toFixed(2)}
                 {asset.sale_summary.payment_status && (
@@ -482,7 +482,7 @@ function AssetQCPage() {
               </p>
             </div>
           ) : (
-            <p className="text-sm text-gray-500 mt-1">Customer, amount, SKU/laptop, and bundled accessories for this sale.</p>
+            <p className="text-sm text-muted-foreground mt-1">Customer, amount, SKU/laptop, and bundled accessories for this sale.</p>
           )}
         </div>
       )}
@@ -492,12 +492,12 @@ function AssetQCPage() {
       )}
 
       {asset.status === 'qc_passed' && (
-        <div className="mb-6 p-3 bg-green-50 border border-green-200 rounded flex items-center justify-between">
-          <span className="text-green-800 text-sm">QC passed. Ready to list this unit for sale?</span>
+        <div className="mb-6 p-3 bg-success/15 border border-success/20 rounded flex items-center justify-between">
+          <span className="text-success text-sm">QC passed. Ready to list this unit for sale?</span>
           <button
             onClick={markReady}
             disabled={saving}
-            className="bg-green-600 text-white px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="bg-success text-success-foreground px-3 py-1.5 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
             Mark Ready for Sale
@@ -524,11 +524,11 @@ function AssetQCPage() {
                       className={`px-2 py-1 text-xs rounded border ${
                         c.result === r
                           ? r === 'pass'
-                            ? 'bg-green-600 text-white border-green-600'
+                            ? 'bg-success text-success-foreground border-success'
                             : r === 'fail'
-                            ? 'bg-red-600 text-white border-red-600'
-                            : 'bg-gray-500 text-white border-gray-500'
-                          : 'border-gray-200 text-gray-600'
+                            ? 'bg-destructive text-destructive-foreground border-destructive'
+                            : 'bg-muted-foreground text-background border-muted-foreground'
+                          : 'border-border text-muted-foreground'
                       }`}
                     >
                       {r.toUpperCase()}
@@ -628,7 +628,7 @@ function AssetQCPage() {
           <button
             onClick={submitQC}
             disabled={saving}
-            className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
+            className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
             {saving ? 'Saving…' : 'Submit QC Result'}
@@ -639,7 +639,7 @@ function AssetQCPage() {
       {isOwner && (
         <div className="border rounded-lg p-4 mt-6">
           <h2 className="font-semibold mb-3">Cost Adjustments</h2>
-          <p className="text-sm text-gray-600 mb-2">
+          <p className="text-sm text-muted-foreground mb-2">
             Original cost: ₹{(costPrice ?? 0).toFixed(2)}
             {adjustments.length > 0 && totalCost !== null && (
               <> — Total cost: ₹{totalCost.toFixed(2)}</>
@@ -649,7 +649,7 @@ function AssetQCPage() {
             <ul className="text-sm mb-3 divide-y border rounded">
               {adjustments.map((a) => (
                 <li key={a.id} className="p-2 flex justify-between">
-                  <span>{a.reason || '—'} <span className="text-gray-400 text-xs">({a.created_at.slice(0, 10)})</span></span>
+                  <span>{a.reason || '—'} <span className="text-muted-foreground text-xs">({a.created_at.slice(0, 10)})</span></span>
                   <span className="font-medium">₹{Number(a.amount).toFixed(2)}</span>
                 </li>
               ))}
@@ -678,7 +678,7 @@ function AssetQCPage() {
             <button
               onClick={addAdjustment}
               disabled={savingAdjustment}
-              className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
+              className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
             >
               {savingAdjustment && <Loader2 className="size-4 animate-spin" />}
               {savingAdjustment ? 'Adding…' : 'Add'}

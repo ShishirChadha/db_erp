@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: list expenses ----------
@@ -11,6 +11,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!hasPageAccess(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  const ownerCaller = isOwner(sessionUser)
 
   const { searchParams } = new URL(req.url)
   const showDeleted = searchParams.get('show_deleted') === 'true'
@@ -23,7 +24,7 @@ export async function GET(req: NextRequest) {
     : 'expense_date'
   const sortAscending = searchParams.get('order') === 'asc'
 
-  let query = supabaseAdmin.from('expenses').select('*').eq('is_deleted', showDeleted)
+  let query = supabaseAdmin.from('expenses').select('*, vendors(company_name)').eq('is_deleted', showDeleted)
 
   if (search) {
     query = query.or(
@@ -37,7 +38,13 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json(data || [])
+
+  // Vendor identity is owner-only for expenses (same default posture as every
+  // other vendor-linked record in this app, minus the one narrow accessory-receipt
+  // exception, which doesn't apply here) -- strip the joined vendor name server-side
+  // rather than relying on the UI to simply not render it.
+  const rows = ownerCaller ? (data || []) : (data || []).map(({ vendors, ...rest }: any) => rest)
+  return NextResponse.json(rows)
 }
 
 // ---------- POST: create an expense ----------
@@ -47,7 +54,7 @@ export async function POST(req: NextRequest) {
   if (!canEditPage(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
-  const { expense_date, description, type, from_location, to_location, amount, remarks, payment_account, vendor_id } = body
+  const { expense_date, description, type, from_location, to_location, amount, remarks, payment_account, vendor_id, attachments, paid_by_staff } = body
 
   if (!expense_date || !description || amount === undefined || amount === null) {
     return NextResponse.json({ error: 'expense_date, description, and amount are required.' }, { status: 400 })
@@ -74,6 +81,8 @@ export async function POST(req: NextRequest) {
       vendor_id: vendor_id || null,
       created_by: sessionUser.id,
       source: body.source === 'bank_recon' ? 'bank_recon' : 'manual',
+      attachments: Array.isArray(attachments) ? attachments : [],
+      paid_by_staff: paid_by_staff || null,
     })
     .select()
     .single()

@@ -139,8 +139,8 @@ export default function FileUpload({
             onClick={() => setSelectedType(t.value)}
             className={`text-xs px-3 py-1.5 rounded-full border transition-all ${
               selectedType === t.value
-                ? 'bg-blue-600 text-white border-blue-600'
-                : 'border-gray-200 text-gray-600 hover:border-blue-300'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'border-border text-muted-foreground hover:border-primary/30'
             }`}
           >
             {t.label}
@@ -148,17 +148,17 @@ export default function FileUpload({
         ))}
       </div>
 
-      <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-gray-200 rounded-xl p-4 hover:border-blue-300 transition-colors">
+      <label className="flex items-center gap-2 cursor-pointer border-2 border-dashed border-border rounded-xl p-4 hover:border-primary/30 transition-colors">
         {uploading ? (
-          <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+          <Loader2 className="h-5 w-5 text-primary animate-spin" />
         ) : (
-          <Upload className="h-5 w-5 text-gray-400" />
+          <Upload className="h-5 w-5 text-muted-foreground" />
         )}
         <div>
-          <p className="text-sm font-medium text-gray-700">
+          <p className="text-sm font-medium text-muted-foreground">
             {uploading ? 'Uploading...' : `Upload ${FILE_TYPES.find(t => t.value === selectedType)?.label}`}
           </p>
-          <p className="text-xs text-gray-400">PDF, JPG, PNG — any size</p>
+          <p className="text-xs text-muted-foreground">PDF, JPG, PNG — any size</p>
         </div>
         <input
           type="file"
@@ -172,13 +172,13 @@ export default function FileUpload({
       {files.length > 0 && (
         <div className="space-y-2">
           {files.map((f) => (
-            <div key={f.id} className="flex items-center gap-3 bg-gray-50 rounded-xl px-3 py-2.5">
-              <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+            <div key={f.id} className="flex items-center gap-3 bg-muted rounded-xl px-3 py-2.5">
+              <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{f.file_name}</p>
-                <p className="text-xs text-gray-400">{f.file_size_kb} KB</p>
+                <p className="text-xs text-muted-foreground">{f.file_size_kb} KB</p>
               </div>
-              <Badge className="bg-blue-50 text-blue-700 text-xs hover:bg-blue-50">
+              <Badge className="bg-info/15 text-info text-xs hover:bg-info/15">
                 {f.file_type}
               </Badge>
               <Button
@@ -187,7 +187,7 @@ export default function FileUpload({
                 onClick={() => handleView(f.file_path)}
                 title="View/Download"
               >
-                <Eye className="h-3.5 w-3.5 text-blue-600" />
+                <Eye className="h-3.5 w-3.5 text-primary" />
               </Button>
               <Button
                 variant="ghost"
@@ -195,7 +195,7 @@ export default function FileUpload({
                 onClick={() => handleShare(f.file_path)}
                 title="Copy share link (15 min)"
               >
-                <Share2 className="h-3.5 w-3.5 text-green-600" />
+                <Share2 className="h-3.5 w-3.5 text-success" />
               </Button>
               <Button
                 variant="ghost"
@@ -204,9 +204,9 @@ export default function FileUpload({
                 disabled={deletingId === f.id}
               >
                 {deletingId === f.id ? (
-                  <Loader2 className="h-3.5 w-3.5 text-red-500 animate-spin" />
+                  <Loader2 className="h-3.5 w-3.5 text-destructive animate-spin" />
                 ) : (
-                  <Trash2 className="h-3.5 w-3.5 text-red-500" />
+                  <Trash2 className="h-3.5 w-3.5 text-destructive" />
                 )}
               </Button>
             </div>

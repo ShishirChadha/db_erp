@@ -457,7 +457,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <Label>Entry Date</Label>
-              <Input type="date" value={formData.entry_date} disabled className="bg-gray-100" />
+              <Input type="date" value={formData.entry_date} disabled className="bg-muted" />
             </div>
             <div>
               <Label>Purchase Date *</Label>
@@ -559,7 +559,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
                 value={serialNumbersList}
                 onChange={(e) => setSerialNumbersList(e.target.value)}
               />
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-muted-foreground mt-1">
                 You entered {serialNumbersList.split(/\r?\n/).filter((s) => s.trim()).length} of {quantity} serial numbers. Remaining will be empty.
               </p>
             </div>
@@ -631,7 +631,7 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
           )}
 
           {/* SKU (auto) */}
-          <div><Label>SKU (Auto)</Label><Input value={formData.sku} disabled className="bg-gray-100" /></div>
+          <div><Label>SKU (Auto)</Label><Input value={formData.sku} disabled className="bg-muted" /></div>
 
           {/* Pricing Section */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -644,17 +644,17 @@ export default function AddPurchaseDialog({ onAdd, open, onOpenChange, initialDa
                 <div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div>
               </>
             )}
-            <div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-gray-100" /></div>
+            <div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-muted" /></div>
             <div><Label>Total Price (Auto)</Label><Input type="number" step="0.01" value={formData.total_price ?? ""} onChange={(e) => handleChange("total_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             <div><Label>Selling Price</Label><Input type="number" step="0.01" value={formData.selling_price ?? ""} onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
-            <div><Label>Vendor Invoice Total</Label><Input type="number" step="0.01" value={formData.vendor_invoice_total ?? ""} disabled className="bg-gray-100" /></div>
+            <div><Label>Vendor Invoice Total</Label><Input type="number" step="0.01" value={formData.vendor_invoice_total ?? ""} disabled className="bg-muted" /></div>
           </div>
 
           {quantity > 1 && formData.total_price && (
-            <div className="text-right text-sm text-gray-600">Total for {quantity} units: ₹{(formData.total_price * quantity).toFixed(2)}</div>
+            <div className="text-right text-sm text-muted-foreground">Total for {quantity} units: ₹{(formData.total_price * quantity).toFixed(2)}</div>
           )}
 
-          <div><Label>Public Photo URL (optional)</Label><Input value={formData.public_photo_url} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://yourwebsite.com/images/product.jpg" /><p className="text-xs text-gray-500 mt-1">Permanent link to product photo (for WhatsApp/email sharing)</p></div>
+          <div><Label>Public Photo URL (optional)</Label><Input value={formData.public_photo_url} onChange={(e) => handleChange("public_photo_url", e.target.value)} placeholder="https://yourwebsite.com/images/product.jpg" /><p className="text-xs text-muted-foreground mt-1">Permanent link to product photo (for WhatsApp/email sharing)</p></div>
 
           {/* Expense Section */}
           <div className="border rounded-lg p-4 space-y-4">

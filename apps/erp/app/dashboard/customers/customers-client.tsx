@@ -104,11 +104,11 @@ export default function CustomersClient({ initialData }: { initialData: Customer
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Customer Base</h1>
-          <p className="text-sm text-gray-500 mt-1">{customers.length} total customers</p>
+          <h1 className="text-2xl font-semibold text-foreground">Customer Base</h1>
+          <p className="text-sm text-muted-foreground mt-1">{customers.length} total customers</p>
         </div>
         <Button
-          className="bg-blue-600 hover:bg-blue-700"
+          className="bg-primary hover:bg-primary/90"
           onClick={() => setShowForm(true)}
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -118,7 +118,7 @@ export default function CustomersClient({ initialData }: { initialData: Customer
 
       {/* Search */}
       <div className="relative mb-4">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search by name, phone, email, source..."
           className="pl-9"
@@ -133,22 +133,22 @@ export default function CustomersClient({ initialData }: { initialData: Customer
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-200 bg-gray-50">
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Type</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Phone</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Email</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Source</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">GST</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Review</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600">Social</th>
-                  <th className="text-left px-4 py-3 font-medium text-gray-600"></th>
+                <tr className="border-b border-border bg-muted">
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Name</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Type</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Phone</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Email</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Source</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">GST</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Review</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground">Social</th>
+                  <th className="text-left px-4 py-3 font-medium text-muted-foreground"></th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-12 text-gray-400">
+                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
                       No customers found. Click "Add Customer" to get started.
                     </td>
                   </tr>
@@ -156,40 +156,40 @@ export default function CustomersClient({ initialData }: { initialData: Customer
                   filtered.map((c) => (
                     <tr
                       key={c.id}
-                      className="border-b border-gray-100 hover:bg-gray-50 transition-colors"
+                      className="border-b border-border hover:bg-muted transition-colors"
                     >
                       <td className="px-4 py-3 font-medium">{c.customer_name}</td>
                       <td className="px-4 py-3">
                         <Badge
                           className={
                             c.type === 'Business'
-                              ? 'bg-blue-100 text-blue-700 hover:bg-blue-100'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-100'
+                              ? 'bg-info/15 text-info hover:bg-info/25'
+                              : 'bg-muted text-muted-foreground hover:bg-muted'
                           }
                         >
                           {c.type || '—'}
                         </Badge>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{c.phone || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.email || '—'}</td>
-                      <td className="px-4 py-3 text-gray-600">{c.source || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{c.phone || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{c.email || '—'}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{c.source || '—'}</td>
                       <td className="px-4 py-3">
                         {c.has_gst ? (
-                          <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Yes</Badge>
+                          <Badge className="bg-success/15 text-success hover:bg-success/25">Yes</Badge>
                         ) : (
-                          <Badge className="bg-gray-100 text-gray-500 hover:bg-gray-100">No</Badge>
+                          <Badge className="bg-muted text-muted-foreground hover:bg-muted">No</Badge>
                         )}
                       </td>
                       <td className="px-4 py-3">
                         {c.google_review ? (
-                          <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
+                          <Star className="h-4 w-4 text-warning fill-yellow-500" />
                         ) : (
-                          <Star className="h-4 w-4 text-gray-300" />
+                          <Star className="h-4 w-4 text-muted-foreground" />
                         )}
                       </td>
                       <td className="px-4 py-3">
                         {c.social_following && c.social_following !== 'None' ? (
-                          <Badge className="bg-pink-100 text-pink-700 hover:bg-pink-100">
+                          <Badge className="bg-pink/15 text-pink hover:bg-pink/15">
                             {c.social_following}
                           </Badge>
                         ) : '—'}
@@ -340,14 +340,14 @@ export default function CustomersClient({ initialData }: { initialData: Customer
           </div>
 
           {error && (
-            <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg mt-2">
+            <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg mt-2">
               {error}
             </div>
           )}
 
           <div className="flex gap-3 mt-4">
             <Button
-              className="flex-1 bg-blue-600 hover:bg-blue-700"
+              className="flex-1 bg-primary hover:bg-primary/90"
               onClick={() => handleSubmit()}
               loading={loading}
             >
@@ -385,8 +385,8 @@ export default function CustomersClient({ initialData }: { initialData: Customer
                 ['Social Following', viewItem.social_following],
               ].map(([label, value]) => (
                 <div key={label}>
-                  <p className="text-gray-400 text-xs">{label}</p>
-                  <p className="font-medium text-gray-900 mt-0.5">{value || '—'}</p>
+                  <p className="text-muted-foreground text-xs">{label}</p>
+                  <p className="font-medium text-foreground mt-0.5">{value || '—'}</p>
                 </div>
               ))}
             </div>

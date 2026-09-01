@@ -137,7 +137,7 @@ function PurchaseOrdersPage() {
         <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <button
           onClick={() => router.push('/dashboard/purchase-orders/new')}
-          className="bg-blue-600 text-white px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded"
         >
           + New Purchase Order
         </button>
@@ -145,7 +145,7 @@ function PurchaseOrdersPage() {
 
       <div className="flex flex-wrap gap-4 mb-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Status</label>
+          <label className="block text-xs text-muted-foreground mb-1">Status</label>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -161,7 +161,7 @@ function PurchaseOrdersPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Vendor</label>
+          <label className="block text-xs text-muted-foreground mb-1">Vendor</label>
           <select
             value={vendorFilter}
             onChange={(e) => setVendorFilter(e.target.value)}
@@ -174,15 +174,15 @@ function PurchaseOrdersPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
+          <label className="block text-xs text-muted-foreground mb-1">From</label>
           <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border p-2 rounded" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
+          <label className="block text-xs text-muted-foreground mb-1">To</label>
           <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border p-2 rounded" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Search</label>
+          <label className="block text-xs text-muted-foreground mb-1">Search</label>
           <input
             type="text"
             placeholder="Search PO number..."
@@ -194,7 +194,7 @@ function PurchaseOrdersPage() {
         {(statusFilter || vendorFilter || dateFrom || dateTo || search) && (
           <button
             onClick={() => { setStatusFilter(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setSearch('') }}
-            className="text-sm text-gray-500 underline"
+            className="text-sm text-muted-foreground underline"
           >
             Clear filters
           </button>
@@ -232,8 +232,8 @@ function PurchaseOrdersPage() {
           <tbody className="divide-y">
             {sortedOrders.length === 0 && <EmptyTableRow colSpan={8} message="No purchase orders found." />}
             {sortedOrders.map((po, idx) => (
-              <tr key={po.id} className="hover:bg-gray-50">
-                <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+              <tr key={po.id} className="hover:bg-muted">
+                <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                 <td className="p-2">{po.po_date}</td>
                 <td className="p-2">{po.po_number}</td>
                 <td className="p-2">{po.vendor_name}</td>
@@ -243,14 +243,14 @@ function PurchaseOrdersPage() {
                 <td className="p-2 space-x-2">
                   <button
                     onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}
-                    className="text-blue-600 underline"
+                    className="text-primary underline"
                   >
                     View
                   </button>
                   <button
                     onClick={() => handleDelete(po)}
                     disabled={deletingId === po.id}
-                    className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1"
+                    className="text-destructive underline disabled:opacity-50 inline-flex items-center gap-1"
                   >
                     {deletingId === po.id && <Loader2 className="size-3 animate-spin" />}
                     Delete

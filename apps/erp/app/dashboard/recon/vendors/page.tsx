@@ -228,10 +228,10 @@ function VendorReconPage() {
     <div className="p-6 max-w-5xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Vendor Reconciliation</h1>
-        <p className="text-sm text-gray-500">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
+        <p className="text-sm text-muted-foreground">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
       </div>
 
-      {err && <div className="text-red-600 text-sm border border-red-200 bg-red-50 rounded p-3">{err}</div>}
+      {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3">{err}</div>}
 
       <div className="border rounded p-4 space-y-3">
         <h2 className="font-medium">Upload an invoice</h2>
@@ -246,10 +246,10 @@ function VendorReconPage() {
 
       <div className="grid md:grid-cols-[16rem_1fr] gap-4">
         <div className="border rounded divide-y max-h-[32rem] overflow-y-auto">
-          {recentDocs.length === 0 && <div className="p-3 text-sm text-gray-400">No invoices uploaded yet.</div>}
+          {recentDocs.length === 0 && <div className="p-3 text-sm text-muted-foreground">No invoices uploaded yet.</div>}
           {recentDocs.map((d) => (
-            <div key={d.id} className={`group flex items-start ${activeDoc?.id === d.id ? 'bg-gray-100' : ''}`}>
-              <button onClick={() => openDoc(d)} className="flex-1 text-left p-3 text-sm hover:bg-gray-50 min-w-0">
+            <div key={d.id} className={`group flex items-start ${activeDoc?.id === d.id ? 'bg-muted' : ''}`}>
+              <button onClick={() => openDoc(d)} className="flex-1 text-left p-3 text-sm hover:bg-muted min-w-0">
                 <div className="truncate font-medium">{d.file_name}</div>
                 <StatusBadge tone={STATUS_TONE[d.extraction_status] || 'neutral'}>{d.extraction_status.replace(/_/g, ' ')}</StatusBadge>
               </button>
@@ -257,7 +257,7 @@ function VendorReconPage() {
                 onClick={() => deleteDoc(d)}
                 disabled={deleting}
                 title="Delete this document"
-                className="p-3 text-gray-300 hover:text-red-600 opacity-0 group-hover:opacity-100 transition-opacity"
+                className="p-3 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
               >
                 <Trash2 className="size-4" />
               </button>
@@ -266,14 +266,14 @@ function VendorReconPage() {
         </div>
 
         <div className="border rounded p-4 space-y-4 min-h-[20rem]">
-          {!activeDoc && <div className="text-sm text-gray-400">Select an invoice from the list, or upload a new one.</div>}
+          {!activeDoc && <div className="text-sm text-muted-foreground">Select an invoice from the list, or upload a new one.</div>}
 
           {activeDoc && (
             <>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{activeDoc.file_name}</div>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-muted-foreground">
                     {activeDoc.page_count ?? '—'} page(s) · {activeDoc.text_layer_chars ?? 0} chars extracted · tier {activeDoc.extraction_tier || 'none yet'}
                   </div>
                 </div>
@@ -281,7 +281,7 @@ function VendorReconPage() {
               </div>
 
               {activeDoc.extraction_status === 'ai_pending_approval' && (
-                <div className="border border-blue-200 bg-blue-50 rounded p-3 text-sm flex items-center justify-between">
+                <div className="border border-primary/20 bg-info/15 rounded p-3 text-sm flex items-center justify-between">
                   <span>No saved layout matched this invoice. Read it with AI, or save a layout after a first manual/AI read to make future invoices from this vendor free.</span>
                   <Button size="sm" onClick={() => readWithAi()} disabled={aiPending}>
                     {aiPending && <Loader2 className="size-4 animate-spin mr-1" />}
@@ -291,7 +291,7 @@ function VendorReconPage() {
               )}
 
               {activeDoc.extraction_status === 'failed' && (
-                <div className="border border-red-200 bg-red-50 rounded p-3 text-sm flex items-center justify-between">
+                <div className="border border-destructive/20 bg-destructive/10 rounded p-3 text-sm flex items-center justify-between">
                   <span>{activeDoc.validation_errors?.[0]?.message || 'The AI read of this invoice failed.'} Try again once the cause is fixed (e.g. a missing ANTHROPIC_API_KEY).</span>
                   <Button size="sm" variant="outline" onClick={() => readWithAi()} disabled={aiPending}>
                     {aiPending && <Loader2 className="size-4 animate-spin mr-1" />}
@@ -301,7 +301,7 @@ function VendorReconPage() {
               )}
 
               {activeDoc.extraction_status === 'needs_review' && activeDoc.validation_errors && (
-                <div className="border border-amber-200 bg-amber-50 rounded p-3 text-sm space-y-2">
+                <div className="border border-warning/20 bg-warning/15 rounded p-3 text-sm space-y-2">
                   <div className="font-medium">This extraction's own arithmetic doesn't add up — review before trusting it:</div>
                   <ul className="list-disc pl-5 space-y-0.5">
                     {activeDoc.validation_errors.map((issue: any, i: number) => (
@@ -326,41 +326,41 @@ function VendorReconPage() {
               )}
 
               {noVendorCandidates && (
-                <div className="border border-amber-200 bg-amber-50 rounded p-3 text-sm space-y-3">
+                <div className="border border-warning/20 bg-warning/15 rounded p-3 text-sm space-y-3">
                   <div className="font-medium">No vendor matched confidently.</div>
                   {noVendorCandidates.length > 0 && (
                     <ul className="space-y-1">
                       {noVendorCandidates.map((c) => (
                         <li key={c.id} className="flex items-center justify-between">
-                          <span>{c.company_name} <span className="text-gray-400">({(c.similarity * 100).toFixed(0)}% match)</span></span>
+                          <span>{c.company_name} <span className="text-muted-foreground">({(c.similarity * 100).toFixed(0)}% match)</span></span>
                           <Button size="sm" variant="outline" onClick={() => activeDoc && generateProposals(activeDoc.id, c.id)}>Use this vendor</Button>
                         </li>
                       ))}
                     </ul>
                   )}
 
-                  <div className="space-y-1.5 pt-1 border-t border-amber-200/70">
+                  <div className="space-y-1.5 pt-1 border-t border-warning/20/70">
                     <div className="relative">
-                      <Search className="size-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <Search className="size-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
                       <Input
                         value={vendorSearch}
                         onChange={(e) => setVendorSearch(e.target.value)}
                         placeholder="Search all vendors by name…"
-                        className="h-8 pl-7 bg-white"
+                        className="h-8 pl-7 bg-card"
                       />
                     </div>
                     {vendorSearch.trim().length >= 2 && (
                       vendorSearchResults.length > 0 ? (
                         <ul className="space-y-1 max-h-40 overflow-y-auto">
                           {vendorSearchResults.map((v) => (
-                            <li key={v.id} className="flex items-center justify-between bg-white rounded px-2 py-1">
+                            <li key={v.id} className="flex items-center justify-between bg-card rounded px-2 py-1">
                               <span>{v.company_name}</span>
                               <Button size="sm" variant="outline" onClick={() => activeDoc && generateProposals(activeDoc.id, v.id)}>Use this vendor</Button>
                             </li>
                           ))}
                         </ul>
                       ) : (
-                        <div className="text-gray-500">No vendor found matching "{vendorSearch.trim()}".</div>
+                        <div className="text-muted-foreground">No vendor found matching "{vendorSearch.trim()}".</div>
                       )
                     )}
                   </div>
@@ -402,11 +402,11 @@ function VendorReconPage() {
                       <div key={p.id} className="p-3 flex items-center justify-between gap-3 text-sm">
                         <div>
                           <div className="font-medium">{FIELD_LABELS[p.field_name] || p.field_name}
-                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${p.change_kind === 'conflict' ? 'bg-red-100 text-red-700' : p.change_kind === 'derived' ? 'bg-purple-100 text-purple-700' : 'bg-green-100 text-green-700'}`}>
+                            <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${p.change_kind === 'conflict' ? 'bg-destructive/10 text-destructive' : p.change_kind === 'derived' ? 'bg-purple/15 text-purple' : 'bg-success/15 text-success'}`}>
                               {p.change_kind === 'conflict' ? 'conflict' : p.change_kind === 'derived' ? 'derived' : 'fill'}
                             </span>
                           </div>
-                          <div className="text-gray-500">{p.current_value || '—'} → <span className="text-gray-900">{p.proposed_value || '—'}</span></div>
+                          <div className="text-muted-foreground">{p.current_value || '—'} → <span className="text-foreground">{p.proposed_value || '—'}</span></div>
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <Button size="sm" variant="outline" onClick={() => decide(p.id, 'approve')}><Check className="size-4" /></Button>
@@ -419,11 +419,11 @@ function VendorReconPage() {
               )}
 
               {pending.length === 0 && decided.length > 0 && (
-                <div className="text-sm text-gray-500">All {decided.length} proposal(s) for this invoice have been decided.</div>
+                <div className="text-sm text-muted-foreground">All {decided.length} proposal(s) for this invoice have been decided.</div>
               )}
 
               {decided.length > 0 && (
-                <details className="text-xs text-gray-500">
+                <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer">Decided ({decided.length})</summary>
                   <ul className="mt-2 space-y-1">
                     {decided.map((p) => (

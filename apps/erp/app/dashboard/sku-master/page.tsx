@@ -264,7 +264,7 @@ function SkuMasterPage() {
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">SKU Master</h1>
-        <button onClick={handleCreate} className="bg-blue-600 text-white px-4 py-2 rounded">
+        <button onClick={handleCreate} className="bg-primary text-primary-foreground px-4 py-2 rounded">
           + New SKU
         </button>
       </div>
@@ -274,25 +274,25 @@ function SkuMasterPage() {
       {counts && <StatCardsRow cards={statCards} />}
 
       {duplicateClusters.length > 0 && (
-        <div className="mb-4 border border-amber-300 bg-amber-50 rounded-md">
+        <div className="mb-4 border border-warning/20 bg-warning/15 rounded-md">
           <button
             type="button"
             onClick={() => setShowDuplicates((v) => !v)}
-            className="w-full flex items-center gap-2 p-3 text-left text-sm font-medium text-amber-800"
+            className="w-full flex items-center gap-2 p-3 text-left text-sm font-medium text-warning"
           >
             <AlertTriangle className="size-4 shrink-0" />
             {duplicateClusters.length} possible duplicate group{duplicateClusters.length !== 1 ? 's' : ''} found
             <span className="ml-auto text-xs underline">{showDuplicates ? 'Hide' : 'Review'}</span>
           </button>
           {showDuplicates && (
-            <div className="border-t border-amber-300 divide-y divide-amber-200">
+            <div className="border-t border-warning/20 divide-y divide-warning/20">
               {duplicateClusters.map((cluster, idx) => (
                 <div key={idx} className="p-3 flex flex-wrap items-center gap-3 text-sm">
                   <div className="flex-1 min-w-0">
                     {cluster.skus.map((s) => {
                       const configDiff = buildConfigDiff(s.category, s.specifications, templates)
                       return (
-                        <div key={s.id} className="text-gray-700">
+                        <div key={s.id} className="text-muted-foreground">
                           {s.full_sku_code} -- {s.brand} {s.model_name} ({s.quantity_in_stock ?? 0} in stock)
                           {configDiff && <span className="font-medium"> -- {configDiff}</span>}
                         </div>
@@ -302,7 +302,7 @@ function SkuMasterPage() {
                   <button
                     type="button"
                     onClick={() => setMergeCluster(cluster)}
-                    className="px-3 py-1.5 border border-amber-400 rounded text-amber-800 hover:bg-amber-100 shrink-0"
+                    className="px-3 py-1.5 border border-warning/20 rounded text-warning hover:bg-warning/15 shrink-0"
                   >
                     Merge...
                   </button>
@@ -315,7 +315,7 @@ function SkuMasterPage() {
 
       <div className="flex flex-wrap gap-4 mb-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Category</label>
+          <label className="block text-xs text-muted-foreground mb-1">Category</label>
           <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border p-2 rounded">
             <option value="">All Categories</option>
             {templates.map((t) => (
@@ -324,7 +324,7 @@ function SkuMasterPage() {
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Search</label>
+          <label className="block text-xs text-muted-foreground mb-1">Search</label>
           <input
             type="text"
             placeholder="Search code or description..."
@@ -336,7 +336,7 @@ function SkuMasterPage() {
         {(categoryFilter || search || filterTab !== 'all') && (
           <button
             onClick={() => { setCategoryFilter(''); setSearch(''); setFilterTab('all') }}
-            className="text-sm text-gray-500 underline"
+            className="text-sm text-muted-foreground underline"
           >
             Clear filters
           </button>
@@ -372,7 +372,7 @@ function SkuMasterPage() {
             {displayedSkus.length === 0 && <EmptyTableRow colSpan={9} message="No SKUs found." />}
             {displayedSkus.map((sku, idx) => (
               <tr key={sku.id}>
-                <td className="p-2 text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</td>
+                <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
                 <td className="p-2">{sku.full_sku_code}</td>
                 <td className="p-2">{buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description}</td>
                 <td className="p-2">{sku.hsn_code || '—'}</td>
@@ -385,14 +385,14 @@ function SkuMasterPage() {
                   </StatusBadge>
                 </td>
                 <td className="p-2 space-x-2">
-                  <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-blue-600 underline disabled:opacity-50">Edit</button>
+                  <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-primary underline disabled:opacity-50">Edit</button>
                   {isOwner && (
-                    <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple-600 underline">Pricing</Link>
+                    <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple underline">Pricing</Link>
                   )}
                   {(isOwner || hasPageAccess('website')) && (
-                    <button onClick={() => setWebPublishSku(sku)} className="text-emerald-600 underline">Website</button>
+                    <button onClick={() => setWebPublishSku(sku)} className="text-success underline">Website</button>
                   )}
-                  <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-red-600 underline disabled:opacity-50 inline-flex items-center gap-1">
+                  <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-destructive underline disabled:opacity-50 inline-flex items-center gap-1">
                     {deletingId === sku.id && <Loader2 className="size-3 animate-spin" />}
                     Delete
                   </button>

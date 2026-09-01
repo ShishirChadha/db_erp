@@ -135,7 +135,7 @@ export function EditPoItemDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-destructive text-sm">{error}</div>}
 
           <div>
             <Label>Quantity</Label>
@@ -156,7 +156,7 @@ export function EditPoItemDialog({
           <div>
             <Label>HSN Code</Label>
             <Input value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} placeholder="e.g. 8471" />
-            <p className="text-xs text-gray-500 mt-1">Belongs to the SKU, not just this PO -- correcting it here updates the SKU everywhere.</p>
+            <p className="text-xs text-muted-foreground mt-1">Belongs to the SKU, not just this PO -- correcting it here updates the SKU everywhere.</p>
           </div>
 
           {!isDraft && (

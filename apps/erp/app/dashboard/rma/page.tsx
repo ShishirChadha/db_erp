@@ -156,7 +156,7 @@ function RmaPage() {
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">RMA / Returns</h1>
-        <button onClick={openModal} className="bg-blue-600 text-white px-4 py-2 rounded">
+        <button onClick={openModal} className="bg-primary text-primary-foreground px-4 py-2 rounded">
           + New RMA
         </button>
       </div>
@@ -211,7 +211,7 @@ function RmaPage() {
                       key={next}
                       onClick={() => advanceStatus(e, next)}
                       disabled={!!advancingKey}
-                      className="text-blue-600 underline text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
+                      className="text-primary underline text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
                     >
                       {advancingKey === `${e.id}:${next}` && <Loader2 className="size-3 animate-spin" />}
                       {next.replace(/_/g, ' ')}
@@ -226,7 +226,7 @@ function RmaPage() {
 
       {modalOpen && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
-          <div className="bg-white rounded-lg p-6 w-full max-w-lg">
+          <div className="bg-card rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-lg font-bold mb-4">New RMA</h2>
 
             <div className="mb-3">
@@ -246,9 +246,9 @@ function RmaPage() {
                 Asset ({direction === 'to_vendor' ? 'faulty' : 'sold'} units only)
               </label>
               {selectedAsset ? (
-                <div className="flex items-center justify-between border p-2 rounded bg-gray-50">
+                <div className="flex items-center justify-between border p-2 rounded bg-muted">
                   <span>{selectedAsset.asset_number} — {selectedAsset.sku_code}</span>
-                  <button onClick={() => setSelectedAsset(null)} className="text-red-600 text-xs underline">Change</button>
+                  <button onClick={() => setSelectedAsset(null)} className="text-destructive text-xs underline">Change</button>
                 </div>
               ) : (
                 <>
@@ -265,7 +265,7 @@ function RmaPage() {
                         <button
                           key={a.id}
                           onClick={() => setSelectedAsset(a)}
-                          className="block w-full text-left px-2 py-1 hover:bg-gray-100 text-sm"
+                          className="block w-full text-left px-2 py-1 hover:bg-muted text-sm"
                         >
                           {a.asset_number} — {a.sku_code} {a.serial_number ? `(${a.serial_number})` : ''}
                         </button>
@@ -303,7 +303,7 @@ function RmaPage() {
               <button
                 onClick={submitRma}
                 disabled={saving}
-                className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50"
+                className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Open RMA'}
               </button>

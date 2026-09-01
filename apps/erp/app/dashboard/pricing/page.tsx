@@ -111,7 +111,7 @@ function SkuSearch({ templates, onSelect }: { templates: ConfigSummaryTemplate[]
         onChange={(e) => setTerm(e.target.value)}
         placeholder="Search item by SKU code or description..."
       />
-      {loading && <Loader2 className="absolute right-2 top-2 size-4 animate-spin text-gray-400" />}
+      {loading && <Loader2 className="absolute right-2 top-2 size-4 animate-spin text-muted-foreground" />}
       {results.length > 0 && (
         <ul className="border rounded-md mt-1 max-h-72 overflow-y-auto absolute bg-background w-full z-10 shadow">
           {results.map((sku) => (
@@ -121,7 +121,7 @@ function SkuSearch({ templates, onSelect }: { templates: ConfigSummaryTemplate[]
               className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm"
             >
               <div className="font-medium">{sku.full_sku_code}</div>
-              <div className="text-xs text-gray-500">
+              <div className="text-xs text-muted-foreground">
                 {buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description} — {sku.quantity_in_stock ?? 0} in stock
               </div>
             </li>
@@ -139,16 +139,16 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
   return (
     <div className="border rounded-lg p-4">
       <h2 className="font-semibold mb-1">Vendor Comparison</h2>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Who you've bought this from, and at what price — the "I bought this from ABC 3x, here's XYZ's price" view.
       </p>
       {data.vendor_comparison.length === 0 ? (
-        <p className="text-sm text-gray-400">No purchase history found for this item yet.</p>
+        <p className="text-sm text-muted-foreground">No purchase history found for this item yet.</p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-500">
+              <tr className="text-left text-muted-foreground">
                 <th className="p-2">Last Bought</th>
                 <th className="p-2">Vendor</th>
                 <th className="p-2 text-right">Times Bought</th>
@@ -175,14 +175,14 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
 
       {data.history.length > 0 && (
         <div className="mt-3">
-          <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs text-blue-600 underline">
+          <button type="button" onClick={() => setShowHistory((v) => !v)} className="text-xs text-primary underline">
             {showHistory ? 'Hide' : 'Show'} full purchase history ({data.history.length})
           </button>
           {showHistory && (
             <div className="overflow-x-auto rounded-md border mt-2">
               <table className="min-w-full text-sm">
                 <thead>
-                  <tr className="text-left text-gray-500">
+                  <tr className="text-left text-muted-foreground">
                     <th className="p-2">Date</th>
                     <th className="p-2">Vendor</th>
                     <th className="p-2 text-right">Price</th>
@@ -198,8 +198,8 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
                       <td className="p-2">{h.vendor_name || '—'}</td>
                       <td className="p-2 text-right tabular-nums">{money(h.price)}</td>
                       <td className="p-2 text-right tabular-nums">{h.quantity}</td>
-                      <td className="p-2 text-xs text-gray-500">{SOURCE_LABELS[h.source] || h.source}</td>
-                      <td className="p-2 text-xs text-gray-500">{h.ref || '—'}</td>
+                      <td className="p-2 text-xs text-muted-foreground">{SOURCE_LABELS[h.source] || h.source}</td>
+                      <td className="p-2 text-xs text-muted-foreground">{h.ref || '—'}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -286,36 +286,36 @@ function MarginCalculatorPanel({ data, onSaved }: { data: PriceIntel; onSaved: (
   return (
     <div className="border rounded-lg p-4">
       <h2 className="font-semibold mb-1">Margin Calculator</h2>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Cost basis prefilled from the last vendor price — edit either markup% or price, the other updates.
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Cost (₹)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Cost (₹)</label>
           <Input type="number" value={cost} onChange={(e) => handleCostChange(Number(e.target.value))} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Markup on cost (%)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Markup on cost (%)</label>
           <Input type="number" value={markupPct} onChange={(e) => handleMarkupChange(Number(e.target.value))} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Suggested Price (₹)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Suggested Price (₹)</label>
           <Input type="number" value={price} onChange={(e) => handlePriceChange(Number(e.target.value))} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Margin on price</label>
+          <label className="block text-xs text-muted-foreground mb-1">Margin on price</label>
           <div className="h-8 flex items-center text-sm tabular-nums">{marginPct.toFixed(1)}%</div>
         </div>
       </div>
 
-      <p className="text-sm text-gray-600 mb-3">
+      <p className="text-sm text-muted-foreground mb-3">
         Profit per unit: <span className="font-medium tabular-nums">{money(profitAmt)}</span>
         {data.market_benchmark && (
           <>
             {' '}— {price <= data.market_benchmark.min
-              ? <span className="text-emerald-600">₹{(data.market_benchmark.min - price).toFixed(2)} below cheapest competitor</span>
-              : <span className="text-amber-600">₹{(price - data.market_benchmark.min).toFixed(2)} above cheapest competitor</span>}
+              ? <span className="text-success">₹{(data.market_benchmark.min - price).toFixed(2)} below cheapest competitor</span>
+              : <span className="text-warning">₹{(price - data.market_benchmark.min).toFixed(2)} above cheapest competitor</span>}
           </>
         )}
       </p>
@@ -338,7 +338,7 @@ function MarginCalculatorPanel({ data, onSaved }: { data: PriceIntel; onSaved: (
       {showQuoteForm && (
         <div className="mt-3 border-t pt-3 flex flex-wrap items-end gap-2">
           <div className="w-72">
-            <label className="block text-xs text-gray-500 mb-1">Customer</label>
+            <label className="block text-xs text-muted-foreground mb-1">Customer</label>
             <SearchableCustomerSelect value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />
           </div>
           <Button loading={creatingQuote} onClick={() => handleCreateQuote()}>
@@ -387,7 +387,7 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
   return (
     <div className="border rounded-lg p-4">
       <h2 className="font-semibold mb-1">Competitor Benchmark</h2>
-      <p className="text-xs text-gray-500 mb-3">
+      <p className="text-xs text-muted-foreground mb-3">
         Log prices you look up (Cashify, New Jaisa, Sudewala…) so a benchmark builds up over time.
       </p>
 
@@ -399,27 +399,27 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
 
       <div className="flex flex-wrap items-end gap-2 mb-3">
         <div className="w-44">
-          <label className="block text-xs text-gray-500 mb-1">Competitor</label>
+          <label className="block text-xs text-muted-foreground mb-1">Competitor</label>
           <SearchableSelect options={competitors} value={competitor} onChange={setCompetitor} placeholder="Select..." />
         </div>
         <div className="w-32">
-          <label className="block text-xs text-gray-500 mb-1">Price (₹)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Price (₹)</label>
           <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
         </div>
         <div className="w-56">
-          <label className="block text-xs text-gray-500 mb-1">Link (optional)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Link (optional)</label>
           <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." />
         </div>
         <Button loading={adding} onClick={() => handleAdd()}>Add</Button>
       </div>
 
       {observations.length === 0 ? (
-        <p className="text-sm text-gray-400">No competitor prices logged yet for this item.</p>
+        <p className="text-sm text-muted-foreground">No competitor prices logged yet for this item.</p>
       ) : (
         <div className="overflow-x-auto rounded-md border">
           <table className="min-w-full text-sm">
             <thead>
-              <tr className="text-left text-gray-500">
+              <tr className="text-left text-muted-foreground">
                 <th className="p-2">Date</th>
                 <th className="p-2">Competitor</th>
                 <th className="p-2 text-right">Price</th>
@@ -434,10 +434,10 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
                   <td className="p-2">{o.competitor}</td>
                   <td className="p-2 text-right tabular-nums">{money(o.price)}</td>
                   <td className="p-2">
-                    {o.source_url ? <a href={o.source_url} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">view</a> : '—'}
+                    {o.source_url ? <a href={o.source_url} target="_blank" rel="noreferrer" className="text-primary underline text-xs">view</a> : '—'}
                   </td>
                   <td className="p-2">
-                    <button onClick={() => handleDelete(o.id)} disabled={deletingId === o.id} className="text-red-500 disabled:opacity-50">
+                    <button onClick={() => handleDelete(o.id)} disabled={deletingId === o.id} className="text-destructive disabled:opacity-50">
                       {deletingId === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
                     </button>
                   </td>
@@ -495,14 +495,14 @@ function PriceCockpitInner() {
     <div className="p-4 max-w-4xl mx-auto space-y-4">
       <div>
         <h1 className="text-2xl font-bold mb-1">Price Cockpit</h1>
-        <p className="text-sm text-gray-500 mb-3">
+        <p className="text-sm text-muted-foreground mb-3">
           Pick an item to see who you've bought it from, work out a sell price, and log competitor prices — all in one place.
         </p>
         <SkuSearch templates={templates} onSelect={selectSku} />
       </div>
 
-      {loading && <div className="text-sm text-gray-500">Loading…</div>}
-      {error && <div className="text-sm text-red-600">Error: {error}</div>}
+      {loading && <div className="text-sm text-muted-foreground">Loading…</div>}
+      {error && <div className="text-sm text-destructive">Error: {error}</div>}
 
       {data && !loading && (
         <>
@@ -511,12 +511,12 @@ function PriceCockpitInner() {
               {buildConfigSummary(data.sku.category, data.sku.specifications, templates) || data.sku.sku_description || data.sku.full_sku_code}
             </h2>
             {data.sku.sku_description && (
-              <p className="text-sm text-gray-600">{data.sku.sku_description}</p>
+              <p className="text-sm text-muted-foreground">{data.sku.sku_description}</p>
             )}
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               {data.sku.full_sku_code} — {data.sku.category} · {data.sku.quantity_in_stock ?? 0} in stock
             </p>
-            <p className="text-sm text-gray-600 mt-1">
+            <p className="text-sm text-muted-foreground mt-1">
               Current default selling price: <span className="font-medium">{money(data.sku.selling_price_default)}</span>
             </p>
           </div>
@@ -533,7 +533,7 @@ function PriceCockpitInner() {
       )}
 
       {!data && !loading && !error && (
-        <p className="text-sm text-gray-400">Search for an item above to get started.</p>
+        <p className="text-sm text-muted-foreground">Search for an item above to get started.</p>
       )}
     </div>
   )
@@ -542,7 +542,7 @@ function PriceCockpitInner() {
 export default function PriceCockpitPage() {
   return (
     <RequireOwner>
-      <Suspense fallback={<div className="p-4 text-sm text-gray-500">Loading…</div>}>
+      <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading…</div>}>
         <PriceCockpitInner />
       </Suspense>
     </RequireOwner>

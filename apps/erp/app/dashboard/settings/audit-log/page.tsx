@@ -102,21 +102,21 @@ export default function AuditLogPage() {
   useEffect(() => { load() }, [load])
 
   if (roleLoading) {
-    return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-gray-400" /></div>
+    return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
   }
 
   return (
     <div className="space-y-4">
       <div>
         <h1 className="text-xl font-semibold">Audit Log</h1>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           {isOwner ? "Every user's activity, most recent first." : 'Your own activity, most recent first.'}
         </p>
       </div>
 
       <div className="flex flex-wrap gap-2 items-end">
         <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-600">Module</label>
+          <label className="text-xs font-medium text-muted-foreground">Module</label>
           <select
             className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
             value={module}
@@ -127,7 +127,7 @@ export default function AuditLogPage() {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-600">Action</label>
+          <label className="text-xs font-medium text-muted-foreground">Action</label>
           <select
             className="h-8 rounded-md border border-input bg-transparent px-2 text-sm"
             value={actionType}
@@ -138,11 +138,11 @@ export default function AuditLogPage() {
           </select>
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-600">From</label>
+          <label className="text-xs font-medium text-muted-foreground">From</label>
           <Input type="date" className="h-8" value={dateFrom} onChange={(e) => { setPage(1); setDateFrom(e.target.value) }} />
         </div>
         <div className="space-y-1">
-          <label className="text-xs font-medium text-gray-600">To</label>
+          <label className="text-xs font-medium text-muted-foreground">To</label>
           <Input type="date" className="h-8" value={dateTo} onChange={(e) => { setPage(1); setDateTo(e.target.value) }} />
         </div>
       </div>
@@ -151,7 +151,7 @@ export default function AuditLogPage() {
 
       <div className="rounded-md border overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+          <thead className="bg-muted text-xs text-muted-foreground uppercase">
             <tr>
               <th className="p-2 text-left">When</th>
               {isOwner && <th className="p-2 text-left">User</th>}
@@ -163,7 +163,7 @@ export default function AuditLogPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={isOwner ? 6 : 5} className="p-4 text-center text-gray-400">Loading…</td></tr>
+              <tr><td colSpan={isOwner ? 6 : 5} className="p-4 text-center text-muted-foreground">Loading…</td></tr>
             ) : rows.length === 0 ? (
               <EmptyTableRow colSpan={isOwner ? 6 : 5} message="No activity found." />
             ) : (
@@ -200,8 +200,8 @@ function AuditLogRowView({
 
   return (
     <>
-      <tr className="border-t hover:bg-gray-50 cursor-pointer" onClick={onToggle}>
-        <td className="p-2 whitespace-nowrap text-gray-500 tabular-nums">
+      <tr className="border-t hover:bg-muted cursor-pointer" onClick={onToggle}>
+        <td className="p-2 whitespace-nowrap text-muted-foreground tabular-nums">
           {new Date(row.created_at).toLocaleString()}
         </td>
         {isOwner && <td className="p-2">{row.actor_email || row.actor_id || '—'}</td>}
@@ -210,10 +210,10 @@ function AuditLogRowView({
           <StatusBadge tone={severityTone}>{ACTION_LABELS[row.action_type] || row.action_type}</StatusBadge>
         </td>
         <td className="p-2">{row.record_label || row.record_id || '—'}</td>
-        <td className="p-2 text-right text-xs text-gray-400">{expanded ? 'Hide' : 'Details'}</td>
+        <td className="p-2 text-right text-xs text-muted-foreground">{expanded ? 'Hide' : 'Details'}</td>
       </tr>
       {expanded && (
-        <tr className="border-t bg-gray-50/60">
+        <tr className="border-t bg-muted/60">
           <td colSpan={isOwner ? 6 : 5} className="p-3">
             <AuditLogDetail row={row} isOwner={isOwner} onChanged={onChanged} />
           </td>
@@ -238,11 +238,11 @@ function AuditLogDetail({ row, isOwner, onChanged }: { row: AuditLogRow; isOwner
 
   return (
     <div className="space-y-3">
-      {row.reason && <div className="text-sm"><span className="text-gray-500">Reason: </span>{row.reason}</div>}
+      {row.reason && <div className="text-sm"><span className="text-muted-foreground">Reason: </span>{row.reason}</div>}
 
       {row.field_corrections?.length > 0 && (
         <div className="space-y-1">
-          <div className="text-xs font-medium text-gray-600">Field changes</div>
+          <div className="text-xs font-medium text-muted-foreground">Field changes</div>
           {row.field_corrections.map((fc) => (
             <FieldCorrectionLine key={fc.id} fc={fc} isOwner={isOwner} onChanged={onChanged} />
           ))}
@@ -250,13 +250,13 @@ function AuditLogDetail({ row, isOwner, onChanged }: { row: AuditLogRow; isOwner
       )}
 
       {row.restore_status === 'restored' && (
-        <div className="text-xs text-gray-500">
+        <div className="text-xs text-muted-foreground">
           Restored {row.restored_at ? new Date(row.restored_at).toLocaleString() : ''}
         </div>
       )}
 
       {row.restore_status === 'restore_failed' && (
-        <div className="text-xs text-red-600">Last restore attempt failed.</div>
+        <div className="text-xs text-destructive">Last restore attempt failed.</div>
       )}
 
       {isOwner && row.action_type === 'soft_delete' && row.restore_status === 'restorable' && (
@@ -285,7 +285,7 @@ function FieldCorrectionLine({ fc, isOwner, onChanged }: { fc: FieldCorrectionDe
     <div className="flex items-center justify-between gap-3 text-sm border-b last:border-b-0 py-1">
       <span>
         <span className="font-medium">{fc.field_name}</span>:{' '}
-        <span className="text-gray-500 line-through">{fc.old_value ?? '—'}</span>{' '}
+        <span className="text-muted-foreground line-through">{fc.old_value ?? '—'}</span>{' '}
         →{' '}
         <span>{fc.new_value ?? '—'}</span>
       </span>

@@ -95,12 +95,12 @@ export function MoveUnitDialog({
         </DialogHeader>
 
         <div className="space-y-3">
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-destructive text-sm">{error}</div>}
 
           {selectedPo ? (
-            <div className="flex items-center justify-between border rounded p-2 text-sm bg-gray-50">
+            <div className="flex items-center justify-between border rounded p-2 text-sm bg-muted">
               <span>{selectedPo.po_number} — {selectedPo.vendor_name}</span>
-              <button onClick={() => setSelectedPo(null)} className="text-xs text-gray-500 underline">Change</button>
+              <button onClick={() => setSelectedPo(null)} className="text-xs text-muted-foreground underline">Change</button>
             </div>
           ) : (
             <div>
@@ -112,7 +112,7 @@ export function MoveUnitDialog({
                     <button
                       key={po.id}
                       onClick={() => { setSelectedPo(po); setResults([]) }}
-                      className="block w-full text-left px-2 py-1 text-xs hover:bg-gray-100 border-b last:border-b-0"
+                      className="block w-full text-left px-2 py-1 text-xs hover:bg-muted border-b last:border-b-0"
                     >
                       {po.po_number} — {po.vendor_name} ({po.po_status.replace(/_/g, ' ')})
                     </button>

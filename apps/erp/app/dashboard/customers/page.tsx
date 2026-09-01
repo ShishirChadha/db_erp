@@ -191,7 +191,7 @@ function CustomersPage() {
           <TableBody>
             {loading ? <TableRow><TableCell colSpan={10} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
               <TableRow key={c.id}>
-                <TableCell className="text-right tabular-nums text-gray-400">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
+                <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                 <TableCell>{c.customer_name}</TableCell>
                 <TableCell>{c.type}</TableCell>
                 <TableCell>{c.has_gst ? (c.gst_number || "Yes") : "No"}</TableCell>

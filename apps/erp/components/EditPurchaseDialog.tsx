@@ -331,7 +331,7 @@ return (
 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 <div>
 <Label>Entry Date</Label>
-<Input type="date" value={formData.entry_date?.slice(0, 10) || ""} disabled className="bg-gray-100" />
+<Input type="date" value={formData.entry_date?.slice(0, 10) || ""} disabled className="bg-muted" />
 </div>
 <div>
 <Label>Purchase Date *</Label>
@@ -441,7 +441,7 @@ placeholder="e.g., DBAS582"
 </div>
 
 {/* SKU (auto) */}
-<div><Label>SKU</Label><Input value={formData.sku || ""} disabled className="bg-gray-100" /></div>
+<div><Label>SKU</Label><Input value={formData.sku || ""} disabled className="bg-muted" /></div>
 <div><Label>Serial Number</Label><Input value={formData.serial_number || ""} onChange={(e) => handleChange("serial_number", e.target.value)} /></div>
 
 {/* Pricing Section */}
@@ -456,7 +456,7 @@ placeholder="e.g., DBAS582"
 <div><Label>Eway Bill No.</Label><Input value={formData.eway_bill_no || ""} onChange={(e) => handleChange("eway_bill_no", e.target.value)} /></div>
 </>
 )}
-<div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-gray-100" /></div>
+<div><Label>GST Amount (Auto)</Label><Input type="number" step="0.01" value={formData.gst_amount ?? ""} disabled className="bg-muted" /></div>
 <div><Label>Total Price (Auto)</Label><Input type="number" step="0.01" value={formData.total_price ?? ""} onChange={(e) => handleChange("total_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
 <div><Label>Selling Price</Label><Input type="number" step="0.01" value={formData.selling_price ?? ""} onChange={(e) => handleChange("selling_price", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
 <div><Label>Vendor Invoice Total</Label><Input
@@ -464,7 +464,7 @@ type="number"
 step="0.01"
 value={formData.vendor_invoice_total ?? ""}
 disabled
-className="bg-gray-100"
+className="bg-muted"
 /></div>
 </div>
 
@@ -492,7 +492,7 @@ className="bg-gray-100"
 <div><Label>Remarks</Label><textarea className="w-full border rounded-md p-2" rows={2} value={formData.remarks || ""} onChange={(e) => handleChange("remarks", e.target.value)} /></div>
 
 {/* File Upload */}
-<div className="mt-6 pt-4 border-t border-gray-200">
+<div className="mt-6 pt-4 border-t border-border">
 <h4 className="text-sm font-medium mb-3">Attached Files (Invoices, E-Way Bills, Receipts)</h4>
 <FileUpload purchaseId={purchase.id} assetNumber={purchase.asset_number || ""} />
 </div>

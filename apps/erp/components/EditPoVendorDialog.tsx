@@ -73,7 +73,7 @@ export function EditPoVendorDialog({
         </DialogHeader>
 
         <div className="space-y-4">
-          {error && <div className="text-red-600 text-sm">{error}</div>}
+          {error && <div className="text-destructive text-sm">{error}</div>}
           <div>
             <Label>Vendor</Label>
             <select value={vendorId} onChange={(e) => setVendorId(e.target.value)} className="border p-2 w-full rounded text-sm">

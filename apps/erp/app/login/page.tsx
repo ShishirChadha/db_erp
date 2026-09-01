@@ -43,7 +43,7 @@ export default function LoginPage() {
 
   return (
     // Outer container – full height, items start from top
-    <div className="min-h-screen flex flex-col justify-start bg-gray-50">
+    <div className="min-h-screen flex flex-col justify-start bg-background">
       
       {/* Logo at top center – minimal top padding, no bottom margin */}
       <div className="flex justify-center pt-6 pb-0">
@@ -62,8 +62,8 @@ export default function LoginPage() {
           
           {/* Heading – directly after logo with minimal gap */}
           <div className="text-center mb-6">
-            <h1 className="text-3xl font-semibold text-gray-900">DB Official ERP SYSTEM</h1>
-            <p className="text-gray-500 text-sm mt-1">Inventory & Sales Management</p>
+            <h1 className="text-3xl font-semibold text-foreground">DB Official ERP SYSTEM</h1>
+            <p className="text-muted-foreground text-sm mt-1">Inventory & Sales Management</p>
           </div>
 
           {/* Login card */}
@@ -98,13 +98,13 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="bg-red-50 text-red-600 text-sm px-4 py-3 rounded-lg">
+                <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg">
                   {error}
                 </div>
               )}
 
               <Button
-                className="w-full bg-blue-600 hover:bg-blue-700 py-2.5"
+                className="w-full bg-primary hover:bg-primary/90 py-2.5"
                 onClick={handleLogin}
                 loading={loading}
               >
@@ -113,7 +113,7 @@ export default function LoginPage() {
             </CardContent>
           </Card>
 
-          <p className="text-center text-xs text-gray-400 mt-6">
+          <p className="text-center text-xs text-muted-foreground mt-6">
             Digitalbluez © {new Date().getFullYear()} · Official Copyright Apply
           </p>
         </div>

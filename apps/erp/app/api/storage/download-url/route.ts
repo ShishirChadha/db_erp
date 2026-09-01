@@ -1,9 +1,9 @@
 import { createClient } from '@/lib/supabase/server';
 import { supabaseAdmin } from '@/lib/supabase/service';
-import { getCookieSessionUser, isOwner } from '@/lib/auth/session';
+import { getCookieSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session';
 import { NextRequest, NextResponse } from 'next/server';
 
-const ALLOWED_BUCKETS = ['purchase-files', 'documents'] as const;
+const ALLOWED_BUCKETS = ['purchase-files', 'documents', 'expense-receipts'] as const;
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -24,7 +24,14 @@ export async function POST(req: NextRequest) {
     if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
-  const storageClient = bucket === 'documents' ? supabaseAdmin.storage : supabase.storage;
+  // expense-receipts: any role with 'expenses' page access can view an attachment
+  // (receipts aren't cost/vendor/margin data).
+  if (bucket === 'expense-receipts') {
+    const sessionUser = await getCookieSessionUser();
+    if (!hasPageAccess(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  }
+
+  const storageClient = ['documents', 'expense-receipts'].includes(bucket) ? supabaseAdmin.storage : supabase.storage;
   const { data, error } = await storageClient
     .from(bucket)
     .createSignedUrl(key, expiresIn);

@@ -64,10 +64,10 @@ function Section({
   if (loading) return null
   if (count === 0) return null
   return (
-    <div className="border rounded-lg bg-white shadow-sm p-4">
+    <div className="border rounded-lg bg-card shadow-sm p-4">
       <div className="flex items-center justify-between mb-2">
-        <h2 className="font-semibold text-gray-900">{title} ({count})</h2>
-        <Link href={href} className="text-xs text-blue-600 underline">View all</Link>
+        <h2 className="font-semibold text-foreground">{title} ({count})</h2>
+        <Link href={href} className="text-xs text-primary underline">View all</Link>
       </div>
       <ul className="divide-y">{children}</ul>
     </div>
@@ -75,7 +75,7 @@ function Section({
 }
 
 function Row({ children }: { children: React.ReactNode }) {
-  return <li className="py-2 text-sm text-gray-700">{children}</li>
+  return <li className="py-2 text-sm text-muted-foreground">{children}</li>
 }
 
 // Cross-cutting "check this first thing" checklist -- doesn't replace Repair Jobs,
@@ -133,19 +133,19 @@ function PendingTasksPage() {
   return (
     <div className="p-4 max-w-3xl mx-auto">
       <h1 className="text-2xl font-bold mb-1">Pending Tasks</h1>
-      <p className="text-sm text-gray-500 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Everything outstanding across Repair Jobs, RMA, Live Stock, and Sales -- check this first thing to see what needs attention today.
       </p>
 
-      {loading && <div className="text-gray-500 text-sm">Loading...</div>}
-      {nothingPending && <div className="text-gray-500 text-sm">Nothing pending -- you're all caught up.</div>}
+      {loading && <div className="text-muted-foreground text-sm">Loading...</div>}
+      {nothingPending && <div className="text-muted-foreground text-sm">Nothing pending -- you're all caught up.</div>}
 
       <div className="space-y-4">
         <Section title="Repair Jobs In Progress" count={repairJobs.length} href="/dashboard/repair-jobs" loading={loading}>
           {repairJobs.slice(0, 8).map(job => (
             <Row key={job.id}>
               <span className="font-medium">{job.job_number}</span> -- {job.customers?.customer_name || 'Unknown customer'}
-              {' '}<span className="text-gray-400">({(job.problem_description || job.customer_device_description || '').slice(0, 60) || 'no description'})</span>
+              {' '}<span className="text-muted-foreground">({(job.problem_description || job.customer_device_description || '').slice(0, 60) || 'no description'})</span>
             </Row>
           ))}
         </Section>

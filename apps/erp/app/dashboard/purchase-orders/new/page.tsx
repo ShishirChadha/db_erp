@@ -217,18 +217,18 @@ function NewPurchaseOrderPage() {
 
   return (
     <div className="p-4 max-w-4xl mx-auto">
-      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-gray-600 hover:text-gray-900 mb-2">
+      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-muted-foreground hover:text-foreground mb-2">
         ← Back to Purchase Orders
       </button>
       <h1 className="text-2xl font-bold mb-4">New Purchase Order</h1>
       <div className="flex mb-6">
         {[1, 2, 3].map(s => (
-          <div key={s} className={`flex-1 text-center py-2 ${step === s ? 'bg-blue-600 text-white' : 'bg-gray-200'}`}>
+          <div key={s} className={`flex-1 text-center py-2 ${step === s ? 'bg-primary text-primary-foreground' : 'bg-muted'}`}>
             Step {s}: {s === 1 ? 'Header' : s === 2 ? 'Items' : 'Review'}
           </div>
         ))}
       </div>
-      {error && <div className="text-red-600 mb-4">{error}</div>}
+      {error && <div className="text-destructive mb-4">{error}</div>}
 
       {/* Step 1: Header (unchanged) */}
       {step === 1 && (
@@ -273,7 +273,7 @@ function NewPurchaseOrderPage() {
             <textarea value={remarks} onChange={(e) => setRemarks(e.target.value)} className="border p-2 w-full rounded" />
           </div>
           <div className="flex justify-end">
-            <button onClick={() => setStep(2)} disabled={!vendorId || !poDate} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+            <button onClick={() => setStep(2)} disabled={!vendorId || !poDate} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
               Next: Add Items
             </button>
           </div>
@@ -295,11 +295,11 @@ function NewPurchaseOrderPage() {
               placeholder="Type to search SKU..."
             />
             {showSkuDropdown && skuOptions.length > 0 && (
-              <ul className="absolute z-10 bg-white border w-full max-h-40 overflow-y-auto">
+              <ul className="absolute z-10 bg-card border w-full max-h-40 overflow-y-auto">
                 {skuOptions.map(sku => (
                   <li
                     key={sku.id}
-                    className="p-2 hover:bg-gray-100 cursor-pointer"
+                    className="p-2 hover:bg-muted cursor-pointer"
                     onClick={() => {
                       setSelectedSku(sku)
                       setSkuSearch(sku.full_sku_code)
@@ -307,8 +307,8 @@ function NewPurchaseOrderPage() {
                     }}
                   >
                     <div className="font-medium">{sku.full_sku_code}</div>
-                    <div className="text-sm text-gray-600">{sku.sku_description}</div>
-                    <div className="text-xs text-gray-400">
+                    <div className="text-sm text-muted-foreground">{sku.sku_description}</div>
+                    <div className="text-xs text-muted-foreground">
                       {[sku.brand, sku.model_name, sku.hsn_code && `HSN: ${sku.hsn_code}`, ...Object.values(sku.specifications || {}).filter(v => v)]
                         .filter(Boolean).join(' · ')}
                     </div>
@@ -317,12 +317,12 @@ function NewPurchaseOrderPage() {
               </ul>
             )}
             {showSkuDropdown && skuSearch.trim() && skuOptions.length === 0 && (
-              <div className="absolute z-10 bg-white border w-full p-3 text-sm">
+              <div className="absolute z-10 bg-card border w-full p-3 text-sm">
                 No matching SKU found.{' '}
                 <button
                   type="button"
                   onClick={() => setShowCreateSku(true)}
-                  className="text-blue-600 underline"
+                  className="text-primary underline"
                 >
                   + Create new SKU
                 </button>
@@ -331,23 +331,23 @@ function NewPurchaseOrderPage() {
           </div>
 
           {selectedSku && (
-            <div className="border p-4 rounded mb-4 bg-gray-50">
+            <div className="border p-4 rounded mb-4 bg-muted">
               <div className="flex justify-between items-start">
                 <div>
                   <h3 className="text-lg font-bold">{selectedSku.full_sku_code}</h3>
-                  <p className="text-gray-700">{selectedSku.sku_description}</p>
+                  <p className="text-muted-foreground">{selectedSku.sku_description}</p>
                   <div className="mt-2 grid grid-cols-2 gap-2 text-sm">
-                    {selectedSku.brand && <p><span className="text-gray-500">Brand:</span> {selectedSku.brand}</p>}
-                    {selectedSku.model_name && <p><span className="text-gray-500">Model:</span> {selectedSku.model_name}</p>}
+                    {selectedSku.brand && <p><span className="text-muted-foreground">Brand:</span> {selectedSku.brand}</p>}
+                    {selectedSku.model_name && <p><span className="text-muted-foreground">Model:</span> {selectedSku.model_name}</p>}
                     {Object.entries(selectedSku.specifications || {}).map(([key, val]) => (
                       val !== null && val !== '' && (
-                        <p key={key}><span className="text-gray-500">{key}:</span> {String(val)}</p>
+                        <p key={key}><span className="text-muted-foreground">{key}:</span> {String(val)}</p>
                       )
                     ))}
-                    {selectedSku.hsn_code && <p><span className="text-gray-500">HSN:</span> {selectedSku.hsn_code}</p>}
+                    {selectedSku.hsn_code && <p><span className="text-muted-foreground">HSN:</span> {selectedSku.hsn_code}</p>}
                   </div>
                 </div>
-                <button onClick={() => { setSelectedSku(null); setSkuSearch(''); }} className="text-red-500 text-sm">✕ Clear</button>
+                <button onClick={() => { setSelectedSku(null); setSkuSearch(''); }} className="text-destructive text-sm">✕ Clear</button>
               </div>
 
               <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -372,7 +372,7 @@ function NewPurchaseOrderPage() {
                   <input type="text" value={hsnCode} onChange={(e) => setHsnCode(e.target.value)} className="border p-2 w-full rounded" placeholder="Auto‑filled from SKU" />
                 </div>
               </div>
-              <button onClick={addItem} className="mt-3 bg-green-600 text-white px-4 py-2 rounded">Add Item</button>
+              <button onClick={addItem} className="mt-3 bg-success text-success-foreground px-4 py-2 rounded">Add Item</button>
             </div>
           )}
 
@@ -381,7 +381,7 @@ function NewPurchaseOrderPage() {
               <h3 className="font-semibold mb-2">Added Items</h3>
               <table className="min-w-full border text-sm">
                 <thead>
-                  <tr className="bg-gray-50">
+                  <tr className="bg-muted">
                     <th className="border p-2 text-left">SKU</th>
                     <th className="border p-2 text-left">Specs</th>
                     <th className="border p-2 text-left">HSN</th>
@@ -404,19 +404,19 @@ function NewPurchaseOrderPage() {
                     ].filter(Boolean).join(', ') || '—'
 
                     return (
-                      <tr key={idx} className="hover:bg-gray-50">
+                      <tr key={idx} className="hover:bg-muted">
                         <td className="border p-2">
                           <div className="font-medium">{item.sku_full_code}</div>
-                          <div className="text-xs text-gray-500">{item.description}</div>
+                          <div className="text-xs text-muted-foreground">{item.description}</div>
                         </td>
-                        <td className="border p-2 text-xs text-gray-600">{specsSummary}</td>
+                        <td className="border p-2 text-xs text-muted-foreground">{specsSummary}</td>
                         <td className="border p-2 text-xs">{item.hsn_code || '—'}</td>
                         <td className="border p-2 text-right">{item.quantity}</td>
                         <td className="border p-2 text-right">₹{item.unit_price.toFixed(2)}</td>
                         <td className="border p-2 text-right">{item.gst_percentage}%</td>
                         <td className="border p-2 text-right">₹{item.line_total.toFixed(2)}</td>
                         <td className="border p-2 text-center">
-                          <button onClick={() => removeItem(idx)} className="text-red-500">✕</button>
+                          <button onClick={() => removeItem(idx)} className="text-destructive">✕</button>
                         </td>
                       </tr>
                     )
@@ -432,8 +432,8 @@ function NewPurchaseOrderPage() {
           )}
 
           <div className="flex justify-between mt-6">
-            <button onClick={() => setStep(1)} className="bg-gray-200 px-4 py-2 rounded">Back</button>
-            <button onClick={() => setStep(3)} disabled={items.length === 0} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+            <button onClick={() => setStep(1)} className="bg-muted px-4 py-2 rounded">Back</button>
+            <button onClick={() => setStep(3)} disabled={items.length === 0} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
               Review Order
             </button>
           </div>
@@ -444,7 +444,7 @@ function NewPurchaseOrderPage() {
       {step === 3 && (
         <div>
           <h2 className="text-lg font-semibold mb-2">Review Order</h2>
-          <div className="border p-4 mb-4 rounded bg-white">
+          <div className="border p-4 mb-4 rounded bg-card">
             <p><strong>Vendor:</strong> {vendors.find(v => v.id === vendorId)?.company_name || 'N/A'}</p>
             <p><strong>Date:</strong> {poDate}</p>
             <p><strong>Expected Delivery:</strong> {expectedDelivery || 'N/A'}</p>
@@ -454,7 +454,7 @@ function NewPurchaseOrderPage() {
           <h3 className="font-semibold mb-2">Items ({items.length})</h3>
           <table className="min-w-full border mb-4 text-sm">
             <thead>
-              <tr className="bg-gray-50">
+              <tr className="bg-muted">
                 <th className="border p-2 text-left">SKU</th>
                 <th className="border p-2 text-left">Specs</th>
                 <th className="border p-2 text-left">HSN</th>
@@ -478,9 +478,9 @@ function NewPurchaseOrderPage() {
                   <tr key={idx}>
                     <td className="border p-2">
                       <div className="font-medium">{item.sku_full_code}</div>
-                      <div className="text-xs text-gray-500">{item.description}</div>
+                      <div className="text-xs text-muted-foreground">{item.description}</div>
                     </td>
-                    <td className="border p-2 text-xs text-gray-600">{specsSummary}</td>
+                    <td className="border p-2 text-xs text-muted-foreground">{specsSummary}</td>
                     <td className="border p-2 text-xs">{item.hsn_code || '—'}</td>
                     <td className="border p-2 text-right">{item.quantity}</td>
                     <td className="border p-2 text-right">₹{item.unit_price.toFixed(2)}</td>
@@ -497,8 +497,8 @@ function NewPurchaseOrderPage() {
           </div>
 
           <div className="flex justify-between mt-4">
-            <button onClick={() => setStep(2)} className="bg-gray-200 px-4 py-2 rounded">Back</button>
-            <button onClick={() => handleSubmit()} disabled={submitting} className="bg-blue-600 text-white px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
+            <button onClick={() => setStep(2)} className="bg-muted px-4 py-2 rounded">Back</button>
+            <button onClick={() => handleSubmit()} disabled={submitting} className="bg-primary text-primary-foreground px-6 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5">
               {submitting && <Loader2 className="size-4 animate-spin" />}
               {submitting ? 'Creating...' : 'Create Purchase Order'}
             </button>

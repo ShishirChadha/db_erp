@@ -153,19 +153,19 @@ export default function ActivityCommentThread({
   return (
     <div className="space-y-3">
       <h4 className="font-medium text-sm">Comments</h4>
-      {loading && <p className="text-xs text-gray-400">Loading...</p>}
+      {loading && <p className="text-xs text-muted-foreground">Loading...</p>}
       <div className="space-y-2 max-h-72 overflow-y-auto">
-        {!loading && comments.length === 0 && <p className="text-xs text-gray-400">No comments yet.</p>}
+        {!loading && comments.length === 0 && <p className="text-xs text-muted-foreground">No comments yet.</p>}
         {comments.map(c => (
-          <div key={c.id} className={`text-sm rounded p-2 ${c.pinned ? 'bg-amber-50 border border-amber-200' : 'bg-gray-50'}`}>
+          <div key={c.id} className={`text-sm rounded p-2 ${c.pinned ? 'bg-warning/15 border border-warning/20' : 'bg-muted'}`}>
             {c.pinned && (
-              <p className="text-xs text-amber-700 flex items-center gap-1 mb-1">
+              <p className="text-xs text-warning flex items-center gap-1 mb-1">
                 <Pin className="h-3 w-3" /> Pinned by {c.pinned_by_name || 'someone'}
               </p>
             )}
             <div className="flex justify-between items-start">
               <span className="font-medium">{c.author_name}</span>
-              <span className="text-xs text-gray-400">
+              <span className="text-xs text-muted-foreground">
                 {format(new Date(c.created_at), 'dd/MM HH:mm')}{c.edited ? ' (edited)' : ''}
               </span>
             </div>
@@ -174,8 +174,8 @@ export default function ActivityCommentThread({
             {c.attachments?.length > 0 && (
               <div className="mt-1.5 space-y-1">
                 {c.attachments.map((a, i) => (
-                  <button key={i} onClick={() => openAttachment(a.key)} className="flex items-center gap-1.5 text-xs text-blue-600 hover:underline">
-                    <FileText className="h-3 w-3" /> {a.name} {a.size !== null && <span className="text-gray-400">({formatSize(a.size)})</span>}
+                  <button key={i} onClick={() => openAttachment(a.key)} className="flex items-center gap-1.5 text-xs text-primary hover:underline">
+                    <FileText className="h-3 w-3" /> {a.name} {a.size !== null && <span className="text-muted-foreground">({formatSize(a.size)})</span>}
                   </button>
                 ))}
               </div>
@@ -186,30 +186,30 @@ export default function ActivityCommentThread({
                 <button
                   key={r.emoji}
                   onClick={() => toggleReaction(c.id, r.emoji)}
-                  className={`text-xs px-1.5 py-0.5 rounded-full border ${r.reactedByMe ? 'bg-blue-50 border-blue-300' : 'bg-white border-gray-200'}`}
+                  className={`text-xs px-1.5 py-0.5 rounded-full border ${r.reactedByMe ? 'bg-info/15 border-primary/20' : 'bg-card border-border'}`}
                 >
                   {r.emoji} {r.count}
                 </button>
               ))}
               <div className="relative">
-                <button onClick={() => setReactionPickerFor(prev => prev === c.id ? null : c.id)} className="text-gray-400 hover:text-gray-600">
+                <button onClick={() => setReactionPickerFor(prev => prev === c.id ? null : c.id)} className="text-muted-foreground hover:text-foreground">
                   <Smile className="h-3.5 w-3.5" />
                 </button>
                 {reactionPickerFor === c.id && (
-                  <div className="absolute bottom-full mb-1 left-0 bg-white border rounded shadow-md flex gap-1 p-1 z-10">
+                  <div className="absolute bottom-full mb-1 left-0 bg-card border rounded shadow-md flex gap-1 p-1 z-10">
                     {REACTION_PALETTE.map(emoji => (
-                      <button key={emoji} onClick={() => toggleReaction(c.id, emoji)} className="hover:bg-gray-100 rounded px-1 text-sm">{emoji}</button>
+                      <button key={emoji} onClick={() => toggleReaction(c.id, emoji)} className="hover:bg-muted rounded px-1 text-sm">{emoji}</button>
                     ))}
                   </div>
                 )}
               </div>
               {canPin && (
-                <button onClick={() => togglePin(c)} className="text-gray-400 hover:text-amber-600 ml-auto" title={c.pinned ? 'Unpin' : 'Pin this comment'}>
+                <button onClick={() => togglePin(c)} className="text-muted-foreground hover:text-warning ml-auto" title={c.pinned ? 'Unpin' : 'Pin this comment'}>
                   {c.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
                 </button>
               )}
               {(c.author_id === myId || isOwner) && (
-                <button onClick={() => handleDelete(c.id)} className="text-xs text-red-500 hover:underline">Delete</button>
+                <button onClick={() => handleDelete(c.id)} className="text-xs text-destructive hover:underline">Delete</button>
               )}
             </div>
           </div>
@@ -219,9 +219,9 @@ export default function ActivityCommentThread({
       {pendingAttachments.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {pendingAttachments.map((a, i) => (
-            <span key={i} className="flex items-center gap-1 text-xs bg-gray-100 rounded px-2 py-1">
+            <span key={i} className="flex items-center gap-1 text-xs bg-muted rounded px-2 py-1">
               <FileText className="h-3 w-3" /> {a.name}
-              <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="text-gray-400 hover:text-red-500">
+              <button onClick={() => setPendingAttachments(prev => prev.filter((_, idx) => idx !== i))} className="text-muted-foreground hover:text-destructive">
                 <X className="h-3 w-3" />
               </button>
             </span>
@@ -238,18 +238,18 @@ export default function ActivityCommentThread({
             value={text}
             onChange={e => handleTextChange(e.target.value)}
           />
-          <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-gray-500 hover:text-gray-700 h-9 px-1 disabled:opacity-50" title="Attach a file">
+          <button onClick={() => fileInputRef.current?.click()} disabled={uploading} className="text-muted-foreground hover:text-foreground h-9 px-1 disabled:opacity-50" title="Attach a file">
             {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Paperclip className="h-4 w-4" />}
           </button>
           <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileSelect} />
-          <button onClick={submit} disabled={submitting || !text.trim()} className="px-3 bg-blue-600 text-white rounded disabled:opacity-50 h-9">
+          <button onClick={submit} disabled={submitting || !text.trim()} className="px-3 bg-primary text-primary-foreground rounded disabled:opacity-50 h-9">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
           </button>
         </div>
         {showMentionList && filteredCandidates.length > 0 && (
-          <div className="absolute bottom-full mb-1 left-0 bg-white border rounded shadow-md w-56 max-h-40 overflow-y-auto z-10">
+          <div className="absolute bottom-full mb-1 left-0 bg-card border rounded shadow-md w-56 max-h-40 overflow-y-auto z-10">
             {filteredCandidates.map(c => (
-              <button key={c.id} onClick={() => pickMention(c)} className="block w-full text-left px-2 py-1.5 text-sm hover:bg-gray-100">
+              <button key={c.id} onClick={() => pickMention(c)} className="block w-full text-left px-2 py-1.5 text-sm hover:bg-muted">
                 {c.name}
               </button>
             ))}

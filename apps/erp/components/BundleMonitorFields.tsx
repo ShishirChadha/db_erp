@@ -36,7 +36,7 @@ export function BundleMonitorFields({ value, onChange }: { value: BundledMonitor
           <input className="border p-2 w-full rounded" value={value.serial_number} onChange={(e) => onChange({ ...value, serial_number: e.target.value })} />
         </div>
       </div>
-      <p className="text-xs text-gray-500">Creates its own trackable unit -- can be QC'd and sold independently of the desktop.</p>
+      <p className="text-xs text-muted-foreground">Creates its own trackable unit -- can be QC'd and sold independently of the desktop.</p>
     </div>
   )
 }

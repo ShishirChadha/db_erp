@@ -70,18 +70,18 @@ export default function TagsManager() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Tags are added freely by anyone on the Activity Hub. Rename one here to fix a typo or merge it into
         another spelling everywhere it&apos;s used, or remove it entirely.
       </p>
 
-      {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+      {error && <div className="text-destructive text-sm mb-2">{error}</div>}
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading...</p>
+        <p className="text-sm text-muted-foreground">Loading...</p>
       ) : (
         <div className="border rounded divide-y">
-          {tags.length === 0 && <p className="text-sm text-gray-400 p-2">No tags in use yet.</p>}
+          {tags.length === 0 && <p className="text-sm text-muted-foreground p-2">No tags in use yet.</p>}
           {tags.map(tag => (
             <div key={tag} className="flex justify-between items-center p-2">
               <span>{tag}</span>
@@ -89,14 +89,14 @@ export default function TagsManager() {
                 <button
                   onClick={() => renameTag(tag)}
                   disabled={busy}
-                  className="text-xs px-2 py-1 rounded bg-blue-50 text-blue-600 disabled:opacity-50"
+                  className="text-xs px-2 py-1 rounded bg-info/15 text-primary disabled:opacity-50"
                 >
                   Rename
                 </button>
                 <button
                   onClick={() => deleteTag(tag)}
                   disabled={busy}
-                  className="text-xs px-2 py-1 rounded bg-red-50 text-red-600 disabled:opacity-50"
+                  className="text-xs px-2 py-1 rounded bg-destructive/10 text-destructive disabled:opacity-50"
                 >
                   Delete
                 </button>

@@ -56,7 +56,7 @@ export const ResizableHeader = ({
 
   return (
     <th
-      className={cn(className, 'relative', stickyTop !== undefined && 'sticky z-20 bg-white')}
+      className={cn(className, 'relative', stickyTop !== undefined && 'sticky z-20 bg-card')}
       style={stickyTop !== undefined ? { width, top: stickyTop } : { width }}
     >
       {onSort ? (
@@ -68,7 +68,7 @@ export const ResizableHeader = ({
       )}
       <div
         onMouseDown={handleMouseDown}
-        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-blue-200"
+        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-primary/20"
       />
     </th>
   )

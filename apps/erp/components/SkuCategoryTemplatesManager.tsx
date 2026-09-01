@@ -190,15 +190,15 @@ export default function SkuCategoryTemplatesManager() {
   // includes_monitor -> monitor_brand/size/resolution).
   const checkboxFieldNames = draftFields.filter((f) => f.type === 'checkbox').map((f) => f.name)
 
-  if (loading) return <p className="text-sm text-gray-400">Loading...</p>
+  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Every SKU category's spec fields (New SKU, Stock Intake's inline create, and the PO wizard's create-new-SKU all read this) live here. A category code and a field's machine name are locked once created -- existing SKUs are already keyed by them.
       </p>
 
-      {error && <div className="text-red-600 text-sm mb-3">{error}</div>}
+      {error && <div className="text-destructive text-sm mb-3">{error}</div>}
 
       <div className="flex flex-col md:flex-row gap-4">
         <div className="md:w-56 shrink-0">
@@ -207,14 +207,14 @@ export default function SkuCategoryTemplatesManager() {
               <button
                 key={t.category}
                 onClick={() => selectCategory(t.category)}
-                className={`w-full text-left p-2 text-sm ${selected === t.category ? 'bg-blue-50 font-medium' : 'hover:bg-gray-50'}`}
+                className={`w-full text-left p-2 text-sm ${selected === t.category ? 'bg-info/15 font-medium' : 'hover:bg-muted'}`}
               >
-                {t.display_name} <span className="text-gray-400 font-mono text-xs">({t.category})</span>
+                {t.display_name} <span className="text-muted-foreground font-mono text-xs">({t.category})</span>
               </button>
             ))}
           </div>
           {!showNewCategory ? (
-            <button onClick={() => setShowNewCategory(true)} className="text-sm text-blue-600">+ New Category</button>
+            <button onClick={() => setShowNewCategory(true)} className="text-sm text-primary">+ New Category</button>
           ) : (
             <div className="border rounded p-2 space-y-2">
               <input
@@ -229,12 +229,12 @@ export default function SkuCategoryTemplatesManager() {
                 placeholder="Display name"
                 className="border p-1 w-full rounded text-sm"
               />
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Works immediately for New SKU / Stock Intake / PO wizard's create-new-SKU. A developer still needs to register it as serialized-or-quantity-only, and add it to the legacy Purchases quick-entry dialog's Type dropdown if needed there too.
               </p>
               <div className="flex gap-2">
-                <button onClick={createCategory} disabled={busy} className="bg-blue-600 text-white px-3 py-1 rounded text-sm disabled:opacity-50">Create</button>
-                <button onClick={() => setShowNewCategory(false)} className="text-sm text-gray-500">Cancel</button>
+                <button onClick={createCategory} disabled={busy} className="bg-primary text-primary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">Create</button>
+                <button onClick={() => setShowNewCategory(false)} className="text-sm text-muted-foreground">Cancel</button>
               </div>
             </div>
           )}
@@ -246,21 +246,21 @@ export default function SkuCategoryTemplatesManager() {
               <h3 className="font-medium mb-2 text-sm">Category Info</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
                 <div>
-                  <label className="block text-xs text-gray-500">Display Name</label>
+                  <label className="block text-xs text-muted-foreground">Display Name</label>
                   <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="border p-1 w-full rounded text-sm" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500">SKU Code Format</label>
+                  <label className="block text-xs text-muted-foreground">SKU Code Format</label>
                   <input value={skuCodeFormat} onChange={(e) => setSkuCodeFormat(e.target.value)} className="border p-1 w-full rounded text-sm font-mono" />
                 </div>
               </div>
-              <button onClick={saveCategoryInfo} disabled={busy} className="bg-blue-600 text-white px-3 py-1 rounded text-sm disabled:opacity-50">Save Category Info</button>
+              <button onClick={saveCategoryInfo} disabled={busy} className="bg-primary text-primary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">Save Category Info</button>
             </div>
 
             <div className="border rounded p-3">
               <h3 className="font-medium mb-2 text-sm">Fields</h3>
               <div className="border rounded divide-y mb-3">
-                {draftFields.length === 0 && <p className="text-sm text-gray-400 p-2">No fields yet.</p>}
+                {draftFields.length === 0 && <p className="text-sm text-muted-foreground p-2">No fields yet.</p>}
                 {draftFields.map((field, i) => (
                   <div key={field.name} className="p-2 flex flex-wrap items-center gap-2 text-sm">
                     <div className="flex flex-col shrink-0">
@@ -272,7 +272,7 @@ export default function SkuCategoryTemplatesManager() {
                       onChange={(e) => updateField(i, { label: e.target.value })}
                       className="border p-1 rounded flex-1 min-w-[120px]"
                     />
-                    <span className="font-mono text-xs text-gray-400" title="Machine name (locked)">{field.name}</span>
+                    <span className="font-mono text-xs text-muted-foreground" title="Machine name (locked)">{field.name}</span>
                     <select value={field.type} onChange={(e) => updateField(i, { type: e.target.value as TemplateField['type'] })} className="border p-1 rounded">
                       {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
@@ -292,13 +292,13 @@ export default function SkuCategoryTemplatesManager() {
                       <Checkbox checked={draftVariantFields.includes(field.name)} onCheckedChange={() => toggleVariant(field.name)} />
                       Variant
                     </label>
-                    <button onClick={() => removeField(i)} className="text-red-600 text-xs">Remove</button>
+                    <button onClick={() => removeField(i)} className="text-destructive text-xs">Remove</button>
                   </div>
                 ))}
               </div>
 
-              <div className="border rounded p-2 space-y-2 bg-gray-50">
-                <p className="text-xs font-medium text-gray-600">+ Add Field</p>
+              <div className="border rounded p-2 space-y-2 bg-muted">
+                <p className="text-xs font-medium text-muted-foreground">+ Add Field</p>
                 <div className="flex flex-wrap gap-2">
                   <input
                     value={newField.label}
@@ -337,11 +337,11 @@ export default function SkuCategoryTemplatesManager() {
                     <Checkbox checked={newField.variant} onCheckedChange={(v) => setNewField((f) => ({ ...f, variant: !!v }))} />
                     Variant
                   </label>
-                  <button onClick={addField} className="bg-gray-700 text-white px-3 py-1 rounded text-sm">Add</button>
+                  <button onClick={addField} className="bg-foreground text-background px-3 py-1 rounded text-sm">Add</button>
                 </div>
               </div>
 
-              <button onClick={saveFields} disabled={busy} className="mt-3 bg-blue-600 text-white px-3 py-1 rounded text-sm disabled:opacity-50">Save Fields</button>
+              <button onClick={saveFields} disabled={busy} className="mt-3 bg-primary text-primary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">Save Fields</button>
             </div>
           </div>
         )}

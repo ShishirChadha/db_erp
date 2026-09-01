@@ -92,7 +92,7 @@ function UpgradePricingSection() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Configure what upgrades customers can buy on the website (e.g. 8GB RAM → 16GB RAM = +₹3,500), and their price.
         RAM/SSD upgrades are a real physical service performed by staff before shipping; a Warranty upgrade just
         extends the unit&apos;s warranty. Only rules matching a unit&apos;s <em>current</em> spec will show on the
@@ -101,7 +101,7 @@ function UpgradePricingSection() {
 
       <div className="border rounded-lg p-4 mb-4">
         <h3 className="text-sm font-semibold mb-3">Add Upgrade Rule</h3>
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {error && <div className="text-destructive text-sm mb-2">{error}</div>}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 items-end">
           <div>
             <label className="block text-xs font-medium mb-1">Category</label>
@@ -140,7 +140,7 @@ function UpgradePricingSection() {
               <label className="block text-xs font-medium mb-1">Price (₹)</label>
               <input type="number" min={0} value={priceDelta} onChange={(e) => setPriceDelta(e.target.value)} className="border p-2 w-full rounded" />
             </div>
-            <button onClick={addRule} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50 h-fit self-end">
+            <button onClick={addRule} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50 h-fit self-end">
               {saving ? 'Adding…' : 'Add'}
             </button>
           </div>
@@ -148,9 +148,9 @@ function UpgradePricingSection() {
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rules.length === 0 ? (
-        <p className="text-sm text-gray-500">No upgrade rules configured yet.</p>
+        <p className="text-sm text-muted-foreground">No upgrade rules configured yet.</p>
       ) : (
         <table className="min-w-full border">
           <thead>
@@ -173,12 +173,12 @@ function UpgradePricingSection() {
                 <td className="border p-2">{r.to_value}</td>
                 <td className="border p-2 text-right tabular-nums">₹{Number(r.price_delta).toFixed(2)}</td>
                 <td className="border p-2 text-center">
-                  <button onClick={() => toggleActive(r)} className="text-blue-600 underline text-xs">
+                  <button onClick={() => toggleActive(r)} className="text-primary underline text-xs">
                     {r.is_active ? 'Deactivate' : 'Activate'}
                   </button>
                 </td>
                 <td className="border p-2">
-                  <button onClick={() => removeRule(r.id)} className="text-red-600 underline text-xs">Delete</button>
+                  <button onClick={() => removeRule(r.id)} className="text-destructive underline text-xs">Delete</button>
                 </td>
               </tr>
             ))}
@@ -297,14 +297,14 @@ function PromotionsSection() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Discounts, coupon codes, and free-gift promotions for the website. At most one non-stackable promotion
         applies per order (the best discount wins); any number of stackable promotions combine with it and each other.
       </p>
 
       <div className="border rounded-lg p-4 mb-4 space-y-3">
         <h3 className="text-sm font-semibold">Add Promotion</h3>
-        {error && <div className="text-red-600 text-sm">{error}</div>}
+        {error && <div className="text-destructive text-sm">{error}</div>}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1">Name</label>
@@ -374,15 +374,15 @@ function PromotionsSection() {
             Stackable with other promotions
           </label>
         </div>
-        <button onClick={addPromo} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+        <button onClick={addPromo} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
           {saving ? 'Adding…' : 'Add Promotion'}
         </button>
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : promos.length === 0 ? (
-        <p className="text-sm text-gray-500">No promotions configured yet.</p>
+        <p className="text-sm text-muted-foreground">No promotions configured yet.</p>
       ) : (
         <table className="min-w-full border">
           <thead>
@@ -407,10 +407,10 @@ function PromotionsSection() {
                 <td className="border p-2 text-xs">{toLocalDatetimeInput(p.starts_at)} → {toLocalDatetimeInput(p.ends_at)}</td>
                 <td className="border p-2 text-center">{p.is_stackable ? 'Yes' : 'No'}</td>
                 <td className="border p-2 text-center">
-                  <button onClick={() => toggleActive(p)} className="text-blue-600 underline text-xs">{p.is_active ? 'Deactivate' : 'Activate'}</button>
+                  <button onClick={() => toggleActive(p)} className="text-primary underline text-xs">{p.is_active ? 'Deactivate' : 'Activate'}</button>
                 </td>
                 <td className="border p-2">
-                  <button onClick={() => removePromo(p.id)} className="text-red-600 underline text-xs">Delete</button>
+                  <button onClick={() => removePromo(p.id)} className="text-destructive underline text-xs">Delete</button>
                 </td>
               </tr>
             ))}
@@ -478,14 +478,14 @@ function CrossSellSection() {
 
   return (
     <div>
-      <p className="text-sm text-gray-600 mb-4">
+      <p className="text-sm text-muted-foreground mb-4">
         Which category to suggest under "Complete your setup" on a product page. Seeded from the previous default
         (every category suggests Accessories) — add more specific rules (e.g. Laptops → Adapters) as you like.
       </p>
 
       <div className="border rounded-lg p-4 mb-4">
         <h3 className="text-sm font-semibold mb-3">Add Rule</h3>
-        {error && <div className="text-red-600 text-sm mb-2">{error}</div>}
+        {error && <div className="text-destructive text-sm mb-2">{error}</div>}
         <div className="flex gap-3 items-end">
           <div>
             <label className="block text-xs font-medium mb-1">When viewing category</label>
@@ -495,16 +495,16 @@ function CrossSellSection() {
             <label className="block text-xs font-medium mb-1">Suggest category</label>
             <input type="text" value={suggestedCategory} onChange={(e) => setSuggestedCategory(e.target.value.toUpperCase())} placeholder="e.g. ACC" className="border p-2 rounded w-32" />
           </div>
-          <button onClick={addRule} disabled={saving} className="bg-blue-600 text-white px-4 py-2 rounded disabled:opacity-50">
+          <button onClick={addRule} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
             {saving ? 'Adding…' : 'Add'}
           </button>
         </div>
       </div>
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-muted-foreground">Loading…</p>
       ) : rules.length === 0 ? (
-        <p className="text-sm text-gray-500">No cross-sell rules configured yet.</p>
+        <p className="text-sm text-muted-foreground">No cross-sell rules configured yet.</p>
       ) : (
         <table className="min-w-full border">
           <thead>
@@ -521,10 +521,10 @@ function CrossSellSection() {
                 <td className="border p-2">{r.source_category}</td>
                 <td className="border p-2">{r.suggested_category}</td>
                 <td className="border p-2 text-center">
-                  <button onClick={() => toggleActive(r)} className="text-blue-600 underline text-xs">{r.is_active ? 'Deactivate' : 'Activate'}</button>
+                  <button onClick={() => toggleActive(r)} className="text-primary underline text-xs">{r.is_active ? 'Deactivate' : 'Activate'}</button>
                 </td>
                 <td className="border p-2">
-                  <button onClick={() => removeRule(r.id)} className="text-red-600 underline text-xs">Delete</button>
+                  <button onClick={() => removeRule(r.id)} className="text-destructive underline text-xs">Delete</button>
                 </td>
               </tr>
             ))}
@@ -552,7 +552,7 @@ export default function WebsiteAdminManager() {
             key={t.key}
             onClick={() => setTab(t.key)}
             className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-              tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-800'
+              tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             {t.label}

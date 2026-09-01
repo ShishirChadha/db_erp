@@ -45,7 +45,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: Replace
   })
 
   const doneButton = isOwner && job.status !== 'done' ? (
-    <button onClick={() => markDone()} disabled={marking} className="text-green-700 underline text-xs flex items-center gap-1">
+    <button onClick={() => markDone()} disabled={marking} className="text-success underline text-xs flex items-center gap-1">
       {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
     </button>
   ) : null
@@ -56,14 +56,14 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: Replace
         <div className="flex justify-between items-start gap-2">
           <div>
             <div className="font-medium">{job.job_number}</div>
-            {job.is_own_stock && <div className="text-xs text-gray-500">Our stock</div>}
+            {job.is_own_stock && <div className="text-xs text-muted-foreground">Our stock</div>}
           </div>
           <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
         </div>
         <div className="text-sm">{job.customers?.customer_name || '—'}</div>
-        <div className="text-xs text-gray-600">Old: {unitLabel(job.old_asset)} → New: {unitLabel(job.new_asset)}</div>
-        <div className="text-sm text-gray-600">{job.problem_description || job.customer_device_description || '—'}</div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+        <div className="text-xs text-muted-foreground">Old: {unitLabel(job.old_asset)} → New: {unitLabel(job.new_asset)}</div>
+        <div className="text-sm text-muted-foreground">{job.problem_description || job.customer_device_description || '—'}</div>
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="tabular-nums">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
           <span>{job.payment_account || '—'}</span>
         </div>
@@ -74,7 +74,7 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: Replace
 
   return (
     <tr>
-      <td className="border p-2 text-right tabular-nums text-gray-400">{index + 1}</td>
+      <td className="border p-2 text-right tabular-nums text-muted-foreground">{index + 1}</td>
       <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
       <td className="border p-2">{job.customers?.customer_name || '—'}</td>
       <td className="border p-2">{unitLabel(job.old_asset)}</td>
@@ -122,7 +122,7 @@ function ReplacementJobsPage() {
     <div className="p-4">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Replacement Jobs</h1>
-        <Link href="/dashboard/entry/service?subtype=replacement&return_to=%2Fdashboard%2Freplacement-jobs" className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium shrink-0">
+        <Link href="/dashboard/entry/service?subtype=replacement&return_to=%2Fdashboard%2Freplacement-jobs" className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
           + New Replacement
         </Link>
       </div>
@@ -156,7 +156,7 @@ function ReplacementJobsPage() {
             <tbody>
               {jobs.map((job, idx) => <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
               {jobs.length === 0 && (
-                <tr><td colSpan={isOwner ? 10 : 9} className="border p-4 text-center text-gray-400">No replacement jobs found.</td></tr>
+                <tr><td colSpan={isOwner ? 10 : 9} className="border p-4 text-center text-muted-foreground">No replacement jobs found.</td></tr>
               )}
             </tbody>
           </table>
@@ -165,7 +165,7 @@ function ReplacementJobsPage() {
 
       {!loading && (
         <div className="md:hidden space-y-2">
-          {jobs.length === 0 && <p className="text-sm text-gray-400 text-center py-6">No replacement jobs found.</p>}
+          {jobs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No replacement jobs found.</p>}
           {jobs.map((job, idx) => (
             <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
           ))}

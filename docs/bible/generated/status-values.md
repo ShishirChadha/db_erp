@@ -7,7 +7,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 |---|---|---|---|
 | activities | priority | activities_priority_check | `CHECK ((priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text])))` |
 | activities | related_type | activities_related_pair_check | `CHECK (((related_type IS NULL) = (related_id IS NULL)))` |
-| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text]))))` |
+| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text, 'recurring_expense'::text]))))` |
 | activities | status | activities_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
 | asset_ledger | battery_health_percent | asset_ledger_battery_health_percent_check | `CHECK (((battery_health_percent IS NULL) OR ((battery_health_percent >= 0) AND (battery_health_percent <= 100))))` |
 | asset_ledger | estimated_backup_hours | asset_ledger_estimated_backup_hours_check | `CHECK (((estimated_backup_hours IS NULL) OR (estimated_backup_hours >= (0)::numeric)))` |
@@ -50,7 +50,9 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | document_sends | channel | document_sends_channel_check | `CHECK ((channel = ANY (ARRAY['email'::text, 'whatsapp'::text])))` |
 | document_sends | document_type | document_sends_document_type_check | `CHECK ((document_type = ANY (ARRAY['invoice'::text, 'sales_document'::text])))` |
 | document_sends | status | document_sends_status_check | `CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text])))` |
+| expense_reimbursements | payment_account | expense_reimbursements_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | expenses | payment_account | expenses_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| expenses | reimbursement_status | expenses_reimbursement_status_check | `CHECK ((reimbursement_status = ANY (ARRAY['not_applicable'::text, 'pending'::text, 'partial'::text, 'reimbursed'::text])))` |
 | expenses | source | expenses_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'bank_recon'::text])))` |
 | extraction_templates | template_kind | extraction_templates_template_kind_check | `CHECK ((template_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
@@ -76,6 +78,8 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | purchases | category | purchases_category_check | `CHECK ((category = ANY (ARRAY['New'::text, 'Preowned'::text])))` |
 | purchases | purchase_type | purchases_purchase_type_check | `CHECK ((purchase_type = ANY (ARRAY['Cash'::text, 'GST'::text])))` |
 | recon_sessions | status | recon_sessions_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'closed'::text])))` |
+| recurring_expense_rules | interval_unit | recurring_expense_rules_interval_unit_check | `CHECK ((interval_unit = ANY (ARRAY['weekly'::text, 'monthly'::text, 'yearly'::text])))` |
+| recurring_expense_rules | payment_account | recurring_expense_rules_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | reorder_rules | reorder_quantity | reorder_rules_reorder_quantity_check | `CHECK ((reorder_quantity > 0))` |
 | repair_jobs | job_type | repair_jobs_job_type_check | `CHECK ((job_type = ANY (ARRAY['repair'::text, 'replacement'::text])))` |
 | repair_jobs | payment_account | repair_jobs_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |

@@ -16,7 +16,7 @@ sources:
   - apps/erp/app/api/recon-sessions/**
   - apps/erp/app/api/purchase-orders/[id]/payments/**
   - apps/erp/app/dashboard/recon/**
-updated: 2026-08-31
+updated: 2026-09-01
 ---
 
 ## What this covers
@@ -91,17 +91,25 @@ this session's work began.
   (`match_type='transfer_pair'`) writes a match row on **both** legs (possibly
   in different `bank_accounts`) in one call. A debit that isn't a purchase
   becomes a real `expenses` row on the spot (`match_type='expense'`,
-  `source='bank_recon'`) — see **business-rules** for the expenses-module shape
-  this relies on (`payment_account`/`entity_key`/`vendor_id`, and its type list
-  now lives in `custom_options` category `expense_types`, not a hardcoded
-  array).
+  `source='bank_recon'`) — see **expenses** for the full data model this
+  relies on (`payment_account`/`entity_key`/`vendor_id`, and its type list
+  lives in `custom_options` category `expense_types`, not a hardcoded array).
+  This is a second, independent expense-creation code path alongside
+  `POST /api/expenses` — the two must be kept in sync on any future schema
+  change to `expenses`.
 - **`recon_sessions`** is the actual "keep going until nothing's left" loop —
   one row per bank account + period, `open_count` always recomputed fresh (never
   trusted stale) before a close is allowed, and reopening a closed session is
   an audited action. A session's summary also runs a **recurring-expense
-  watch**: a type (Rent/Electricity/Internet) with real history in an earlier
-  period but no matching expense in the current one is flagged — a missing
-  recurring cost is easier to miss than an unexpected one.
+  watch**: a type with an active `recurring_expense_rules` entry for this
+  account's entity that has real expense history in an earlier period but no
+  matching expense in the current one is flagged — a missing recurring cost is
+  easier to miss than an unexpected one. This was a hardcoded `['Rent',
+  'Electricity', 'Internet']` array until 2026-09-01, when it switched to
+  reading from `recurring_expense_rules` instead, so there's one definition of
+  "what counts as recurring" — see **expenses** for the real, schedulable
+  mechanism (`scan_recurring_expenses()`, a daily `pg_cron` job) this on-demand
+  watch now shares its type list with.
 - **`vendor_payments`** (the debit-side twin of `sale_payments`) is what makes
   bank-debit matching against a PO possible at all — a PO's `grand_total` only
   ever recorded what's owed, never what was paid, before this. Same append-
@@ -117,8 +125,10 @@ rather than silently pretending the numbers tie.
 
 ## Related
 
-**purchasing** (PO/PI creation stays a manual flow — see above), **business-rules**
-(the expenses-module shape, the vendor cost/vendor-identity redaction rule),
-**roles-permissions** (every recon page and route is owner-only),
+**purchasing** (PO/PI creation stays a manual flow — see above), **expenses**
+(the data model this recon-created row shares with `POST /api/expenses`, and
+the recurring-rules table the watch above now reads), **business-rules**
+(the vendor cost/vendor-identity redaction rule), **roles-permissions**
+(every recon page and route is owner-only),
 **finance-gst-reports** (GSTR-2B-vs-purchase-invoice matching is the highest-
 value reconciliation not yet built).

@@ -73,13 +73,13 @@ export function RecordZohoInvoiceDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white p-6 rounded shadow-lg max-w-md w-full space-y-3">
+      <div className="bg-card p-6 rounded shadow-lg max-w-md w-full space-y-3">
         <h2 className="text-lg font-bold">Record Zoho Invoice #</h2>
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-muted-foreground">
           Enter the invoice number Zoho already issued{saleIds.length > 1 ? ` for these ${saleIds.length} sales` : ''}. The ERP records it as-is and marks the sale
           {saleIds.length > 1 ? 's' : ''} done — it does not generate a new number.
         </p>
-        {err && <div className="text-red-600 text-sm">{err}</div>}
+        {err && <div className="text-destructive text-sm">{err}</div>}
         <div>
           <label className="block text-xs font-medium mb-1">Zoho Invoice Number *</label>
           <input value={invoiceNumber} onChange={(e) => setInvoiceNumber(e.target.value)} placeholder="e.g. DBI2026/27-00695" className="border p-2 w-full rounded" autoFocus />
@@ -90,7 +90,7 @@ export function RecordZohoInvoiceDialog({
         </div>
         <div>
           <label className="block text-xs font-medium mb-1">Zoho PDF (optional)</label>
-          <label className="text-xs text-gray-600 flex items-center gap-1 cursor-pointer border rounded px-2 py-1 hover:bg-gray-50 w-fit">
+          <label className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer border rounded px-2 py-1 hover:bg-muted w-fit">
             <Upload className="h-3 w-3" />
             {file ? file.name : 'Attach PDF'}
             <input type="file" className="hidden" accept="application/pdf,image/*" onChange={(e) => setFile(e.target.files?.[0] || null)} />
@@ -98,7 +98,7 @@ export function RecordZohoInvoiceDialog({
         </div>
         <div className="flex justify-end gap-2 pt-1">
           <button onClick={onClose} disabled={busy} className="px-4 py-2 border rounded text-sm">Cancel</button>
-          <button onClick={() => save()} disabled={busy} className="px-4 py-2 bg-blue-600 text-white rounded text-sm inline-flex items-center gap-1.5 disabled:opacity-50">
+          <button onClick={() => save()} disabled={busy} className="px-4 py-2 bg-primary text-primary-foreground rounded text-sm inline-flex items-center gap-1.5 disabled:opacity-50">
             {busy && <Loader2 className="size-4 animate-spin" />}
             {uploading ? 'Uploading…' : saving ? 'Recording…' : 'Record'}
           </button>

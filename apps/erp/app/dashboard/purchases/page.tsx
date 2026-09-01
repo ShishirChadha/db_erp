@@ -566,10 +566,10 @@ const handleRestore = async (purchase: any) => {
                 <div className="col-span-2"><Label>Public Photo URL</Label>
                   {viewItem.public_photo_url ? (
                     <div className="flex gap-2 items-center">
-                      <a href={viewItem.public_photo_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 text-sm break-all">{viewItem.public_photo_url}</a>
+                      <a href={viewItem.public_photo_url} target="_blank" rel="noopener noreferrer" className="text-primary text-sm break-all">{viewItem.public_photo_url}</a>
                       <Button size="sm" variant="ghost" onClick={() => { navigator.clipboard.writeText(viewItem.public_photo_url); alert("Copied!"); }}>Copy</Button>
                     </div>
-                  ) : <p className="text-sm text-gray-400">None</p>}
+                  ) : <p className="text-sm text-muted-foreground">None</p>}
                 </div>
               </div>
               <div className="border-t pt-4">

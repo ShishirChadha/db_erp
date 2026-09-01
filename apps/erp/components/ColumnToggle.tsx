@@ -25,7 +25,7 @@ export function ColumnToggle<K extends string>({
         </Button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-56">
-        <p className="text-xs font-medium text-gray-500 px-1 pb-1">Show columns</p>
+        <p className="text-xs font-medium text-muted-foreground px-1 pb-1">Show columns</p>
         {columns.map((col) => (
           <label key={col.key} className="flex items-center gap-2 px-1 py-1 text-sm cursor-pointer">
             <Checkbox

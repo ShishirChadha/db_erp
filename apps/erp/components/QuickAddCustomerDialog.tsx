@@ -123,8 +123,8 @@ export default function QuickAddCustomerDialog({ onAdd }: { onAdd: (created?: an
                     {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
                   </Button>
                 </div>
-                {gstError && <p className="text-xs text-red-500 mt-1">{gstError}</p>}
-                {formData.state && <p className="text-xs text-gray-400 mt-1">State: {formData.state} ({formData.state_code})</p>}
+                {gstError && <p className="text-xs text-destructive mt-1">{gstError}</p>}
+                {formData.state && <p className="text-xs text-muted-foreground mt-1">State: {formData.state} ({formData.state_code})</p>}
               </div>
             </>
           )}
