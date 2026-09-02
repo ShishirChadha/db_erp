@@ -19,7 +19,7 @@ sources:
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/lib/owner-only-expense-types.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 ## What this covers
