@@ -7,10 +7,11 @@ routes: [/dashboard/expenses, /dashboard/reports]
 keywords: [revenue, report, gst, finance, kpi, receivables, margin, expense, financial year, fy]
 sources:
   - apps/erp/app/api/reports/route.ts
+  - apps/erp/app/api/reports/website/route.ts
   - apps/erp/lib/reports.ts
   - apps/erp/lib/gstCalculation.ts
   - apps/erp/app/dashboard/reports/reports-client.tsx
-updated: 2026-09-01
+updated: 2026-09-02
 ---
 
 ## The single reporting dispatcher
@@ -41,6 +42,34 @@ also (2026-09-01) exclude any row whose `type` is one of the owner's
 false — otherwise an aggregate would leak what those hidden rows themselves
 don't, e.g. total salary spend showing up in a non-owner's period total even
 though no individual `Salaries` row is ever visible to them.
+
+## Website tab — the one exception to the single dispatcher
+
+The Reports page's **Website** tab (2026-09-02) is the one metric group that
+does **not** go through `/api/reports`'s `report_*` RPC dispatcher, because
+its data doesn't live in Supabase at all: it's sourced live from the **GA4
+Data API** against the digitalbluez.com storefront's Google Analytics
+property, via a dedicated route, `GET /api/reports/website`. Same auth gate
+(`hasPageAccess(sessionUser, 'reports')`) and same `reports-client.tsx` page,
+but a separate `metric` namespace (`summary`, `timeseries`, `top_pages`,
+`devices`, `demographics_age`, `demographics_gender`, `geo`,
+`traffic_source`) and its own fetch helper (`getWebsiteReport`, distinct from
+`getReport`).
+
+Requires three server env vars with no fallback — `GA4_PROPERTY_ID`,
+`GA4_CLIENT_EMAIL`, `GA4_PRIVATE_KEY` (a Google Cloud service account granted
+Viewer access on the GA4 property) — the route returns `501` if any are
+missing, which the UI renders as a plain "not configured" notice rather than
+a crash. Demographics (age/gender) require Google Signals enabled in GA4 and
+real traffic volume before they populate — an empty result here is expected
+for a while after setup, not a bug; the UI says so rather than showing a
+misleading zero.
+
+The storefront side of this is `apps/web/components/Analytics.tsx` — a
+consent-gated GA4 tag (Consent Mode default `denied`, only grants
+`analytics_storage` after the visitor accepts the cookie banner). No
+analytics data is ever written to Supabase; the ERP always reads it live from
+Google at request time.
 
 ## Periods
 
