@@ -83,6 +83,7 @@ function PODetailPage() {
   const [editingVendor, setEditingVendor] = useState(false)
   const [attachingUnits, setAttachingUnits] = useState(false)
   const [movingUnit, setMovingUnit] = useState<{ assetNumber: string; serialNumber: string | null; entryDate: string | null; skuLabel: string } | null>(null)
+  const [removingAssetNumber, setRemovingAssetNumber] = useState<string | null>(null)
   const [payments, setPayments] = useState<VendorPayment[]>([])
   const [showAddPayment, setShowAddPayment] = useState(false)
 
@@ -206,6 +207,34 @@ function PODetailPage() {
     }
   })
 
+  const handleRemoveUnit = async (assetNumber: string) => {
+    if (removingAssetNumber) return
+    if (!confirm(`Remove ${assetNumber} from this PO?`)) return
+    setRemovingAssetNumber(assetNumber)
+    try {
+      const body = { asset_number: assetNumber }
+      let res = await apiFetch(`/api/purchase-orders/${poId}/remove-unit`, { method: 'POST', body: JSON.stringify(body) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (err.error_code === 'already_invoiced') {
+          if (!confirm(`${err.error}\n\nProceed anyway?`)) return
+          res = await apiFetch(`/api/purchase-orders/${poId}/remove-unit`, {
+            method: 'POST',
+            body: JSON.stringify({ ...body, confirm_despite_invoice: true }),
+          })
+        }
+        if (!res.ok) {
+          const err2 = await res.json().catch(() => ({}))
+          alert(err2.error || 'Failed to remove unit.')
+          return
+        }
+      }
+      fetchPO()
+    } finally {
+      setRemovingAssetNumber(null)
+    }
+  }
+
   if (loading) return <div className="p-4">Loading PO...</div>
   if (!po) return <div className="p-4 text-destructive">Purchase Order not found.</div>
 
@@ -308,6 +337,15 @@ function PODetailPage() {
                                 className="text-xs text-muted-foreground hover:text-primary/80 underline"
                               >
                                 Move
+                              </button>
+                            )}
+                            {po.po_status !== 'cancelled' && (
+                              <button
+                                onClick={() => handleRemoveUnit(unit.asset_number)}
+                                disabled={removingAssetNumber === unit.asset_number}
+                                className="text-xs text-muted-foreground hover:text-destructive underline disabled:opacity-50"
+                              >
+                                Remove
                               </button>
                             )}
                           </div>

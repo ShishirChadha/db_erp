@@ -17,6 +17,7 @@ import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
 import { ColumnToggle } from '@/components/ColumnToggle'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { EditSaleDialog } from '@/components/EditSaleDialog'
+import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
 
@@ -47,6 +48,7 @@ interface AssetRow {
   sale_total?: number
   invoice_finalized?: boolean
   invoice_number?: string
+  invoice_mode?: 'erp' | 'external'
   payment_status?: string
   amount_paid?: number
   bundled_accessories_display?: { name: string; quantity: number }[]
@@ -198,6 +200,9 @@ export default function StockView({
   }, [])
   const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].field)
   const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].order)
+  // Sold Accessories has its own date sort toggle (its own route/field, sale_date --
+  // not part of SortField/toggleSort, which are asset_ledger-specific).
+  const [soldAccOrder, setSoldAccOrder] = useState<SortOrder>('desc')
 
   // Switches tab and resets sort to that tab's own default in one state update, so the
   // very next fetch (triggered once, by the resulting single re-render) already uses the
@@ -305,6 +310,7 @@ export default function StockView({
         params.set('year', yearFilter)
         if (monthFilter) params.set('month', monthFilter)
       }
+      params.set('order', soldAccOrder)
       params.set('page', String(page))
       params.set('limit', String(PAGE_SIZE))
 
@@ -318,7 +324,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, searchTerm, monthFilter, yearFilter, page])
+  }, [tab, searchTerm, monthFilter, yearFilter, page, soldAccOrder])
 
   useEffect(() => { fetchSoldAccessories() }, [fetchSoldAccessories])
 
@@ -418,6 +424,7 @@ export default function StockView({
   const [forceDeleteAsset, setForceDeleteAsset] = useState<{ id: string; label: string } | null>(null)
   const [forceDeleteErr, setForceDeleteErr] = useState('')
   const [addPaymentAsset, setAddPaymentAsset] = useState<{ saleId: string; balanceDue: number } | null>(null)
+  const [zohoSaleId, setZohoSaleId] = useState<string | null>(null)
 
   const generateInvoice = async (saleAssetId: string) => {
     if (pendingRowKey) return
@@ -634,6 +641,7 @@ export default function StockView({
         <CreatePoForm
           assetIds={[...selected.keys()]}
           assets={[...selected.values()]}
+          templates={templates}
           onClose={() => setShowPoForm(false)}
           onDone={() => { setShowPoForm(false); setSelected(new Map()); fetchAssets(); fetchCounts() }}
         />
@@ -673,6 +681,14 @@ export default function StockView({
           saleId={editSaleId}
           onClose={() => setEditSaleId(null)}
           onSaved={() => { fetchSoldAccessories(); fetchCounts() }}
+        />
+      )}
+
+      {zohoSaleId && (
+        <RecordZohoInvoiceDialog
+          saleIds={[zohoSaleId]}
+          onClose={() => setZohoSaleId(null)}
+          onRecorded={() => { setZohoSaleId(null); fetchAssets(); fetchCounts() }}
         />
       )}
 
@@ -742,7 +758,12 @@ export default function StockView({
             <thead>
               <tr>
                 <th className="border p-2 w-10 text-right">#</th>
-                <th className="border p-2">Date</th>
+                <th
+                  className="border p-2 cursor-pointer select-none"
+                  onClick={() => setSoldAccOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+                >
+                  Date{soldAccOrder === 'asc' ? ' ↑' : ' ↓'}
+                </th>
                 <th className="border p-2">Item</th>
                 <th className="border p-2 text-right">Qty</th>
                 <th className="border p-2 text-right">Sale Total</th>
@@ -812,7 +833,11 @@ export default function StockView({
                 <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('asset_number')}>
                   Asset / Serial{sortIndicator('asset_number')}
                 </th>
-                {visibleColumns.entryDate && <th className="border p-2">Entry Date</th>}
+                {visibleColumns.entryDate && (
+                  <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('created_at')}>
+                    Entry Date{sortIndicator('created_at')}
+                  </th>
+                )}
                 {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
                 {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
                 {visibleColumns.sku && <th className="border p-2">SKU</th>}
@@ -848,6 +873,9 @@ export default function StockView({
                     <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline">
                       {identifier(asset)}
                     </Link>
+                    {asset.asset_number && asset.serial_number && (
+                      <div className="text-xs text-muted-foreground">SN: {asset.serial_number}</div>
+                    )}
                     {asset.under_repair_job_number && (
                       <span className="ml-1 px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap" title={`Repair job ${asset.under_repair_job_number}`}>
                         Under Repair
@@ -860,9 +888,6 @@ export default function StockView({
                   {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
                   <td className="border p-2">
                     {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
-                    {asset.asset_number && asset.serial_number && (
-                      <span className="text-muted-foreground"> · SN: {asset.serial_number}</span>
-                    )}
                   </td>
                   <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
                   {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
@@ -899,6 +924,10 @@ export default function StockView({
                     <td className="border p-2 text-center">
                       {asset.invoice_finalized ? (
                         <span className="text-success">✓ {asset.invoice_number}</span>
+                      ) : asset.invoice_mode === 'external' ? (
+                        <button onClick={() => setZohoSaleId(asset.sale_id!)} disabled={!asset.sale_id} className="text-warning underline text-xs disabled:opacity-50" title="This entity is issuing invoices in Zoho during the transition">
+                          Record Zoho Invoice #
+                        </button>
                       ) : (
                         <button onClick={() => generateInvoice(asset.id)} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
                           {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
@@ -1059,6 +1088,9 @@ export default function StockView({
                   <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline font-medium break-all">
                     {identifier(asset)}
                   </Link>
+                  {asset.asset_number && asset.serial_number && (
+                    <div className="text-xs text-muted-foreground">SN: {asset.serial_number}</div>
+                  )}
                   <div className="text-xs text-muted-foreground">{asset.sku_code}</div>
                 </div>
                 {isOwner && (tab === 'current' || tab === 'sold') && !asset.po_id && (
@@ -1067,9 +1099,6 @@ export default function StockView({
               </div>
               <div className="text-sm">
                 {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
-                {asset.asset_number && asset.serial_number && (
-                  <span className="text-muted-foreground"> · SN: {asset.serial_number}</span>
-                )}
               </div>
               {asset.created_at || asset.po_date ? (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -1098,7 +1127,13 @@ export default function StockView({
                     </div>
                   )}
                   {isOwner && (
-                    <div>{asset.invoice_finalized ? <span className="text-success">✓ {asset.invoice_number}</span> : 'Invoice pending'}</div>
+                    <div>
+                      {asset.invoice_finalized ? (
+                        <span className="text-success">✓ {asset.invoice_number}</span>
+                      ) : asset.invoice_mode === 'external' ? (
+                        <button onClick={() => setZohoSaleId(asset.sale_id!)} disabled={!asset.sale_id} className="text-warning underline disabled:opacity-50">Record Zoho Invoice #</button>
+                      ) : 'Invoice pending'}
+                    </div>
                   )}
                 </div>
               )}
@@ -1149,9 +1184,10 @@ export default function StockView({
   )
 }
 
-function CreatePoForm({ assetIds, assets, onClose, onDone }: {
+function CreatePoForm({ assetIds, assets, templates, onClose, onDone }: {
   assetIds: string[]
   assets: AssetRow[]
+  templates: ConfigSummaryTemplate[]
   onClose: () => void
   onDone: () => void
 }) {
@@ -1164,12 +1200,16 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
 
   const soldCount = useMemo(() => assets.filter(a => a.status === 'sold').length, [assets])
 
-  // One cost/GST input per distinct SKU among the selected units.
+  // One cost/GST input per distinct SKU among the selected units. category/
+  // specifications are carried along (identical across every unit sharing this
+  // sku_code) so the review table can show a real config summary (e.g. "i5 / 8GB /
+  // 256GB") instead of just a SKU code -- easy to pick the wrong laptop out of a
+  // page full of near-identical asset numbers otherwise.
   const skuGroups = useMemo(() => {
-    const map = new Map<string, { sku_code: string; count: number }>()
+    const map = new Map<string, { sku_code: string; count: number; category?: string | null; specifications?: Record<string, any> | null }>()
     for (const a of assets) {
       const key = a.sku_code
-      if (!map.has(key)) map.set(key, { sku_code: a.sku_code, count: 0 })
+      if (!map.has(key)) map.set(key, { sku_code: a.sku_code, count: 0, category: a.category, specifications: a.specifications })
       map.get(key)!.count++
     }
     return [...map.entries()]
@@ -1287,6 +1327,7 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
         <thead>
           <tr>
             <th className="border p-2">SKU</th>
+            <th className="border p-2">Config</th>
             <th className="border p-2">Qty</th>
             <th className="border p-2">Unit Price (before GST) (₹)</th>
             <th className="border p-2">GST %</th>
@@ -1297,6 +1338,7 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
           {skuGroups.map(([skuCode, info]) => (
             <tr key={skuCode}>
               <td className="border p-2">{skuCode}</td>
+              <td className="border p-2 text-xs text-muted-foreground">{buildConfigSummary(info.category, info.specifications, templates) || '—'}</td>
               <td className="border p-2">{info.count}</td>
               <td className="border p-2">
                 <input
@@ -1327,7 +1369,7 @@ function CreatePoForm({ assetIds, assets, onClose, onDone }: {
         </tbody>
         <tfoot>
           <tr>
-            <td className="border p-2 text-right font-medium" colSpan={4}>Grand Total (incl. GST)</td>
+            <td className="border p-2 text-right font-medium" colSpan={5}>Grand Total (incl. GST)</td>
             <td className="border p-2 font-medium">₹{grandTotal.toFixed(2)}</td>
           </tr>
         </tfoot>
