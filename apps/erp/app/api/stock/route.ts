@@ -7,6 +7,7 @@ import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
+import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 
 // Category spec field names (used to build the specifications->>field ILIKE clauses
 // below) rarely change -- refetching all of sku_category_templates on every single
@@ -353,14 +354,15 @@ export async function GET(req: NextRequest) {
   const bundledAccessoryIds = [...new Set(
     (salesRows || []).flatMap((s: any) => (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => b.accessory_id).filter(Boolean))
   )]
-  // Both depend on salesRows above, but not on each other -- concurrent again.
-  const [{ data: liveCustomers }, { data: bundledSkus }] = await Promise.all([
+  // All three depend on salesRows above, but not on each other -- concurrent again.
+  const [{ data: liveCustomers }, { data: bundledSkus }, paymentDateBySaleId] = await Promise.all([
     unfinalizedCustomerIds.length
       ? supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
       : Promise.resolve({ data: [] as any[] }),
     bundledAccessoryIds.length
       ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
       : Promise.resolve({ data: [] as any[] }),
+    latestPaymentDatesBySaleId((salesRows || []).map((s: any) => s.id)),
   ])
   const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
   const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
@@ -375,6 +377,7 @@ export async function GET(req: NextRequest) {
         const bsku = bundledSkuById.get(b.accessory_id)
         return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
       }),
+      payment_date: paymentDateBySaleId.get(s.id) || null,
     },
   ]))
 
@@ -419,6 +422,7 @@ export async function GET(req: NextRequest) {
       invoice_mode: sale ? (invoicingModeByKey.get(resolveEntityKey(sale.payment_account)) === 'external' ? 'external' : 'erp') : undefined,
       payment_status: sale?.payment_status,
       amount_paid: sale?.amount_paid,
+      payment_date: sale?.payment_date,
       bundled_accessories: sale?.bundled_accessories,
       bundled_accessories_display: sale?.bundled_accessories_display,
     }

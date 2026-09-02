@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
+import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
 // This is the transactional/financial view (payment state, incentive attribution),
@@ -138,6 +139,10 @@ export async function GET(req: NextRequest) {
     : { data: [] as any[] }
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
 
+  // Most recent sale_payments installment date per sale -- shown as "Payment Date"
+  // alongside sale_date; a sale with 2+ partial payments shows its latest one.
+  const paymentDateBySaleId = await latestPaymentDatesBySaleId((data || []).map((s: any) => s.id))
+
   const result = (data || []).map((s: any) => {
     const withName = !s.finalized && s.customer_id && liveNameById.has(s.customer_id)
       ? { ...s, customer_name: liveNameById.get(s.customer_id) }
@@ -155,6 +160,7 @@ export async function GET(req: NextRequest) {
     const repairJob = s.repair_job_id ? repairJobById.get(s.repair_job_id) : null
     withName.repair_job_number = repairJob?.job_number || null
     withName.repair_description = repairJob?.problem_description || null
+    withName.payment_date = paymentDateBySaleId.get(s.id) || null
     return withName
   })
 
@@ -183,6 +189,7 @@ export async function GET(req: NextRequest) {
 function getSortValue(key: string): (s: any) => string | number {
   switch (key) {
     case 'sale_date': return (s) => s.sale_date || ''
+    case 'payment_date': return (s) => s.payment_date || ''
     case 'customer_name': return (s) => s.customer_name || ''
     case 'item': return (s) => s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? 'Accessory' : s.repair_job_id ? (s.repair_job_number || 'Repair') : '')
     case 'description': return (s) => s.sku_description || s.full_sku_code || s.repair_description || ''

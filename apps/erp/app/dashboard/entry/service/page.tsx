@@ -6,7 +6,7 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { Checkbox } from '@/components/ui/checkbox'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
-import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
+import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -420,7 +420,7 @@ function ServicePageInner() {
               <div className="flex-1">
                 <SearchableCustomerSelect key={customerRefreshKey} value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />
               </div>
-              <QuickAddCustomerDialog onAdd={(created) => {
+              <AddCustomerDialog onAdd={(created) => {
                 if (created?.id) { setCustomerId(created.id); setCustomerRefreshKey(k => k + 1) }
               }} />
             </div>

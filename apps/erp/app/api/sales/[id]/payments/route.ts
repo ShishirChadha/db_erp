@@ -80,6 +80,18 @@ export async function POST(
     }, { status: 409 })
   }
 
+  // recorded_at is optional -- lets a payment be backdated to when it actually
+  // happened (e.g. entering a customer's installment a day late) rather than always
+  // stamping the moment it was typed into the ERP. Defaults to now() via the column's
+  // own DB default when omitted.
+  let recordedAt: string | undefined
+  if (body.recorded_at) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(body.recorded_at)) {
+      return NextResponse.json({ error: 'recorded_at must be in YYYY-MM-DD format.' }, { status: 400 })
+    }
+    recordedAt = `${body.recorded_at}T12:00:00.000Z`
+  }
+
   const { data: payment, error } = await supabaseAdmin
     .from('sale_payments')
     .insert({
@@ -88,6 +100,7 @@ export async function POST(
       payment_account: body.payment_account || null,
       note: body.note || null,
       recorded_by: sessionUser.id,
+      ...(recordedAt ? { recorded_at: recordedAt } : {}),
     })
     .select()
     .single()

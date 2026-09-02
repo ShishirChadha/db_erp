@@ -44,11 +44,12 @@ export function AddPaymentDialog({
   const [amount, setAmount] = useState(balanceDue > 0 ? balanceDue : 0);
   const [paymentAccount, setPaymentAccount] = useState("");
   const [note, setNote] = useState("");
+  const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [err, setErr] = useState("");
 
   const { run: submit, pending } = useAsyncAction(async () => {
     setErr("");
-    const body = { amount, payment_account: paymentAccount || undefined, note: note || undefined };
+    const body = { amount, payment_account: paymentAccount || undefined, note: note || undefined, recorded_at: paymentDate };
     let res = await apiFetch(`/api/sales/${saleId}/payments`, { method: "POST", body: JSON.stringify(body) });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -103,6 +104,15 @@ export function AddPaymentDialog({
           <div>
             <Label>Note (optional)</Label>
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. 2nd installment" />
+          </div>
+          <div>
+            <Label>Payment Date</Label>
+            <Input
+              type="date"
+              value={paymentDate}
+              max={new Date().toISOString().slice(0, 10)}
+              onChange={(e) => setPaymentDate(e.target.value)}
+            />
           </div>
         </div>
 

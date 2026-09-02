@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
-import QuickAddCustomerDialog from '@/components/QuickAddCustomerDialog'
+import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
@@ -140,6 +140,22 @@ function SellPageInner() {
   const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
   const [priceMode, setPriceMode] = useState<'pre_gst' | 'post_gst'>('pre_gst')
 
+  // Sale Type must always match whether the selected entity is actually GST-registered
+  // (Digitalbluez is; Techtenth/Cash aren't -- confirmed in business_profiles) rather
+  // than being a separately-set field that can silently drift out of sync with
+  // paymentAccount. It used to be an independent dropdown whose two options happened to
+  // be "GST"/"Cash" -- easily confused with the unrelated Payment Account "Cash" option
+  // -- which let a Digitalbluez sale get entered with GST switched off (and the Pre/
+  // Post-GST toggle below disappearing along with it). Derived automatically instead;
+  // see gstRegisteredByKey below.
+  const [gstRegisteredByKey, setGstRegisteredByKey] = useState<Record<string, boolean>>({})
+  useEffect(() => {
+    apiFetch('/api/business-profiles/gst-status').then(res => res.json()).then((data) => {
+      if (!Array.isArray(data)) return
+      setGstRegisteredByKey(Object.fromEntries(data.map((p: any) => [p.key, !!p.is_gst_registered])))
+    })
+  }, [])
+
   // Payment is a list of legs -- amount + which account it was actually received into
   // (independent of paymentAccount below, the single "invoice under" entity). The first
   // leg defaults to the full cart total (so a simple one-method full payment stays
@@ -152,6 +168,15 @@ function SellPageInner() {
   const [paymentAccount, setPaymentAccount] = useState('Digitalbluez')
   const [notes, setNotes] = useState('')
   const [saleDate, setSaleDate] = useState(today())
+
+  // Keep Sale Type locked to whatever the invoicing entity actually is -- see the
+  // gstRegisteredByKey comment above. Re-derives every time paymentAccount changes
+  // (including via the "Invoice under" auto-sync from a single payment leg's account).
+  useEffect(() => {
+    const entityKey = paymentAccount.toLowerCase()
+    if (!(entityKey in gstRegisteredByKey)) return
+    setSaleType(gstRegisteredByKey[entityKey] ? 'GST' : 'Cash')
+  }, [paymentAccount, gstRegisteredByKey])
 
   const { values: staffNames } = useCustomOptions('staff_names')
   const [soldBy, setSoldBy] = useState('')
@@ -234,7 +259,9 @@ function SellPageInner() {
   useEffect(() => {
     if (prefillCustomerId) setCustomerId(prefillCustomerId)
     if (skuSearch) { setMode('unit'); setUnitSearch(skuSearch) }
-    if (prefillGstRate) { setGstPercent(Number(prefillGstRate)); setSaleType(Number(prefillGstRate) > 0 ? 'GST' : 'Cash') }
+    // saleType itself is NOT set here anymore -- it's derived purely from the selected
+    // entity (see the gstRegisteredByKey effect above), never from a prefilled rate.
+    if (prefillGstRate) { setGstPercent(Number(prefillGstRate)) }
   }, [prefillCustomerId, skuSearch, prefillGstRate])
 
   useEffect(() => {
@@ -276,8 +303,13 @@ function SellPageInner() {
   const linePreGstBase = (price: number) =>
     (saleType === 'GST' && priceMode === 'post_gst' && price) ? Math.round((price / (1 + gstPercent / 100)) * 100) / 100 : price
 
+  // An accessory line's price field is a PER-UNIT rate -- the line's actual charge
+  // scales with quantity (typing 100 at qty 1, then changing qty to 3, means 300, not
+  // a flat 100 regardless of quantity). A unit/laptop line has no quantity concept
+  // (always exactly 1 serialized item), so it's unaffected by this multiplication.
   const lineBaseGstPrice = (line: CartLine) =>
-    linePreGstBase(line.salePrice || 0) + (line.kind === 'unit' ? bundledAddOnsTotal(line.bundled) : 0)
+    linePreGstBase(line.salePrice || 0) * (line.kind === 'accessory' ? line.quantity : 1)
+    + (line.kind === 'unit' ? bundledAddOnsTotal(line.bundled) : 0)
 
   const cartSubtotal = cartItems.reduce((sum, line) => sum + lineBaseGstPrice(line), 0)
   const cartGstAmount = saleType === 'GST' ? Math.round(cartSubtotal * gstPercent * 100) / 10000 : 0
@@ -341,7 +373,8 @@ function SellPageInner() {
     setAccessorySearch(''); setAccessoryOptions([])
     setBundlingForLineId(null); setBundleSearch(''); setBundleOptions([])
     setCustomerId(null); setCustomerData(null)
-    setGstPercent(18); setSaleType('GST'); setPriceMode('pre_gst')
+    // saleType isn't reset explicitly -- it re-derives from paymentAccount below.
+    setGstPercent(18); setPriceMode('pre_gst')
     setPaymentLegs([{ id: crypto.randomUUID(), amount: 0, account: 'Digitalbluez', note: '' }])
     setFirstLegAmountTouched(false); setInvoicingEntityTouched(false)
     setPaymentAccount('Digitalbluez'); setNotes(''); setSoldBy('')
@@ -549,7 +582,7 @@ function SellPageInner() {
                   <div className="flex gap-3 items-end mt-2">
                     <div>
                       <label className="block text-xs text-muted-foreground mb-1">
-                        Price {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST)' : '(GST-Incl.)') : ''} (₹)
+                        {line.kind === 'accessory' ? 'Unit Price' : 'Price'} {saleType === 'GST' ? (priceMode === 'pre_gst' ? '(Pre-GST)' : '(GST-Incl.)') : ''} (₹)
                       </label>
                       <input
                         type="number"
@@ -559,17 +592,22 @@ function SellPageInner() {
                       />
                     </div>
                     {line.kind === 'accessory' && (
-                      <div>
-                        <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
-                        <input
-                          type="number"
-                          min={1}
-                          max={line.accessory.quantity}
-                          value={line.quantity}
-                          onChange={(e) => updateAccessoryQty(line.id, Number(e.target.value))}
-                          className="border p-2 w-24 rounded"
-                        />
-                      </div>
+                      <>
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={line.accessory.quantity}
+                            value={line.quantity}
+                            onChange={(e) => updateAccessoryQty(line.id, Number(e.target.value))}
+                            className="border p-2 w-24 rounded"
+                          />
+                        </div>
+                        <div className="text-sm text-muted-foreground pb-2">
+                          = ₹{((line.salePrice || 0) * line.quantity).toFixed(2)}
+                        </div>
+                      </>
                     )}
                   </div>
 
@@ -656,7 +694,7 @@ function SellPageInner() {
                 onCustomerData={setCustomerData}
               />
             </div>
-            <QuickAddCustomerDialog onAdd={(created) => {
+            <AddCustomerDialog onAdd={(created) => {
               if (created?.id) {
                 setCustomerId(created.id)
                 setCustomerData(created)
@@ -669,10 +707,12 @@ function SellPageInner() {
         <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Sale Type</label>
-            <select value={saleType} onChange={(e) => setSaleType(e.target.value as 'GST' | 'Cash')} className="border p-2 w-full rounded">
-              <option value="GST">GST</option>
-              <option value="Cash">Cash</option>
-            </select>
+            <div className="border p-2 w-full rounded bg-muted text-sm">
+              {saleType === 'GST' ? 'GST' : 'No GST (Bill of Supply)'}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              Follows the invoicing entity below ({paymentAccount}) -- not separately editable.
+            </p>
           </div>
           {saleType === 'GST' && (
             <div>
@@ -827,7 +867,7 @@ function SellPageInner() {
                     <li key={line.id}>
                       {line.kind === 'unit'
                         ? `${unitLabel(line.unit)} — ${line.unit.sku_code} · ₹${line.salePrice.toFixed(2)}`
-                        : `${line.accessory.accessory_name} ×${line.quantity} — ₹${line.salePrice.toFixed(2)}`}
+                        : `${line.accessory.accessory_name} ×${line.quantity} @ ₹${line.salePrice.toFixed(2)} = ₹${(line.salePrice * line.quantity).toFixed(2)}`}
                       {line.kind === 'unit' && line.bundled.length > 0 && (
                         <div className="text-xs text-muted-foreground">
                           + {line.bundled.map(b => `${b.accessory_name} ×${b.quantity}${b.price ? ` (+₹${b.price})` : ''}`).join(', ')}

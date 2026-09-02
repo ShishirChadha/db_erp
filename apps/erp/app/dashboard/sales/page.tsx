@@ -17,7 +17,10 @@ import { CustomerDetailDialog } from "@/components/CustomerDetailDialog";
 import { Pagination } from "@/components/Pagination";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
-const COLUMN_PREFS_KEY = "sales-ledger-visible-columns";
+// Renamed from "sales-ledger-visible-columns" -- that key stored a SHOWN list,
+// which this now-hidden-list format would misread inverted if it reused the same
+// key (old data isn't migrated; it's simply superseded, a one-time reset).
+const COLUMN_PREFS_KEY = "sales-ledger-hidden-columns";
 
 interface Sale {
   id: string;
@@ -50,6 +53,7 @@ interface Sale {
   ram?: string | null;
   ssd?: string | null;
   bundled_accessories_display?: { name: string; quantity: number }[];
+  payment_date?: string | null;
 }
 
 type SortDir = "asc" | "desc";
@@ -98,6 +102,16 @@ const COLUMNS: ColumnDef[] = [
     defaultWidth: 110,
     sortable: true,
     render: (s) => s.sale_date?.slice(0, 10),
+    optional: true,
+    defaultVisible: true,
+  },
+  {
+    key: "payment_date",
+    label: "Payment Date",
+    className: "border p-2 whitespace-nowrap",
+    defaultWidth: 130,
+    sortable: true,
+    render: (s, ctx) => <PaymentDateCell sale={s} canEditSale={ctx.canEditSale} onDone={ctx.onDone} />,
     optional: true,
     defaultVisible: true,
   },
@@ -383,6 +397,27 @@ function ActionsCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: b
   );
 }
 
+// The most recent sale_payments installment's date (see /api/sales's
+// latestPaymentDatesBySaleId) -- clicking it opens Edit Sale's payment list, which
+// has its own per-payment editable date field (owner-only), rather than duplicating
+// a second date-edit control here.
+function PaymentDateCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: boolean; onDone: () => void }) {
+  const [showEdit, setShowEdit] = useState(false);
+  if (!sale.payment_date) return <>—</>;
+  return (
+    <>
+      {canEditSale ? (
+        <button type="button" onClick={() => setShowEdit(true)} className="text-primary underline">
+          {sale.payment_date.slice(0, 10)}
+        </button>
+      ) : (
+        sale.payment_date.slice(0, 10)
+      )}
+      {showEdit && <EditSaleDialog saleId={sale.id} onClose={() => setShowEdit(false)} onSaved={onDone} />}
+    </>
+  );
+}
+
 function SaleRow({ sale, ctx, visibleColumns }: { sale: Sale; ctx: RowCtx; visibleColumns: ColumnDef[] }) {
   return (
     <tr className={sale.is_deleted ? "opacity-50" : undefined}>
@@ -491,17 +526,26 @@ function SalesLedgerPage() {
     try {
       const saved = window.localStorage.getItem(COLUMN_PREFS_KEY);
       if (!saved) return defaults;
-      const savedKeys: string[] = JSON.parse(saved);
-      // Only optional columns are ever hidden -- mandatory columns always stay visible
-      // even if a stale saved list from an older column set doesn't mention them.
-      return new Set(COLUMNS.filter((c) => !c.optional || savedKeys.includes(c.key)).map((c) => c.key));
+      // Persisted as the set of columns the user explicitly HID (a diff off the
+      // defaults), not the set shown -- a brand-new optional column (e.g. Payment
+      // Date, added after someone already had saved prefs) must default to visible
+      // for everyone, and a positive "shown" list can never express that: any key
+      // simply absent from an old saved list (because it didn't exist yet) would
+      // look identical to "the user hid this," permanently hiding every future
+      // column for existing users.
+      const hiddenKeys: string[] = JSON.parse(saved);
+      const next = new Set(defaults);
+      for (const key of hiddenKeys) next.delete(key);
+      return next;
     } catch {
       return defaults;
     }
   });
 
   useEffect(() => {
-    window.localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify([...visibleColumnKeys]));
+    const optionalKeys = COLUMNS.filter((c) => c.optional).map((c) => c.key);
+    const hiddenKeys = optionalKeys.filter((key) => !visibleColumnKeys.has(key));
+    window.localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(hiddenKeys));
   }, [visibleColumnKeys]);
 
   const visibleColumns = useMemo(

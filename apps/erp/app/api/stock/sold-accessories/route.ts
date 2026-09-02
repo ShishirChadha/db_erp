@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
+import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 
 // ---------- GET: sold accessories ----------
 // Read-only list of standalone accessory sales (sales.accessory_id set, no asset_ledger
@@ -70,6 +71,7 @@ export async function GET(req: NextRequest) {
     ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category').in('id', skuIds)
     : { data: [] as any[] }
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
+  const paymentDateBySaleId = await latestPaymentDatesBySaleId((sales || []).map((s: any) => s.id))
 
   const result = (sales || []).map((s: any) => {
     const sku = skuById.get(s.accessory_id)
@@ -84,6 +86,7 @@ export async function GET(req: NextRequest) {
       sale_total: s.sale_total,
       payment_status: s.payment_status,
       amount_paid: s.amount_paid,
+      payment_date: paymentDateBySaleId.get(s.id) || null,
       payment_account: s.payment_account,
       sold_by: s.sold_by,
       finalized: s.finalized,

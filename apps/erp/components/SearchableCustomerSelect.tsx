@@ -9,9 +9,11 @@ interface Customer {
   customer_name: string;
   gst_number: string | null;
   address: string | null;
+  city: string | null;
+  state: string | null;
   phone: string | null;
   email: string | null;
-  place_of_supply?: string; // can be derived from address or GST
+  place_of_supply?: string;
 }
 
 export function SearchableCustomerSelect({
@@ -39,7 +41,7 @@ export function SearchableCustomerSelect({
     const timer = setTimeout(async () => {
       let query = supabase
         .from("customers")
-        .select("id, customer_name, gst_number, address, phone, email")
+        .select("id, customer_name, gst_number, address, city, state, phone, email")
         .eq("is_deleted", false);
 
       if (searchTerm) {
@@ -50,10 +52,15 @@ export function SearchableCustomerSelect({
       // A newer request has since been fired -- this response is stale, discard it.
       if (requestId !== latestRequestId.current) return;
       if (data) {
-        // Derive place_of_supply from address (or GST). For now, just a placeholder.
+        // place_of_supply is display-only here (a hint in the picker dropdown) --
+        // real GST place-of-supply math happens server-side in classifyGst() off the
+        // customer's actual state_code column, not this. Previously derived by
+        // splitting the free-text `address` string, which broke the moment a
+        // customer's address didn't end in a recognizable place name; `state`/`city`
+        // are real columns now, so use those directly instead of guessing.
         const enriched = data.map(c => ({
           ...c,
-          place_of_supply: c.address?.split(",").pop()?.trim() || "Delhi"
+          place_of_supply: c.state || c.city || "—"
         }));
         setCustomers(enriched);
       }

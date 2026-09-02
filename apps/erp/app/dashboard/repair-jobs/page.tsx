@@ -9,7 +9,11 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
+import { StatCardsRow } from '@/components/StatCardsRow'
 import { REPAIR_JOB_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+
+type SortField = 'job_date' | 'job_number' | 'customer_name' | 'status' | 'payment_status' | 'amount_charged'
+type SortOrder = 'asc' | 'desc'
 
 const PAGE_SIZE = 25
 
@@ -166,10 +170,49 @@ function RepairJobsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
 
+  // searchInput updates on every keystroke; searchTerm catches up 300ms after typing
+  // stops and is what actually drives the fetch -- same debounce pattern as StockView.
+  const [searchInput, setSearchInput] = useState('')
+  const [searchTerm, setSearchTerm] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
+  const [sortField, setSortField] = useState<SortField>('job_date')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  const toggleSort = (field: SortField) => {
+    if (sortField === field) setSortOrder(prev => (prev === 'asc' ? 'desc' : 'asc'))
+    else { setSortField(field); setSortOrder('desc') }
+  }
+  const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
+
+  // Summary counts shown as clickable stat cards -- independent of the active status
+  // filter/page, but respects the search term so the numbers stay consistent with
+  // what's actually reachable through the search box.
+  const [statCounts, setStatCounts] = useState({ total: 0, open: 0, done: 0, cancelled: 0 })
+  const fetchStats = useCallback(async () => {
+    const params = new URLSearchParams()
+    if (searchTerm) params.set('search', searchTerm)
+    const res = await apiFetch(`/api/repair-jobs?${params.toString()}`)
+    if (res.ok) {
+      const all: RepairJob[] = await res.json()
+      setStatCounts({
+        total: all.length,
+        open: all.filter(j => j.status === 'intake' || j.status === 'in_progress').length,
+        done: all.filter(j => j.status === 'done').length,
+        cancelled: all.filter(j => j.status === 'cancelled').length,
+      })
+    }
+  }, [searchTerm])
+
   const fetchJobs = useCallback(async () => {
     setLoading(true)
     const params = new URLSearchParams()
     if (statusFilter) params.set('status', statusFilter)
+    if (searchTerm) params.set('search', searchTerm)
+    params.set('sort', sortField)
+    params.set('order', sortOrder)
     params.set('page', String(page))
     params.set('limit', String(PAGE_SIZE))
     const res = await apiFetch(`/api/repair-jobs?${params.toString()}`)
@@ -181,12 +224,15 @@ function RepairJobsPage() {
       setJobs([])
     }
     setLoading(false)
-  }, [statusFilter, page])
+  }, [statusFilter, searchTerm, sortField, sortOrder, page])
 
   useEffect(() => { fetchJobs() }, [fetchJobs])
+  useEffect(() => { fetchStats() }, [fetchStats])
+
+  const refresh = () => { fetchJobs(); fetchStats() }
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [statusFilter])
+  useEffect(() => { setPage(1) }, [statusFilter, searchTerm])
 
   return (
     <div className="p-4">
@@ -197,12 +243,29 @@ function RepairJobsPage() {
         </Link>
       </div>
 
-      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded mb-4">
-        <option value="">All Statuses</option>
-        <option value="intake,in_progress">Open</option>
-        <option value="done">Done</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+      <StatCardsRow
+        cards={[
+          { label: 'Total', value: statCounts.total, active: !statusFilter, onClick: () => setStatusFilter('') },
+          { label: 'Open', value: statCounts.open, active: statusFilter === 'intake,in_progress', onClick: () => setStatusFilter('intake,in_progress') },
+          { label: 'Done', value: statCounts.done, active: statusFilter === 'done', onClick: () => setStatusFilter('done') },
+          { label: 'Cancelled', value: statCounts.cancelled, active: statusFilter === 'cancelled', onClick: () => setStatusFilter('cancelled') },
+        ]}
+      />
+
+      <div className="flex gap-4 mb-4 flex-wrap items-center">
+        <input
+          type="text"
+          placeholder="Search job #, problem, device, or customer..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="border p-2 rounded"
+        />
+        {(statusFilter || searchInput) && (
+          <button onClick={() => { setStatusFilter(''); setSearchInput(''); setSearchTerm('') }} className="text-sm text-muted-foreground underline">
+            Clear filters
+          </button>
+        )}
+      </div>
 
       {loading ? (
         <div>Loading...</div>
@@ -212,19 +275,29 @@ function RepairJobsPage() {
             <thead>
               <tr>
                 <th className="border p-2 w-10 text-right">#</th>
-                <th className="border p-2">Date</th>
-                <th className="border p-2">Job #</th>
-                <th className="border p-2">Customer</th>
+                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('job_date')}>
+                  Date{sortIndicator('job_date')}
+                </th>
+                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('job_number')}>
+                  Job #{sortIndicator('job_number')}
+                </th>
+                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('customer_name')}>
+                  Customer{sortIndicator('customer_name')}
+                </th>
                 <th className="border p-2">Problem / Device</th>
-                <th className="border p-2">Status</th>
-                <th className="border p-2">Payment</th>
+                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('status')}>
+                  Status{sortIndicator('status')}
+                </th>
+                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('payment_status')}>
+                  Payment{sortIndicator('payment_status')}
+                </th>
                 <th className="border p-2">Amount Paid</th>
                 <th className="border p-2">Received Into</th>
                 {canEdit && <th className="border p-2">Actions</th>}
               </tr>
             </thead>
             <tbody>
-              {jobs.map((job, idx) => <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
+              {jobs.map((job, idx) => <JobRow key={job.id} job={job} canEdit={canEdit} onDone={refresh} index={(page - 1) * PAGE_SIZE + idx} />)}
               {jobs.length === 0 && (
                 <tr><td colSpan={canEdit ? 10 : 9} className="border p-4 text-center text-muted-foreground">No repair jobs found.</td></tr>
               )}
@@ -237,7 +310,7 @@ function RepairJobsPage() {
         <div className="md:hidden space-y-2">
           {jobs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No repair jobs found.</p>}
           {jobs.map((job, idx) => (
-            <JobRow key={job.id} job={job} canEdit={canEdit} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
+            <JobRow key={job.id} job={job} canEdit={canEdit} onDone={refresh} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
           ))}
         </div>
       )}

@@ -51,6 +51,7 @@ interface AssetRow {
   invoice_mode?: 'erp' | 'external'
   payment_status?: string
   amount_paid?: number
+  payment_date?: string | null
   bundled_accessories_display?: { name: string; quantity: number }[]
 }
 
@@ -72,6 +73,7 @@ interface SoldAccessoryRow {
   sale_total: number
   payment_status: string
   amount_paid: number
+  payment_date?: string | null
   payment_account: string | null
   sold_by: string | null
   finalized: boolean
@@ -128,6 +130,7 @@ const OPTIONAL_COLUMNS = [
   { key: 'vendorCost', label: 'Vendor / Cost' },
   { key: 'customer', label: 'Customer' },
   { key: 'saleTotal', label: 'Sale Total' },
+  { key: 'paymentDate', label: 'Payment Date' },
   { key: 'bundle', label: 'Bundle' },
   { key: 'invoice', label: 'Invoice' },
 ] as const
@@ -769,6 +772,7 @@ export default function StockView({
                 <th className="border p-2 text-right">Sale Total</th>
                 <th className="border p-2">Payment</th>
                 <th className="border p-2 text-right">Amount Paid</th>
+                <th className="border p-2">Payment Date</th>
                 <th className="border p-2">Received Into</th>
                 <th className="border p-2">Customer</th>
                 <th className="border p-2">Sold By</th>
@@ -777,7 +781,7 @@ export default function StockView({
               </tr>
             </thead>
             <tbody>
-              {soldAccessories.length === 0 && <EmptyTableRow colSpan={12} message="No accessory sales found." />}
+              {soldAccessories.length === 0 && <EmptyTableRow colSpan={13} message="No accessory sales found." />}
               {soldAccessories.map((sale, idx) => (
                 <tr key={sale.id}>
                   <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -792,6 +796,7 @@ export default function StockView({
                   <td className="border p-2 text-right tabular-nums">₹{sale.sale_total?.toFixed(2)}</td>
                   <td className="border p-2 capitalize">{sale.payment_status}</td>
                   <td className="border p-2 text-right tabular-nums">₹{sale.amount_paid?.toFixed(2)}</td>
+                  <td className="border p-2 whitespace-nowrap">{sale.payment_date?.slice(0, 10) || '—'}</td>
                   <td className="border p-2">{sale.payment_account || '—'}</td>
                   <td className="border p-2">{sale.customer_name || '—'}</td>
                   <td className="border p-2">{sale.sold_by || '—'}</td>
@@ -850,6 +855,7 @@ export default function StockView({
                 {isOwner && tab === 'current' && visibleColumns.vendorCost && <th className="border p-2">Vendor / Cost</th>}
                 {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
                 {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
+                {tab === 'sold' && visibleColumns.paymentDate && <th className="border p-2">Payment Date</th>}
                 {tab === 'sold' && visibleColumns.bundle && <th className="border p-2">Bundle</th>}
                 {tab === 'sold' && <th className="border p-2">Payment</th>}
                 {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
@@ -903,6 +909,7 @@ export default function StockView({
                   )}
                   {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
                   {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
+                  {tab === 'sold' && visibleColumns.paymentDate && <td className="border p-2 whitespace-nowrap">{asset.payment_date?.slice(0, 10) || '—'}</td>}
                   {tab === 'sold' && visibleColumns.bundle && (
                     <td className="border p-2">
                       {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0
@@ -1026,6 +1033,7 @@ export default function StockView({
               <div className="text-xs text-muted-foreground space-y-0.5">
                 <div>Sold {sale.sale_date?.slice(0, 10)} to {sale.customer_name || '—'}</div>
                 <div className="tabular-nums">₹{sale.sale_total?.toFixed(2)} · {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} paid</div>
+                {sale.payment_date && <div>Payment date: {sale.payment_date.slice(0, 10)}</div>}
                 {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
                 <div>{sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
               </div>
@@ -1121,6 +1129,7 @@ export default function StockView({
                     {asset.payment_status || '—'}
                     {typeof asset.amount_paid === 'number' && ` · ₹${asset.amount_paid.toFixed(2)} of ₹${(asset.sale_total || 0).toFixed(2)}`}
                   </div>
+                  {asset.payment_date && <div>Payment date: {asset.payment_date.slice(0, 10)}</div>}
                   {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0 && (
                     <div>
                       Bundled: {asset.bundled_accessories_display.map((b) => `${b.name}${b.quantity > 1 ? ` ×${b.quantity}` : ''}`).join(', ')}

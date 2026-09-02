@@ -13,15 +13,48 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
+  const search = searchParams.get('search')
+  const sortKey = searchParams.get('sort') || 'job_date'
+  const sortDir = searchParams.get('order') === 'asc'
   const pagination = parsePagination(searchParams)
 
   let query = supabaseAdmin
     .from('repair_jobs')
     .select('*, customers(customer_name, phone)', pagination ? { count: 'exact' } : undefined)
-    .order('job_date', { ascending: false, nullsFirst: false })
-    .order('created_at', { ascending: false })
+
+  const SORT_COLUMNS: Record<string, { column: string; foreignTable?: string }> = {
+    job_date: { column: 'job_date' },
+    job_number: { column: 'job_number' },
+    status: { column: 'status' },
+    payment_status: { column: 'payment_status' },
+    amount_charged: { column: 'amount_charged' },
+    customer_name: { column: 'customer_name', foreignTable: 'customers' },
+  }
+  const sortSpec = SORT_COLUMNS[sortKey] || SORT_COLUMNS.job_date
+  query = query.order(sortSpec.column, { ascending: sortDir, nullsFirst: false, ...(sortSpec.foreignTable ? { foreignTable: sortSpec.foreignTable } : {}) })
+  if (sortKey !== 'job_number') query = query.order('job_number', { ascending: false })
 
   if (status) query = query.in('status', status.split(',').map(s => s.trim()))
+
+  // Repair jobs don't store a customer_name snapshot (unlike sales) -- resolve matching
+  // customer ids first so search can span both the job's own text fields and its customer.
+  if (search) {
+    const term = `%${search}%`
+    const { data: matchingCustomers } = await supabaseAdmin
+      .from('customers')
+      .select('id')
+      .ilike('customer_name', term)
+    const customerIds = (matchingCustomers || []).map((c: any) => c.id)
+    const orParts = [
+      `job_number.ilike.${term}`,
+      `problem_description.ilike.${term}`,
+      `customer_device_description.ilike.${term}`,
+      `customer_device_serial.ilike.${term}`,
+    ]
+    if (customerIds.length) orParts.push(`customer_id.in.(${customerIds.join(',')})`)
+    query = query.or(orParts.join(','))
+  }
+
   if (pagination) query = query.range(pagination.from, pagination.to)
 
   const { data, error, count } = await query

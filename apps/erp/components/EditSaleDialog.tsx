@@ -185,6 +185,19 @@ export function EditSaleDialog({
     }
   };
 
+  const editPaymentDate = async (paymentId: string, newDate: string) => {
+    const res = await apiFetch(`/api/sales/${saleId}/payments/${paymentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ recorded_at: newDate }),
+    });
+    if (res.ok) {
+      loadPayments();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      alert(e.error || "Failed to update payment date.");
+    }
+  };
+
   const { run: save, pending: saving } = useAsyncAction(async () => {
     setErr("");
     const body: Record<string, unknown> = {
@@ -424,13 +437,30 @@ export function EditSaleDialog({
                       <div>
                         ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ""}
                         {p.note ? ` · ${p.note}` : ""}
-                        <div className="text-muted-foreground">
-                          {new Date(p.recorded_at).toLocaleString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ""}
+                        <div className="text-muted-foreground flex items-center gap-1">
+                          {isOwner ? (
+                            <input
+                              type="date"
+                              defaultValue={p.recorded_at?.slice(0, 10)}
+                              max={new Date().toISOString().slice(0, 10)}
+                              onBlur={(e) => {
+                                const next = e.target.value;
+                                if (next && next !== p.recorded_at?.slice(0, 10)) editPaymentDate(p.id, next);
+                              }}
+                              className="border rounded px-1 py-0.5 text-xs bg-transparent"
+                              title="Payment date -- editable"
+                            />
+                          ) : (
+                            new Date(p.recorded_at).toLocaleDateString()
+                          )}
+                          {p.recorded_by_name ? ` · ${p.recorded_by_name}` : ""}
                         </div>
                       </div>
-                      <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
-                        Remove
-                      </button>
+                      {isOwner && (
+                        <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
+                          Remove
+                        </button>
+                      )}
                     </li>
                   ))}
                 </ul>

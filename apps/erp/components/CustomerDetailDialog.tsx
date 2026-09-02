@@ -18,11 +18,17 @@ interface Customer {
   id: string;
   customer_name: string;
   type: string;
+  contact_person?: string | null;
   has_gst: boolean;
   gst_number: string;
   address: string;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  pincode?: string | null;
   phone: string;
   email: string;
+  alt_email?: string | null;
   source: string;
   google_review: boolean;
   social_following: string;
@@ -94,10 +100,20 @@ export function CustomerDetailDialog({
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <Field label="Type" value={customer.type} />
+              {customer.type === "Business" && (
+                <Field label="Contact Person" value={customer.contact_person} />
+              )}
               <Field label="Phone" value={customer.phone} />
               <Field label="Email" value={customer.email} />
-              <Field label="Has GST" value={customer.has_gst ? "Yes" : "No"} />
-              <Field label="GST Number" value={customer.gst_number} />
+              <Field label="Email 2" value={customer.alt_email} />
+              {customer.type === "Business" && (
+                <>
+                  <Field label="Has GST" value={customer.has_gst ? "Yes" : "No"} />
+                  {customer.has_gst && <Field label="GST Number" value={customer.gst_number} />}
+                </>
+              )}
+              <Field label="City" value={customer.city} />
+              <Field label="Pincode" value={customer.pincode} />
               <Field label="State" value={customer.state ? `${customer.state} (${customer.state_code || "—"})` : null} />
               <Field label="Source" value={customer.source} />
               <Field label="Social Following" value={customer.social_following} />
@@ -106,7 +122,12 @@ export function CustomerDetailDialog({
                 <Field label="Customer Since" value={new Date(customer.created_at).toLocaleDateString()} />
               )}
             </div>
-            <Field label="Address" value={customer.address} />
+            <Field
+              label="Address"
+              value={
+                [customer.address_line1, customer.address_line2].filter(Boolean).join(", ") || customer.address
+              }
+            />
 
             {showChange && (
               <div className="border rounded p-3 space-y-2">

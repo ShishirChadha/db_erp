@@ -62,6 +62,7 @@ function CustomersPage() {
       query = query.or(
         `customer_name.ilike.%${searchTerm}%,` +
         `type.ilike.%${searchTerm}%,` +
+        `contact_person.ilike.%${searchTerm}%,` +
         `gst_number.ilike.%${searchTerm}%,` +
         `address.ilike.%${searchTerm}%,` +
         `phone.ilike.%${searchTerm}%,` +
@@ -124,6 +125,7 @@ function CustomersPage() {
             transformRow={(row: any) => ({
               customer_name: row.customer_name,
               type: row.type,
+              contact_person: row.contact_person,
               has_gst: row.has_gst === "true" || row.has_gst === "TRUE" || row.has_gst === true,
               gst_number: row.gst_number,
               address: row.address,
@@ -179,6 +181,7 @@ function CustomersPage() {
               <TableHead className="w-10 text-right">#</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("customer_name")}>Name {sortField === "customer_name" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("type")}>Type {sortField === "type" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
+              <TableHead>Contact Person</TableHead>
               <TableHead>GST</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead className="cursor-pointer" onClick={() => handleSort("email")}>Email {sortField === "email" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
@@ -189,11 +192,12 @@ function CustomersPage() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {loading ? <TableRow><TableCell colSpan={10} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={10} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
+            {loading ? <TableRow><TableCell colSpan={11} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={11} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
               <TableRow key={c.id}>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
                 <TableCell>{c.customer_name}</TableCell>
                 <TableCell>{c.type}</TableCell>
+                <TableCell>{c.type === "Business" ? (c.contact_person || "—") : ""}</TableCell>
                 <TableCell>{c.has_gst ? (c.gst_number || "Yes") : "No"}</TableCell>
                 <TableCell>{c.phone}</TableCell>
                 <TableCell>{c.email}</TableCell>
