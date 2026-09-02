@@ -24,6 +24,8 @@ interface EligibleUnit {
   sku_id: string
   sku_code: string
   description: string
+  entry_date: string | null
+  status: string
 }
 
 interface AccessoryBacklogEntry {
@@ -81,6 +83,8 @@ export function AttachUnitsDialog({
             sku_id: u.sku_id,
             sku_code: u.sku_code || '',
             description: u.description || '',
+            entry_date: u.created_at || null,
+            status: u.status || '',
           }))
         setResults(eligible)
       })
@@ -244,7 +248,13 @@ export function AttachUnitsDialog({
               <label key={u.id} className="flex items-center gap-2 p-2 border-b last:border-b-0 hover:bg-muted cursor-pointer text-sm">
                 <Checkbox checked={selected.has(u.id)} onCheckedChange={() => toggle(u)} />
                 <div>
-                  <div className="font-medium">{u.serial_number || '(no serial)'} — {u.sku_code}</div>
+                  <div className="font-medium">
+                    {u.serial_number || '(no serial)'} — {u.sku_code}
+                    <span className="text-xs text-muted-foreground font-normal">
+                      {' '}· entry {u.entry_date ? u.entry_date.slice(0, 10) : 'unknown'}
+                      {u.status ? ` · ${u.status.replace(/_/g, ' ')}` : ''}
+                    </span>
+                  </div>
                   <div className="text-xs text-muted-foreground">{u.description}</div>
                 </div>
               </label>
