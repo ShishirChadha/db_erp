@@ -31,21 +31,46 @@ export async function POST(req: NextRequest) {
   }
   const userId = userData.user.id
 
-  const { data: customer, error: customerErr } = await supabaseAdmin
-    .from('customers')
-    .insert({
-      customer_name: fullName,
-      type: 'Individual',
-      phone: phone || null,
-      email,
-      source: 'Website',
-    })
-    .select()
-    .single()
+  // The ERP enforces one active customer per phone number (customers_active_phone_unique)
+  // -- an existing walk-in/in-store customer signing up on the website with the same phone
+  // should link their web account to that existing record (reunite their store + web
+  // history) rather than fail because the phone is "already taken".
+  let customer: { id: string } | null = null
+  let reusedExistingCustomer = false
+  const trimmedPhone = (phone || '').trim()
+  if (trimmedPhone) {
+    const { data: existing } = await supabaseAdmin
+      .from('customers')
+      .select('id')
+      .eq('is_deleted', false)
+      .eq('phone', trimmedPhone)
+      .maybeSingle()
+    customer = existing
+    reusedExistingCustomer = !!existing
+  }
 
-  if (customerErr) {
+  if (!customer) {
+    const { data: created, error: customerErr } = await supabaseAdmin
+      .from('customers')
+      .insert({
+        customer_name: fullName,
+        type: 'Individual',
+        phone: phone || null,
+        email,
+        source: 'Website',
+      })
+      .select()
+      .single()
+
+    if (customerErr) {
+      await supabaseAdmin.auth.admin.deleteUser(userId)
+      return NextResponse.json({ error: customerErr.message }, { status: 400 })
+    }
+    customer = created
+  }
+  if (!customer) {
     await supabaseAdmin.auth.admin.deleteUser(userId)
-    return NextResponse.json({ error: customerErr.message }, { status: 400 })
+    return NextResponse.json({ error: 'Failed to create customer record' }, { status: 400 })
   }
 
   const { error: profileErr } = await supabaseAdmin.from('customer_profiles').insert({
@@ -56,7 +81,12 @@ export async function POST(req: NextRequest) {
   })
 
   if (profileErr) {
-    await supabaseAdmin.from('customers').delete().eq('id', customer.id)
+    // Only clean up the customer row if this request created it -- a reused existing
+    // (e.g. in-store) customer must never be deleted just because linking a new web
+    // account to it failed.
+    if (!reusedExistingCustomer) {
+      await supabaseAdmin.from('customers').delete().eq('id', customer.id)
+    }
     await supabaseAdmin.auth.admin.deleteUser(userId)
     return NextResponse.json({ error: profileErr.message }, { status: 400 })
   }

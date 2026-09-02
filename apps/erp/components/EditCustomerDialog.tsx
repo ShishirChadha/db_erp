@@ -22,6 +22,7 @@ import {
 import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
 
 interface Customer {
   id: string;
@@ -67,6 +68,8 @@ export default function EditCustomerDialog({
   const [formData, setFormData] = useState<Partial<Customer>>({});
   const [gstFetching, setGstFetching] = useState(false);
   const [gstError, setGstError] = useState("");
+  const [duplicateError, setDuplicateError] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState("");
   const supabase = createClient();
 
   useEffect(() => {
@@ -77,6 +80,8 @@ export default function EditCustomerDialog({
     const needsAddressFallback = !customer.address_line1 && !customer.address_line2 && !customer.city && !customer.pincode && customer.address;
     setFormData(needsAddressFallback ? { ...customer, address_line1: customer.address } : customer);
     setGstError("");
+    setDuplicateError("");
+    setDuplicateWarning("");
   }, [customer]);
 
   const handleChange = (field: keyof Customer, value: string | boolean) => {
@@ -119,6 +124,22 @@ export default function EditCustomerDialog({
 
   const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
+    setDuplicateError("");
+    setDuplicateWarning("");
+
+    const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
+      customer_name: formData.customer_name || "",
+      phone: formData.phone || "",
+      excludeId: customer.id,
+    });
+    if (blockingMatch) {
+      setDuplicateError(`A customer with this phone number already exists: "${blockingMatch.customer_name}". Use that customer instead of creating a duplicate.`);
+      return;
+    }
+    if (nameWarningMatch) {
+      setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different phone number.`);
+    }
+
     const { id, ...updateData } = formData;
     const payload = { ...updateData, address: composeAddress(formData) };
     const { error } = await supabase
@@ -127,7 +148,13 @@ export default function EditCustomerDialog({
       .eq("id", customer.id);
     if (error) {
       console.error(error);
-      alert("Update failed.");
+      // 23505 = unique_violation -- the customers_active_phone_unique index catching a
+      // race the pre-check above missed.
+      if ((error as any).code === "23505") {
+        setDuplicateError("A customer with this phone number already exists.");
+      } else {
+        alert("Update failed.");
+      }
     } else {
       onOpenChange(false);
       onUpdate();
@@ -231,8 +258,9 @@ export default function EditCustomerDialog({
               <Label>Phone</Label>
               <Input
                 value={formData.phone || ""}
-                onChange={(e) => handleChange("phone", e.target.value)}
+                onChange={(e) => { handleChange("phone", e.target.value); setDuplicateError(""); }}
               />
+              {duplicateError && <p className="text-xs text-destructive mt-1">{duplicateError}</p>}
             </div>
             <div>
               <Label>Email</Label>
@@ -283,6 +311,9 @@ export default function EditCustomerDialog({
               </Select>
             </div>
           </div>
+          {duplicateWarning && (
+            <p className="text-xs text-warning bg-warning/10 rounded px-3 py-2">{duplicateWarning}</p>
+          )}
           <div className="flex justify-end space-x-2">
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
               Cancel

@@ -189,6 +189,10 @@ function ServicePageInner() {
   const [soldBy, setSoldBy] = useState('')
   const [saleType, setSaleType] = useState<'GST' | 'Cash'>('GST')
   const [gstPercent, setGstPercent] = useState(18)
+  // Repair-only: GST applies exactly when Received Into is Digitalbluez (the only
+  // GST-registered entity) -- Cash/Techtenth stay untaxed, same rule the finalize
+  // route applies when the job is marked done and a sales row is created.
+  const [repairGstPercent, setRepairGstPercent] = useState(18)
   const { values: staffNameOptions } = useCustomOptions('staff_names')
 
   useEffect(() => {
@@ -288,7 +292,7 @@ function ServicePageInner() {
     setServiceDate(today())
     setPartsUsed([]); setPartsSearch(''); setPartsOptions([])
     setOldSaleInfo(null); setBundled([]); setBundleSearch(''); setBundleOptions([])
-    setAdditionalAmountPaid(''); setSoldBy(''); setSaleType('GST'); setGstPercent(18)
+    setAdditionalAmountPaid(''); setSoldBy(''); setSaleType('GST'); setGstPercent(18); setRepairGstPercent(18)
   }
 
   const { run: handleSubmitRepairOrReplacement, pending: submittingRepair } = useAsyncAction(async () => {
@@ -328,6 +332,7 @@ function ServicePageInner() {
             problem_description: problem,
             amount_charged: amountCharged === '' ? null : amountCharged,
             payment_account: paymentAccount,
+            gst_percentage: paymentAccount === 'Digitalbluez' ? repairGstPercent : null,
             job_date: serviceDate,
             parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
           }
@@ -568,7 +573,7 @@ function ServicePageInner() {
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block font-medium text-sm mb-1">
-                {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : 'Amount Charged (₹)'}
+                {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : subType === 'repair' && paymentAccount === 'Digitalbluez' ? 'Amount Charged (₹, pre-GST)' : 'Amount Charged (₹)'}
               </label>
               <input type="number" value={amountCharged} onChange={(e) => setAmountCharged(e.target.value === '' ? '' : Number(e.target.value))} className="border p-2 w-full rounded" />
             </div>
@@ -579,6 +584,24 @@ function ServicePageInner() {
               </select>
             </div>
           </div>
+
+          {subType === 'repair' && paymentAccount === 'Digitalbluez' && (
+            <div className="bg-muted/50 border rounded p-3 space-y-2">
+              <div>
+                <label className="block font-medium text-sm mb-1">GST %</label>
+                <input
+                  type="number"
+                  value={repairGstPercent}
+                  onChange={(e) => setRepairGstPercent(Number(e.target.value))}
+                  className="w-24 border rounded p-1 text-center"
+                />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                Before GST: ₹{(amountCharged || 0).toFixed(2)} · GST ({repairGstPercent}%): ₹{(Math.round((Number(amountCharged) || 0) * repairGstPercent) / 100).toFixed(2)}
+                {' · '}<span className="font-medium text-foreground">After GST (Total): ₹{((Number(amountCharged) || 0) + Math.round((Number(amountCharged) || 0) * repairGstPercent) / 100).toFixed(2)}</span>
+              </p>
+            </div>
+          )}
 
           {subType === 'replacement' && (
             <div className="grid grid-cols-2 gap-4">

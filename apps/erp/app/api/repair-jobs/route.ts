@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { generateRepairJobNumber } from '@/lib/repair-jobs'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
+import { resolveEntityKey } from '@/lib/invoice-finalize'
 
 // ---------- GET: list repair jobs ----------
 export async function GET(req: NextRequest) {
@@ -20,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabaseAdmin
     .from('repair_jobs')
-    .select('*, customers(customer_name, phone)', pagination ? { count: 'exact' } : undefined)
+    .select('*, customers(customer_name, phone), sales(id, finalized, invoice_id, invoice_number, sale_total, sale_gst, sale_base_price, amount_paid, payment_account)', pagination ? { count: 'exact' } : undefined)
 
   const SORT_COLUMNS: Record<string, { column: string; foreignTable?: string }> = {
     job_date: { column: 'job_date' },
@@ -59,8 +60,23 @@ export async function GET(req: NextRequest) {
 
   const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  if (pagination) return NextResponse.json({ data, total: count ?? 0 })
-  return NextResponse.json(data)
+
+  // Flatten the reverse sales(...) embed (one row max in practice -- a job only ever
+  // creates a sale once, at Mark Done) and tag it with the same erp/external invoicing
+  // mode the Sales Ledger uses, so the Repair Jobs page can offer Generate Invoice /
+  // Record Zoho Invoice # directly without a second trip through Sales Ledger.
+  const { data: profiles } = await supabaseAdmin.from('business_profiles').select('key, invoicing_mode')
+  const modeByKey = new Map((profiles || []).map((p: any) => [p.key, p.invoicing_mode]))
+  const withSale = (data || []).map((j: any) => {
+    const sale = Array.isArray(j.sales) ? j.sales[0] || null : j.sales || null
+    return {
+      ...j,
+      sales: sale ? { ...sale, invoice_mode: modeByKey.get(resolveEntityKey(sale.payment_account)) === 'external' ? 'external' : 'erp' } : null,
+    }
+  })
+
+  if (pagination) return NextResponse.json({ data: withSale, total: count ?? 0 })
+  return NextResponse.json(withSale)
 }
 
 // ---------- POST: intake a repair job ----------
@@ -75,7 +91,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const {
     customer_id, is_own_stock, asset_id, customer_device_description, customer_device_serial,
-    problem_description, amount_charged, payment_account, job_date, parts,
+    problem_description, amount_charged, payment_account, gst_percentage, job_date, parts,
   } = body
 
   if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
@@ -135,6 +151,7 @@ export async function POST(req: NextRequest) {
       problem_description,
       amount_charged: amount_charged ?? null,
       payment_account: payment_account || null,
+      gst_percentage: gst_percentage ?? null,
       entered_by: sessionUser.id,
       job_date: resolvedJobDate,
     })

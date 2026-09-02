@@ -23,6 +23,7 @@ import {
 import { Plus, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
 
 const emptyForm = {
   customer_name: "",
@@ -60,6 +61,8 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
   const [gstFetching, setGstFetching] = useState(false);
   const [gstError, setGstError] = useState("");
   const [formData, setFormData] = useState(emptyForm);
+  const [duplicateError, setDuplicateError] = useState("");
+  const [duplicateWarning, setDuplicateWarning] = useState("");
   const supabase = createClient();
 
   const handleChange = (field: string, value: string | boolean) => {
@@ -107,16 +110,38 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
 
   const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault();
+    setDuplicateError("");
+    setDuplicateWarning("");
+
+    const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
+      customer_name: formData.customer_name,
+      phone: formData.phone,
+    });
+    if (blockingMatch) {
+      setDuplicateError(`A customer with this phone number already exists: "${blockingMatch.customer_name}". Use that customer instead of creating a duplicate.`);
+      return;
+    }
+    if (nameWarningMatch) {
+      setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different phone number. Continuing will create a separate customer.`);
+    }
+
     const payload = { ...formData, address: composeAddress(formData) };
     const { data, error } = await supabase.from("customers").insert([payload]).select().single();
     if (error) {
       console.error(error);
-      alert("Failed to add customer.");
+      // 23505 = unique_violation -- the customers_active_phone_unique index catching a
+      // race the pre-check above missed (two staff saving the same new phone at once).
+      if ((error as any).code === "23505") {
+        setDuplicateError("A customer with this phone number already exists.");
+      } else {
+        alert("Failed to add customer.");
+      }
     } else {
       setOpen(false);
       onAdd(data);
       setFormData(emptyForm);
       setGstError("");
+      setDuplicateWarning("");
     }
   });
 
@@ -156,13 +181,20 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
             <div className="col-span-2"><Label>Address Line 2</Label><Input value={formData.address_line2} onChange={(e) => handleChange("address_line2", e.target.value)} /></div>
             <div><Label>City</Label><Input value={formData.city} onChange={(e) => handleChange("city", e.target.value)} /></div>
             <div><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} /></div>
-            <div><Label>Phone</Label><Input value={formData.phone} onChange={(e) => handleChange("phone", e.target.value)} /></div>
+            <div>
+              <Label>Phone</Label>
+              <Input value={formData.phone} onChange={(e) => { handleChange("phone", e.target.value); setDuplicateError(""); }} />
+              {duplicateError && <p className="text-xs text-destructive mt-1">{duplicateError}</p>}
+            </div>
             <div><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
             <div className="col-span-2"><Label>Email 2 (optional)</Label><Input type="email" value={formData.alt_email} onChange={(e) => handleChange("alt_email", e.target.value)} /></div>
             <div><Label>Source</Label><Input value={formData.source} onChange={(e) => handleChange("source", e.target.value)} /></div>
             <div className="flex items-center space-x-2"><Checkbox id="google_review" checked={formData.google_review} onCheckedChange={(v) => handleChange("google_review", !!v)} /><Label htmlFor="google_review">Google Review</Label></div>
             <div><Label>Social Following</Label><Select value={formData.social_following} onValueChange={(val) => handleChange("social_following", val)}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="FB">FB</SelectItem><SelectItem value="Insta">Insta</SelectItem><SelectItem value="Both">Both</SelectItem><SelectItem value="None">None</SelectItem></SelectContent></Select></div>
           </div>
+          {duplicateWarning && (
+            <p className="text-xs text-warning bg-warning/10 rounded px-3 py-2">{duplicateWarning}</p>
+          )}
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={() => setOpen(false)} disabled={loading}>Cancel</Button>
             <Button type="submit" loading={loading}>Add Customer</Button>

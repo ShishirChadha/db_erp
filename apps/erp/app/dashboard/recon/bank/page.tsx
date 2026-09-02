@@ -72,15 +72,66 @@ function BankReconPage() {
     await loadAccounts()
   })
 
+  // Real bank CSV exports (ICICI's "Detailed Statement" included) carry a metadata
+  // preamble -- account name/address/A/C no/period -- before the actual transaction
+  // table starts, so naively treating row 1 as the header row (as this used to)
+  // misreads that preamble as headers instead, producing Papaparse's auto-generated
+  // "_1"/"_2"/"_3" placeholder names for the mostly-empty first row and losing every
+  // real transaction. Scan for the row that actually looks like a transaction-table
+  // header (several non-empty cells, at least two recognizable column-name words)
+  // instead of assuming it's row 1.
+  const HEADER_HINTS = ['date', 'narration', 'description', 'particular', 'debit', 'credit', 'withdrawal', 'deposit', 'balance', 'amount', 'reference', 'cheque', 'remarks']
+  const findHeaderRowIndex = (rows: string[][]): number => {
+    for (let i = 0; i < Math.min(rows.length, 60); i++) {
+      const cells = (rows[i] || []).map((c) => (c || '').trim().toLowerCase())
+      const nonEmpty = cells.filter((c) => c !== '')
+      if (nonEmpty.length < 4) continue
+      const hintMatches = cells.filter((c) => HEADER_HINTS.some((h) => c.includes(h))).length
+      if (hintMatches >= 2) return i
+    }
+    return 0 // nothing matched -- fall back to the old assumption so a plain, already-clean CSV still works
+  }
+
   const parseFile = (file: File) => {
     setErr('')
-    Papa.parse<Record<string, string>>(file, {
-      header: true,
+    Papa.parse<string[]>(file, {
+      header: false,
       skipEmptyLines: true,
-      complete: async (results) => {
-        const headers = results.meta.fields || []
+      complete: async (raw) => {
+        const rows = raw.data
+        const headerIdx = findHeaderRowIndex(rows)
+        const rawHeaders = (rows[headerIdx] || []).map((h) => (h || '').trim())
+        // Dedupe/backfill blank column names the same way Papaparse's own header:true
+        // mode does, so downstream mapping keys are always unique and non-empty.
+        const seen: Record<string, number> = {}
+        const headers = rawHeaders.map((h, i) => {
+          const base = h || `_${i + 1}`
+          seen[base] = (seen[base] || 0) + 1
+          return seen[base] > 1 ? `${base}_${seen[base]}` : base
+        })
+
+        const dataRows: Record<string, string>[] = []
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const r = rows[i]
+          if (!r || r.every((c) => !c || !c.trim())) continue
+          const obj: Record<string, string> = {}
+          headers.forEach((h, idx) => { obj[h] = r[idx] ?? '' })
+          dataRows.push(obj)
+        }
+
+        // Bonus: this same preamble/footer format usually prints "Opening Bal:" /
+        // "Closing Bal:" rows -- auto-fill them so the owner doesn't have to retype
+        // numbers that are already right there in the file.
+        for (const r of rows) {
+          const label = (r[0] || '').trim().toLowerCase()
+          const value = parseAmount(r[1])
+          if (value == null) continue
+          if (label.startsWith('opening bal')) setOpeningBalance(value)
+          if (label.startsWith('closing bal')) setClosingBalance(value)
+        }
+
         setCsvHeaders(headers)
-        setCsvRows(results.data)
+        setCsvRows(dataRows)
         // Try the saved profile for this account first.
         if (activeAccountId) {
           const profRes = await apiFetch(`/api/bank-accounts/${activeAccountId}/column-profile`)

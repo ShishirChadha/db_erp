@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { resolveEntityKey } from '@/lib/invoice-finalize'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -27,7 +28,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account')
+    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage')
     .eq('id', id)
     .single()
 
@@ -65,6 +66,20 @@ export async function POST(
       .eq('id', job.customer_id)
       .single()
 
+    // GST applies exactly when the resolved entity is GST-registered (Digitalbluez
+    // today) -- same resolveEntityKey()/business_profiles.is_gst_registered check
+    // used for every other GST decision in the app, never a hardcoded account name.
+    const entityKey = resolveEntityKey(job.payment_account)
+    const { data: entity } = await supabaseAdmin
+      .from('business_profiles')
+      .select('is_gst_registered')
+      .eq('key', entityKey)
+      .single()
+
+    const gstPct = entity?.is_gst_registered ? (job.gst_percentage ?? 18) : 0
+    const gstAmount = gstPct > 0 ? Math.round(job.amount_charged * gstPct) / 100 : 0
+    const saleTotal = job.amount_charged + gstAmount
+
     const { data: sale, error: saleErr } = await supabaseAdmin
       .from('sales')
       .insert({
@@ -74,10 +89,10 @@ export async function POST(
         sale_date: today.toISOString().slice(0, 10),
         sale_month: MONTHS[saleDateObj.getUTCMonth()],
         sale_year: saleDateObj.getUTCFullYear(),
-        sale_type: 'Cash',
+        sale_type: entity?.is_gst_registered ? 'GST' : 'Cash',
         sale_base_price: job.amount_charged,
-        sale_gst: 0,
-        sale_total: job.amount_charged,
+        sale_gst: gstAmount,
+        sale_total: saleTotal,
         payment_account: job.payment_account,
         entered_by: sessionUser.id,
         finalized: false,

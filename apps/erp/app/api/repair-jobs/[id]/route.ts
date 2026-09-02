@@ -21,8 +21,8 @@ export async function PATCH(
   const { id } = await params
   const body = await req.json()
 
-  const operationalFields = ['status', 'solution_description', 'problem_description']
-  const financialFields = ['payment_status', 'amount_paid', 'amount_charged', 'payment_account']
+  const operationalFields = ['status', 'solution_description', 'problem_description', 'customer_device_description', 'customer_device_serial', 'job_date']
+  const financialFields = ['payment_status', 'amount_paid', 'amount_charged', 'payment_account', 'gst_percentage']
   const editableFields = [...operationalFields, ...financialFields]
 
   const hasEdit = editableFields.some((key) => body[key] !== undefined)
