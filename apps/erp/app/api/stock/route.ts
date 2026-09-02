@@ -6,6 +6,7 @@ import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
+import { resolveEntityKey } from '@/lib/invoice-finalize'
 
 // Category spec field names (used to build the specifications->>field ILIKE clauses
 // below) rarely change -- refetching all of sku_category_templates on every single
@@ -14,6 +15,24 @@ import { parsePagination } from '@/lib/pagination'
 let specFieldNamesCache: string[] | null = null
 let specFieldNamesCacheAt = 0
 const SPEC_FIELD_CACHE_TTL_MS = 60_000
+
+// business_profiles.invoicing_mode barely ever changes -- same short-TTL cache pattern
+// as getSpecFieldNames below, so it doesn't become another unconditional query on every
+// single /api/stock request (it's also skipped entirely below when nothing in this
+// response is sold, since invoice_mode is meaningless without a sale to attach it to).
+let invoicingModeCache: Map<string, string> | null = null
+let invoicingModeCacheAt = 0
+const INVOICING_MODE_CACHE_TTL_MS = 60_000
+
+async function getInvoicingModeByKey(): Promise<Map<string, string>> {
+  if (invoicingModeCache && Date.now() - invoicingModeCacheAt < INVOICING_MODE_CACHE_TTL_MS) {
+    return invoicingModeCache
+  }
+  const { data: businessProfiles } = await supabaseAdmin.from('business_profiles').select('key, invoicing_mode')
+  invoicingModeCache = new Map((businessProfiles || []).map((p: any) => [p.key, p.invoicing_mode]))
+  invoicingModeCacheAt = Date.now()
+  return invoicingModeCache
+}
 
 async function getSpecFieldNames(): Promise<string[]> {
   if (specFieldNamesCache && Date.now() - specFieldNamesCacheAt < SPEC_FIELD_CACHE_TTL_MS) {
@@ -189,32 +208,41 @@ export async function GET(req: NextRequest) {
     // spec value buried in sku_master.specifications (e.g. "16GB" RAM, "i5" CPU) --
     // asset_ledger.sku_id is always populated regardless of PO-link status, so
     // resolving matching SKUs first and OR-ing on sku_id covers all three.
-    const specFieldNames = await getSpecFieldNames()
-    const specClauses = specFieldNames.map((f) => `specifications->>${f}.ilike.%${search}%`)
-
-    const { data: matchingSkus } = await supabaseAdmin
-      .from('sku_master')
-      .select('id')
-      .or([
-        `full_sku_code.ilike.%${search}%`,
-        `sku_description.ilike.%${search}%`,
-        `brand.ilike.%${search}%`,
-        `model_name.ilike.%${search}%`,
-        ...specClauses,
-      ].join(','))
-
-    const skuIds = (matchingSkus || []).map((s) => s.id)
-
-    // A term can also match the customer a unit was sold to -- customer_name lives on
-    // `sales`, joined in separately after this query runs (see saleByAssetId below), so
-    // it has to be resolved here the same way SKU matches are: look up matching sales
-    // first, then OR their asset_ledger_id into this query.
-    const { data: matchingSales } = await supabaseAdmin
-      .from('sales')
-      .select('asset_ledger_id')
-      .ilike('customer_name', `%${search}%`)
-      .not('asset_ledger_id', 'is', null)
-    const customerAssetIds = [...new Set((matchingSales || []).map((s: any) => s.asset_ledger_id))]
+    // Resolving the SKU-text match (which itself needs the cached spec field names
+    // first) and the customer-name match are independent of each other -- run them
+    // concurrently rather than as 3 sequential round trips, each of which is real
+    // network latency to Supabase, not query cost (these tables are small; the old
+    // sequential chain, not slow SQL, was what made a single search request add up to
+    // multiple seconds and occasionally time out).
+    const [skuIds, customerAssetIds] = await Promise.all([
+      (async () => {
+        const specFieldNames = await getSpecFieldNames()
+        const specClauses = specFieldNames.map((f) => `specifications->>${f}.ilike.%${search}%`)
+        const { data: matchingSkus } = await supabaseAdmin
+          .from('sku_master')
+          .select('id')
+          .or([
+            `full_sku_code.ilike.%${search}%`,
+            `sku_description.ilike.%${search}%`,
+            `brand.ilike.%${search}%`,
+            `model_name.ilike.%${search}%`,
+            ...specClauses,
+          ].join(','))
+        return (matchingSkus || []).map((s) => s.id)
+      })(),
+      // A term can also match the customer a unit was sold to -- customer_name lives on
+      // `sales`, joined in separately after this query runs (see saleByAssetId below),
+      // so it has to be resolved here the same way SKU matches are: look up matching
+      // sales first, then OR their asset_ledger_id into this query.
+      (async () => {
+        const { data: matchingSales } = await supabaseAdmin
+          .from('sales')
+          .select('asset_ledger_id')
+          .ilike('customer_name', `%${search}%`)
+          .not('asset_ledger_id', 'is', null)
+        return [...new Set((matchingSales || []).map((s: any) => s.asset_ledger_id))]
+      })(),
+    ])
 
     const orClauses = [`asset_number.ilike.%${search}%`, `serial_number.ilike.%${search}%`]
     if (skuIds.length > 0) {
@@ -260,40 +288,56 @@ export async function GET(req: NextRequest) {
   const fallbackSkuIds = [...new Set(noPoItemRows.map((a: any) => a.sku_id).filter(Boolean))]
   const fallbackVendorIds = [...new Set(noPoItemRows.map((a: any) => a.vendor_id).filter(Boolean))]
 
-  const [{ data: fallbackSkus }, { data: fallbackVendors }] = await Promise.all([
+  // A unit currently out for repair keeps whatever asset_ledger.status it already
+  // had (repair-job creation never changes it) -- this is the only place that fact
+  // is otherwise visible, so surface it as a badge here rather than a stored status.
+  const assetIds = (assets || []).map((a: any) => a.id)
+
+  // Sold units get their sale info merged in (customer, invoice status) -- this is
+  // what makes the Sold Stock view usable as a warranty lookup, and lets the owner see
+  // which sales still need an invoice, without a second page/request.
+  const soldIds = (assets || []).filter((a: any) => a.status === 'sold').map((a: any) => a.id)
+
+  // These five lookups are all independent of each other (each only depends on
+  // `assets`/`assetIds`/`soldIds`, already computed above) -- run them concurrently
+  // instead of one-by-one. Sequential round trips here (each real network latency to
+  // Supabase, not query cost -- these tables are small) is what made a single Stock
+  // request add up to multiple seconds and occasionally time out.
+  const [
+    { data: fallbackSkus },
+    { data: fallbackVendors },
+    { data: openRepairJobs },
+    { data: salesRows },
+    invoicingModeByKey,
+  ] = await Promise.all([
     fallbackSkuIds.length
       ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', fallbackSkuIds)
       : Promise.resolve({ data: [] as any[] }),
     fallbackVendorIds.length
       ? supabaseAdmin.from('vendors').select('id, company_name').in('id', fallbackVendorIds)
       : Promise.resolve({ data: [] as any[] }),
+    assetIds.length
+      ? supabaseAdmin.from('repair_jobs').select('asset_id, job_number').in('asset_id', assetIds).in('status', ['intake', 'in_progress'])
+      : Promise.resolve({ data: [] as any[] }),
+    soldIds.length
+      ? supabaseAdmin
+          .from('sales')
+          .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account')
+          .in('asset_ledger_id', soldIds)
+      : Promise.resolve({ data: [] as any[] }),
+    // Digitalbluez is currently in Zoho "external" invoicing mode during the
+    // transition (docs/decisions.md, 2026-07-24) -- generating an ERP invoice for it
+    // is blocked server-side regardless, but the Stock/Live Stock Sold tab's
+    // "Generate Invoice" button didn't know that and showed the same label for every
+    // entity, only failing (with a redirect-to-Sales alert) once actually clicked.
+    // Same invoice_mode resolution /api/sales already does, so the button here can
+    // show "Record Zoho Invoice #" upfront instead. Only fetched (and cached) when
+    // there's actually a sold row in this response.
+    soldIds.length ? getInvoicingModeByKey() : Promise.resolve(new Map<string, string>()),
   ])
   const skuById = new Map((fallbackSkus || []).map((s: any) => [s.id, s]))
   const vendorById = new Map((fallbackVendors || []).map((v: any) => [v.id, v]))
-
-  // A unit currently out for repair keeps whatever asset_ledger.status it already
-  // had (repair-job creation never changes it) -- this is the only place that fact
-  // is otherwise visible, so surface it as a badge here rather than a stored status.
-  const assetIds = (assets || []).map((a: any) => a.id)
-  const { data: openRepairJobs } = assetIds.length
-    ? await supabaseAdmin
-        .from('repair_jobs')
-        .select('asset_id, job_number')
-        .in('asset_id', assetIds)
-        .in('status', ['intake', 'in_progress'])
-    : { data: [] as any[] }
   const repairJobByAssetId = new Map((openRepairJobs || []).map((r: any) => [r.asset_id, r.job_number]))
-
-  // Sold units get their sale info merged in (customer, invoice status) -- this is
-  // what makes the Sold Stock view usable as a warranty lookup, and lets the owner see
-  // which sales still need an invoice, without a second page/request.
-  const soldIds = (assets || []).filter((a: any) => a.status === 'sold').map((a: any) => a.id)
-  const { data: salesRows } = soldIds.length
-    ? await supabaseAdmin
-        .from('sales')
-        .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories')
-        .in('asset_ledger_id', soldIds)
-    : { data: [] as any[] }
 
   // customer_name is a snapshot frozen at sale creation -- for sales not yet finalized
   // into a GST invoice, prefer the customer's current name so a correction made on the
@@ -302,11 +346,6 @@ export async function GET(req: NextRequest) {
   const unfinalizedCustomerIds = [...new Set(
     (salesRows || []).filter((s: any) => !s.finalized && s.customer_id).map((s: any) => s.customer_id)
   )]
-  const { data: liveCustomers } = unfinalizedCustomerIds.length
-    ? await supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
-    : { data: [] as any[] }
-  const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
-
   // Bundled accessories are stored inline on the unit's own sales row
   // (sales.bundled_accessories JSONB: [{accessory_id, quantity, unit_price}]) --
   // resolve each accessory_id to a display name in one batched lookup, same pattern
@@ -314,9 +353,16 @@ export async function GET(req: NextRequest) {
   const bundledAccessoryIds = [...new Set(
     (salesRows || []).flatMap((s: any) => (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => b.accessory_id).filter(Boolean))
   )]
-  const { data: bundledSkus } = bundledAccessoryIds.length
-    ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
-    : { data: [] as any[] }
+  // Both depend on salesRows above, but not on each other -- concurrent again.
+  const [{ data: liveCustomers }, { data: bundledSkus }] = await Promise.all([
+    unfinalizedCustomerIds.length
+      ? supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
+      : Promise.resolve({ data: [] as any[] }),
+    bundledAccessoryIds.length
+      ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
+      : Promise.resolve({ data: [] as any[] }),
+  ])
+  const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
   const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
 
   const saleByAssetId = new Map((salesRows || []).map((s: any) => [
@@ -370,6 +416,7 @@ export async function GET(req: NextRequest) {
       sale_total: sale?.sale_total,
       invoice_finalized: sale?.finalized,
       invoice_number: sale?.invoice_number,
+      invoice_mode: sale ? (invoicingModeByKey.get(resolveEntityKey(sale.payment_account)) === 'external' ? 'external' : 'erp') : undefined,
       payment_status: sale?.payment_status,
       amount_paid: sale?.amount_paid,
       bundled_accessories: sale?.bundled_accessories,

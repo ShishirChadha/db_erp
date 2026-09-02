@@ -18,6 +18,9 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const search = searchParams.get('search')
   const pagination = parsePagination(searchParams, 20)
+  // Sort is opt-in, same convention as /api/stock -- default stays sale_date desc
+  // (most recent first) for callers that don't pass it.
+  const sortAscending = searchParams.get('order') === 'asc'
 
   let query = supabaseAdmin
     .from('sales')
@@ -27,7 +30,7 @@ export async function GET(req: NextRequest) {
     )
     .not('accessory_id', 'is', null)
     .eq('is_deleted', false)
-    .order('sale_date', { ascending: false, nullsFirst: false })
+    .order('sale_date', { ascending: sortAscending, nullsFirst: false })
     .order('id', { ascending: true })
 
   if (search) {

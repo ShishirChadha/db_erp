@@ -55,7 +55,7 @@ export default function AdvisorLauncher() {
     <button
       type="button"
       onClick={open}
-      className="fixed bottom-4 right-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 md:bottom-6 md:right-6"
+      className="fixed bottom-4 left-4 z-40 flex items-center gap-2 rounded-full bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-lg hover:bg-primary/90 md:bottom-6 md:left-6"
       aria-label="Ask DB"
     >
       <Sparkles className="h-4 w-4" />
