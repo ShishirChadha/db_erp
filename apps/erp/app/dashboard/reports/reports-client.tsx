@@ -10,7 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
-  TrendingUp, TrendingDown, Package, IndianRupee, Users, AlertTriangle,
+  TrendingUp, TrendingDown, Package, IndianRupee, Users, AlertTriangle, Globe, Eye, MousePointerClick, Clock,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import {
@@ -50,6 +50,16 @@ async function getReport<T = any>(metric: string, params: Record<string, string>
   const res = await apiFetch(`/api/reports?${sp.toString()}`)
   if (!res.ok) return null
   return res.json()
+}
+
+async function getWebsiteReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<{ data: T | null; error: string | null }> {
+  const sp = new URLSearchParams({ metric, ...params })
+  const res = await apiFetch(`/api/reports/website?${sp.toString()}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    return { data: null, error: body.error || 'Failed to load' }
+  }
+  return { data: await res.json(), error: null }
 }
 
 export default function ReportsClient() {
@@ -113,6 +123,7 @@ export default function ReportsClient() {
           <TabsTrigger value="expenses">Expenses</TabsTrigger>
           <TabsTrigger value="cash">Cash & Receivables</TabsTrigger>
           <TabsTrigger value="gst">GST</TabsTrigger>
+          <TabsTrigger value="website">Website</TabsTrigger>
           <TabsTrigger value="data_health">Data Health</TabsTrigger>
         </TabsList>
 
@@ -139,6 +150,9 @@ export default function ReportsClient() {
         </TabsContent>
         <TabsContent value="gst">
           <GstTab period={period} active={activeTab === 'gst'} />
+        </TabsContent>
+        <TabsContent value="website">
+          <WebsiteTab period={period} active={activeTab === 'website'} />
         </TabsContent>
         <TabsContent value="data_health">
           <DataHealthTab active={activeTab === 'data_health'} />
@@ -685,6 +699,186 @@ function GstTab({ period, active }: { period: Period; active: boolean }) {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+// ── Website (Google Analytics) ──────────────────────────────────────
+function formatDuration(seconds: number): string {
+  const m = Math.floor(seconds / 60)
+  const s = Math.round(seconds % 60)
+  return `${m}m ${s}s`
+}
+
+function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
+  const [summary, setSummary] = useState<any>(null)
+  const [timeseries, setTimeseries] = useState<any[] | null>(null)
+  const [topPages, setTopPages] = useState<any[] | null>(null)
+  const [devices, setDevices] = useState<any[] | null>(null)
+  const [ageData, setAgeData] = useState<any[] | null>(null)
+  const [genderData, setGenderData] = useState<any[] | null>(null)
+  const [geo, setGeo] = useState<any[] | null>(null)
+  const [trafficSource, setTrafficSource] = useState<any[] | null>(null)
+  const [notConfigured, setNotConfigured] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!active) return
+    setLoading(true)
+    const p = { from: period.from, to: period.to }
+    Promise.all([
+      getWebsiteReport('summary', p),
+      getWebsiteReport('timeseries', p),
+      getWebsiteReport('top_pages', p),
+      getWebsiteReport('devices', p),
+      getWebsiteReport('demographics_age', p),
+      getWebsiteReport('demographics_gender', p),
+      getWebsiteReport('geo', p),
+      getWebsiteReport('traffic_source', p),
+    ]).then(([s, t, tp, d, a, g, geoR, ts]) => {
+      if (s.error) setNotConfigured(true)
+      setSummary(s.data)
+      setTimeseries(t.data)
+      setTopPages(tp.data)
+      setDevices(d.data)
+      setAgeData(a.data)
+      setGenderData(g.data)
+      setGeo(geoR.data)
+      setTrafficSource(ts.data)
+      setLoading(false)
+    })
+  }, [active, period.from, period.to])
+
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+
+  if (notConfigured) {
+    return (
+      <Card className="border-warning/20">
+        <CardContent className="pt-6 flex items-start gap-2 text-sm text-warning">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span>Google Analytics isn&apos;t configured on this server yet — set GA4_PROPERTY_ID, GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY.</span>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const tiles = [
+    { title: 'Sessions', value: summary?.sessions ?? 0, icon: Globe, color: 'text-info', bg: 'bg-info/15' },
+    { title: 'Active Users', value: summary?.active_users ?? 0, sub: `${summary?.new_users ?? 0} new`, icon: Users, color: 'text-pink', bg: 'bg-pink/15' },
+    { title: 'Page Views', value: summary?.page_views ?? 0, icon: Eye, color: 'text-success', bg: 'bg-success/15' },
+    { title: 'Engagement Rate', value: `${Math.round((summary?.engagement_rate ?? 0) * 100)}%`, icon: MousePointerClick, color: 'text-purple', bg: 'bg-purple/15' },
+    { title: 'Avg Session Duration', value: formatDuration(summary?.avg_session_duration_sec ?? 0), icon: Clock, color: 'text-warning', bg: 'bg-warning/15' },
+  ]
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+        {tiles.map((t) => (
+          <Card key={t.title}>
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium text-muted-foreground">{t.title}</CardTitle>
+                <div className={`${t.bg} p-2 rounded-lg`}><t.icon className={`h-4 w-4 ${t.color}`} /></div>
+              </div>
+            </CardHeader>
+            <CardContent><p className="text-xl font-semibold text-foreground">{t.value}</p></CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {timeseries && timeseries.length > 0 && (
+        <Card>
+          <CardHeader><CardTitle className="text-base">Daily Traffic</CardTitle></CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={280}>
+              <ComposedChart data={timeseries}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={(d) => new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip labelFormatter={(d) => new Date(d).toLocaleDateString('en-IN')} />
+                <Bar dataKey="sessions" name="Sessions" fill="var(--chart-1)" radius={[4, 4, 0, 0]} />
+                <Line type="monotone" dataKey="active_users" name="Active Users" stroke="var(--chart-2)" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <BreakdownRowsCard title="Top Pages" rows={topPages} labelKey="label" valueKey="page_views" valueLabel="Views" />
+        <BreakdownRowsCard title="Traffic Sources" rows={trafficSource} labelKey="label" valueKey="sessions" valueLabel="Sessions" />
+        <ChartPie title="Devices" rows={devices} valueKey="sessions" />
+        <BreakdownRowsCard title="Top Cities" rows={geo} labelKey="label" valueKey="sessions" valueLabel="Sessions" />
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <Card>
+          <CardHeader><CardTitle className="text-base">Age</CardTitle></CardHeader>
+          <CardContent>
+            {!ageData || ageData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No age data yet — Google Signals demographics need more traffic before they populate (can take days to weeks after enabling).</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={ageData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="label" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="active_users" name="Users" fill="var(--chart-3)" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader><CardTitle className="text-base">Gender</CardTitle></CardHeader>
+          <CardContent>
+            {!genderData || genderData.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No gender data yet — Google Signals demographics need more traffic before they populate (can take days to weeks after enabling).</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <PieChart>
+                  <Pie data={genderData} dataKey="active_users" nameKey="label" outerRadius={80} label={(e: any) => `${e.label}: ${e.active_users}`}>
+                    {genderData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Tooltip />
+                  <Legend />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}
+
+function BreakdownRowsCard({ title, rows, labelKey, valueKey, valueLabel }: { title: string; rows: any[] | null; labelKey: string; valueKey: string; valueLabel: string }) {
+  return (
+    <Card>
+      <CardHeader><CardTitle className="text-base">{title}</CardTitle></CardHeader>
+      <CardContent>
+        {!rows ? <p className="text-sm text-muted-foreground">Loading…</p> : rows.length === 0 ? <p className="text-sm text-muted-foreground">No data for this period.</p> : (
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Label</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">{valueLabel}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className="border-t">
+                    <td className="px-3 py-2">{r[labelKey]}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{r[valueKey]}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

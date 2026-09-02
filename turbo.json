@@ -11,7 +11,8 @@
     "RAZORPAY_WEBHOOK_SECRET",
     "RESEND_API_KEY",
     "RESEND_FROM_EMAIL",
-    "APIFY_API_TOKEN"
+    "APIFY_API_TOKEN",
+    "NEXT_PUBLIC_GA_MEASUREMENT_ID"
   ],
   "tasks": {
     "build": {
