@@ -48,7 +48,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.payment_account = payment_account
     updates.entity_key = payment_account ? String(payment_account).toLowerCase() : null
   }
-  if (vendor_id !== undefined) updates.vendor_id = vendor_id
+  if (vendor_id !== undefined) updates.vendor_id = vendor_id || null
   if (attachments !== undefined) updates.attachments = Array.isArray(attachments) ? attachments : []
   if (paid_by_staff !== undefined) updates.paid_by_staff = paid_by_staff || null
   if (is_deleted !== undefined) {
