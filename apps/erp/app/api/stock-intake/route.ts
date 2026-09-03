@@ -39,13 +39,19 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
 
-  if (!body.type) return NextResponse.json({ error: 'Type is required.' }, { status: 400 })
-  const category = TYPE_TO_CATEGORY[body.type] || 'OTHER'
-  // Monitor's field_schema has no `model`-equivalent field (just brand/size/etc, see
-  // sku_category_templates) -- schema-driven field capture means the frontend genuinely
-  // has nothing to send for it, matching how creating a Monitor SKU via SKU Master's own
-  // "New SKU" form works today. Every other category still requires it.
-  if (!body.model && category !== 'MON') return NextResponse.json({ error: 'Model is required.' }, { status: 400 })
+  // `sku_id` means the employee searched the catalog and picked an existing SKU up
+  // front (see the intake page's search box) -- the item is already fully identified,
+  // so Type/Model/specs are neither required nor used; skip straight to using that SKU.
+  let category = ''
+  if (!body.sku_id) {
+    if (!body.type) return NextResponse.json({ error: 'Type is required.' }, { status: 400 })
+    category = TYPE_TO_CATEGORY[body.type] || 'OTHER'
+    // Monitor's field_schema has no `model`-equivalent field (just brand/size/etc, see
+    // sku_category_templates) -- schema-driven field capture means the frontend genuinely
+    // has nothing to send for it, matching how creating a Monitor SKU via SKU Master's own
+    // "New SKU" form works today. Every other category still requires it.
+    if (!body.model && category !== 'MON') return NextResponse.json({ error: 'Model is required.' }, { status: 400 })
+  }
 
   // Serial number has no DB-level uniqueness constraint (see the duplication analysis
   // in docs/decisions.md) -- hard block on any existing match, no confirm-and-proceed
@@ -79,32 +85,42 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Schema-driven callers (the current Stock Intake frontend) send a ready-made
-  // `specifications` object matching the category's own sku_category_templates.
-  // field_schema, same shape SKU Master's "New SKU" form sends -- used verbatim when
-  // present. `buildSpecifications`'s legacy flat-field assembly stays as a fallback for
-  // any caller that still sends the old shape (e.g. /api/purchases' AddPurchaseDialog,
-  // which shares this same helper and hasn't been migrated).
-  const specs = body.specifications && typeof body.specifications === 'object'
-    ? { brand: resolveBrand(body), ...body.specifications }
-    : buildSpecifications(category, body)
-  const brand = resolveBrand(body)
-
   let sku
   let possibleDuplicates
-  try {
-    const result = await resolveOrCreateSku({
-      category,
-      item_type: body.type,
-      brand,
-      model_name: body.model || '',
-      specifications: specs,
-      sku_description: `${brand} ${body.model || ''}`.trim(),
-    })
-    sku = result.sku
-    possibleDuplicates = result.possibleDuplicates
-  } catch (err: any) {
-    return NextResponse.json({ error: `Failed to resolve SKU: ${err.message}` }, { status: 500 })
+  if (body.sku_id) {
+    const { data: existingSku } = await supabaseAdmin
+      .from('sku_master')
+      .select('id, full_sku_code')
+      .eq('id', body.sku_id)
+      .maybeSingle()
+    if (!existingSku) return NextResponse.json({ error: 'Selected item not found.' }, { status: 404 })
+    sku = existingSku
+  } else {
+    // Schema-driven callers (the current Stock Intake frontend) send a ready-made
+    // `specifications` object matching the category's own sku_category_templates.
+    // field_schema, same shape SKU Master's "New SKU" form sends -- used verbatim when
+    // present. `buildSpecifications`'s legacy flat-field assembly stays as a fallback for
+    // any caller that still sends the old shape (e.g. /api/purchases' AddPurchaseDialog,
+    // which shares this same helper and hasn't been migrated).
+    const specs = body.specifications && typeof body.specifications === 'object'
+      ? { brand: resolveBrand(body), ...body.specifications }
+      : buildSpecifications(category, body)
+    const brand = resolveBrand(body)
+
+    try {
+      const result = await resolveOrCreateSku({
+        category,
+        item_type: body.type,
+        brand,
+        model_name: body.model || '',
+        specifications: specs,
+        sku_description: `${brand} ${body.model || ''}`.trim(),
+      })
+      sku = result.sku
+      possibleDuplicates = result.possibleDuplicates
+    } catch (err: any) {
+      return NextResponse.json({ error: `Failed to resolve SKU: ${err.message}` }, { status: 500 })
+    }
   }
 
   const ledgerRow = buildIntakeLedgerRow(body, {
@@ -153,7 +169,7 @@ export async function POST(req: NextRequest) {
     tableName: 'asset_ledger',
     recordId: inserted.id,
     recordLabel: body.serial_number || inserted.id,
-    metadata: { sku_id: sku.id, type: body.type, model: body.model },
+    metadata: { sku_id: sku.id, type: body.type || 'existing_sku', model: body.model || sku.full_sku_code },
   })
 
   // Bundled monitor -- a genuine second unit, created the same way the primary one

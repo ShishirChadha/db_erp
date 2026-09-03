@@ -14,6 +14,12 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
 import { AccessoryBundlePicker, type BundledAccessory } from '@/components/AccessoryBundlePicker'
 import { BundleMonitorFields, EMPTY_BUNDLED_MONITOR, type BundledMonitor } from '@/components/BundleMonitorFields'
+import { buildConfigSummary } from '@/lib/sku-config-summary'
+
+// The serialized/per-unit categories Stock Intake's Type field can produce (see
+// TYPE_TO_CATEGORY + the 'OTHER' catch-all) -- excludes the fungible accessory
+// categories, which already have their own picker (AccessoryBundlePicker) below.
+const CATALOG_SEARCH_CATEGORIES = 'LAP,DES,MON,TAB,OTHER'
 
 interface CategoryTemplate {
   category: string
@@ -67,9 +73,34 @@ function StockIntakePage() {
   const [bundleMonitor, setBundleMonitor] = useState(false)
   const [bundledMonitor, setBundledMonitor] = useState<BundledMonitor>(EMPTY_BUNDLED_MONITOR)
 
+  // Search the real SKU catalog up front so an employee can pick an existing item
+  // (skipping Type/spec entry entirely) instead of only finding out whether it already
+  // exists after submitting -- see resolveOrCreateSku, which still runs silently for
+  // whatever the employee types below when no catalog item is picked here.
+  const [catalogSearch, setCatalogSearch] = useState('')
+  const [catalogResults, setCatalogResults] = useState<any[]>([])
+  const [selectedSku, setSelectedSku] = useState<any | null>(null)
+
   const { values: typeOptions, addOption: addTypeOption } = useCustomOptions('stock_intake_type')
 
-  const category = TYPE_TO_CATEGORY[type] || 'OTHER'
+  useEffect(() => {
+    if (!catalogSearch.trim() || selectedSku) { setCatalogResults([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${CATALOG_SEARCH_CATEGORIES}&search=${encodeURIComponent(catalogSearch)}`)
+      const data = await res.json()
+      setCatalogResults(Array.isArray(data) ? data : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [catalogSearch, selectedSku])
+
+  const selectSku = (sku: any) => {
+    setSelectedSku(sku)
+    setCatalogSearch(''); setCatalogResults([])
+    setType(''); setSpecs({})
+  }
+  const clearSelectedSku = () => { setSelectedSku(null) }
+
+  const category = selectedSku ? selectedSku.category : (TYPE_TO_CATEGORY[type] || 'OTHER')
   const selectedTemplate = templates.find(t => t.category === category)
   const fieldSchema = parseFieldSchema(selectedTemplate?.field_schema)
   // Model Year is the one field kept conditionally hidden rather than always rendered --
@@ -115,6 +146,7 @@ function StockIntakePage() {
 
   const resetForm = () => {
     setType('Laptop'); setSpecs({})
+    setSelectedSku(null); setCatalogSearch(''); setCatalogResults([])
     setBundled([]); setBundleMonitor(false); setBundledMonitor(EMPTY_BUNDLED_MONITOR)
     setSerialNumber(''); setPurchasedByType('Digitalbluez'); setConditionNotes('')
     setReceivedDate(today())
@@ -122,8 +154,10 @@ function StockIntakePage() {
 
   // Generic required-field check, driven by the resolved category's own field_schema --
   // whatever that category marks required (brand, model, size, ...) must be filled, no
-  // hardcoded "Model" special case.
+  // hardcoded "Model" special case. Skipped entirely once an existing SKU is picked from
+  // the catalog search -- it's already fully identified, nothing left to require.
   const missingRequiredLabel = () => {
+    if (selectedSku) return null
     const missing = fields.filter((f: any) => f.required && !specs[f.name])
     return missing.length > 0 ? missing.map((f: any) => f.label).join(', ') : null
   }
@@ -141,10 +175,11 @@ function StockIntakePage() {
     if (missing) { setError(`${missing} required.`); return }
 
     const payload = {
-      type,
-      model: identityField ? specs[identityField] : undefined,
-      brand: specs.brand,
-      specifications: specs,
+      sku_id: selectedSku?.id,
+      type: selectedSku ? undefined : type,
+      model: selectedSku ? undefined : (identityField ? specs[identityField] : undefined),
+      brand: selectedSku ? undefined : specs.brand,
+      specifications: selectedSku ? undefined : specs,
       serial_number: serialNumber,
       purchased_by_type: purchasedByType,
       condition_notes: conditionNotes,
@@ -214,23 +249,67 @@ function StockIntakePage() {
           <p className="text-xs text-muted-foreground mt-1">Backdate this if the unit was actually received earlier.</p>
         </div>
 
-        <div>
-          <label className="block font-medium text-sm mb-1">Type *</label>
-          <SearchableSelect
-            options={typeOptions}
-            value={type}
-            onChange={(v) => { setType(v); setSpecs({}) }}
-            placeholder="Select type..."
-            onOtherCommit={(v) => { if (!typeOptions.includes(v)) addTypeOption(v) }}
-          />
-        </div>
+        {selectedSku ? (
+          <div className="border rounded p-3 bg-muted/50 flex justify-between items-start gap-3">
+            <div>
+              <div className="font-medium text-sm">{selectedSku.full_sku_code}</div>
+              <div className="text-sm text-muted-foreground">
+                {buildConfigSummary(selectedSku.category, selectedSku.specifications, templates) || selectedSku.sku_description}
+              </div>
+              <div className="text-xs text-muted-foreground mt-1">{selectedSku.quantity_in_stock ?? 0} currently in stock</div>
+            </div>
+            <button onClick={clearSelectedSku} className="text-sm underline text-muted-foreground hover:text-foreground shrink-0">
+              Change
+            </button>
+          </div>
+        ) : (
+          <div>
+            <label className="block font-medium text-sm mb-1">Find Existing Item</label>
+            <input
+              value={catalogSearch}
+              onChange={(e) => setCatalogSearch(e.target.value)}
+              placeholder="Search by brand, model, or SKU code..."
+              className="border p-2 w-full rounded"
+            />
+            {catalogResults.length > 0 && (
+              <ul className="border rounded mt-1 max-h-56 overflow-y-auto">
+                {catalogResults.map((r) => (
+                  <li key={r.id} onClick={() => selectSku(r)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0">
+                    <div className="font-medium text-sm">{r.full_sku_code}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {buildConfigSummary(r.category, r.specifications, templates) || r.sku_description} · {r.quantity_in_stock ?? 0} in stock
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Found it? Select it above to skip the fields below. Not there? Just fill in Type and the rest to create it.
+            </p>
+          </div>
+        )}
 
-        <CategorySpecFields
-          fields={fields}
-          specs={specs}
-          category={category}
-          onChange={(name, value) => setSpecs(prev => ({ ...prev, [name]: value }))}
-        />
+        {!selectedSku && (
+          <>
+            <div>
+              <label className="block font-medium text-sm mb-1">Type *</label>
+              <SearchableSelect
+                options={typeOptions}
+                value={type}
+                onChange={(v) => { setType(v); setSpecs({}) }}
+                placeholder="Select type..."
+                onOtherCommit={(v) => { if (!typeOptions.includes(v)) addTypeOption(v) }}
+              />
+            </div>
+
+            <CategorySpecFields
+              fields={fields}
+              specs={specs}
+              category={category}
+              onChange={(name, value) => setSpecs(prev => ({ ...prev, [name]: value }))}
+            />
+          </>
+        )}
 
         <AccessoryBundlePicker bundled={bundled} onChange={setBundled} />
 
@@ -291,11 +370,18 @@ function StockIntakePage() {
           onBack={() => setShowReview(false)}
           onConfirm={async () => { await handleSubmit(); setShowReview(false) }}
           rows={[
-            { label: 'Type', value: type },
-            ...fields.map((f: any) => ({
-              label: f.label,
-              value: typeof specs[f.name] === 'boolean' ? (specs[f.name] ? 'Yes' : 'No') : (specs[f.name] ?? ''),
-            })),
+            ...(selectedSku
+              ? [{
+                  label: 'Item',
+                  value: `${selectedSku.full_sku_code} — ${buildConfigSummary(selectedSku.category, selectedSku.specifications, templates) || selectedSku.sku_description}`,
+                }]
+              : [
+                  { label: 'Type', value: type },
+                  ...fields.map((f: any) => ({
+                    label: f.label,
+                    value: typeof specs[f.name] === 'boolean' ? (specs[f.name] ? 'Yes' : 'No') : (specs[f.name] ?? ''),
+                  })),
+                ]),
             { label: 'Serial Number', value: serialNumber },
             { label: 'Purchased By', value: purchasedByType },
             ...(bundled.length > 0 ? [{ label: 'Bundled Accessories', value: bundled.map(b => `${b.accessory_name} ×${b.quantity}`).join(', ') }] : []),
