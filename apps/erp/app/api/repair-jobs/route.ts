@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
-import { generateRepairJobNumber } from '@/lib/repair-jobs'
+import { generateRepairJobNumber, resolveRepairGstPercent, consumeRepairParts } from '@/lib/repair-jobs'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
 
   let query = supabaseAdmin
     .from('repair_jobs')
-    .select('*, customers(customer_name, phone), sales(id, finalized, invoice_id, invoice_number, sale_total, sale_gst, sale_base_price, amount_paid, payment_account)', pagination ? { count: 'exact' } : undefined)
+    .select('*, customers(customer_name, phone), sales(id, finalized, invoice_id, invoice_number, sale_total, sale_gst, sale_base_price, amount_paid, payment_status, payment_account, is_deleted)', pagination ? { count: 'exact' } : undefined)
 
   const SORT_COLUMNS: Record<string, { column: string; foreignTable?: string }> = {
     job_date: { column: 'job_date' },
@@ -61,17 +61,43 @@ export async function GET(req: NextRequest) {
   const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
-  // Flatten the reverse sales(...) embed (one row max in practice -- a job only ever
-  // creates a sale once, at Mark Done) and tag it with the same erp/external invoicing
-  // mode the Sales Ledger uses, so the Repair Jobs page can offer Generate Invoice /
-  // Record Zoho Invoice # directly without a second trip through Sales Ledger.
+  // A job can now have MULTIPLE linked sales -- the labor charge (created at Mark
+  // Done) plus one per consumed part (created immediately when the part is added,
+  // see lib/repair-jobs.ts's consumeRepairParts) -- so this aggregates across all of
+  // them rather than flattening to a single sale. Once a job is billed,
+  // repair_jobs.payment_status/amount_paid are a stale intake-time snapshot (see
+  // CLAUDE.md) -- these aggregate fields are what the list/Edit dialog must display
+  // instead. Also tags the "invoicing entity" mode (erp/external) the Sales Ledger
+  // uses, so the Repair Jobs page can offer Generate Invoice / Record Zoho Invoice #
+  // directly without a second trip through Sales Ledger.
   const { data: profiles } = await supabaseAdmin.from('business_profiles').select('key, invoicing_mode')
   const modeByKey = new Map((profiles || []).map((p: any) => [p.key, p.invoicing_mode]))
   const withSale = (data || []).map((j: any) => {
-    const sale = Array.isArray(j.sales) ? j.sales[0] || null : j.sales || null
+    const rawSales: any[] = Array.isArray(j.sales) ? j.sales : j.sales ? [j.sales] : []
+    const sales = rawSales.filter((s) => !s.is_deleted)
+    const saleCount = sales.length
+    const totalCharged = sales.reduce((sum, s) => sum + Number(s.sale_total || 0), 0)
+    const totalPaid = sales.reduce((sum, s) => sum + Number(s.amount_paid || 0), 0)
+    const allFinalized = saleCount > 0 && sales.every((s) => s.finalized)
+    const aggregatePaymentStatus = saleCount === 0
+      ? j.payment_status
+      : totalPaid <= 0
+        ? 'pending'
+        : sales.every((s) => s.payment_status === 'paid')
+          ? 'paid'
+          : 'partial'
+    const invoiceMode = sales.length > 0
+      ? modeByKey.get(resolveEntityKey(sales[0].payment_account)) === 'external' ? 'external' : 'erp'
+      : undefined
     return {
       ...j,
-      sales: sale ? { ...sale, invoice_mode: modeByKey.get(resolveEntityKey(sale.payment_account)) === 'external' ? 'external' : 'erp' } : null,
+      sales,
+      sale_count: saleCount,
+      total_charged: totalCharged,
+      total_paid: totalPaid,
+      all_finalized: allFinalized,
+      aggregate_payment_status: aggregatePaymentStatus,
+      invoice_mode: invoiceMode,
     }
   })
 
@@ -106,25 +132,16 @@ export async function POST(req: NextRequest) {
   }
 
   // Parts consumed during the repair (accessory sku_master rows -- battery, screen,
-  // keyboard, etc.) -- validated up front so a job never gets created only to find
-  // out a part is oversold. repair_job_parts links back to the exact stock_movements
-  // row it produced, same idiom as every other stock-affecting action in this app.
-  const partsToConsume: Array<{ sku_id: string; quantity: number }> = Array.isArray(parts)
-    ? parts.filter((p: any) => p?.sku_id && p?.quantity > 0)
+  // keyboard, etc.) become real, priced accessory sales (sales.repair_job_id) the
+  // moment the job is created -- see lib/repair-jobs.ts's consumeRepairParts, which
+  // reuses the same cart machinery (lib/sales-cart.ts) as a normal accessory sale.
+  // A priced sale needs an invoicing entity, so payment_account is required whenever
+  // parts are present.
+  const partsToConsume: Array<{ sku_id: string; quantity: number; unit_price: number }> = Array.isArray(parts)
+    ? parts.filter((p: any) => p?.sku_id && p?.quantity > 0).map((p: any) => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: Number(p.unit_price) || 0 }))
     : []
-  if (partsToConsume.length > 0) {
-    const { data: skuRows } = await supabaseAdmin
-      .from('sku_master')
-      .select('id, full_sku_code, quantity_in_stock')
-      .in('id', partsToConsume.map((p) => p.sku_id))
-    const skuById = new Map((skuRows || []).map((s) => [s.id, s]))
-    for (const part of partsToConsume) {
-      const sku = skuById.get(part.sku_id)
-      if (!sku) return NextResponse.json({ error: 'Part not found.' }, { status: 404 })
-      if (sku.quantity_in_stock < part.quantity) {
-        return NextResponse.json({ error: `Only ${sku.quantity_in_stock} of ${sku.full_sku_code} in stock.` }, { status: 400 })
-      }
-    }
+  if (partsToConsume.length > 0 && !payment_account) {
+    return NextResponse.json({ error: '"Received Into" is required to add parts.' }, { status: 400 })
   }
 
   // Backdate support: an employee logging a job that actually happened earlier can
@@ -160,28 +177,6 @@ export async function POST(req: NextRequest) {
 
   if (jobErr) return NextResponse.json({ error: jobErr.message }, { status: 500 })
 
-  for (const part of partsToConsume) {
-    const { data: movement, error: moveErr } = await supabaseAdmin
-      .from('stock_movements')
-      .insert({
-        sku_id: part.sku_id,
-        movement_type: 'sale',
-        quantity_change: -part.quantity,
-        notes: `Used in repair job ${jobNumber}`,
-        created_by: sessionUser.id,
-      })
-      .select('id')
-      .single()
-    if (!moveErr && movement) {
-      await supabaseAdmin.from('repair_job_parts').insert({
-        repair_job_id: job.id,
-        sku_id: part.sku_id,
-        quantity: part.quantity,
-        stock_movement_id: movement.id,
-      })
-    }
-  }
-
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
     actionType: 'create',
@@ -191,5 +186,26 @@ export async function POST(req: NextRequest) {
     recordLabel: job.job_number,
   })
 
-  return NextResponse.json({ success: true, id: job.id, job_number: job.job_number }, { status: 201 })
+  // The device intake itself has already succeeded at this point -- a part
+  // consumption problem (e.g. a stock race since the earlier validation) is
+  // surfaced back to the caller as a warning rather than rolling back the job.
+  let partsWarning: string | undefined
+  if (partsToConsume.length > 0) {
+    const { data: customer } = await supabaseAdmin.from('customers').select('customer_name').eq('id', customer_id).single()
+    const gstPct = await resolveRepairGstPercent(payment_account, gst_percentage)
+    const result = await consumeRepairParts({
+      jobId: job.id,
+      jobNumber: job.job_number,
+      customerId: customer_id,
+      customerName: customer?.customer_name || null,
+      paymentAccount: payment_account,
+      gstPercent: gstPct,
+      saleDate: resolvedJobDate,
+      parts: partsToConsume,
+      sessionUserId: sessionUser.id,
+    })
+    if (!result.ok) partsWarning = result.message
+  }
+
+  return NextResponse.json({ success: true, id: job.id, job_number: job.job_number, parts_warning: partsWarning }, { status: 201 })
 }

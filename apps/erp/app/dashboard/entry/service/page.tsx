@@ -53,13 +53,16 @@ function mapSkuToAccessory(s: any): Accessory {
 const RETURN_REASONS = ['Defective on arrival', 'Not as described', 'Changed mind', 'Wrong item', 'Other']
 
 // Parts consumed during a repair (battery, screen, keyboard, etc.) are sku_master
-// rows like every other accessory -- consuming one writes a stock_movements 'sale'
-// row via POST /api/repair-jobs's parts array, same mechanism a normal sale uses.
+// rows like every other accessory -- consuming one becomes a real, priced accessory
+// sale (sales.repair_job_id) via POST /api/repair-jobs's parts array (see
+// lib/repair-jobs.ts's consumeRepairParts), same mechanism a normal accessory sale
+// uses, just tagged back to this job.
 const PART_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MOUSE', 'ACC', 'ADP']
 
 interface PartOption {
   id: string
   label: string
+  price: number
 }
 
 function unitLabel(u: StockUnit) {
@@ -174,7 +177,7 @@ function ServicePageInner() {
   const [replacementUnit, setReplacementUnit] = useState<StockUnit | null>(null)
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
 
-  const [partsUsed, setPartsUsed] = useState<{ sku_id: string; label: string; quantity: number }[]>([])
+  const [partsUsed, setPartsUsed] = useState<{ sku_id: string; label: string; quantity: number; unit_price: number }[]>([])
   const [partsSearch, setPartsSearch] = useState('')
   const [partsOptions, setPartsOptions] = useState<PartOption[]>([])
 
@@ -252,16 +255,18 @@ function ServicePageInner() {
     const timer = setTimeout(async () => {
       const res = await apiFetch(`/api/sku-master?category=${PART_CATEGORIES.join(',')}&search=${encodeURIComponent(partsSearch)}`)
       const data = await res.json()
-      setPartsOptions(Array.isArray(data) ? data.map((s: any) => ({ id: s.id, label: s.sku_description || s.full_sku_code })) : [])
+      setPartsOptions(Array.isArray(data) ? data.map((s: any) => ({ id: s.id, label: s.sku_description || s.full_sku_code, price: Number(s.selling_price_default) || 0 })) : [])
     }, 300)
     return () => clearTimeout(timer)
   }, [partsSearch])
 
   const addPart = (p: PartOption) => {
     if (partsUsed.some(x => x.sku_id === p.id)) return
-    setPartsUsed(prev => [...prev, { sku_id: p.id, label: p.label, quantity: 1 }])
+    setPartsUsed(prev => [...prev, { sku_id: p.id, label: p.label, quantity: 1, unit_price: p.price }])
     setPartsSearch(''); setPartsOptions([])
   }
+  const updatePart = (idx: number, patch: Partial<{ quantity: number; unit_price: number }>) =>
+    setPartsUsed(prev => prev.map((x, i) => i === idx ? { ...x, ...patch } : x))
 
   const [returnUnit, setReturnUnit] = useState<StockUnit | null>(null)
   const [returnReason, setReturnReason] = useState(RETURN_REASONS[0])
@@ -316,7 +321,7 @@ function ServicePageInner() {
             amount_charged: amountCharged === '' ? null : amountCharged,
             payment_account: paymentAccount,
             job_date: serviceDate,
-            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
+            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: p.unit_price })),
             bundled_accessories: bundled.map(b => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.price || 0 })),
             sold_by: soldBy || undefined,
             sale_type: saleType,
@@ -334,7 +339,7 @@ function ServicePageInner() {
             payment_account: paymentAccount,
             gst_percentage: paymentAccount === 'Digitalbluez' ? repairGstPercent : null,
             job_date: serviceDate,
-            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity })),
+            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: p.unit_price })),
           }
       const res = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
@@ -491,21 +496,36 @@ function ServicePageInner() {
               </ul>
             )}
             {partsUsed.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 space-y-1">
                 {partsUsed.map((p, idx) => (
-                  <span key={p.sku_id} className="bg-muted text-sm px-2 py-1 rounded flex items-center gap-1">
-                    {p.label}
+                  <div key={p.sku_id} className="flex items-center gap-2 text-sm bg-muted border rounded p-2">
+                    <span className="flex-1">{p.label}</span>
                     <input
                       type="number"
                       min={1}
                       value={p.quantity}
-                      onChange={(e) => setPartsUsed(prev => prev.map((x, i) => i === idx ? { ...x, quantity: Number(e.target.value) } : x))}
-                      className="w-12 border rounded text-center"
+                      onChange={(e) => updatePart(idx, { quantity: Number(e.target.value) })}
+                      className="w-14 border rounded text-center"
+                      title="Quantity"
+                    />
+                    <input
+                      type="number"
+                      min={0}
+                      value={p.unit_price}
+                      onChange={(e) => updatePart(idx, { unit_price: Number(e.target.value) })}
+                      placeholder="₹"
+                      className="w-20 border rounded text-center"
+                      title="Price each (₹)"
                     />
                     <button onClick={() => setPartsUsed(prev => prev.filter((_, i) => i !== idx))} className="text-destructive">✕</button>
-                  </span>
+                  </div>
                 ))}
               </div>
+            )}
+            {partsUsed.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Prefilled from each SKU's usual selling price — adjust per-job as needed. Each part becomes its own itemized sale, combinable with the repair charge into one invoice.
+              </p>
             )}
           </div>
 

@@ -19,21 +19,38 @@ type SortOrder = 'asc' | 'desc'
 
 const PAGE_SIZE = 25
 
+type SaleSummary = { id: string; finalized: boolean; invoice_number: string | null; sale_total: number; amount_paid: number; payment_status: string; payment_account: string; is_deleted?: boolean }
+
 type RepairJob = RepairJobDetail & {
   customers: { customer_name: string; phone: string | null } | null
+  sales?: SaleSummary[]
 }
 
-// Mirrors app/dashboard/sales/page.tsx's InvoiceCell -- once a job is billed
-// (job.sales exists), the same Generate Invoice / Record Zoho Invoice # actions are
-// available right here, instead of only reachable via a separate trip to Sales Ledger.
+// Mirrors app/dashboard/sales/page.tsx's InvoiceCell -- once a job is billed (has one
+// or more linked sales -- the labor charge and/or one per consumed part), the same
+// Generate Invoice / Record Zoho Invoice # actions are available right here, instead
+// of only reachable via a separate trip to Sales Ledger. When a job has more than one
+// unfinalized sale (e.g. a labor charge + parts), they're combined into ONE invoice via
+// the same finalize-batch route Sales Ledger's own multi-select already uses.
 function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; onDone: () => void }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false)
-  const sale = job.sales
-  if (!sale) return <span className="text-muted-foreground text-xs">Not billed yet</span>
+  const sales = job.sales || []
+  if (sales.length === 0) return <span className="text-muted-foreground text-xs">Not billed yet</span>
 
-  const isExternal = sale.invoice_mode === 'external'
+  const unfinalized = sales.filter((s) => !s.finalized)
+  if (unfinalized.length === 0) {
+    // All finalized -- show every invoice number (usually just one, but a job's
+    // charges could have been invoiced separately at different times).
+    const numbers = [...new Set(sales.map((s) => s.invoice_number).filter(Boolean))]
+    return <span className="text-success text-xs">✓ {numbers.join(', ')}</span>
+  }
+  if (!isOwner) return <span className="text-muted-foreground text-xs">Awaiting invoice</span>
+
+  const isExternal = job.invoice_mode === 'external'
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
-    const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: 'POST', body: '{}' })
+    const res = unfinalized.length === 1
+      ? await apiFetch(`/api/sales/${unfinalized[0].id}/finalize`, { method: 'POST', body: '{}' })
+      : await apiFetch(`/api/sales/finalize-batch`, { method: 'POST', body: JSON.stringify({ sale_ids: unfinalized.map((s) => s.id) }) })
     if (!res.ok) {
       const e = await res.json().catch(() => ({}))
       alert(e.error || 'Failed to generate invoice.')
@@ -44,11 +61,7 @@ function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: 
 
   return (
     <>
-      {sale.finalized ? (
-        <span className="text-success text-xs">✓ {sale.invoice_number}</span>
-      ) : !isOwner ? (
-        <span className="text-muted-foreground text-xs">Awaiting invoice</span>
-      ) : isExternal ? (
+      {isExternal ? (
         <button onClick={() => setShowZohoDialog(true)} className="text-warning underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
           Record Zoho Invoice #
         </button>
@@ -59,7 +72,7 @@ function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: 
         </button>
       )}
       {showZohoDialog && (
-        <RecordZohoInvoiceDialog saleIds={[sale.id]} onClose={() => setShowZohoDialog(false)} onRecorded={onDone} />
+        <RecordZohoInvoiceDialog saleIds={unfinalized.map((s) => s.id)} onClose={() => setShowZohoDialog(false)} onRecorded={onDone} />
       )}
     </>
   )
@@ -67,6 +80,14 @@ function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: 
 
 function JobRow({ job, canEdit, isOwner, onDone, index, variant = 'row' }: { job: RepairJob; canEdit: boolean; isOwner: boolean; onDone: () => void; index: number; variant?: 'row' | 'card' }) {
   const [showEdit, setShowEdit] = useState(false)
+
+  // Once a job is billed (has one or more linked, non-deleted sales), those sales are
+  // the source of truth for what's actually charged/paid -- repair_jobs.payment_status/
+  // amount_paid freeze at their intake-time value and are never updated afterward (see
+  // CLAUDE.md). The list API already computes these aggregates (app/api/repair-jobs/route.ts).
+  const billed = (job.sale_count || 0) > 0
+  const displayPaymentStatus = billed ? (job.aggregate_payment_status || 'pending') : job.payment_status
+  const displayAmountPaid = billed ? (job.total_paid ?? 0) : (job.amount_paid ?? 0)
 
   const { run: markDone, pending: marking } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/repair-jobs/${job.id}/finalize`, { method: 'POST' })
@@ -107,8 +128,8 @@ function JobRow({ job, canEdit, isOwner, onDone, index, variant = 'row' }: { job
         <div className="text-sm">{job.customers?.customer_name || '—'}</div>
         <div className="text-sm text-muted-foreground">{job.problem_description || job.customer_device_description || '—'}</div>
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, job.payment_status)}>{job.payment_status}</StatusBadge>
-          <span className="tabular-nums">₹{job.amount_paid?.toFixed(2)}</span>
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{displayPaymentStatus}</StatusBadge>
+          <span className="tabular-nums">₹{displayAmountPaid.toFixed(2)}</span>
           <span>{job.payment_account || '—'}</span>
         </div>
         <RepairInvoiceCell job={job} isOwner={isOwner} onDone={onDone} />
@@ -126,8 +147,8 @@ function JobRow({ job, canEdit, isOwner, onDone, index, variant = 'row' }: { job
       <td className="border p-2">{job.customers?.customer_name || '—'}</td>
       <td className="border p-2 max-w-xs truncate">{job.problem_description || job.customer_device_description || '—'}</td>
       <td className="border p-2"><StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge></td>
-      <td className="border p-2"><StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, job.payment_status)}>{job.payment_status}</StatusBadge></td>
-      <td className="border p-2 text-right tabular-nums">₹{job.amount_paid?.toFixed(2)}</td>
+      <td className="border p-2"><StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{displayPaymentStatus}</StatusBadge></td>
+      <td className="border p-2 text-right tabular-nums">₹{displayAmountPaid.toFixed(2)}</td>
       <td className="border p-2">{job.payment_account || '—'}</td>
       <td className="border p-2"><RepairInvoiceCell job={job} isOwner={isOwner} onDone={onDone} /></td>
       {canEdit && (

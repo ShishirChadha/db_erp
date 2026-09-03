@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -27,9 +27,11 @@ import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
+const PART_CATEGORIES = ["RAM", "SSD", "CPU", "GPU", "KBD", "MOUSE", "ACC", "ADP"];
 
-interface LinkedSale {
+interface SaleLine {
   id: string;
+  accessory_id: string | null;
   finalized: boolean;
   invoice_id: string | null;
   invoice_number: string | null;
@@ -37,9 +39,29 @@ interface LinkedSale {
   sale_gst: number;
   sale_base_price: number;
   amount_paid: number;
-  invoice_mode?: "erp" | "external";
+  payment_status: string;
+  payment_account: string;
+  kind: "labor" | "part";
+  label: string;
+  invoice_mode: "erp" | "external";
 }
 
+interface PartInstalled {
+  id: string;
+  sku_id: string;
+  label: string;
+  quantity: number;
+  unit_price: number | null;
+  sale_id: string | null;
+  payment_status: string | null;
+  finalized: boolean | null;
+}
+
+// Kept minimal -- this is what the Repair Jobs LIST route returns (lightweight
+// aggregates only, see app/api/repair-jobs/route.ts). The dialog fetches the full
+// itemized detail (sale_lines/parts_installed) itself on open, from
+// GET /api/repair-jobs/[id], rather than the list row carrying that weight for
+// every row all the time.
 export interface RepairJobDetail {
   id: string;
   job_number: string;
@@ -55,15 +77,28 @@ export interface RepairJobDetail {
   amount_paid: number;
   payment_account: string | null;
   gst_percentage: number | null;
-  sales: LinkedSale | null;
+  sale_count?: number;
+  total_charged?: number;
+  total_paid?: number;
+  aggregate_payment_status?: string;
+  all_finalized?: boolean;
+  invoice_mode?: "erp" | "external";
 }
 
-// Repair charges become a real `sales` row (sales.repair_job_id) the moment the job is
-// marked Done (see POST /api/repair-jobs/[id]/finalize) -- once that's happened, this
-// job's own amount_charged/gst_percentage/payment_account are a frozen snapshot of
-// what was billed, not a live editable value, so those fields lock and further
-// payments/invoicing happen against the linked sale instead (same handoff already
-// documented in CLAUDE.md).
+interface PartOption {
+  id: string;
+  label: string;
+  price: number;
+}
+
+// Repair charges become real `sales` rows the moment they exist: the labor charge on
+// Mark Done (see POST /api/repair-jobs/[id]/finalize), each part the moment it's added
+// (intake or here, see POST /api/repair-jobs/[id]/parts) -- once any of that has
+// happened, this job's own amount_charged/gst_percentage/payment_account are a frozen
+// snapshot of what was charged then, not a live editable value, so those fields lock
+// and further payments/invoicing happen against the linked sale(s) instead (see
+// CLAUDE.md). repair_jobs.payment_status/amount_paid are similarly stale once billed --
+// the itemized sale_lines fetched below are the real source of truth.
 export function EditRepairJobDialog({
   job,
   onClose,
@@ -73,7 +108,28 @@ export function EditRepairJobDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const billed = !!job.sales;
+  const [saleLines, setSaleLines] = useState<SaleLine[]>([]);
+  const [partsInstalled, setPartsInstalled] = useState<PartInstalled[]>([]);
+  const [loadingDetail, setLoadingDetail] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    apiFetch(`/api/repair-jobs/${job.id}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (cancelled) return;
+        setSaleLines(Array.isArray(data.sale_lines) ? data.sale_lines : []);
+        setPartsInstalled(Array.isArray(data.parts_installed) ? data.parts_installed : []);
+        setLoadingDetail(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [job.id]);
+
+  // Before the detail fetch resolves, go by the list row's own aggregate (sale_count)
+  // so a job that's already billed doesn't briefly flash the unbilled edit form.
+  const billed = loadingDetail ? (job.sale_count || 0) > 0 : saleLines.length > 0;
 
   const [deviceDescription, setDeviceDescription] = useState(job.customer_device_description || "");
   const [deviceSerial, setDeviceSerial] = useState(job.customer_device_serial || "");
@@ -86,7 +142,7 @@ export function EditRepairJobDialog({
   const [paymentStatus, setPaymentStatus] = useState(job.payment_status);
   const [amountPaid, setAmountPaid] = useState(job.amount_paid || 0);
   const [err, setErr] = useState("");
-  const [showAddPayment, setShowAddPayment] = useState(false);
+  const [payingSale, setPayingSale] = useState<SaleLine | null>(null);
   const [showZohoDialog, setShowZohoDialog] = useState(false);
 
   const gstApplies = !billed && paymentAccount === "Digitalbluez";
@@ -131,14 +187,67 @@ export function EditRepairJobDialog({
     onClose();
   });
 
+  const unfinalizedLines = saleLines.filter((s) => !s.finalized);
+  const isExternal = unfinalizedLines[0]?.invoice_mode === "external";
+
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
-    if (!job.sales) return;
-    const res = await apiFetch(`/api/sales/${job.sales.id}/finalize`, { method: "POST", body: "{}" });
+    if (unfinalizedLines.length === 0) return;
+    const res = unfinalizedLines.length === 1
+      ? await apiFetch(`/api/sales/${unfinalizedLines[0].id}/finalize`, { method: "POST", body: "{}" })
+      : await apiFetch(`/api/sales/finalize-batch`, { method: "POST", body: JSON.stringify({ sale_ids: unfinalizedLines.map((s) => s.id) }) });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       setErr(e.error || "Failed to generate invoice.");
       return;
     }
+    onSaved();
+  });
+
+  // ---------- Add Part ----------
+  const [showAddPart, setShowAddPart] = useState(false);
+  const [partSearch, setPartSearch] = useState("");
+  const [partOptions, setPartOptions] = useState<PartOption[]>([]);
+  const [newPart, setNewPart] = useState<{ sku_id: string; label: string; quantity: number; unit_price: number } | null>(null);
+
+  useEffect(() => {
+    if (!partSearch.trim()) {
+      setPartOptions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${PART_CATEGORIES.join(",")}&search=${encodeURIComponent(partSearch)}`);
+      const data = await res.json();
+      setPartOptions(
+        Array.isArray(data)
+          ? data.map((s: any) => ({ id: s.id, label: s.sku_description || s.full_sku_code, price: Number(s.selling_price_default) || 0 }))
+          : []
+      );
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [partSearch]);
+
+  const { run: addPart, pending: addingPart } = useAsyncAction(async () => {
+    if (!newPart) return;
+    setErr("");
+    const res = await apiFetch(`/api/repair-jobs/${job.id}/parts`, {
+      method: "POST",
+      body: JSON.stringify({ sku_id: newPart.sku_id, quantity: newPart.quantity, unit_price: newPart.unit_price }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setErr(e.error || "Failed to add part.");
+      return;
+    }
+    setNewPart(null);
+    setPartSearch("");
+    setPartOptions([]);
+    setShowAddPart(false);
+    // Refresh this dialog's own detail (parts + a new sale line) without closing it.
+    setLoadingDetail(true);
+    const detail = await (await apiFetch(`/api/repair-jobs/${job.id}`)).json();
+    setSaleLines(Array.isArray(detail.sale_lines) ? detail.sale_lines : []);
+    setPartsInstalled(Array.isArray(detail.parts_installed) ? detail.parts_installed : []);
+    setLoadingDetail(false);
     onSaved();
   });
 
@@ -183,7 +292,7 @@ export function EditRepairJobDialog({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>{gstApplies ? "Amount Charged (₹, pre-GST)" : "Amount Charged (₹)"}</Label>
+              <Label>{gstApplies ? "Labor Charge (₹, pre-GST)" : "Labor Charge (₹)"}</Label>
               <Input
                 type="number"
                 value={amountCharged}
@@ -203,16 +312,7 @@ export function EditRepairJobDialog({
             </div>
           </div>
 
-          {billed ? (
-            <div className="border rounded p-3 text-sm space-y-1 bg-muted">
-              <p className="text-muted-foreground text-xs">
-                This job was billed on Mark Done -- amount/GST/account are locked to what was charged then.
-              </p>
-              <p>Before GST: ₹{job.sales!.sale_base_price.toFixed(2)}</p>
-              <p>GST: ₹{job.sales!.sale_gst.toFixed(2)}</p>
-              <p className="font-bold text-base">After GST (Total): ₹{job.sales!.sale_total.toFixed(2)}</p>
-            </div>
-          ) : gstApplies ? (
+          {!billed && gstApplies && (
             <div className="border rounded p-3 space-y-2 bg-muted">
               <div>
                 <Label>GST %</Label>
@@ -224,9 +324,10 @@ export function EditRepairJobDialog({
                 <p className="font-bold text-base">After GST (Total): ₹{totalAfterGst.toFixed(2)}</p>
               </div>
             </div>
-          ) : (
+          )}
+          {!billed && !gstApplies && (
             <p className="text-xs text-muted-foreground">
-              No GST applies -- only Digitalbluez is GST-registered; Cash/Techtenth issue a Bill of Supply.
+              No GST applies — only Digitalbluez is GST-registered; Cash/Techtenth issue a Bill of Supply.
             </p>
           )}
 
@@ -250,40 +351,138 @@ export function EditRepairJobDialog({
             </div>
           )}
 
-          {billed && (
-            <div className="border rounded p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Invoice</Label>
-                {job.sales!.finalized ? (
-                  <span className="text-success text-sm">✓ {job.sales!.invoice_number}</span>
-                ) : job.sales!.invoice_mode === "external" ? (
-                  <Button type="button" size="sm" variant="outline" onClick={() => setShowZohoDialog(true)}>
-                    Record Zoho Invoice #
-                  </Button>
+          {/* ---------- Parts Installed ---------- */}
+          <div className="border rounded p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <Label>Parts Installed</Label>
+              {!showAddPart && (
+                <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPart(true)}>
+                  + Add Part
+                </Button>
+              )}
+            </div>
+            {loadingDetail ? (
+              <p className="text-xs text-muted-foreground">Loading…</p>
+            ) : partsInstalled.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No parts recorded.</p>
+            ) : (
+              <ul className="text-sm space-y-1">
+                {partsInstalled.map((p) => (
+                  <li key={p.id} className="flex justify-between">
+                    <span>{p.label} x{p.quantity}</span>
+                    <span className="tabular-nums text-muted-foreground">
+                      {p.unit_price != null ? `₹${p.unit_price.toFixed(2)} each` : "—"}
+                      {p.payment_status && <span className="ml-2">({p.payment_status})</span>}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {showAddPart && (
+              <div className="border-t pt-2 space-y-2">
+                {!newPart ? (
+                  <>
+                    <Input
+                      value={partSearch}
+                      onChange={(e) => setPartSearch(e.target.value)}
+                      placeholder="Search a part to add..."
+                    />
+                    {partOptions.length > 0 && (
+                      <ul className="border rounded max-h-40 overflow-y-auto">
+                        {partOptions.map((p) => (
+                          <li
+                            key={p.id}
+                            onClick={() => { setNewPart({ sku_id: p.id, label: p.label, quantity: 1, unit_price: p.price }); setPartSearch(""); setPartOptions([]); }}
+                            className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm"
+                          >
+                            {p.label}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setShowAddPart(false)}>Cancel</Button>
+                  </>
                 ) : (
-                  <Button type="button" size="sm" variant="outline" onClick={() => generateInvoice()} disabled={generating}>
-                    {generating && <Loader2 className="size-3 animate-spin mr-1" />}
-                    Generate Invoice
-                  </Button>
+                  <div className="flex items-center gap-2 text-sm bg-muted border rounded p-2">
+                    <span className="flex-1">{newPart.label}</span>
+                    <Input
+                      type="number"
+                      min={1}
+                      value={newPart.quantity}
+                      onChange={(e) => setNewPart({ ...newPart, quantity: Number(e.target.value) })}
+                      className="w-16 text-center"
+                    />
+                    <Input
+                      type="number"
+                      min={0}
+                      value={newPart.unit_price}
+                      onChange={(e) => setNewPart({ ...newPart, unit_price: Number(e.target.value) })}
+                      className="w-24 text-center"
+                    />
+                    <Button type="button" size="sm" onClick={() => addPart()} disabled={addingPart}>
+                      {addingPart && <Loader2 className="size-3 animate-spin mr-1" />}Add
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => { setNewPart(null); setShowAddPart(false); }}>✕</Button>
+                  </div>
                 )}
               </div>
-              {!job.sales!.finalized && (
-                <p className="text-xs text-muted-foreground">
-                  Can also be combined with other sales for this customer into one invoice from the Sales Ledger.
-                </p>
+            )}
+          </div>
+
+          {/* ---------- Charges (billed sales) ---------- */}
+          {billed && (
+            <div className="border rounded p-3 space-y-2">
+              <Label>Charges</Label>
+              {loadingDetail ? (
+                <p className="text-xs text-muted-foreground">Loading…</p>
+              ) : (
+                <ul className="space-y-2">
+                  {saleLines.map((line) => (
+                    <li key={line.id} className="flex items-center justify-between text-sm border-b pb-2 last:border-0 last:pb-0">
+                      <div>
+                        <div>{line.label}</div>
+                        <div className="text-xs text-muted-foreground">
+                          ₹{line.sale_total.toFixed(2)} · {line.payment_status} (₹{line.amount_paid.toFixed(2)} paid)
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {line.finalized ? (
+                          <span className="text-success text-xs">✓ {line.invoice_number}</span>
+                        ) : (
+                          <Button type="button" size="sm" variant="outline" onClick={() => setPayingSale(line)}>
+                            Add Payment
+                          </Button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
               )}
-              <div className="flex items-center justify-between pt-2 border-t">
-                <div className="text-sm">Payment: further installments are recorded on the linked sale now.</div>
-                <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPayment(true)}>
-                  Add Payment
-                </Button>
-              </div>
+              {!loadingDetail && (
+                <div className="flex items-center justify-between pt-2 border-t font-medium text-sm">
+                  <span>
+                    Total ₹{saleLines.reduce((s, l) => s + l.sale_total, 0).toFixed(2)} · Paid ₹{saleLines.reduce((s, l) => s + l.amount_paid, 0).toFixed(2)}
+                  </span>
+                  {unfinalizedLines.length > 0 && (
+                    isExternal ? (
+                      <Button type="button" size="sm" variant="outline" onClick={() => setShowZohoDialog(true)}>
+                        Record Zoho Invoice #
+                      </Button>
+                    ) : (
+                      <Button type="button" size="sm" variant="outline" onClick={() => generateInvoice()} disabled={generating}>
+                        {generating && <Loader2 className="size-3 animate-spin mr-1" />}Generate Invoice
+                      </Button>
+                    )
+                  )}
+                </div>
+              )}
             </div>
           )}
 
           {job.status !== "done" && (
             <div className="border-t pt-3 flex justify-between items-center">
-              <p className="text-xs text-muted-foreground">Marking done bills this job into the Sales Ledger.</p>
+              <p className="text-xs text-muted-foreground">Marking done bills the labor charge into the Sales Ledger.</p>
               <Button type="button" variant="outline" onClick={() => markDone()} disabled={marking}>
                 {marking && <Loader2 className="size-3 animate-spin mr-1" />}
                 Mark Done
@@ -301,15 +500,15 @@ export function EditRepairJobDialog({
         </DialogFooter>
       </DialogContent>
 
-      {showZohoDialog && job.sales && (
-        <RecordZohoInvoiceDialog saleIds={[job.sales.id]} onClose={() => setShowZohoDialog(false)} onRecorded={onSaved} />
+      {showZohoDialog && unfinalizedLines.length > 0 && (
+        <RecordZohoInvoiceDialog saleIds={unfinalizedLines.map((s) => s.id)} onClose={() => setShowZohoDialog(false)} onRecorded={onSaved} />
       )}
-      {showAddPayment && job.sales && (
+      {payingSale && (
         <AddPaymentDialog
-          saleId={job.sales.id}
-          balanceDue={job.sales.sale_total - job.sales.amount_paid}
-          onClose={() => setShowAddPayment(false)}
-          onSaved={() => { setShowAddPayment(false); onSaved(); }}
+          saleId={payingSale.id}
+          balanceDue={payingSale.sale_total - payingSale.amount_paid}
+          onClose={() => setPayingSale(null)}
+          onSaved={() => { setPayingSale(null); onSaved(); }}
         />
       )}
     </Dialog>

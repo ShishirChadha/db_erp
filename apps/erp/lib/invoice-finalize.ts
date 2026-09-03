@@ -70,7 +70,12 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
   asset_number?: string | null
   repair_job_id?: string
 }> {
-  if (sale.repair_job_id) {
+  // A repair job's sales rows are either its labor charge (repair_job_id only) or a
+  // consumed part (repair_job_id AND accessory_id both set, see
+  // lib/repair-jobs.ts's consumeRepairParts) -- only the former is a generic "repair"
+  // line; a part must still itemize as the real accessory it is (SKU/HSN/quantity),
+  // just like a normal accessory sale, so it shows correctly on the invoice.
+  if (sale.repair_job_id && !sale.accessory_id) {
     const { data: job } = await supabaseAdmin
       .from('repair_jobs')
       .select('job_number, problem_description')

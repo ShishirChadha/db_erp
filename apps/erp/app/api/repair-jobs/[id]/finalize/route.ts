@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { resolveEntityKey } from '@/lib/invoice-finalize'
+import { resolveRepairGstPercent } from '@/lib/repair-jobs'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -67,16 +67,9 @@ export async function POST(
       .single()
 
     // GST applies exactly when the resolved entity is GST-registered (Digitalbluez
-    // today) -- same resolveEntityKey()/business_profiles.is_gst_registered check
-    // used for every other GST decision in the app, never a hardcoded account name.
-    const entityKey = resolveEntityKey(job.payment_account)
-    const { data: entity } = await supabaseAdmin
-      .from('business_profiles')
-      .select('is_gst_registered')
-      .eq('key', entityKey)
-      .single()
-
-    const gstPct = entity?.is_gst_registered ? (job.gst_percentage ?? 18) : 0
+    // today) -- shared with part-sale creation (lib/repair-jobs.ts) so both compute
+    // GST identically, never a hardcoded account name.
+    const gstPct = await resolveRepairGstPercent(job.payment_account, job.gst_percentage)
     const gstAmount = gstPct > 0 ? Math.round(job.amount_charged * gstPct) / 100 : 0
     const saleTotal = job.amount_charged + gstAmount
 
@@ -89,7 +82,7 @@ export async function POST(
         sale_date: today.toISOString().slice(0, 10),
         sale_month: MONTHS[saleDateObj.getUTCMonth()],
         sale_year: saleDateObj.getUTCFullYear(),
-        sale_type: entity?.is_gst_registered ? 'GST' : 'Cash',
+        sale_type: gstPct > 0 ? 'GST' : 'Cash',
         sale_base_price: job.amount_charged,
         sale_gst: gstAmount,
         sale_total: saleTotal,
