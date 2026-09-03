@@ -27,6 +27,8 @@ import EditCustomerDialog from "@/components/EditCustomerDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { Pagination } from "@/components/Pagination";
+import { CustomerNameLink } from "@/components/CustomerNameLink";
+import { buildCustomerSummary } from "@/lib/customer-summary";
 
 const PAGE_SIZE = 25
 
@@ -195,7 +197,14 @@ function CustomersPage() {
             {loading ? <TableRow><TableCell colSpan={11} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={11} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
               <TableRow key={c.id}>
                 <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
-                <TableCell>{c.customer_name}</TableCell>
+                <TableCell>
+                  <CustomerNameLink
+                    customerId={c.id}
+                    customerName={c.customer_name}
+                    summary={buildCustomerSummary(c)}
+                    onUpdated={fetchCustomers}
+                  />
+                </TableCell>
                 <TableCell>{c.type}</TableCell>
                 <TableCell>{c.type === "Business" ? (c.contact_person || "—") : ""}</TableCell>
                 <TableCell>{c.has_gst ? (c.gst_number || "Yes") : "No"}</TableCell>

@@ -7,6 +7,8 @@ import { AsyncCombobox } from "@/components/AsyncCombobox";
 interface Customer {
   id: string;
   customer_name: string;
+  type?: string | null;
+  contact_person?: string | null;
   gst_number: string | null;
   address: string | null;
   city: string | null;
@@ -41,7 +43,7 @@ export function SearchableCustomerSelect({
     const timer = setTimeout(async () => {
       let query = supabase
         .from("customers")
-        .select("id, customer_name, gst_number, address, city, state, phone, email")
+        .select("id, customer_name, type, contact_person, gst_number, address, city, state, phone, email")
         .eq("is_deleted", false);
 
       if (searchTerm) {
@@ -92,6 +94,10 @@ export function SearchableCustomerSelect({
       renderItem={(customer) => (
         <div className="flex flex-col">
           <span>{customer.customer_name}</span>
+          {customer.type === "Business" && customer.contact_person && (
+            <span className="text-xs text-muted-foreground">Contact: {customer.contact_person}</span>
+          )}
+          {customer.phone && <span className="text-xs text-muted-foreground">Phone: {customer.phone}</span>}
           {customer.gst_number && <span className="text-xs text-muted-foreground">GST: {customer.gst_number}</span>}
           {customer.place_of_supply && <span className="text-xs text-muted-foreground">Place: {customer.place_of_supply}</span>}
         </div>

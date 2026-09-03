@@ -22,6 +22,9 @@ interface PurchaseOrder {
   po_status: string
   total_amount: number | null
   grand_total: number | null
+  amount_paid: number | null
+  payment_status: string | null
+  last_payment_date: string | null
 }
 
 interface Vendor {
@@ -220,6 +223,7 @@ function PurchaseOrdersPage() {
               <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_status')}>
                 Status{sortIndicator('po_status')}
               </th>
+              <th className="p-2">Payment Date</th>
               <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('total_amount')}>
                 Total (before GST){sortIndicator('total_amount')}
               </th>
@@ -230,7 +234,7 @@ function PurchaseOrdersPage() {
             </tr>
           </thead>
           <tbody className="divide-y">
-            {sortedOrders.length === 0 && <EmptyTableRow colSpan={8} message="No purchase orders found." />}
+            {sortedOrders.length === 0 && <EmptyTableRow colSpan={9} message="No purchase orders found." />}
             {sortedOrders.map((po, idx) => (
               <tr key={po.id} className="hover:bg-muted">
                 <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
@@ -238,6 +242,11 @@ function PurchaseOrdersPage() {
                 <td className="p-2">{po.po_number}</td>
                 <td className="p-2">{po.vendor_name}</td>
                 <td className="p-2"><StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge></td>
+                <td className="p-2 text-muted-foreground">
+                  {po.last_payment_date
+                    ? new Date(po.last_payment_date).toLocaleDateString()
+                    : po.payment_status === 'paid' ? '—' : 'Unpaid'}
+                </td>
                 <td className="p-2 text-right tabular-nums">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>
                 <td className="p-2 text-right tabular-nums">{po.grand_total ? `₹${po.grand_total.toFixed(2)}` : '-'}</td>
                 <td className="p-2 space-x-2">

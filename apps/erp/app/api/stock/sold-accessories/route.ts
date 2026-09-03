@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { buildCustomerSummary } from '@/lib/customer-summary'
 
 // ---------- GET: sold accessories ----------
 // Read-only list of standalone accessory sales (sales.accessory_id set, no asset_ledger
@@ -26,7 +27,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('sales')
     .select(
-      'id, sale_date, customer_name, accessory_id, accessory_quantity, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, created_at',
+      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, created_at',
       pagination ? { count: 'exact' } : undefined
     )
     .not('accessory_id', 'is', null)
@@ -73,12 +74,23 @@ export async function GET(req: NextRequest) {
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
   const paymentDateBySaleId = await latestPaymentDatesBySaleId((sales || []).map((s: any) => s.id))
 
+  // Same live (never frozen) disambiguation summary as /api/stock and /api/sales --
+  // see lib/customer-summary.ts.
+  const customerIds = [...new Set((sales || []).map((s: any) => s.customer_id).filter(Boolean))]
+  const { data: customers } = customerIds.length
+    ? await supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', customerIds)
+    : { data: [] as any[] }
+  const customerById = new Map((customers || []).map((c: any) => [c.id, c]))
+
   const result = (sales || []).map((s: any) => {
     const sku = skuById.get(s.accessory_id)
+    const customer = s.customer_id ? customerById.get(s.customer_id) : null
     return {
       id: s.id,
       sale_date: s.sale_date,
+      customer_id: s.customer_id,
       customer_name: s.customer_name,
+      customer_summary: customer ? buildCustomerSummary(customer) : null,
       full_sku_code: sku?.full_sku_code || '',
       sku_description: sku?.sku_description || '',
       category: sku?.category || null,

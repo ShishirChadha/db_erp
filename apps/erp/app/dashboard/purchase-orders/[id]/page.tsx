@@ -258,7 +258,12 @@ function PODetailPage() {
               <button onClick={() => setEditingVendor(true)} className="ml-2 text-xs text-primary underline">Edit</button>
             )}
           </p>
-          <p><strong>PO Date:</strong> {po.po_date}</p>
+          <p>
+            <strong>PO Date:</strong> {po.po_date}
+            {po.po_status !== 'cancelled' && (
+              <button onClick={() => setEditingVendor(true)} className="ml-2 text-xs text-primary underline">Edit</button>
+            )}
+          </p>
           <p><strong>Expected Delivery:</strong> {po.expected_delivery_date || 'N/A'}</p>
         </div>
         <div>
@@ -536,6 +541,7 @@ function PODetailPage() {
         <EditPoVendorDialog
           poId={poId}
           currentVendorId={po.vendor_id}
+          currentPoDate={po.po_date}
           onClose={() => setEditingVendor(false)}
           onSaved={fetchPO}
         />

@@ -8,6 +8,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { parsePagination } from '@/lib/pagination'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { buildCustomerSummary } from '@/lib/customer-summary'
 
 // Category spec field names (used to build the specifications->>field ILIKE clauses
 // below) rarely change -- refetching all of sku_category_templates on every single
@@ -354,10 +355,16 @@ export async function GET(req: NextRequest) {
   const bundledAccessoryIds = [...new Set(
     (salesRows || []).flatMap((s: any) => (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => b.accessory_id).filter(Boolean))
   )]
+  // Every sold row's customer_id, regardless of finalized state -- unlike
+  // customer_name (a frozen legal snapshot on a finalized GST invoice), this small
+  // identity summary is a pure disambiguation aid (many customers share a first
+  // name -- see docs/decisions.md customer-dedupe note) and should always reflect
+  // the customer's current details.
+  const allCustomerIds = [...new Set((salesRows || []).filter((s: any) => s.customer_id).map((s: any) => s.customer_id))]
   // All three depend on salesRows above, but not on each other -- concurrent again.
   const [{ data: liveCustomers }, { data: bundledSkus }, paymentDateBySaleId] = await Promise.all([
-    unfinalizedCustomerIds.length
-      ? supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
+    allCustomerIds.length
+      ? supabaseAdmin.from('customers').select('id, customer_name, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds)
       : Promise.resolve({ data: [] as any[] }),
     bundledAccessoryIds.length
       ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
@@ -365,21 +372,26 @@ export async function GET(req: NextRequest) {
     latestPaymentDatesBySaleId((salesRows || []).map((s: any) => s.id)),
   ])
   const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
+  const liveCustomerById = new Map((liveCustomers || []).map((c: any) => [c.id, c]))
   const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
 
-  const saleByAssetId = new Map((salesRows || []).map((s: any) => [
-    s.asset_ledger_id,
-    {
-      ...(!s.finalized && s.customer_id && liveCustomerNameById.has(s.customer_id)
-        ? { ...s, customer_name: liveCustomerNameById.get(s.customer_id) }
-        : s),
-      bundled_accessories_display: (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
-        const bsku = bundledSkuById.get(b.accessory_id)
-        return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
-      }),
-      payment_date: paymentDateBySaleId.get(s.id) || null,
-    },
-  ]))
+  const saleByAssetId = new Map((salesRows || []).map((s: any) => {
+    const liveCustomer = s.customer_id ? liveCustomerById.get(s.customer_id) : null
+    return [
+      s.asset_ledger_id,
+      {
+        ...(!s.finalized && s.customer_id && liveCustomerNameById.has(s.customer_id)
+          ? { ...s, customer_name: liveCustomerNameById.get(s.customer_id) }
+          : s),
+        customer_summary: liveCustomer ? buildCustomerSummary(liveCustomer) : null,
+        bundled_accessories_display: (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
+          const bsku = bundledSkuById.get(b.accessory_id)
+          return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
+        }),
+        payment_date: paymentDateBySaleId.get(s.id) || null,
+      },
+    ]
+  }))
 
   // Flatten the nested joins into a simpler structure
   const result = (assets || []).map((asset: any) => {
@@ -415,7 +427,9 @@ export async function GET(req: NextRequest) {
       vendor_name: po?.vendor_name || fallbackVendor?.company_name,
       purchased_by_type: po?.purchased_by_type || asset.purchased_by_type,
       sale_id: sale?.id,
+      customer_id: sale?.customer_id,
       customer_name: sale?.customer_name,
+      customer_summary: sale?.customer_summary,
       sale_total: sale?.sale_total,
       invoice_finalized: sale?.finalized,
       invoice_number: sale?.invoice_number,

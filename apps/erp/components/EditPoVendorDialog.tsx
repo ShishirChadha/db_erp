@@ -20,21 +20,24 @@ interface Vendor {
   company_name: string
 }
 
-// Corrects the vendor on a PO after creation (any status past draft). Same
+// Corrects the vendor and/or PO date after creation (any status past draft). Same
 // already_invoiced confirm flow as EditPoItemDialog/EditSaleDialog.
 export function EditPoVendorDialog({
   poId,
   currentVendorId,
+  currentPoDate,
   onClose,
   onSaved,
 }: {
   poId: string
   currentVendorId: string
+  currentPoDate: string
   onClose: () => void
   onSaved: () => void
 }) {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState(currentVendorId)
+  const [poDate, setPoDate] = useState(currentPoDate)
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
 
@@ -42,9 +45,15 @@ export function EditPoVendorDialog({
     apiFetch('/api/vendors').then((res) => res.json()).then(setVendors).catch(() => {})
   }, [])
 
+  const changed = vendorId !== currentVendorId || poDate !== currentPoDate
+
   const { run: save, pending: saving } = useAsyncAction(async () => {
     setError('')
-    const body = { vendor_id: vendorId, reason: reason || undefined }
+    const body = {
+      vendor_id: vendorId !== currentVendorId ? vendorId : undefined,
+      po_date: poDate !== currentPoDate ? poDate : undefined,
+      reason: reason || undefined,
+    }
     let res = await apiFetch(`/api/purchase-orders/${poId}`, { method: 'PATCH', body: JSON.stringify(body) })
     if (!res.ok) {
       const e = await res.json().catch(() => ({}))
@@ -68,8 +77,8 @@ export function EditPoVendorDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Edit Vendor</DialogTitle>
-          <DialogDescription>Also updates the vendor on every unit already tied to this PO.</DialogDescription>
+          <DialogTitle>Edit Vendor / PO Date</DialogTitle>
+          <DialogDescription>Changing the vendor also updates it on every unit already tied to this PO.</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -81,6 +90,15 @@ export function EditPoVendorDialog({
             </select>
           </div>
           <div>
+            <Label>PO Date</Label>
+            <input
+              type="date"
+              value={poDate}
+              onChange={(e) => setPoDate(e.target.value)}
+              className="border p-2 w-full rounded text-sm"
+            />
+          </div>
+          <div>
             <Label>Reason (optional)</Label>
             <Textarea value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why is this being corrected?" rows={2} />
           </div>
@@ -88,7 +106,7 @@ export function EditPoVendorDialog({
 
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>Cancel</Button>
-          <Button onClick={() => save()} disabled={saving || vendorId === currentVendorId} loading={saving}>
+          <Button onClick={() => save()} disabled={saving || !changed} loading={saving}>
             Save
           </Button>
         </DialogFooter>

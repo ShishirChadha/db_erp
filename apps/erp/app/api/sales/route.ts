@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { buildCustomerSummary } from '@/lib/customer-summary'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
 // This is the transactional/financial view (payment state, incentive attribution),
@@ -92,6 +93,16 @@ export async function GET(req: NextRequest) {
     : { data: [] as any[] }
   const liveNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
 
+  // Small disambiguation summary (type/contact/address/source) shown next to every
+  // customer name in the ledger -- see lib/customer-summary.ts. Always live (not
+  // frozen), for every sale regardless of finalized state, since it's informational
+  // rather than a legal invoice field.
+  const allCustomerIds = [...new Set((data || []).filter((s: any) => s.customer_id).map((s: any) => s.customer_id))]
+  const { data: summaryCustomers } = allCustomerIds.length
+    ? await supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds)
+    : { data: [] as any[] }
+  const customerSummaryById = new Map((summaryCustomers || []).map((c: any) => [c.id, buildCustomerSummary(c)]))
+
   // Per-sale invoicing mode (Zoho transition): resolve each sale's entity from its
   // payment_account and tag it 'erp' or 'external' so the ledger UI shows the right
   // action -- "Generate Invoice" (ERP) vs "Record Zoho Invoice #" (external).
@@ -147,6 +158,7 @@ export async function GET(req: NextRequest) {
     const withName = !s.finalized && s.customer_id && liveNameById.has(s.customer_id)
       ? { ...s, customer_name: liveNameById.get(s.customer_id) }
       : { ...s }
+    withName.customer_summary = s.customer_id ? customerSummaryById.get(s.customer_id) || null : null
     withName.invoice_mode = modeByKey.get(resolveEntityKey(s.payment_account)) === 'external' ? 'external' : 'erp'
     const sku = skuById.get(s.accessory_id || skuIdByAssetLedgerId.get(s.asset_ledger_id))
     withName.sku_description = sku?.sku_description || null

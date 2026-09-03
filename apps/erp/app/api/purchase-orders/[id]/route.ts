@@ -234,18 +234,23 @@ export async function PATCH(
 
   const { id } = await params
   const body = await req.json()
-  const { vendor_id, reason, confirm_despite_invoice } = body
-  if (!vendor_id) return NextResponse.json({ error: 'vendor_id is required.' }, { status: 400 })
+  const { vendor_id, po_date, reason, confirm_despite_invoice } = body
+  if (!vendor_id && !po_date) {
+    return NextResponse.json({ error: 'vendor_id or po_date is required.' }, { status: 400 })
+  }
 
-  const { data: po } = await supabaseAdmin.from('purchase_orders').select('po_status, vendor_id, vendor_name').eq('id', id).single()
+  const { data: po } = await supabaseAdmin.from('purchase_orders').select('po_status, vendor_id, vendor_name, po_date').eq('id', id).single()
   if (!po) return NextResponse.json({ error: 'Purchase Order not found' }, { status: 404 })
   if (po.po_status === 'draft') {
-    return NextResponse.json({ error: 'A draft PO\'s vendor is edited via the New PO wizard, not this endpoint.' }, { status: 400 })
+    return NextResponse.json({ error: 'A draft PO is edited via the New PO wizard, not this endpoint.' }, { status: 400 })
   }
   if (po.po_status === 'cancelled') {
     return NextResponse.json({ error: 'A cancelled PO cannot be edited.' }, { status: 400 })
   }
-  if (vendor_id === po.vendor_id) return NextResponse.json({ success: true })
+
+  const vendorChanged = !!vendor_id && vendor_id !== po.vendor_id
+  const dateChanged = !!po_date && po_date !== po.po_date
+  if (!vendorChanged && !dateChanged) return NextResponse.json({ success: true })
 
   const { data: existingInvoices } = await supabaseAdmin
     .from('invoices')
@@ -256,28 +261,45 @@ export async function PATCH(
   const invoice = existingInvoices?.[0]
   if (invoice && !confirm_despite_invoice) {
     return NextResponse.json({
-      error: `This PO is already invoiced (${invoice.invoice_number}) -- correcting the vendor will NOT update that invoice, which will then disagree with the live record. Confirm to proceed anyway.`,
+      error: `This PO is already invoiced (${invoice.invoice_number}) -- correcting this will NOT update that invoice, which will then disagree with the live record. Confirm to proceed anyway.`,
       error_code: 'already_invoiced',
     }, { status: 409 })
   }
 
-  const vendorName = await getVendorName(vendor_id)
-  await supabaseAdmin.from('purchase_orders').update({ vendor_id, vendor_name: vendorName }).eq('id', id)
+  const updateFields: Record<string, any> = {}
+  const corrections: { field: string; oldValue: any; newValue: any }[] = []
+  let vendorName = po.vendor_name
+
+  if (vendorChanged) {
+    vendorName = await getVendorName(vendor_id)
+    updateFields.vendor_id = vendor_id
+    updateFields.vendor_name = vendorName
+    corrections.push({ field: 'vendor_id', oldValue: po.vendor_id, newValue: vendor_id })
+    corrections.push({ field: 'vendor_name', oldValue: po.vendor_name, newValue: vendorName })
+  }
+  if (dateChanged) {
+    updateFields.po_date = po_date
+    corrections.push({ field: 'po_date', oldValue: po.po_date, newValue: po_date })
+  }
+
+  await supabaseAdmin.from('purchase_orders').update(updateFields).eq('id', id)
 
   const fieldCorrectionIds = await logFieldCorrections(
     'purchase_orders',
     id,
-    [
-      { field: 'vendor_id', oldValue: po.vendor_id, newValue: vendor_id },
-      { field: 'vendor_name', oldValue: po.vendor_name, newValue: vendorName },
-    ],
+    corrections,
     sessionUser.id,
     reason || null
   )
 
   // Vendor is header-level but was copied per-unit into asset_ledger at
   // submit/receive/promotion time -- keep every unit on this PO in sync.
-  await supabaseAdmin.from('asset_ledger').update({ vendor_id }).eq('po_id', id)
+  // po_date is never copied anywhere (asset_ledger tracks its own reserved_at/
+  // entry timestamps independently -- see the po_date comment above), so no
+  // propagation is needed for it.
+  if (vendorChanged) {
+    await supabaseAdmin.from('asset_ledger').update({ vendor_id }).eq('po_id', id)
+  }
 
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },

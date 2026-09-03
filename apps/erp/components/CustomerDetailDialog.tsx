@@ -13,6 +13,7 @@ import { Loader2 } from "lucide-react";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import AddCustomerDialog from "@/components/AddCustomerDialog";
+import { apiFetch } from "@/lib/api-client";
 
 interface Customer {
   id: string;
@@ -66,6 +67,10 @@ export function CustomerDetailDialog({
   const [showEdit, setShowEdit] = useState(false);
   const [showChange, setShowChange] = useState(false);
   const [reassigning, setReassigning] = useState(false);
+  const [showMerge, setShowMerge] = useState(false);
+  const [mergeTarget, setMergeTarget] = useState<{ id: string; customer_name: string } | null>(null);
+  const [merging, setMerging] = useState(false);
+  const [mergeError, setMergeError] = useState("");
   const supabase = createClient();
 
   const load = async (id: string) => {
@@ -85,11 +90,40 @@ export function CustomerDetailDialog({
     setShowChange(false);
   };
 
+  // Folds this customer (the duplicate, e.g. "Rohit (Bhanu)") into the selected target
+  // (the one to keep, e.g. "Rohit"): every sale/invoice/repair job/etc. this customer
+  // has moves to the target, and this customer is deleted. See /api/customers/merge.
+  const handleMerge = async () => {
+    if (!mergeTarget || !customer) return;
+    setMerging(true);
+    setMergeError("");
+    const res = await apiFetch("/api/customers/merge", {
+      method: "POST",
+      body: JSON.stringify({ source_id: customer.id, target_id: mergeTarget.id }),
+    });
+    if (res.ok) {
+      onCustomerUpdated?.();
+      onClose();
+    } else {
+      const e = await res.json().catch(() => ({}));
+      setMergeError(e.error || "Failed to merge customer.");
+      setMerging(false);
+    }
+  };
+
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{loading ? "Customer" : customer?.customer_name || "Customer"}</DialogTitle>
+          <DialogTitle>
+            {loading
+              ? "Customer"
+              : customer
+              ? `${customer.customer_name || "Customer"}${
+                  customer.type === "Business" && customer.contact_person ? ` (Contact: ${customer.contact_person})` : ""
+                }`
+              : "Customer"}
+          </DialogTitle>
         </DialogHeader>
 
         {loading ? (
@@ -146,6 +180,44 @@ export function CustomerDetailDialog({
                 </div>
               </div>
             )}
+
+            {showMerge && (
+              <div className="border rounded p-3 space-y-2">
+                <div className="text-sm font-medium">Merge this duplicate into another customer</div>
+                <p className="text-xs text-muted-foreground">
+                  Pick the customer to keep. All of "{customer.customer_name}"'s sales, invoices, repair jobs and
+                  payments will move to that customer, and "{customer.customer_name}" will be deleted.
+                </p>
+                {!mergeTarget ? (
+                  <SearchableCustomerSelect
+                    value={null}
+                    onChange={() => {}}
+                    onCustomerData={(c) => c && setMergeTarget({ id: c.id, customer_name: c.customer_name })}
+                  />
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm">
+                      Merge <span className="font-medium">"{customer.customer_name}"</span> into{" "}
+                      <span className="font-medium">"{mergeTarget.customer_name}"</span>, then delete "{customer.customer_name}"?
+                    </p>
+                    {mergeError && <p className="text-xs text-destructive">{mergeError}</p>}
+                    <div className="flex gap-2">
+                      <Button type="button" size="sm" variant="destructive" onClick={handleMerge} loading={merging}>
+                        Confirm Merge
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" disabled={merging} onClick={() => { setMergeTarget(null); setMergeError(""); }}>
+                        Pick a different customer
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                <div className="flex justify-end pt-1">
+                  <Button type="button" size="sm" variant="ghost" disabled={merging} onClick={() => { setShowMerge(false); setMergeTarget(null); setMergeError(""); }}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -159,6 +231,11 @@ export function CustomerDetailDialog({
             {onReassign && !showChange && (
               <Button type="button" size="sm" variant="outline" onClick={() => setShowChange(true)}>
                 Change Customer
+              </Button>
+            )}
+            {customer && !showMerge && (
+              <Button type="button" size="sm" variant="outline" onClick={() => setShowMerge(true)}>
+                Merge Duplicate
               </Button>
             )}
           </div>

@@ -58,6 +58,23 @@ export async function GET(req: NextRequest) {
     pos = pos.filter(po => !invoicedIds.has(po.id))
   }
 
+  // Last payment date per PO -- amount_paid/payment_status already come back via
+  // select('*') above, but the date of the most recent installment lives in the
+  // vendor_payments ledger, not on purchase_orders itself.
+  if (pos.length > 0) {
+    const { data: payments } = await supabaseAdmin
+      .from('vendor_payments')
+      .select('po_id, paid_on')
+      .in('po_id', pos.map((po) => po.id))
+      .order('paid_on', { ascending: false })
+
+    const lastPaymentByPo = new Map<string, string>()
+    for (const p of payments || []) {
+      if (!lastPaymentByPo.has(p.po_id)) lastPaymentByPo.set(p.po_id, p.paid_on)
+    }
+    pos = pos.map((po) => ({ ...po, last_payment_date: lastPaymentByPo.get(po.id) || null }))
+  }
+
   if (pagination) return NextResponse.json({ data: pos, total: count ?? 0 })
   return NextResponse.json(pos)
 }

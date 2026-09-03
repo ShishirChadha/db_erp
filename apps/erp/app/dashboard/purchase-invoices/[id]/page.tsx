@@ -6,13 +6,29 @@ import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { AddVendorPaymentDialog } from '@/components/AddVendorPaymentDialog'
 
 interface PO {
+  id: string
   po_number: string
   po_date: string
   vendor_name: string
   purchased_by_type: string
   po_status: string
+  amount_paid: number | null
+  payment_status: string | null
+  grand_total: number | null
+}
+
+interface VendorPayment {
+  id: string
+  amount: number
+  payment_account: string | null
+  paid_on: string
+  method: string | null
+  reference: string | null
+  note: string | null
+  recorded_by_name: string | null
 }
 
 interface AssetItem {
@@ -57,6 +73,8 @@ function InvoiceDetailPage() {
   const [invoice, setInvoice] = useState<Invoice | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [payments, setPayments] = useState<VendorPayment[]>([])
+  const [showAddPayment, setShowAddPayment] = useState(false)
 
   const { run: handleDelete, pending: deleting } = useAsyncAction(async () => {
     if (!confirm('Permanently delete this invoice? This cannot be undone.')) return
@@ -70,24 +88,46 @@ function InvoiceDetailPage() {
     }
   })
 
-  useEffect(() => {
-    const fetchInvoice = async () => {
-      try {
-        const res = await apiFetch(`/api/purchase-invoices/${invoiceId}`)
-        if (!res.ok) {
-          const errText = await res.text()
-          throw new Error(errText || 'Invoice not found')
-        }
-        const data = await res.json()
-        setInvoice(data)
-      } catch (err: any) {
-        setError(err.message)
-      } finally {
-        setLoading(false)
+  const fetchInvoice = async () => {
+    try {
+      const res = await apiFetch(`/api/purchase-invoices/${invoiceId}`)
+      if (!res.ok) {
+        const errText = await res.text()
+        throw new Error(errText || 'Invoice not found')
       }
+      const data = await res.json()
+      setInvoice(data)
+      return data as Invoice
+    } catch (err: any) {
+      setError(err.message)
+      return null
+    } finally {
+      setLoading(false)
     }
-    fetchInvoice()
+  }
+
+  // Vendor payments are recorded once against the PO (see AddVendorPaymentDialog),
+  // not per-invoice -- an invoice's "payment date" is that same ledger, filtered by
+  // its own po_id.
+  const loadPayments = async (poId: string | null) => {
+    if (!poId) { setPayments([]); return }
+    const res = await apiFetch(`/api/purchase-orders/${poId}/payments`)
+    if (res.ok) setPayments(await res.json())
+  }
+
+  useEffect(() => {
+    fetchInvoice().then((data) => loadPayments(data?.po_id ?? null))
   }, [invoiceId])
+
+  const deletePayment = async (paymentId: string) => {
+    if (!invoice?.po_id) return
+    if (!confirm('Remove this payment entry?')) return
+    const res = await apiFetch(`/api/purchase-orders/${invoice.po_id}/payments/${paymentId}`, { method: 'DELETE' })
+    if (res.ok) {
+      loadPayments(invoice.po_id)
+      fetchInvoice()
+    }
+  }
 
   if (loading) return <div className="p-4">Loading invoice…</div>
   if (error) return <div className="p-4 text-destructive">Error: {error}</div>
@@ -172,6 +212,45 @@ function InvoiceDetailPage() {
         </div>
       )}
 
+      {invoice.purchase_order && (
+        <div className="border rounded p-3 space-y-2 mb-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="font-medium">Vendor Payment</p>
+              <div className="text-sm capitalize">
+                {invoice.purchase_order.payment_status} · ₹{(invoice.purchase_order.amount_paid ?? 0).toFixed(2)} of ₹{(invoice.purchase_order.grand_total ?? 0).toFixed(2)}
+              </div>
+            </div>
+            {invoice.purchase_order.payment_status !== 'paid' && (
+              <button
+                onClick={() => setShowAddPayment(true)}
+                className="border rounded px-3 py-1.5 text-sm hover:bg-muted"
+              >
+                Add Payment
+              </button>
+            )}
+          </div>
+          {payments.length > 0 && (
+            <ul className="text-xs border-t pt-2 divide-y max-h-32 overflow-y-auto">
+              {payments.map((p) => (
+                <li key={p.id} className="py-1 flex items-center justify-between gap-2">
+                  <div>
+                    ₹{p.amount.toFixed(2)}{p.payment_account ? ` · ${p.payment_account}` : ''}{p.method ? ` · ${p.method}` : ''}
+                    {p.note ? ` · ${p.note}` : ''}
+                    <div className="text-muted-foreground">
+                      {new Date(p.paid_on).toLocaleDateString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ''}
+                    </div>
+                  </div>
+                  <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
+                    Remove
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       {invoice.notes && (
         <div className="mb-4">
           <h3 className="font-semibold mb-1">Notes</h3>
@@ -216,6 +295,15 @@ function InvoiceDetailPage() {
         </button>
         <button onClick={() => router.back()} disabled={deleting} className="bg-muted px-4 py-2 rounded disabled:opacity-50">Back</button>
       </div>
+
+      {showAddPayment && invoice.po_id && invoice.purchase_order && (
+        <AddVendorPaymentDialog
+          poId={invoice.po_id}
+          balanceDue={(invoice.purchase_order.grand_total ?? 0) - (invoice.purchase_order.amount_paid ?? 0)}
+          onClose={() => setShowAddPayment(false)}
+          onSaved={() => { loadPayments(invoice.po_id); fetchInvoice() }}
+        />
+      )}
     </div>
   )
 }

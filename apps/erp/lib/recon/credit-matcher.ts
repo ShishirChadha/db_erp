@@ -38,7 +38,11 @@ export async function findCreditCandidates(params: {
 }): Promise<CreditCandidate[]> {
   const { amount, txnDate, entityKey } = params
 
-  const lower = amount * (1 - AMOUNT_TOLERANCE_PCT)
+  // Upper bound only, not a lower one -- a single bank credit can settle several
+  // smaller sale_payments at once (one NEFT covering two separate invoices), so a
+  // candidate genuinely smaller than the transaction is not noise to filter out, it's
+  // exactly the split case. The score below still ranks a near-full-amount match
+  // highest; this only widens what's shown, not what's suggested first.
   const upper = amount * (1 + AMOUNT_TOLERANCE_PCT)
   const windowStart = new Date(new Date(txnDate).getTime() - DATE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10)
   const windowEnd = new Date(new Date(txnDate).getTime() + DATE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10)
@@ -51,13 +55,34 @@ export async function findCreditCandidates(params: {
   const { data: payments } = await supabaseAdmin
     .from('sale_payments')
     .select('id, sale_id, amount, payment_account, recorded_at, sales(customer_name)')
-    .gte('amount', lower)
     .lte('amount', upper)
     .gte('recorded_at', windowStart)
     .lte('recorded_at', windowEnd)
     .eq('payment_account', paymentAccount)
+    .order('amount', { ascending: false })
+    .limit(30)
 
-  return (payments || []).map((p: any) => {
+  // Exclude a sale_payment already fully consumed by some other bank transaction's
+  // match -- otherwise the same payment could be offered (and matched) twice.
+  const candidateIds = (payments || []).map((p) => p.id)
+  let consumed = new Set<string>()
+  if (candidateIds.length > 0) {
+    const { data: existingMatches } = await supabaseAdmin
+      .from('bank_transaction_matches')
+      .select('sale_payment_id, amount_applied')
+      .in('sale_payment_id', candidateIds)
+    const appliedBySalePayment = new Map<string, number>()
+    for (const m of existingMatches || []) {
+      appliedBySalePayment.set(m.sale_payment_id, (appliedBySalePayment.get(m.sale_payment_id) || 0) + Number(m.amount_applied))
+    }
+    consumed = new Set(
+      (payments || [])
+        .filter((p) => (appliedBySalePayment.get(p.id) || 0) >= Number(p.amount) - 0.5)
+        .map((p) => p.id)
+    )
+  }
+
+  return (payments || []).filter((p: any) => !consumed.has(p.id)).map((p: any) => {
     const dateDelta = Math.abs((new Date(p.recorded_at).getTime() - new Date(txnDate).getTime()) / 86400000)
     const amountDelta = Math.abs(p.amount - amount)
     // Exact amount + same day scores highest; tolerance/window usage decays the score

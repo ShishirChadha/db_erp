@@ -14,6 +14,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { EditSaleDialog } from "@/components/EditSaleDialog";
 import { ResizableHeader } from "@/components/ResizableHeader";
 import { CustomerDetailDialog } from "@/components/CustomerDetailDialog";
+import { CustomerSummaryLine } from "@/components/CustomerSummaryLine";
+import type { CustomerSummary } from "@/lib/customer-summary";
 import { Pagination } from "@/components/Pagination";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
@@ -27,6 +29,7 @@ interface Sale {
   sale_date: string;
   customer_id: string | null;
   customer_name: string | null;
+  customer_summary?: CustomerSummary | null;
   asset_number: string | null;
   serial_number: string | null;
   asset_ledger_id: string | null;
@@ -275,6 +278,7 @@ function CustomerCell({ sale, onDone, canReassign }: { sale: Sale; onDone: () =>
       <button type="button" onClick={() => setShowDetail(true)} className="text-primary underline text-left">
         {sale.customer_name || "—"}
       </button>
+      <CustomerSummaryLine summary={sale.customer_summary} />
       {showDetail && (
         <CustomerDetailDialog
           customerId={sale.customer_id}

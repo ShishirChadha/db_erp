@@ -29,7 +29,7 @@ export async function GET(
   if (invoice.po_id) {
     const { data: poData } = await supabaseAdmin
       .from('purchase_orders')
-      .select('po_number, po_date, vendor_name, purchased_by_type, po_status')
+      .select('id, po_number, po_date, vendor_name, purchased_by_type, po_status, amount_paid, payment_status, grand_total')
       .eq('id', invoice.po_id)
       .single()
     po = poData || null

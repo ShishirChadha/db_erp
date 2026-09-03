@@ -16,6 +16,8 @@ import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
 import { ColumnToggle } from '@/components/ColumnToggle'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
+import { CustomerNameLink } from '@/components/CustomerNameLink'
+import type { CustomerSummary } from '@/lib/customer-summary'
 import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
@@ -43,7 +45,9 @@ interface AssetRow {
   po_date?: string
   vendor_name?: string
   purchased_by_type?: string
+  customer_id?: string | null
   customer_name?: string
+  customer_summary?: CustomerSummary | null
   sale_id?: string
   sale_total?: number
   invoice_finalized?: boolean
@@ -66,7 +70,9 @@ interface Vendor {
 interface SoldAccessoryRow {
   id: string
   sale_date: string
+  customer_id?: string | null
   customer_name: string | null
+  customer_summary?: CustomerSummary | null
   full_sku_code: string
   sku_description: string | null
   accessory_quantity: number
@@ -798,7 +804,9 @@ export default function StockView({
                   <td className="border p-2 text-right tabular-nums">₹{sale.amount_paid?.toFixed(2)}</td>
                   <td className="border p-2 whitespace-nowrap">{sale.payment_date?.slice(0, 10) || '—'}</td>
                   <td className="border p-2">{sale.payment_account || '—'}</td>
-                  <td className="border p-2">{sale.customer_name || '—'}</td>
+                  <td className="border p-2">
+                    <CustomerNameLink customerId={sale.customer_id} customerName={sale.customer_name} summary={sale.customer_summary} onUpdated={fetchSoldAccessories} />
+                  </td>
                   <td className="border p-2">{sale.sold_by || '—'}</td>
                   <td className="border p-2">
                     {sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : '—'}
@@ -907,7 +915,11 @@ export default function StockView({
                       {asset.vendor_name ? `${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}` : '—'}
                     </td>
                   )}
-                  {tab === 'sold' && visibleColumns.customer && <td className="border p-2">{asset.customer_name || '—'}</td>}
+                  {tab === 'sold' && visibleColumns.customer && (
+                    <td className="border p-2">
+                      <CustomerNameLink customerId={asset.customer_id} customerName={asset.customer_name} summary={asset.customer_summary} onUpdated={fetchAssets} />
+                    </td>
+                  )}
                   {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
                   {tab === 'sold' && visibleColumns.paymentDate && <td className="border p-2 whitespace-nowrap">{asset.payment_date?.slice(0, 10) || '—'}</td>}
                   {tab === 'sold' && visibleColumns.bundle && (
@@ -1031,7 +1043,7 @@ export default function StockView({
                 <div className="text-xs text-muted-foreground">{sale.full_sku_code} · Qty {sale.accessory_quantity}</div>
               </div>
               <div className="text-xs text-muted-foreground space-y-0.5">
-                <div>Sold {sale.sale_date?.slice(0, 10)} to {sale.customer_name || '—'}</div>
+                <div>Sold {sale.sale_date?.slice(0, 10)} to <CustomerNameLink customerId={sale.customer_id} customerName={sale.customer_name} summary={sale.customer_summary} onUpdated={fetchSoldAccessories} className="text-primary underline" /></div>
                 <div className="tabular-nums">₹{sale.sale_total?.toFixed(2)} · {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} paid</div>
                 {sale.payment_date && <div>Payment date: {sale.payment_date.slice(0, 10)}</div>}
                 {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
@@ -1123,7 +1135,7 @@ export default function StockView({
               </div>
               {tab === 'sold' && (
                 <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>Sold {asset.sold_at?.slice(0, 10)} to {asset.customer_name || '—'}</div>
+                  <div>Sold {asset.sold_at?.slice(0, 10)} to <CustomerNameLink customerId={asset.customer_id} customerName={asset.customer_name} summary={asset.customer_summary} onUpdated={fetchAssets} className="text-primary underline" /></div>
                   <div className="tabular-nums">₹{asset.sale_total?.toFixed(2)}</div>
                   <div className="capitalize">
                     {asset.payment_status || '—'}

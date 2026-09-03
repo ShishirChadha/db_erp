@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Check, X, ArrowLeftRight, Lock, LockOpen } from 'lucide-react'
+import { Loader2, Check, X, ArrowLeftRight, Lock, LockOpen, ClipboardList } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import RequireOwner from '@/components/RequireOwner'
@@ -12,9 +12,23 @@ import { SearchableSelect } from '@/components/SearchableSelect'
 
 interface BankAccount { id: string; label: string; entity_key: string }
 interface CreditCandidate { sale_payment_id: string; sale_id: string; amount: number; customer_name: string | null; date_delta_days: number }
+interface PurchaseCandidate {
+  kind: 'stock_movement' | 'purchase_order'
+  stock_movement_id?: string
+  po_id?: string
+  po_number?: string
+  amount?: number
+  outstanding?: number
+  vendor_id: string | null
+  vendor_name: string | null
+  sku_description?: string | null
+  full_sku_code?: string | null
+  quantity?: number
+  date_delta_days: number
+}
 interface Txn {
   id: string; txn_date: string; narration: string; debit: number | null; credit: number | null
-  recon_status: string; credit_candidates?: CreditCandidate[]
+  recon_status: string; credit_candidates?: CreditCandidate[]; purchase_candidates?: PurchaseCandidate[]
 }
 interface SessionRow { id: string; status: string; open_count: number; matched_count: number; total_count: number; period_start: string; period_end: string }
 
@@ -35,6 +49,8 @@ function SessionsPage() {
   const [err, setErr] = useState('')
   const { values: expenseTypes } = useCustomOptions('expense_types')
   const [expenseForm, setExpenseForm] = useState<Record<string, { type: string; description: string }>>({})
+  const [selectedCredits, setSelectedCredits] = useState<Record<string, Set<string>>>({}) // txnId -> set of sale_payment_id
+  const [matching, setMatching] = useState<Record<string, boolean>>({})
 
   useEffect(() => { apiFetch('/api/bank-accounts').then((r) => r.ok && r.json()).then((d) => { if (d) { setAccounts(d); if (!accountId && d[0]) setAccountId(d[0].id) } }) }, [])
 
@@ -50,20 +66,61 @@ function SessionsPage() {
     const sumRes = await apiFetch(`/api/recon-sessions/${sess.id}/summary`)
     if (sumRes.ok) setSummary(await sumRes.json())
 
-    const txnRes = await apiFetch(`/api/bank-transactions?bank_account_id=${accountId}&with_candidates=true&page=1&limit=100`)
-    if (txnRes.ok) {
-      const { data } = await txnRes.json()
-      setTxns((data || []).filter((t: Txn) => t.txn_date >= start && t.txn_date <= end))
-    }
+    // Filtered by date range on the server (date_from/date_to), not fetched as a fixed
+    // top-N page and filtered client-side -- an account with more transactions than one
+    // page's worth would otherwise silently never surface its older months at all,
+    // regardless of which month is selected here.
+    const txnRes = await apiFetch(`/api/bank-transactions?bank_account_id=${accountId}&with_candidates=true&date_from=${start}&date_to=${end}`)
+    if (txnRes.ok) setTxns(await txnRes.json())
   }, [accountId, month])
   useEffect(() => { loadSessionAndTxns() }, [loadSessionAndTxns])
 
-  const matchCredit = async (txnId: string, candidate: CreditCandidate) => {
-    const res = await apiFetch(`/api/bank-transactions/${txnId}/match`, {
-      method: 'POST', body: JSON.stringify({ match_type: 'sale_payment', sale_payment_id: candidate.sale_payment_id, amount_applied: candidate.amount }),
+  const toggleCreditCandidate = (txnId: string, salePaymentId: string) => {
+    setSelectedCredits((prev) => {
+      const current = new Set(prev[txnId] || [])
+      if (current.has(salePaymentId)) current.delete(salePaymentId)
+      else current.add(salePaymentId)
+      return { ...prev, [txnId]: current }
     })
+  }
+
+  // Submits one match call per selected candidate -- a single credit can settle
+  // several sale_payments (a NEFT covering two separate invoices), and the backend
+  // already supports that as a many-to-many join; this is just what drives it from
+  // multiple selections instead of one.
+  const matchSelectedCredits = async (txn: Txn) => {
+    const selectedIds = selectedCredits[txn.id]
+    if (!selectedIds || selectedIds.size === 0) return
+    setMatching((prev) => ({ ...prev, [txn.id]: true }))
+    setErr('')
+    for (const spId of selectedIds) {
+      const candidate = txn.credit_candidates?.find((c) => c.sale_payment_id === spId)
+      if (!candidate) continue
+      const res = await apiFetch(`/api/bank-transactions/${txn.id}/match`, {
+        method: 'POST', body: JSON.stringify({ match_type: 'sale_payment', sale_payment_id: candidate.sale_payment_id, amount_applied: candidate.amount }),
+      })
+      if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Match failed.'); break }
+    }
+    setSelectedCredits((prev) => { const next = { ...prev }; delete next[txn.id]; return next })
+    setMatching((prev) => ({ ...prev, [txn.id]: false }))
+    await loadSessionAndTxns()
+  }
+
+  const matchPurchase = async (txn: Txn, candidate: PurchaseCandidate) => {
+    setErr('')
+    const body = candidate.kind === 'stock_movement'
+      ? { match_type: 'stock_purchase', stock_movement_id: candidate.stock_movement_id, amount_applied: candidate.amount }
+      : { match_type: 'vendor_payment', po_id: candidate.po_id, amount_applied: candidate.outstanding }
+    const res = await apiFetch(`/api/bank-transactions/${txn.id}/match`, { method: 'POST', body: JSON.stringify(body) })
     if (res.ok) await loadSessionAndTxns()
     else setErr((await res.json().catch(() => ({}))).error || 'Match failed.')
+  }
+
+  const raisePoTask = async (txn: Txn, vendorId: string | null) => {
+    setErr('')
+    const res = await apiFetch(`/api/bank-transactions/${txn.id}/raise-po-task`, { method: 'POST', body: JSON.stringify({ vendor_id: vendorId }) })
+    if (res.ok) await loadSessionAndTxns()
+    else setErr((await res.json().catch(() => ({}))).error || 'Could not create task.')
   }
 
   const createExpenseMatch = async (txn: Txn) => {
@@ -204,12 +261,44 @@ function SessionsPage() {
               <StatusBadge tone="warning">{t.recon_status}</StatusBadge>
             </div>
 
-            {t.credit && t.credit_candidates && t.credit_candidates.length > 0 && (
+            {t.credit && t.credit_candidates && t.credit_candidates.length > 0 && (() => {
+              const selected = selectedCredits[t.id] || new Set<string>()
+              const selectedSum = (t.credit_candidates || []).filter((c) => selected.has(c.sale_payment_id)).reduce((s, c) => s + c.amount, 0)
+              return (
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Select one or more — a single credit can settle several invoices' payments at once.</div>
+                  {t.credit_candidates.slice(0, 6).map((c) => (
+                    <label key={c.sale_payment_id} className="flex items-center gap-2 text-sm p-1.5 rounded hover:bg-muted cursor-pointer">
+                      <input type="checkbox" checked={selected.has(c.sale_payment_id)} onChange={() => toggleCreditCandidate(t.id, c.sale_payment_id)} />
+                      <span className="flex-1">₹{c.amount.toFixed(2)} · {c.customer_name || 'unknown customer'} · {Math.round(c.date_delta_days)}d away</span>
+                    </label>
+                  ))}
+                  {selected.size > 0 && (
+                    <div className="flex items-center justify-between pt-1">
+                      <span className={`text-xs tabular-nums ${Math.abs(selectedSum - (t.credit || 0)) < 0.5 ? 'text-success' : 'text-muted-foreground'}`}>
+                        Selected: ₹{selectedSum.toFixed(2)} of ₹{t.credit?.toFixed(2)}
+                      </span>
+                      <Button size="sm" variant="outline" onClick={() => matchSelectedCredits(t)} disabled={matching[t.id]}>
+                        {matching[t.id] && <Loader2 className="size-4 animate-spin mr-1" />}
+                        <Check className="size-4 mr-1" /> Match Selected ({selected.size})
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )
+            })()}
+
+            {t.debit && t.purchase_candidates && t.purchase_candidates.length > 0 && (
               <div className="space-y-1">
-                {t.credit_candidates.slice(0, 3).map((c) => (
-                  <div key={c.sale_payment_id} className="flex items-center justify-between text-sm p-1.5 rounded hover:bg-muted">
-                    <span>₹{c.amount.toFixed(2)} · {c.customer_name || 'unknown customer'} · {Math.round(c.date_delta_days)}d away</span>
-                    <Button size="sm" variant="outline" onClick={() => matchCredit(t.id, c)}><Check className="size-4 mr-1" /> Match</Button>
+                <div className="text-xs text-muted-foreground">This looks like it could be a purchase — matches an existing stock receipt or PO rather than becoming an expense:</div>
+                {t.purchase_candidates.map((c) => (
+                  <div key={c.kind === 'stock_movement' ? c.stock_movement_id : c.po_id} className="flex items-center justify-between text-sm p-1.5 rounded hover:bg-muted">
+                    <span>
+                      {c.kind === 'stock_movement'
+                        ? <>₹{c.amount?.toFixed(2)} · {c.quantity}× {c.full_sku_code || c.sku_description || 'item'} · {c.vendor_name || 'unknown vendor'} · {Math.round(c.date_delta_days)}d away (stock receipt)</>
+                        : <>₹{c.outstanding?.toFixed(2)} outstanding · PO {c.po_number} · {c.vendor_name || 'unknown vendor'} · {Math.round(c.date_delta_days)}d away</>}
+                    </span>
+                    <Button size="sm" variant="outline" onClick={() => matchPurchase(t, c)}><Check className="size-4 mr-1" /> Match</Button>
                   </div>
                 ))}
               </div>
@@ -224,6 +313,9 @@ function SessionsPage() {
                   placeholder="Expense type..."
                 />
                 <Button size="sm" variant="outline" onClick={() => createExpenseMatch(t)}>Create Expense</Button>
+                <Button size="sm" variant="outline" onClick={() => raisePoTask(t, t.purchase_candidates?.[0]?.vendor_id || null)}>
+                  <ClipboardList className="size-4 mr-1" /> Raise PO task
+                </Button>
               </div>
             )}
 

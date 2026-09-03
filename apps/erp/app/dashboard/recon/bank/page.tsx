@@ -308,6 +308,13 @@ function BankReconPage() {
           )}
 
           {activeAccountId && (
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">This list is read-only — matching/explaining transactions happens on Recon Sessions, one calendar month at a time.</div>
+              <a href="/dashboard/recon/sessions"><Button size="sm" variant="outline">Go to Recon Sessions →</Button></a>
+            </div>
+          )}
+
+          {activeAccountId && (
             <div className="border rounded overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted text-xs text-muted-foreground">

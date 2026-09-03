@@ -13,6 +13,7 @@ interface Invoice {
   purchase_orders: { po_number: string; vendor_name: string } | null
   grand_total: number | null
   payment_status: string
+  last_payment_date: string | null
 }
 
 type SortField = 'invoice_number' | 'invoice_date' | 'vendor_name' | 'grand_total' | 'payment_status'
@@ -180,6 +181,7 @@ function PurchaseInvoicesPage() {
               <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('payment_status')}>
                 Status{sortIndicator('payment_status')}
               </th>
+              <th className="border p-2">Payment Date</th>
             </tr>
           </thead>
           <tbody>
@@ -197,6 +199,9 @@ function PurchaseInvoicesPage() {
                   {inv.grand_total != null ? `₹${inv.grand_total.toFixed(2)}` : '—'}
                 </td>
                 <td className="border p-2 capitalize">{inv.payment_status}</td>
+                <td className="border p-2 text-muted-foreground">
+                  {inv.last_payment_date ? new Date(inv.last_payment_date).toLocaleDateString() : '—'}
+                </td>
               </tr>
             ))}
           </tbody>

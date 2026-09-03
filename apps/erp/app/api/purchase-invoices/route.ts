@@ -37,6 +37,7 @@ export async function GET(req: NextRequest) {
     .filter((id: string | null): id is string => id !== null)
 
   let poMap: Record<string, any> = {}
+  const lastPaymentByPo = new Map<string, string>()
   if (poIds.length > 0) {
     const { data: pos } = await supabaseAdmin
       .from('purchase_orders')
@@ -46,11 +47,23 @@ export async function GET(req: NextRequest) {
     pos?.forEach((po: any) => {
       poMap[po.id] = po
     })
+
+    // A PI's "payment date" is the vendor_payments ledger for its PO -- vendor
+    // payments are recorded once against the PO, not per-invoice.
+    const { data: payments } = await supabaseAdmin
+      .from('vendor_payments')
+      .select('po_id, paid_on')
+      .in('po_id', poIds)
+      .order('paid_on', { ascending: false })
+    for (const p of payments || []) {
+      if (!lastPaymentByPo.has(p.po_id)) lastPaymentByPo.set(p.po_id, p.paid_on)
+    }
   }
 
   const result = invoices.map((inv: any) => ({
     ...inv,
     purchase_orders: poMap[inv.po_id] || null,
+    last_payment_date: inv.po_id ? lastPaymentByPo.get(inv.po_id) || null : null,
   }))
 
   return NextResponse.json(result)
