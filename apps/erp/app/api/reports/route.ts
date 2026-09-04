@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { REPORT_DIMENSIONS, type ReportDimension } from '@/lib/reports'
 
-const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries'] as const
+const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries', 'web_funnel', 'web_funnel_timeseries', 'website_health'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -99,6 +99,32 @@ export async function GET(req: NextRequest) {
         if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
         const grain = sp.get('grain') || 'day'
         const { data, error } = await supabaseAdmin.rpc('report_expense_timeseries', { p_from: from, p_to: to, p_grain: grain, p_include_financials: includeFinancials })
+        if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'web_funnel': {
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const abandonHours = parseInt(sp.get('abandon_hours') || '24', 10) || 24
+        const { data, error } = await supabaseAdmin.rpc('report_web_funnel', {
+          p_from: from, p_to: to, p_abandon_hours: abandonHours,
+        })
+        if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'web_funnel_timeseries': {
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const { data, error } = await supabaseAdmin.rpc('report_web_funnel_timeseries', { p_from: from, p_to: to })
+        if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'website_health': {
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        // report_website_health takes timestamptz bounds; the route's from/to
+        // are plain dates like every other metric here, so widen to a full-day
+        // range rather than inventing separate param names for this one case.
+        const { data, error } = await supabaseAdmin.rpc('report_website_health', {
+          p_from: `${from}T00:00:00Z`, p_to: `${to}T23:59:59Z`,
+        })
         if (error) throw error
         return NextResponse.json(data)
       }

@@ -5,6 +5,7 @@ import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { Analytics } from "@/components/Analytics";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BUSINESS_PHONE_TEL, GOOGLE_RATING, GOOGLE_REVIEW_COUNT, SOCIAL_LINKS } from "@/lib/business-info";
 
 // Archivo carries the storefront's retail energy in headlines/prices/badges;
@@ -39,6 +40,12 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
+  },
+  // Only rendered if the env var is set (Next.js omits the meta tag when the
+  // value is undefined) -- set once from the HTML-tag value Search Console
+  // gives you when adding the property, same shape as NEXT_PUBLIC_GA_MEASUREMENT_ID.
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
   },
   icons: {
     icon: "/favicon-32.png",
@@ -109,6 +116,7 @@ export default function RootLayout({
         <SiteFooter />
         <WhatsAppButton />
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
