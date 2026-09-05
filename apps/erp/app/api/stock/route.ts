@@ -232,15 +232,16 @@ export async function GET(req: NextRequest) {
           ].join(','))
         return (matchingSkus || []).map((s) => s.id)
       })(),
-      // A term can also match the customer a unit was sold to -- customer_name lives on
-      // `sales`, joined in separately after this query runs (see saleByAssetId below),
-      // so it has to be resolved here the same way SKU matches are: look up matching
-      // sales first, then OR their asset_ledger_id into this query.
+      // A term can also match the customer a unit was sold to, or the (Zoho, during
+      // the transition, or ERP-generated) invoice number it was billed under -- both
+      // live on `sales`, joined in separately after this query runs (see saleByAssetId
+      // below), so they have to be resolved here the same way SKU matches are: look up
+      // matching sales first, then OR their asset_ledger_id into this query.
       (async () => {
         const { data: matchingSales } = await supabaseAdmin
           .from('sales')
           .select('asset_ledger_id')
-          .ilike('customer_name', `%${search}%`)
+          .or(`customer_name.ilike.%${search}%,invoice_number.ilike.%${search}%`)
           .not('asset_ledger_id', 'is', null)
         return [...new Set((matchingSales || []).map((s: any) => s.asset_ledger_id))]
       })(),

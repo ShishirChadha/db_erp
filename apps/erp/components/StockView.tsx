@@ -603,6 +603,7 @@ export default function StockView({
           placeholder={
             tab === 'sold_accessories' ? 'Search item, customer, or invoice...' :
             tab === 'accessories' ? 'Search accessories...' :
+            tab === 'sold' ? 'Search asset, serial, SKU, customer, or invoice #...' :
             'Search asset, serial, SKU, or spec (e.g. 16GB, i5)...'
           }
           value={searchInput}
