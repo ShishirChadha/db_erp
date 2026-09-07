@@ -103,6 +103,12 @@ function SellPageInner() {
   const [cartItems, setCartItems] = useState<CartLine[]>([])
   // Consumed once, by whichever unit line gets added first (quotation-line conversion).
   const pendingPrefillRateRef = useRef<number | undefined>(prefillRate ? Number(prefillRate) : undefined)
+  // Guards the two prefill effects below against adding the same line twice --
+  // React Strict Mode double-invokes effects on mount in dev, and with no guard
+  // that meant clicking "Sell" from Live Stock/Accessories added the unit/accessory
+  // to the cart twice every time.
+  const consumedPrefillAssetIdRef = useRef<string | null>(null)
+  const consumedPrefillAccessoryIdRef = useRef<string | null>(null)
 
   // "Add a unit" search
   const [unitSearch, setUnitSearch] = useState('')
@@ -238,6 +244,8 @@ function SellPageInner() {
   // Prefill from Live Stock's "Sell" link.
   useEffect(() => {
     if (!prefillAssetId) return
+    if (consumedPrefillAssetIdRef.current === prefillAssetId) return
+    consumedPrefillAssetIdRef.current = prefillAssetId
     setMode('unit')
     fetchUnit(prefillAssetId).then(u => { if (u) addUnitLine(u) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -246,6 +254,8 @@ function SellPageInner() {
   // Prefill from the Accessories page's "Sell" link.
   useEffect(() => {
     if (!prefillAccessoryId) return
+    if (consumedPrefillAccessoryIdRef.current === prefillAccessoryId) return
+    consumedPrefillAccessoryIdRef.current = prefillAccessoryId
     apiFetch(`/api/sku-master?id=${prefillAccessoryId}`).then(res => res.json()).then((data) => {
       if (Array.isArray(data) && data[0]) {
         setMode('accessory')
