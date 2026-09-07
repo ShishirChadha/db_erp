@@ -38,6 +38,11 @@ interface AssetRow {
   description: string
   category?: string | null
   specifications?: Record<string, any> | null
+  // Set only when this unit's SKU was reassigned (Change SKU) after purchase --
+  // sku_code/description above are the CURRENT/effective spec; these are what it
+  // was actually purchased as, so the divergence stays visible instead of hidden.
+  purchased_sku_code?: string | null
+  purchased_description?: string | null
   under_repair_job_number?: string | null
   unit_price?: number
   gst_percentage?: number
@@ -903,6 +908,11 @@ export default function StockView({
                   {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
                   <td className="border p-2">
                     {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
+                    {asset.purchased_sku_code && (
+                      <div className="text-xs text-muted-foreground" title="This unit's spec was changed after purchase (Change SKU)">
+                        Purchased as: {asset.purchased_description || asset.purchased_sku_code}
+                      </div>
+                    )}
                   </td>
                   <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
                   {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
@@ -1120,6 +1130,11 @@ export default function StockView({
               </div>
               <div className="text-sm">
                 {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
+                {asset.purchased_sku_code && (
+                  <div className="text-xs text-muted-foreground">
+                    Purchased as: {asset.purchased_description || asset.purchased_sku_code}
+                  </div>
+                )}
               </div>
               {asset.created_at || asset.po_date ? (
                 <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

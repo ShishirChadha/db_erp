@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -26,7 +27,7 @@ export async function GET(
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
       battery_health_percent, estimated_backup_hours,
       screen_condition, keyboard_condition, body_condition, included_accessories,
-      po_id, po_item_id, sku_id,
+      po_id, po_item_id, sku_id, current_sku_id,
       purchase_order_items (
         sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications )
       )
@@ -39,7 +40,8 @@ export async function GET(
   }
 
   // Legacy-door rows have no purchase_order_items link -- fall back to the SKU
-  // directly referenced on the ledger row itself.
+  // directly referenced on the ledger row itself. This is still the AS-PURCHASED
+  // spec at this point -- current_sku_id (below) is resolved separately.
   if (!(asset as any).purchase_order_items && asset.sku_id) {
     const { data: sku } = await supabaseAdmin
       .from('sku_master')
@@ -47,6 +49,25 @@ export async function GET(
       .eq('id', asset.sku_id)
       .single()
     if (sku) (asset as any).purchase_order_items = { sku_master: sku }
+  }
+
+  // If this unit was reassigned after purchase (Change SKU), swap in its CURRENT
+  // effective spec as the primary `purchase_order_items.sku_master` the page reads,
+  // and preserve the as-purchased one separately as `purchased_sku` so the page can
+  // show both instead of silently losing the purchase history from view.
+  // This route's own purchase_order_items join only selects sku_master, not sku_id,
+  // so resolveEffectiveSkuId's PO-item fallback isn't reachable here -- asset.sku_id
+  // alone is already a reliable stand-in (confirmed always populated and equal to the
+  // PO item's original sku_id at creation time, see lib/effective-sku.ts).
+  const effectiveSkuId = resolveEffectiveSkuId({ sku_id: asset.sku_id, current_sku_id: asset.current_sku_id })
+  if (asset.current_sku_id && effectiveSkuId) {
+    (asset as any).purchased_sku = (asset as any).purchase_order_items?.sku_master || null
+    const { data: currentSku } = await supabaseAdmin
+      .from('sku_master')
+      .select('full_sku_code, sku_description, category, brand, model_name, specifications')
+      .eq('id', effectiveSkuId)
+      .single()
+    if (currentSku) (asset as any).purchase_order_items = { sku_master: currentSku }
   }
 
   const { data: checks } = await supabaseAdmin

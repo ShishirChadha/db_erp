@@ -111,13 +111,16 @@ export function FixSkuDialog({
     setSubmitting(true)
     try {
       const infoRes = await apiFetch(`/api/asset-ledger/${assetId}/reassign-sku`)
-      if (!infoRes.ok) throw new Error('Failed to check affected units')
+      if (!infoRes.ok) throw new Error('Failed to check current spec')
       const info = await infoRes.json()
 
-      const confirmMsg = info.po_item_id
-        ? `This will reassign ${info.affected_count} unit${info.affected_count !== 1 ? 's' : ''} (the whole PO line item) to ${sku.full_sku_code}. Continue?`
-        : `Reassign this unit to ${sku.full_sku_code}?`
-      if (!confirm(confirmMsg)) { setSubmitting(false); return }
+      // Only ever changes THIS unit's current/effective spec -- never rewrites the
+      // original purchase record, and never affects any other unit (even one sharing
+      // the same PO line item), so this confirmation is always the same, simple line.
+      if (!confirm(`Reassign this unit to ${sku.full_sku_code}? This only changes this unit's current spec -- it does not alter the original purchase record.`)) {
+        setSubmitting(false)
+        return
+      }
 
       let res = await apiFetch(`/api/asset-ledger/${assetId}/reassign-sku`, {
         method: 'PATCH',

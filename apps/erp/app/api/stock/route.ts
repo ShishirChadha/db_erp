@@ -165,6 +165,7 @@ export async function GET(req: NextRequest) {
       po_id,
       po_item_id,
       sku_id,
+      current_sku_id,
       source,
       vendor_id,
       purchased_by_type,
@@ -286,9 +287,15 @@ export async function GET(req: NextRequest) {
   }
 
   // For rows with no purchase_order_items (legacy-door entries), pull SKU and
-  // vendor info via their own direct references on asset_ledger instead.
+  // vendor info via their own direct references on asset_ledger instead. Also
+  // batch-fetch every current_sku_id override regardless of PO-linkage -- an
+  // override (set only by SKU reassignment, see lib/effective-sku.ts) always wins
+  // over both the PO item's sku_master and the plain sku_id fallback.
   const noPoItemRows = (assets || []).filter((a: any) => !a.purchase_order_items)
-  const fallbackSkuIds = [...new Set(noPoItemRows.map((a: any) => a.sku_id).filter(Boolean))]
+  const fallbackSkuIds = [...new Set([
+    ...noPoItemRows.map((a: any) => a.sku_id).filter(Boolean),
+    ...(assets || []).map((a: any) => a.current_sku_id).filter(Boolean),
+  ])]
   const fallbackVendorIds = [...new Set(noPoItemRows.map((a: any) => a.vendor_id).filter(Boolean))]
 
   // A unit currently out for repair keeps whatever asset_ledger.status it already
@@ -398,7 +405,13 @@ export async function GET(req: NextRequest) {
   const result = (assets || []).map((asset: any) => {
     const item = asset.purchase_order_items
     const po = item?.purchase_orders
-    const sku = item?.sku_master || skuById.get(asset.sku_id)
+    // "Purchased as" -- the historical, as-bought spec (item's sku_master, or the
+    // plain sku_id fallback for a no-PO row). Never affected by current_sku_id.
+    const purchasedSku = item?.sku_master || skuById.get(asset.sku_id)
+    // "Current" -- what this unit effectively is right now. An override (set only by
+    // SKU reassignment) always wins; otherwise identical to purchasedSku. See
+    // lib/effective-sku.ts for the same precedence rule used everywhere else.
+    const sku = asset.current_sku_id ? skuById.get(asset.current_sku_id) : purchasedSku
     const fallbackVendor = vendorById.get(asset.vendor_id)
     const sale = saleByAssetId.get(asset.id)
     return {
@@ -418,6 +431,11 @@ export async function GET(req: NextRequest) {
       description: sku?.sku_description || '',
       category: sku?.category || null,
       specifications: sku?.specifications || null,
+      // Only set when a reassignment has actually happened -- lets the UI show
+      // "Purchased as: X" alongside the current spec without cluttering the common
+      // case (the vast majority of units, never reassigned) with a redundant field.
+      purchased_sku_code: asset.current_sku_id ? (purchasedSku?.full_sku_code || null) : null,
+      purchased_description: asset.current_sku_id ? (purchasedSku?.sku_description || null) : null,
       under_repair_job_number: repairJobByAssetId.get(asset.id) || null,
       quantity: item?.quantity ?? 1,
       unit_price: item?.unit_price ?? asset.cost_price,

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase/service'
+import { resolveEffectiveSkuId } from './effective-sku'
 
 // Maps sales.payment_account ('Digitalbluez'/'Techtenth'/'Cash') to the
 // business_profiles.key that should issue the invoice. This is the same
@@ -110,21 +111,27 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, sku_id, asset_number')
+    .select('id, sku_id, current_sku_id, asset_number, purchase_order_items(sku_id)')
     .eq('id', sale.asset_ledger_id)
     .single()
   if (!asset) throw new Error(`Linked unit not found for sale ${sale.id}`)
 
-  const { data: sku } = await supabaseAdmin
-    .from('sku_master')
-    .select('full_sku_code, sku_description, hsn_code')
-    .eq('id', asset.sku_id)
-    .single()
+  // Bill what was actually sold, not necessarily what was originally purchased --
+  // resolveEffectiveSkuId prefers current_sku_id (set only by a post-purchase SKU
+  // reassignment) over the as-purchased spec.
+  const effectiveSkuId = resolveEffectiveSkuId(asset)
+  const { data: sku } = effectiveSkuId
+    ? await supabaseAdmin
+        .from('sku_master')
+        .select('full_sku_code, sku_description, hsn_code')
+        .eq('id', effectiveSkuId)
+        .single()
+    : { data: null }
 
   return {
     item_type: 'asset',
     ledger_asset_id: asset.id,
-    sku_id: asset.sku_id,
+    sku_id: effectiveSkuId || undefined,
     asset_number: asset.asset_number,
     description: sku?.sku_description || sku?.full_sku_code || 'Unit',
     hsn_code: sku?.hsn_code || null,

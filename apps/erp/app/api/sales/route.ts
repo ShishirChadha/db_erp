@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 import { buildCustomerSummary } from '@/lib/customer-summary'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
@@ -110,13 +111,16 @@ export async function GET(req: NextRequest) {
   const modeByKey = new Map((profiles || []).map((p: any) => [p.key, p.invoicing_mode]))
 
   // Product description: accessory sales point at sku_master directly via
-  // accessory_id; unit sales need asset_ledger_id -> asset_ledger.sku_id first.
+  // accessory_id; unit sales need asset_ledger_id -> its EFFECTIVE (current) sku_id
+  // first -- resolveEffectiveSkuId prefers current_sku_id (set only by a post-
+  // purchase SKU reassignment) over the as-purchased spec, so a sale correctly
+  // describes/RAM-SSDs/bills what was actually sold, not what was originally bought.
   // Same pattern as /api/stock/sold-accessories.
   const assetLedgerIds = [...new Set((data || []).map((s: any) => s.asset_ledger_id).filter(Boolean))]
   const { data: assetLedgerRows } = assetLedgerIds.length
-    ? await supabaseAdmin.from('asset_ledger').select('id, sku_id').in('id', assetLedgerIds)
+    ? await supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', assetLedgerIds)
     : { data: [] as any[] }
-  const skuIdByAssetLedgerId = new Map((assetLedgerRows || []).map((a: any) => [a.id, a.sku_id]))
+  const skuIdByAssetLedgerId = new Map((assetLedgerRows || []).map((a: any) => [a.id, resolveEffectiveSkuId(a)]))
 
   // Include specifications/category so the ledger can surface RAM/SSD directly
   // (specifications.ram / specifications.ssd -- see sku_category_templates field

@@ -2,16 +2,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 
-// ---------- GET: how many assets would be affected by a reassignment ----------
-// A PO-linked asset's SKU is governed by its purchase_order_items.sku_id, shared
-// by every asset under that same line item -- reassigning one means reassigning
-// all of them together. The caller should see that count before confirming.
-// Also returns the asset's CURRENT sku's specifications (`current_sku`) -- the
-// "before" side of a spec diff FixSkuDialog uses to detect an upgrade/downgrade on
-// RAM or SSD and prompt the correct stock-adjustment direction, rather than a
-// generic guess. Purely additive: existing callers that only read
-// po_item_id/affected_count are unaffected.
+// ---------- GET: the asset's current effective spec, for FixSkuDialog's before/after diff ----------
+// Returns `current_sku` -- the "before" side of a RAM/SSD spec diff FixSkuDialog uses to
+// detect an upgrade/downgrade and prompt the correct stock-adjustment direction, rather
+// than a generic guess. Resolved via the current_sku_id override (if set), falling back
+// to the purchased spec -- same precedence rule as everywhere else that reads a unit's
+// current spec (see resolveEffectiveSkuId above).
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -23,30 +21,36 @@ export async function GET(
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('po_item_id, sku_id, sku_master(id, full_sku_code, sku_description, category, specifications)')
+    .select('sku_id, current_sku_id, purchase_order_items(sku_id)')
     .eq('id', id)
     .single()
 
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
 
-  const currentSku = Array.isArray(asset.sku_master) ? asset.sku_master[0] : asset.sku_master
+  const effectiveSkuId = resolveEffectiveSkuId(asset)
+  const { data: currentSku } = effectiveSkuId
+    ? await supabaseAdmin
+        .from('sku_master')
+        .select('id, full_sku_code, sku_description, category, specifications')
+        .eq('id', effectiveSkuId)
+        .single()
+    : { data: null }
 
-  if (!asset.po_item_id) {
-    return NextResponse.json({ po_item_id: null, affected_count: 1, current_sku: currentSku || null })
-  }
-
-  const { count } = await supabaseAdmin
-    .from('asset_ledger')
-    .select('id', { count: 'exact', head: true })
-    .eq('po_item_id', asset.po_item_id)
-
-  return NextResponse.json({ po_item_id: asset.po_item_id, affected_count: count ?? 1, current_sku: currentSku || null })
+  return NextResponse.json({ current_sku: currentSku || null })
 }
 
-// ---------- PATCH: reassign this asset (or its whole PO line item) to an existing SKU ----------
+// ---------- PATCH: change this unit's CURRENT effective spec ----------
 // Open to any authenticated role (employee or owner) -- no cost/vendor data is
 // read or returned here, so this doesn't need owner-gating the way editing SKU
 // master data does.
+//
+// Deliberately never writes to asset_ledger.sku_id or purchase_order_items.sku_id --
+// those are the historical purchase record and must stay accurate to what was actually
+// bought, no matter what happens to the unit afterward. This only ever sets
+// current_sku_id on the ONE unit being reassigned, so (a) a Purchase Order's own record
+// is never retroactively rewritten, and (b) reassigning one unit can never affect
+// sibling units sharing the same PO line item (both real bugs the old sku_id-mutating
+// version had -- see docs/decisions.md).
 export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -88,38 +92,25 @@ export async function PATCH(
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
-    .select('po_item_id, sku_id')
+    .select('sku_id, current_sku_id, purchase_order_items(sku_id)')
     .eq('id', id)
     .single()
   if (!asset) return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
 
-  const oldSkuId = asset.sku_id
+  const oldEffectiveSkuId = resolveEffectiveSkuId(asset)
 
-  if (asset.po_item_id) {
-    // Reassign the whole PO line item -- every asset under it shares this SKU.
-    const { error } = await supabaseAdmin
-      .from('purchase_order_items')
-      .update({ sku_id: new_sku_id })
-      .eq('id', asset.po_item_id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  } else {
-    // Legacy-door / pre-adoption row -- SKU lives directly on the ledger row.
-    const { error } = await supabaseAdmin
-      .from('asset_ledger')
-      .update({ sku_id: new_sku_id })
-      .eq('id', id)
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  const { error: updateErr } = await supabaseAdmin
+    .from('asset_ledger')
+    .update({ current_sku_id: new_sku_id })
+    .eq('id', id)
+  if (updateErr) return NextResponse.json({ error: updateErr.message }, { status: 500 })
 
   // sku_master.quantity_in_stock is only ever updated by the trg_sync_sku_stock
-  // trigger (BEFORE INSERT on stock_movements) -- never write it directly.
-  // A reassignment moves 1 unit's stock-count contribution from the old SKU to
-  // the new one, regardless of whether this asset is part of a larger PO line
-  // item (each asset under that line already has its own original receipt row;
-  // only this one unit's current SKU mapping is changing).
-  if (oldSkuId && oldSkuId !== new_sku_id) {
+  // trigger (BEFORE INSERT on stock_movements) -- never write it directly. Moves this
+  // one unit's stock-count contribution from its old effective SKU to the new one.
+  if (oldEffectiveSkuId && oldEffectiveSkuId !== new_sku_id) {
     const { error: movementErr } = await supabaseAdmin.from('stock_movements').insert([
-      { sku_id: oldSkuId, movement_type: 'adjustment', quantity_change: -1, notes: 'SKU reassignment' },
+      { sku_id: oldEffectiveSkuId, movement_type: 'adjustment', quantity_change: -1, notes: 'SKU reassignment' },
       { sku_id: new_sku_id, movement_type: 'adjustment', quantity_change: 1, notes: 'SKU reassignment' },
     ])
     if (movementErr) return NextResponse.json({ error: movementErr.message }, { status: 500 })
@@ -131,7 +122,7 @@ export async function PATCH(
     module: 'stock',
     tableName: 'asset_ledger',
     recordId: id,
-    metadata: { old_sku_id: oldSkuId, new_sku_id, po_item_id: asset.po_item_id || null },
+    metadata: { old_effective_sku_id: oldEffectiveSkuId, new_current_sku_id: new_sku_id },
   })
 
   return NextResponse.json({ success: true })

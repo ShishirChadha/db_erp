@@ -81,6 +81,15 @@ interface AssetDetail {
       specifications: Record<string, any> | null
     } | null
   } | null
+  // Set only when this unit's SKU was reassigned (Change SKU) after purchase --
+  // purchase_order_items.sku_master above becomes the CURRENT/effective spec in that
+  // case, and this holds what it was actually purchased as.
+  purchased_sku?: {
+    full_sku_code: string
+    sku_description: string
+    category: string
+    specifications: Record<string, any> | null
+  } | null
   checks: { check_item: string; result: string; notes: string | null }[]
 }
 
@@ -328,6 +337,11 @@ function AssetQCPage() {
       <p className="text-muted-foreground mb-1">
         {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
       </p>
+      {asset.purchased_sku && (
+        <p className="text-xs text-muted-foreground mb-1" title="This unit's spec was changed after purchase (Change SKU)">
+          Purchased as: {asset.purchased_sku.full_sku_code} — {buildConfigSummary(asset.purchased_sku.category, asset.purchased_sku.specifications, templates) || asset.purchased_sku.sku_description}
+        </p>
+      )}
       <p className="text-sm text-muted-foreground mb-4">
         {asset.warranty_type || asset.warranty_expiry_date
           ? `Warranty: ${asset.warranty_type || '—'}${asset.warranty_expiry_date ? ` — expires ${asset.warranty_expiry_date.slice(0, 10)}` : ''}`
