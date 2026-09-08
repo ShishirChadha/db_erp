@@ -25,7 +25,13 @@ export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
-  const { data: authList, error: authErr } = await supabaseAdmin.auth.admin.listUsers()
+  // listUsers() defaults to the 50 most-recently-created auth accounts -- with this
+  // project's accumulated test/verification accounts alongside real staff logins,
+  // that silently dropped older real accounts (e.g. Sanjana's) from this list even
+  // though they could still sign in fine (signInWithPassword doesn't go through this
+  // endpoint at all). 1000 comfortably covers this business's real + leftover-test
+  // account count; a business large enough to exceed that would need real pagination.
+  const { data: authList, error: authErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 1000 })
   if (authErr) return NextResponse.json({ error: authErr.message }, { status: 500 })
 
   const { data: profiles, error: profileErr } = await supabaseAdmin
