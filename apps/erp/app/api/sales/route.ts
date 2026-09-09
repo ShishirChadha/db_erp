@@ -30,6 +30,23 @@ export async function GET(req: NextRequest) {
   const voided = searchParams.get('voided') === 'true'
   const pagination = parsePagination(searchParams)
 
+  // customer_name on `sales` is a text snapshot frozen at sale time (not a live FK
+  // lookup), so it can drift from the customer's actual current name (e.g. a sale
+  // saved with the contact person's name instead of the company name). Resolving
+  // matching customer_ids up front and OR-ing them in makes search resilient to
+  // that drift -- a search still finds every sale for a matching customer even if
+  // that particular sale's own snapshot text doesn't contain the search term.
+  const searchCustomerIds = search
+    ? (await supabaseAdmin
+        .from('customers')
+        .select('id')
+        .or(`customer_name.ilike.%${search}%,contact_person.ilike.%${search}%`)
+      ).data?.map((c: any) => c.id) || []
+    : []
+  const searchFilter = search
+    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}`
+    : ''
+
   // Stat-card counts mode: SQL exact counts for the same filters the ledger's stat
   // cards use (search/payment_status/received_into, never `finalized` -- matches
   // sales/page.tsx's fetchStats, which deliberately omits it so Pending/Partial/
@@ -41,7 +58,7 @@ export async function GET(req: NextRequest) {
       let q = supabaseAdmin.from('sales').select('id', { count: 'exact', head: true }).eq('is_deleted', voided)
       if (paymentStatus) q = q.eq('payment_status', paymentStatus)
       if (receivedInto) q = q.eq('payment_account', receivedInto)
-      if (search) q = q.or(`customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%`)
+      if (search) q = q.or(searchFilter)
       return extra(q)
     }
     const [totalSold, pending, partial, awaitingInvoice] = await Promise.all([
@@ -75,7 +92,7 @@ export async function GET(req: NextRequest) {
   if (finalized === 'true') query = query.eq('finalized', true)
   if (finalized === 'false') query = query.eq('finalized', false)
   if (search) {
-    query = query.or(`customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%`)
+    query = query.or(searchFilter)
   }
 
   const { data, error } = await query

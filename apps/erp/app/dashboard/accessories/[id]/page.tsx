@@ -9,6 +9,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
+import { formatPurchasePrice } from '@/lib/format'
 
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
@@ -22,6 +23,7 @@ interface Movement {
   vendor_id: string | null
   vendor_name: string | null
   unit_price: number | null
+  gst_percentage: number | null
   purchase_date: string | null
   payment_account: string | null
   notes: string | null
@@ -127,6 +129,7 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState(movement.vendor_id || '')
   const [unitPrice, setUnitPrice] = useState<number | ''>(movement.unit_price ?? '')
+  const [gstPercentage, setGstPercentage] = useState<number | ''>(movement.gst_percentage ?? '')
   const [purchaseDate, setPurchaseDate] = useState(movement.purchase_date || '')
   const [paymentAccount, setPaymentAccount] = useState(movement.payment_account || PAYMENT_ACCOUNTS[0])
   const [notes, setNotes] = useState(movement.notes || '')
@@ -144,6 +147,7 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
       body: JSON.stringify({
         vendor_id: vendorId || null,
         unit_price: unitPrice === '' ? null : unitPrice,
+        gst_percentage: gstPercentage === '' ? null : gstPercentage,
         purchase_date: purchaseDate || null,
         payment_account: paymentAccount || null,
         notes,
@@ -188,6 +192,17 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
                 min={0}
                 value={unitPrice}
                 onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                className="border p-1 w-full rounded text-sm mt-0.5"
+              />
+            </label>
+            <label className="block text-xs text-muted-foreground">
+              GST %
+              <input
+                type="number"
+                min={0}
+                max={100}
+                value={gstPercentage}
+                onChange={(e) => setGstPercentage(e.target.value === '' ? '' : Number(e.target.value))}
                 className="border p-1 w-full rounded text-sm mt-0.5"
               />
             </label>
@@ -380,7 +395,7 @@ function AccessoryDetailPage() {
                     </td>
                     <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-warning">awaiting PO</span> : '—')}</td>
                     <td className="border p-2">{m.vendor_name || '—'}</td>
-                    <td className="border p-2 text-right tabular-nums">{m.unit_price != null ? `₹${m.unit_price.toFixed(2)}` : '—'}</td>
+                    <td className="border p-2 text-right tabular-nums">{formatPurchasePrice(m.unit_price, m.gst_percentage) ?? '—'}</td>
                     <td className="border p-2">{m.payment_account || '—'}</td>
                     <td className="border p-2">
                       <EditableNote

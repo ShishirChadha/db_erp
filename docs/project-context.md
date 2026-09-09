@@ -243,6 +243,22 @@ not `UPDATE`, so editing a past quantity would silently desync `sku_master
 a wrong quantity. The other four fields only apply to `receipt` rows (400 if attempted on
 `adjustment`/`sale`); `notes` can be edited on any row type.
 
+**GST on the Last Purchase price (2026-09-09, same session as the paragraph above):**
+`stock_movements.gst_percentage` (nullable, optional, same receipt-only/editable-later
+treatment as `unit_price`) lets whoever records a receipt also note the GST rate, so the
+"Last Purchase" figure (already visible to every role) can show both the pre-GST and
+GST-inclusive amount side by side (`lib/format.ts`'s `formatPurchasePrice`) wherever it
+appears -- the Stock page's Accessories tab, `/dashboard/accessories`'s list, and the
+per-SKU Movement Ledger. This is a display enhancement to the existing informal price
+only -- `sku_master.base_cost` (the formal, owner-only PO cost) is untouched and stays
+GST-exclusive as it always has been.
+
+**Purchase-date search (2026-09-09):** `GET /api/sku-master` accepts optional
+`purchased_from`/`purchased_to` (`YYYY-MM-DD`) -- resolves to the set of `sku_id`s with a
+`receipt` movement whose effective date falls in range (same effective-date rule as
+`getLastEntryVendorsBySku`), then filters the main query to that set. Surfaced as two date
+inputs next to the search box on `/dashboard/accessories`.
+
 ### Activity Hub (`activities`, `activity_assignees`) — shared task/collaboration model
 
 `activities` is a shared, assignable task model — `created_by` is the author; zero-to-many rows in `activity_assignees` (own table, `UNIQUE(activity_id, user_id)`) are who it's assigned to; an empty assignee set is a personal task (visible only to its creator and the owner). Enforcement is API-layer, `supabaseAdmin` + `getSessionUser()` (Bearer token via `apiFetch`), matching the rest of the app — RLS on both tables is the same permissive "backstop, not the boundary" policy used by `purchase_orders`/`asset_ledger`/`field_corrections`, not the restrictive per-`user_id` policies it used to have. Visibility rule (computed server-side in every route, `lib/activities.ts`'s `buildOwnVisibilityFilter`/`canSeeActivity`): owner sees every task; an employee sees only what they created or are assigned to. Any user with `activities` page access can assign a task to any other active user (not self-assign-only).
@@ -265,6 +281,33 @@ UI: `components/ActivityList.tsx` (table + filters, priority, assignee picker, r
 `repair_jobs.job_type` ∈ `('repair','replacement')`, `is_own_stock` boolean (our unit vs. customer's own device). A `replacement` job swaps in one of our units for the customer's broken one — that swapped-in unit is marked `sold` **immediately** at job creation (same "live" principle as a sale), not gated behind owner approval. `status`/`payment_status`/`payment_account`/`amount_charged`/`amount_paid` track the job itself, separately from inventory state.
 
 Customer/vendor returns use the older, separately-built `asset_rma_events` table (`direction` = `'to_vendor'` or `'from_customer'`) via `/api/rma` — vendor returns are owner-only (touch vendor identity); customer returns (Return sub-tab in `/dashboard/entry/service`) are open to both roles and simply move the unit back into the QC funnel.
+
+**Accessory returns/replacements (2026-09-09):** `asset_rma_events`/`replacement_jobs` are
+both hard FK'd to `asset_ledger`, which an accessory (quantity-only, no per-unit row) can
+never have — a new parallel table, `accessory_rma_events`, keyed on `sku_id` + `quantity`
+instead of `asset_id`, covers the same to_vendor/from_customer cases for fungible items.
+This is a case/event table referencing `sku_master`, not a second catalog or quantity
+mechanism, so it doesn't reopen the "no parallel catalog/quantity table" rule (2026-07-23)
+— actual stock movement still goes through the ordinary `stock_movements` ledger via
+`insertAccessoryMovement` (`lib/accessory-rma.ts`), same as every other accessory change.
+Same role split as unit RMA: `to_vendor` (touches `vendor_id`) is owner-only; `from_customer`
+is open to anyone with `rma` edit access. Unlike a serialized unit (which has no quantity
+concept — its presence/absence is `asset_ledger.status`), stock moves **immediately** when
+a case opens, matching this app's "immediately real" principle — the event row is an
+audit/status trail on top, not a gate:
+- `to_vendor` open: `stock_movements` decrement (`movement_type: 'return'`); closing as
+  `replacement_received` writes an increment (`movement_type: 'receipt'` — a genuine new
+  unit arriving); `vendor_rejected`/`refund_received` write nothing further (the vendor
+  kept the stock).
+- `from_customer` open: `stock_movements` increment (`movement_type: 'return'`) immediately
+  (no QC-pending limbo, since accessories have no per-unit status to hold one in); closing
+  as `scrapped` reverses it (`movement_type: 'damage'`, decrement) if inspection finds it
+  unsellable; `restocked` writes nothing further (already counted as stock).
+`movement_type_enum`'s previously-unused `'return'`/`'damage'` values are what make this
+distinguishable from an ordinary `'adjustment'` in the ledger. UI: `/dashboard/rma` gained
+a Units/Accessories tab toggle (separate create form + table, since the two event tables
+have incompatible row shapes); the Return sub-tab in `/dashboard/entry/service` gained the
+same unit/accessory toggle for `from_customer` returns.
 
 ### The Bible (`docs/bible/**`) and "DB", the internal advisor
 A versioned internal manual, split between hand-written chapters

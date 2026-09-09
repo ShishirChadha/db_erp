@@ -12,6 +12,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import { Pagination } from '@/components/Pagination'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
+import { formatPurchasePrice } from '@/lib/format'
 
 const PAGE_SIZE = 25
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
@@ -60,6 +61,7 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
   const [unitPrice, setUnitPrice] = useState<number | ''>('')
+  const [gstPercentage, setGstPercentage] = useState<number | ''>('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10))
   const [paymentAccount, setPaymentAccount] = useState(PAYMENT_ACCOUNTS[0])
   const [remarks, setRemarks] = useState('')
@@ -82,12 +84,13 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         notes: remarks || 'Stock received',
         vendor_id: vendorId || undefined,
         unit_price: unitPrice === '' ? undefined : unitPrice,
+        gst_percentage: gstPercentage === '' ? undefined : gstPercentage,
         purchase_date: purchaseDate || undefined,
         payment_account: paymentAccount,
       }),
     })
     if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to record stock.'); return }
-    setOpen(false); setQty(''); setVendorId(''); setUnitPrice(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
+    setOpen(false); setQty(''); setVendorId(''); setUnitPrice(''); setGstPercentage(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
     setPaymentAccount(PAYMENT_ACCOUNTS[0]); setRemarks('')
     onDone()
   })
@@ -133,6 +136,15 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         value={unitPrice}
         onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
         placeholder="Unit price (optional)"
+        className="border p-1 w-full rounded text-xs"
+      />
+      <input
+        type="number"
+        min={0}
+        max={100}
+        value={gstPercentage}
+        onChange={(e) => setGstPercentage(e.target.value === '' ? '' : Number(e.target.value))}
+        placeholder="GST % (optional)"
         className="border p-1 w-full rounded text-xs"
       />
       <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-1 w-full rounded text-xs">
@@ -421,11 +433,13 @@ function AccessoriesPage() {
   const [skus, setSkus] = useState<AccessorySku[]>([])
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
   const [search, setSearch] = useState('')
+  const [purchasedFrom, setPurchasedFrom] = useState('')
+  const [purchasedTo, setPurchasedTo] = useState('')
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
   const [lastVendors, setLastVendors] = useState<Map<string, string>>(new Map())
-  const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null; purchase_date: string | null }>>(new Map())
+  const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null; gst_percentage: number | null; purchase_date: string | null }>>(new Map())
   const [showArchived, setShowArchived] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
@@ -434,6 +448,8 @@ function AccessoriesPage() {
     setLoading(true)
     const params = new URLSearchParams({ category: ACCESSORY_CATEGORIES.join(',') })
     if (search) params.set('search', search)
+    if (purchasedFrom) params.set('purchased_from', purchasedFrom)
+    if (purchasedTo) params.set('purchased_to', purchasedTo)
     if (showArchived) params.set('status', 'all')
     params.set('page', String(page))
     params.set('limit', String(PAGE_SIZE))
@@ -467,12 +483,12 @@ function AccessoriesPage() {
       setLastEntries(new Map())
     }
     setLoading(false)
-  }, [search, isOwner, showArchived, page])
+  }, [search, purchasedFrom, purchasedTo, isOwner, showArchived, page])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [search, showArchived])
+  useEffect(() => { setPage(1) }, [search, purchasedFrom, purchasedTo, showArchived])
 
   useEffect(() => {
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((all) => {
@@ -498,6 +514,24 @@ function AccessoriesPage() {
           placeholder="Search accessories..."
           className="border p-2 rounded"
         />
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          Purchased from
+          <input
+            type="date"
+            value={purchasedFrom}
+            onChange={(e) => setPurchasedFrom(e.target.value)}
+            className="border p-1.5 rounded"
+          />
+        </label>
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          to
+          <input
+            type="date"
+            value={purchasedTo}
+            onChange={(e) => setPurchasedTo(e.target.value)}
+            className="border p-1.5 rounded"
+          />
+        </label>
         {isOwner && (
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <Checkbox checked={showArchived} onCheckedChange={(v) => setShowArchived(!!v)} />
@@ -548,7 +582,7 @@ function AccessoriesPage() {
                         <>
                           {lastEntries.get(s.id)!.vendor_name}
                           {lastEntries.get(s.id)!.unit_price != null && (
-                            <span className="text-muted-foreground"> @ ₹{lastEntries.get(s.id)!.unit_price!.toFixed(2)}</span>
+                            <span className="text-muted-foreground"> @ {formatPurchasePrice(lastEntries.get(s.id)!.unit_price, lastEntries.get(s.id)!.gst_percentage)}</span>
                           )}
                           {lastEntries.get(s.id)!.purchase_date && (
                             <div className="text-muted-foreground">{lastEntries.get(s.id)!.purchase_date!.slice(0, 10)}</div>

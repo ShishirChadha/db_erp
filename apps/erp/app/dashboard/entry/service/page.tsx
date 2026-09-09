@@ -268,9 +268,24 @@ function ServicePageInner() {
   const updatePart = (idx: number, patch: Partial<{ quantity: number; unit_price: number }>) =>
     setPartsUsed(prev => prev.map((x, i) => i === idx ? { ...x, ...patch } : x))
 
+  const [returnItemKind, setReturnItemKind] = useState<'unit' | 'accessory'>('unit')
   const [returnUnit, setReturnUnit] = useState<StockUnit | null>(null)
+  const [returnSku, setReturnSku] = useState<Accessory | null>(null)
+  const [returnSkuSearch, setReturnSkuSearch] = useState('')
+  const [returnSkuOptions, setReturnSkuOptions] = useState<Accessory[]>([])
+  const [returnQty, setReturnQty] = useState<number | ''>('')
   const [returnReason, setReturnReason] = useState(RETURN_REASONS[0])
   const [returnNotes, setReturnNotes] = useState('')
+
+  useEffect(() => {
+    if (!returnSkuSearch.trim()) { setReturnSkuOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(returnSkuSearch)}`)
+      const data = await res.json()
+      setReturnSkuOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [returnSkuSearch])
 
   // Prefill from Live Stock's "Repair" / "Return" row actions.
   useEffect(() => {
@@ -293,7 +308,8 @@ function ServicePageInner() {
     setCustomerId(null); setIsOwnStock(false); setOwnUnit(null)
     setDeviceDescription(''); setDeviceSerial(''); setProblem(''); setAmountCharged('')
     setPaymentAccount('Digitalbluez')
-    setReplacementUnit(null); setReturnUnit(null); setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
+    setReplacementUnit(null); setReturnItemKind('unit'); setReturnUnit(null); setReturnSku(null); setReturnSkuSearch(''); setReturnSkuOptions([]); setReturnQty('')
+    setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
     setServiceDate(today())
     setPartsUsed([]); setPartsSearch(''); setPartsOptions([])
     setOldSaleInfo(null); setBundled([]); setBundleSearch(''); setBundleOptions([])
@@ -357,24 +373,40 @@ function ServicePageInner() {
 
   const { run: handleSubmitReturn, pending: submittingReturn } = useAsyncAction(async () => {
     setError('')
-    if (!returnUnit) { setError('Select the unit being returned.'); return }
+    if (returnItemKind === 'unit') {
+      if (!returnUnit) { setError('Select the unit being returned.'); return }
+    } else {
+      if (!returnSku) { setError('Select the accessory being returned.'); return }
+      if (!returnQty || returnQty <= 0) { setError('Enter a quantity.'); return }
+    }
 
     try {
-      const res = await apiFetch('/api/rma', {
+      const res = await apiFetch(returnItemKind === 'unit' ? '/api/rma' : '/api/accessory-rma', {
         method: 'POST',
-        body: JSON.stringify({
-          asset_id: returnUnit.id,
-          direction: 'from_customer',
-          reason: returnReason,
-          notes: returnNotes,
-          event_date: serviceDate,
-        }),
+        body: JSON.stringify(
+          returnItemKind === 'unit'
+            ? {
+                asset_id: returnUnit!.id,
+                direction: 'from_customer',
+                reason: returnReason,
+                notes: returnNotes,
+                event_date: serviceDate,
+              }
+            : {
+                sku_id: returnSku!.id,
+                quantity: returnQty,
+                direction: 'from_customer',
+                reason: returnReason,
+                notes: returnNotes,
+                event_date: serviceDate,
+              }
+        ),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Failed to record return.')
       }
-      setDone('Return recorded. Unit sent back to QC.')
+      setDone(returnItemKind === 'unit' ? 'Return recorded. Unit sent back to QC.' : 'Return recorded. Stock updated.')
       resetForm()
       router.replace(returnTo ? `/dashboard/entry/service?return_to=${encodeURIComponent(returnTo)}` : '/dashboard/entry/service')
     } catch (err: any) {
@@ -687,16 +719,78 @@ function ServicePageInner() {
           </div>
 
           <div>
-            <label className="block font-medium text-sm mb-1">Unit Being Returned *</label>
-            <UnitPicker
-              statusFilter="sold"
-              selected={returnUnit}
-              onSelect={setReturnUnit}
-              onClear={() => setReturnUnit(null)}
-              placeholder="Search sold units by asset number or serial..."
-              browsable
-            />
+            <label className="block font-medium text-sm mb-1">Return Type</label>
+            <div className="flex mb-2 border rounded overflow-hidden w-fit">
+              {(['unit', 'accessory'] as const).map(k => (
+                <button
+                  key={k}
+                  onClick={() => setReturnItemKind(k)}
+                  className={`px-3 py-1.5 text-sm capitalize ${returnItemKind === k ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
+                >
+                  {k}
+                </button>
+              ))}
+            </div>
           </div>
+
+          {returnItemKind === 'unit' ? (
+            <div>
+              <label className="block font-medium text-sm mb-1">Unit Being Returned *</label>
+              <UnitPicker
+                statusFilter="sold"
+                selected={returnUnit}
+                onSelect={setReturnUnit}
+                onClear={() => setReturnUnit(null)}
+                placeholder="Search sold units by asset number or serial..."
+                browsable
+              />
+            </div>
+          ) : (
+            <>
+              <div>
+                <label className="block font-medium text-sm mb-1">Accessory Being Returned *</label>
+                {returnSku ? (
+                  <div className="flex items-center justify-between border p-2 rounded bg-muted">
+                    <span>{returnSku.accessory_name}</span>
+                    <button onClick={() => setReturnSku(null)} className="text-destructive text-xs underline">Change</button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Search accessory..."
+                      value={returnSkuSearch}
+                      onChange={(e) => setReturnSkuSearch(e.target.value)}
+                      className="border p-2 w-full rounded"
+                    />
+                    {returnSkuOptions.length > 0 && (
+                      <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                        {returnSkuOptions.map(a => (
+                          <button
+                            key={a.id}
+                            onClick={() => { setReturnSku(a); setReturnSkuOptions([]) }}
+                            className="block w-full text-left px-2 py-1 hover:bg-muted text-sm"
+                          >
+                            {a.accessory_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div>
+                <label className="block font-medium text-sm mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={returnQty}
+                  onChange={(e) => setReturnQty(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="border p-2 w-full rounded"
+                />
+              </div>
+            </>
+          )}
           <div>
             <label className="block font-medium text-sm mb-1">Reason *</label>
             <select value={returnReason} onChange={(e) => setReturnReason(e.target.value)} className="border p-2 w-full rounded">

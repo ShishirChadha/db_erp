@@ -18,7 +18,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id } = await params
   const body = await req.json()
-  const { movement_type, quantity_change, notes, vendor_id, unit_price, purchase_date, payment_account } = body
+  const { movement_type, quantity_change, notes, vendor_id, unit_price, gst_percentage, purchase_date, payment_account } = body
 
   if (!['receipt', 'adjustment'].includes(movement_type)) {
     return NextResponse.json({ error: "movement_type must be 'receipt' or 'adjustment' here." }, { status: 400 })
@@ -36,6 +36,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   // PO-attach cost/vendor.
   let resolvedVendorId: string | null = null
   let resolvedUnitPrice: number | null = null
+  let resolvedGstPercentage: number | null = null
   let resolvedPurchaseDate: string | null = null
   let resolvedPaymentAccount: string | null = null
   if (movement_type === 'receipt') {
@@ -55,6 +56,12 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
       resolvedUnitPrice = unit_price
     }
+    if (gst_percentage !== undefined && gst_percentage !== null && gst_percentage !== '') {
+      if (!Number.isFinite(gst_percentage) || gst_percentage < 0 || gst_percentage > 100) {
+        return NextResponse.json({ error: 'gst_percentage must be a number between 0 and 100.' }, { status: 400 })
+      }
+      resolvedGstPercentage = gst_percentage
+    }
     if (purchase_date) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(purchase_date)) {
         return NextResponse.json({ error: 'purchase_date must be in YYYY-MM-DD format.' }, { status: 400 })
@@ -72,6 +79,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     quantityChange: quantity_change,
     vendorId: resolvedVendorId,
     unitPrice: resolvedUnitPrice,
+    gstPercentage: resolvedGstPercentage,
     purchaseDate: resolvedPurchaseDate,
     paymentAccount: resolvedPaymentAccount,
     notes,

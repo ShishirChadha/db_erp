@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { REPORT_DIMENSIONS, type ReportDimension } from '@/lib/reports'
 
-const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries', 'web_funnel', 'web_funnel_timeseries', 'website_health'] as const
+const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries', 'purchase_kpis', 'web_funnel', 'web_funnel_timeseries', 'website_health'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -93,6 +93,19 @@ export async function GET(req: NextRequest) {
         if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
         const { data, error } = await supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to, p_include_financials: includeFinancials })
         if (error) throw error
+        return NextResponse.json(data)
+      }
+      case 'purchase_kpis': {
+        // count is safe for any role; the RPC has no financials gate of its own,
+        // but the caller must still route the `value`/`prev_value` fields through
+        // isOwner before displaying them (see dashboard/page.tsx).
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const { data, error } = await supabaseAdmin.rpc('report_purchase_kpis', { p_from: from, p_to: to })
+        if (error) throw error
+        if (!includeFinancials && data) {
+          const { value, prev_value, ...rest } = data
+          return NextResponse.json(rest)
+        }
         return NextResponse.json(data)
       }
       case 'expense_timeseries': {

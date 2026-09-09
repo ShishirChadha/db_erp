@@ -12,7 +12,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 // would corrupt every later movement's quantity_before/quantity_after running total for
 // this SKU. A quantity correction still goes through a new 'adjustment' movement (the
 // existing "Correct Quantity" control) -- a real, auditable entry, not a rewritten one.
-// vendor_id/unit_price/purchase_date/payment_account only apply to 'receipt' rows, same
+// vendor_id/unit_price/gst_percentage/purchase_date/payment_account only apply to 'receipt' rows, same
 // as at creation time; notes can be edited on any row. Same page-access gate as recording
 // the movement in the first place -- not owner-only, since this is operational data, not
 // cost/vendor identity.
@@ -28,7 +28,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: existing } = await supabaseAdmin
     .from('stock_movements')
-    .select('id, movement_type, notes, vendor_id, unit_price, purchase_date, payment_account')
+    .select('id, movement_type, notes, vendor_id, unit_price, gst_percentage, purchase_date, payment_account')
     .eq('id', id)
     .maybeSingle()
   if (!existing) return NextResponse.json({ error: 'Movement not found.' }, { status: 404 })
@@ -40,7 +40,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.notes = body.notes || null
   }
 
-  const receiptOnlyFieldsRequested = ['vendor_id', 'unit_price', 'purchase_date', 'payment_account'].some(
+  const receiptOnlyFieldsRequested = ['vendor_id', 'unit_price', 'gst_percentage', 'purchase_date', 'payment_account'].some(
     (key) => body[key] !== undefined
   )
   if (receiptOnlyFieldsRequested && existing.movement_type !== 'receipt') {
@@ -73,6 +73,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     }
   }
 
+  if (body.gst_percentage !== undefined) {
+    if (body.gst_percentage !== null && body.gst_percentage !== '') {
+      if (!Number.isFinite(body.gst_percentage) || body.gst_percentage < 0 || body.gst_percentage > 100) {
+        return NextResponse.json({ error: 'gst_percentage must be a number between 0 and 100.' }, { status: 400 })
+      }
+      updates.gst_percentage = body.gst_percentage
+    } else {
+      updates.gst_percentage = null
+    }
+  }
+
   if (body.purchase_date !== undefined) {
     if (body.purchase_date) {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(body.purchase_date)) {
@@ -96,7 +107,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     .from('stock_movements')
     .update(updates)
     .eq('id', id)
-    .select('id, notes, vendor_id, unit_price, purchase_date, payment_account, vendors(company_name)')
+    .select('id, notes, vendor_id, unit_price, gst_percentage, purchase_date, payment_account, vendors(company_name)')
     .single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
@@ -120,6 +131,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     vendor_id: data.vendor_id,
     vendor_name: (Array.isArray(vendor) ? vendor[0] : vendor)?.company_name ?? null,
     unit_price: data.unit_price,
+    gst_percentage: data.gst_percentage,
     purchase_date: data.purchase_date,
     payment_account: data.payment_account,
   })

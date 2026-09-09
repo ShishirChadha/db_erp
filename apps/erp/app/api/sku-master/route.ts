@@ -26,6 +26,12 @@ export async function GET(req: NextRequest) {
   const publishedFilter = searchParams.get('is_published') // 'true' | 'false', optional
   const stockFilter = searchParams.get('stock_filter') // 'out_of_stock' | 'low_stock', optional
   const wantCounts = searchParams.get('counts') === 'true'
+  // Filters to SKUs that had a receipt in this date range -- date lives on
+  // stock_movements, not sku_master, so this is resolved to a set of sku_ids first
+  // (see accessories page's date-range search). 'Effective date' matches the same
+  // purchase_date-falls-back-to-created_at rule used everywhere else (getLastEntryVendorsBySku).
+  const purchasedFrom = searchParams.get('purchased_from')
+  const purchasedTo = searchParams.get('purchased_to')
 
   // Shared by both the counts request and the main list -- search/category are
   // filter *context* every tab respects, unlike status/is_published/stock_filter
@@ -136,6 +142,21 @@ export async function GET(req: NextRequest) {
   }
   if (id) {
     query = query.eq('id', id)
+  }
+  if (purchasedFrom || purchasedTo) {
+    const { data: movements } = await supabaseAdmin
+      .from('stock_movements')
+      .select('sku_id, purchase_date, created_at')
+      .eq('movement_type', 'receipt')
+    const matchingIds = new Set<string>()
+    for (const m of movements || []) {
+      const effectiveDate: string = m.purchase_date || m.created_at?.slice(0, 10) || ''
+      if (!effectiveDate) continue
+      if (purchasedFrom && effectiveDate < purchasedFrom) continue
+      if (purchasedTo && effectiveDate > purchasedTo) continue
+      matchingIds.add(m.sku_id)
+    }
+    query = query.in('id', matchingIds.size > 0 ? [...matchingIds] : ['00000000-0000-0000-0000-000000000000'])
   }
   if (pagination) query = query.range(pagination.from, pagination.to)
 

@@ -22,6 +22,7 @@ import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
+import { formatPurchasePrice } from '@/lib/format'
 
 interface AssetRow {
   id: string
@@ -106,6 +107,7 @@ interface AccessoryStockRow {
   last_vendor?: string | null
   last_entry_vendor?: string | null
   last_entry_price?: number | null
+  last_entry_gst_percentage?: number | null
   last_entry_date?: string | null
 }
 
@@ -745,7 +747,9 @@ export default function StockView({
                     {sku.last_entry_vendor ? (
                       <>
                         {sku.last_entry_vendor}
-                        {sku.last_entry_price != null && <span className="text-muted-foreground"> @ ₹{sku.last_entry_price.toFixed(2)}</span>}
+                        {sku.last_entry_price != null && (
+                          <span className="text-muted-foreground"> @ {formatPurchasePrice(sku.last_entry_price, sku.last_entry_gst_percentage)}</span>
+                        )}
                         {sku.last_entry_date && <div className="text-muted-foreground">{sku.last_entry_date.slice(0, 10)}</div>}
                       </>
                     ) : '—'}
@@ -1088,7 +1092,7 @@ export default function StockView({
               </div>
               {sku.last_entry_vendor && (
                 <div className="text-xs text-muted-foreground">
-                  Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ₹${sku.last_entry_price.toFixed(2)}`}
+                  Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ${formatPurchasePrice(sku.last_entry_price, sku.last_entry_gst_percentage)}`}
                   {sku.last_entry_date && ` (${sku.last_entry_date.slice(0, 10)})`}
                 </div>
               )}

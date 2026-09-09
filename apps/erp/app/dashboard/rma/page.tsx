@@ -32,21 +32,65 @@ interface StockAsset {
   sku_code: string
 }
 
+// Accessories are sku_master rows like everything else (see docs/decisions.md,
+// 2026-07-23), tracked by quantity alone -- no per-unit asset_ledger row, so an
+// accessory RMA event is keyed on sku_id + quantity instead of asset_id.
+const ACCESSORY_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MOUSE', 'ACC', 'ADP']
+
+interface AccessoryRmaEvent {
+  id: string
+  sku_id: string
+  quantity: number
+  direction: 'to_vendor' | 'from_customer'
+  reason: string
+  vendor_id: string | null
+  status: string
+  opened_at: string
+  closed_at: string | null
+  notes: string | null
+  sku_master: { full_sku_code: string; sku_description: string | null; category: string } | null
+  vendors: { company_name: string } | null
+}
+
+interface AccessorySkuOption {
+  id: string
+  full_sku_code: string
+  sku_description: string | null
+  quantity_in_stock: number
+}
+
 const NEXT_STATUS_OPTIONS: Record<string, string[]> = {
   initiated: ['shipped', 'vendor_accepted', 'vendor_rejected'],
   shipped: ['vendor_accepted', 'vendor_rejected'],
   vendor_accepted: ['replacement_received', 'refund_received'],
 }
 
+// 'initiated' means different things depending on direction -- a to_vendor case still
+// needs to go through the vendor funnel, a from_customer case already moved stock at
+// open and just needs its outcome recorded -- so this is keyed on direction, unlike
+// NEXT_STATUS_OPTIONS above (units only ever go to_vendor through this same funnel).
+function accessoryNextStatuses(direction: 'to_vendor' | 'from_customer', status: string): string[] {
+  if (direction === 'from_customer') {
+    return status === 'initiated' ? ['restocked', 'scrapped'] : []
+  }
+  if (status === 'initiated') return ['shipped', 'vendor_accepted', 'vendor_rejected']
+  if (status === 'shipped') return ['vendor_accepted', 'vendor_rejected']
+  if (status === 'vendor_accepted') return ['replacement_received', 'refund_received']
+  return []
+}
+
 function RmaPage() {
+  const [itemKind, setItemKind] = useState<'unit' | 'accessory'>('unit')
+
   const [events, setEvents] = useState<RmaEvent[]>([])
+  const [accessoryEvents, setAccessoryEvents] = useState<AccessoryRmaEvent[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
   const [directionFilter, setDirectionFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
 
-  // create-form state
+  // create-form state (serialized unit)
   const [direction, setDirection] = useState<'to_vendor' | 'from_customer'>('to_vendor')
   const [assetSearch, setAssetSearch] = useState('')
   const [assetResults, setAssetResults] = useState<StockAsset[]>([])
@@ -55,6 +99,17 @@ function RmaPage() {
   const [vendorId, setVendorId] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+
+  // create-form state (accessory)
+  const [accessoryDirection, setAccessoryDirection] = useState<'to_vendor' | 'from_customer'>('to_vendor')
+  const [skuSearch, setSkuSearch] = useState('')
+  const [skuResults, setSkuResults] = useState<AccessorySkuOption[]>([])
+  const [selectedSku, setSelectedSku] = useState<AccessorySkuOption | null>(null)
+  const [accessoryQty, setAccessoryQty] = useState<number | ''>('')
+  const [accessoryReason, setAccessoryReason] = useState('')
+  const [accessoryVendorId, setAccessoryVendorId] = useState('')
+  const [accessoryNotes, setAccessoryNotes] = useState('')
+  const [accessorySaving, setAccessorySaving] = useState(false)
 
   const fetchEvents = useCallback(async () => {
     setLoading(true)
@@ -66,9 +121,20 @@ function RmaPage() {
     setLoading(false)
   }, [directionFilter, statusFilter])
 
+  const fetchAccessoryEvents = useCallback(async () => {
+    setLoading(true)
+    const params = new URLSearchParams()
+    if (directionFilter) params.append('direction', directionFilter)
+    if (statusFilter) params.append('status', statusFilter)
+    const res = await apiFetch(`/api/accessory-rma?${params.toString()}`)
+    if (res.ok) setAccessoryEvents(await res.json())
+    setLoading(false)
+  }, [directionFilter, statusFilter])
+
   useEffect(() => {
-    fetchEvents()
-  }, [fetchEvents])
+    if (itemKind === 'unit') fetchEvents()
+    else fetchAccessoryEvents()
+  }, [itemKind, fetchEvents, fetchAccessoryEvents])
 
   useEffect(() => {
     apiFetch('/api/vendors').then(async (res) => {
@@ -88,6 +154,58 @@ function RmaPage() {
     return () => clearTimeout(t)
   }, [assetSearch, direction, modalOpen])
 
+  useEffect(() => {
+    if (!modalOpen || itemKind !== 'accessory') return
+    const t = setTimeout(async () => {
+      const params = new URLSearchParams({ category: ACCESSORY_CATEGORIES.join(',') })
+      if (skuSearch) params.set('search', skuSearch)
+      const res = await apiFetch(`/api/sku-master?${params.toString()}`)
+      if (res.ok) setSkuResults(await res.json())
+    }, 300)
+    return () => clearTimeout(t)
+  }, [skuSearch, modalOpen, itemKind])
+
+  const resetAccessoryForm = () => {
+    setAccessoryDirection('to_vendor')
+    setSkuSearch('')
+    setSkuResults([])
+    setSelectedSku(null)
+    setAccessoryQty('')
+    setAccessoryReason('')
+    setAccessoryVendorId('')
+    setAccessoryNotes('')
+  }
+
+  const submitAccessoryRma = async () => {
+    if (!selectedSku || !accessoryReason || !accessoryQty || accessoryQty <= 0) {
+      alert('Select an accessory, enter a quantity, and enter a reason')
+      return
+    }
+    setAccessorySaving(true)
+    try {
+      const res = await apiFetch('/api/accessory-rma', {
+        method: 'POST',
+        body: JSON.stringify({
+          sku_id: selectedSku.id,
+          quantity: accessoryQty,
+          direction: accessoryDirection,
+          reason: accessoryReason,
+          vendor_id: accessoryDirection === 'to_vendor' ? accessoryVendorId || null : null,
+          notes: accessoryNotes || null,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to open accessory RMA')
+        return
+      }
+      setModalOpen(false)
+      fetchAccessoryEvents()
+    } finally {
+      setAccessorySaving(false)
+    }
+  }
+
   const resetForm = () => {
     setDirection('to_vendor')
     setAssetSearch('')
@@ -99,7 +217,8 @@ function RmaPage() {
   }
 
   const openModal = () => {
-    resetForm()
+    if (itemKind === 'unit') resetForm()
+    else resetAccessoryForm()
     setModalOpen(true)
   }
 
@@ -152,12 +271,46 @@ function RmaPage() {
     }
   }
 
+  const advanceAccessoryStatus = async (event: AccessoryRmaEvent, newStatus: string) => {
+    if (advancingKey) return
+    setAdvancingKey(`${event.id}:${newStatus}`)
+    try {
+      const res = await apiFetch(`/api/accessory-rma/${event.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Failed to update accessory RMA')
+        return
+      }
+      fetchAccessoryEvents()
+    } finally {
+      setAdvancingKey(null)
+    }
+  }
+
   return (
     <div className="p-4">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">RMA / Returns</h1>
         <button onClick={openModal} className="bg-primary text-primary-foreground px-4 py-2 rounded">
           + New RMA
+        </button>
+      </div>
+
+      <div className="flex gap-2 mb-4 border-b">
+        <button
+          onClick={() => setItemKind('unit')}
+          className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${itemKind === 'unit' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}
+        >
+          Units
+        </button>
+        <button
+          onClick={() => setItemKind('accessory')}
+          className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${itemKind === 'accessory' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}
+        >
+          Accessories
         </button>
       </div>
 
@@ -181,7 +334,7 @@ function RmaPage() {
 
       {loading ? (
         <div>Loading…</div>
-      ) : (
+      ) : itemKind === 'unit' ? (
         <table className="min-w-full border text-sm">
           <thead>
             <tr>
@@ -222,9 +375,50 @@ function RmaPage() {
             ))}
           </tbody>
         </table>
+      ) : (
+        <table className="min-w-full border text-sm">
+          <thead>
+            <tr>
+              <th className="border p-2">Opened</th>
+              <th className="border p-2">Accessory</th>
+              <th className="border p-2">Qty</th>
+              <th className="border p-2">Direction</th>
+              <th className="border p-2">Reason</th>
+              <th className="border p-2">Vendor</th>
+              <th className="border p-2">Status</th>
+              <th className="border p-2">Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accessoryEvents.map((e) => (
+              <tr key={e.id}>
+                <td className="border p-2">{new Date(e.opened_at).toLocaleDateString()}</td>
+                <td className="border p-2">{e.sku_master?.full_sku_code} {e.sku_master?.sku_description ? `— ${e.sku_master.sku_description}` : ''}</td>
+                <td className="border p-2 text-right tabular-nums">{e.quantity}</td>
+                <td className="border p-2 capitalize">{e.direction.replace('_', ' ')}</td>
+                <td className="border p-2">{e.reason}</td>
+                <td className="border p-2">{e.vendors?.company_name || '—'}</td>
+                <td className="border p-2 capitalize">{e.status.replace(/_/g, ' ')}</td>
+                <td className="border p-2 space-x-2">
+                  {accessoryNextStatuses(e.direction, e.status).map((next) => (
+                    <button
+                      key={next}
+                      onClick={() => advanceAccessoryStatus(e, next)}
+                      disabled={!!advancingKey}
+                      className="text-primary underline text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {advancingKey === `${e.id}:${next}` && <Loader2 className="size-3 animate-spin" />}
+                      {next.replace(/_/g, ' ')}
+                    </button>
+                  ))}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
 
-      {modalOpen && (
+      {modalOpen && itemKind === 'unit' && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-card rounded-lg p-6 w-full max-w-lg">
             <h2 className="text-lg font-bold mb-4">New RMA</h2>
@@ -306,6 +500,103 @@ function RmaPage() {
                 className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50"
               >
                 {saving ? 'Saving…' : 'Open RMA'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modalOpen && itemKind === 'accessory' && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-card rounded-lg p-6 w-full max-w-lg">
+            <h2 className="text-lg font-bold mb-4">New Accessory RMA</h2>
+
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Direction</label>
+              <select
+                value={accessoryDirection}
+                onChange={(e) => setAccessoryDirection(e.target.value as 'to_vendor' | 'from_customer')}
+                className="border p-2 w-full rounded"
+              >
+                <option value="to_vendor">To Vendor (faulty stock)</option>
+                <option value="from_customer">From Customer (post-sale return)</option>
+              </select>
+            </div>
+
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Accessory</label>
+              {selectedSku ? (
+                <div className="flex items-center justify-between border p-2 rounded bg-muted">
+                  <span>{selectedSku.full_sku_code} {selectedSku.sku_description ? `— ${selectedSku.sku_description}` : ''} ({selectedSku.quantity_in_stock} in stock)</span>
+                  <button onClick={() => setSelectedSku(null)} className="text-destructive text-xs underline">Change</button>
+                </div>
+              ) : (
+                <>
+                  <input
+                    type="text"
+                    placeholder="Search accessory..."
+                    value={skuSearch}
+                    onChange={(e) => setSkuSearch(e.target.value)}
+                    className="border p-2 w-full rounded"
+                  />
+                  {skuResults.length > 0 && (
+                    <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                      {skuResults.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => setSelectedSku(s)}
+                          className="block w-full text-left px-2 py-1 hover:bg-muted text-sm"
+                        >
+                          {s.full_sku_code} {s.sku_description ? `— ${s.sku_description}` : ''} ({s.quantity_in_stock} in stock)
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Quantity</label>
+              <input
+                type="number"
+                min={1}
+                value={accessoryQty}
+                onChange={(e) => setAccessoryQty(e.target.value === '' ? '' : Number(e.target.value))}
+                className="border p-2 w-full rounded"
+              />
+            </div>
+
+            {accessoryDirection === 'to_vendor' && (
+              <div className="mb-3">
+                <label className="block text-sm font-medium mb-1">Vendor</label>
+                <select value={accessoryVendorId} onChange={(e) => setAccessoryVendorId(e.target.value)} className="border p-2 w-full rounded">
+                  <option value="">Select vendor...</option>
+                  {vendors.map((v) => (
+                    <option key={v.id} value={v.id}>{v.company_name}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="mb-3">
+              <label className="block text-sm font-medium mb-1">Reason</label>
+              <input type="text" value={accessoryReason} onChange={(e) => setAccessoryReason(e.target.value)} className="border p-2 w-full rounded" />
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-1">Notes</label>
+              <textarea value={accessoryNotes} onChange={(e) => setAccessoryNotes(e.target.value)} className="border p-2 w-full rounded" />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setModalOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
+              <button
+                onClick={submitAccessoryRma}
+                disabled={accessorySaving}
+                className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50"
+              >
+                {accessorySaving ? 'Saving…' : 'Open RMA'}
               </button>
             </div>
           </div>

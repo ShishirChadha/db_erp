@@ -9,28 +9,34 @@ import { supabaseAdmin } from './supabase/service'
 // po_id stays null until the owner's deferred PO-attach step links it.
 export async function insertAccessoryMovement(input: {
   skuId: string
-  movementType: 'receipt' | 'sale' | 'adjustment'
+  movementType: 'receipt' | 'sale' | 'adjustment' | 'return' | 'damage'
   quantityChange: number
   poId?: string | null
   vendorId?: string | null
   unitPrice?: number | null
+  gstPercentage?: number | null
   purchaseDate?: string | null
   paymentAccount?: string | null
   notes?: string | null
   createdBy: string
 }) {
-  return supabaseAdmin.from('stock_movements').insert({
-    sku_id: input.skuId,
-    movement_type: input.movementType,
-    quantity_change: input.quantityChange,
-    po_id: input.poId || null,
-    vendor_id: input.vendorId || null,
-    unit_price: input.unitPrice ?? null,
-    purchase_date: input.purchaseDate || null,
-    payment_account: input.paymentAccount || null,
-    notes: input.notes || null,
-    created_by: input.createdBy,
-  })
+  return supabaseAdmin
+    .from('stock_movements')
+    .insert({
+      sku_id: input.skuId,
+      movement_type: input.movementType,
+      quantity_change: input.quantityChange,
+      po_id: input.poId || null,
+      vendor_id: input.vendorId || null,
+      unit_price: input.unitPrice ?? null,
+      gst_percentage: input.gstPercentage ?? null,
+      purchase_date: input.purchaseDate || null,
+      payment_account: input.paymentAccount || null,
+      notes: input.notes || null,
+      created_by: input.createdBy,
+    })
+    .select('id')
+    .single()
 }
 
 // Attaches exactly `requestedQty` of a SKU's still-unattached ('receipt', po_id IS
@@ -131,13 +137,13 @@ export async function claimAccessoryBacklog(
 // older rows that predate that column.
 export async function getLastEntryVendorsBySku(
   skuIds: string[]
-): Promise<Map<string, { vendorId: string; vendorName: string; unitPrice: number | null; purchaseDate: string | null }>> {
-  const result = new Map<string, { vendorId: string; vendorName: string; unitPrice: number | null; purchaseDate: string | null }>()
+): Promise<Map<string, { vendorId: string; vendorName: string; unitPrice: number | null; gstPercentage: number | null; purchaseDate: string | null }>> {
+  const result = new Map<string, { vendorId: string; vendorName: string; unitPrice: number | null; gstPercentage: number | null; purchaseDate: string | null }>()
   if (skuIds.length === 0) return result
 
   const { data } = await supabaseAdmin
     .from('stock_movements')
-    .select('sku_id, vendor_id, unit_price, purchase_date, created_at, vendors(company_name)')
+    .select('sku_id, vendor_id, unit_price, gst_percentage, purchase_date, created_at, vendors(company_name)')
     .eq('movement_type', 'receipt')
     .not('vendor_id', 'is', null)
     .in('sku_id', skuIds)
@@ -162,6 +168,7 @@ export async function getLastEntryVendorsBySku(
       vendorId: row.vendor_id,
       vendorName: vendor.company_name,
       unitPrice: row.unit_price,
+      gstPercentage: row.gst_percentage,
       purchaseDate: row.purchase_date || row.created_at?.slice(0, 10) || null,
     })
   }
