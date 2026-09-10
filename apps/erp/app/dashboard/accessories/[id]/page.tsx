@@ -128,7 +128,10 @@ function EditableNote({ movementId, notes, onSaved }: { movementId: string; note
 function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement; onClose: () => void; onSaved: (patch: Partial<Movement>) => void }) {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState(movement.vendor_id || '')
-  const [unitPrice, setUnitPrice] = useState<number | ''>(movement.unit_price ?? '')
+  // Edited/displayed as the total paid for this whole receipt, not the stored
+  // per-unit price -- matches how it's captured at Receive Stock time (people have
+  // the invoice total in hand, not a pre-divided per-unit figure).
+  const [totalPrice, setTotalPrice] = useState<number | ''>(movement.unit_price != null ? movement.unit_price * movement.quantity_change : '')
   const [gstPercentage, setGstPercentage] = useState<number | ''>(movement.gst_percentage ?? '')
   const [purchaseDate, setPurchaseDate] = useState(movement.purchase_date || '')
   const [paymentAccount, setPaymentAccount] = useState(movement.payment_account || PAYMENT_ACCOUNTS[0])
@@ -146,7 +149,7 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
       method: 'PATCH',
       body: JSON.stringify({
         vendor_id: vendorId || null,
-        unit_price: unitPrice === '' ? null : unitPrice,
+        unit_price: totalPrice === '' ? null : totalPrice / movement.quantity_change,
         gst_percentage: gstPercentage === '' ? null : gstPercentage,
         purchase_date: purchaseDate || null,
         payment_account: paymentAccount || null,
@@ -186,12 +189,12 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
               + Add new vendor
             </button>
             <label className="block text-xs text-muted-foreground">
-              Unit price
+              Total price paid (for all {movement.quantity_change} unit{movement.quantity_change === 1 ? '' : 's'})
               <input
                 type="number"
                 min={0}
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
+                value={totalPrice}
+                onChange={(e) => setTotalPrice(e.target.value === '' ? '' : Number(e.target.value))}
                 className="border p-1 w-full rounded text-sm mt-0.5"
               />
             </label>

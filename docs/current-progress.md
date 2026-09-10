@@ -1,6 +1,22 @@
 # Current Progress
 
-Last updated: 2026-08-29 — "DB" internal advisor, Phase 1 (deterministic query/response layer) COMPLETE.
+Last updated: 2026-09-09 — Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus a same-day follow-up (real-style WhatsApp template + daily-pick suggestion engine).
+
+## Marketing Content Studio — Phase 0/1 of a 5-phase growth-engine plan
+
+Full plan: `~/.claude/plans/wild-soaring-pie.md`. Decision record: `docs/decisions.md` (2026-09-09 entries, two — the original build and a same-day follow-up). The owner wants to generate WhatsApp/Instagram/Facebook/blog promotional content directly from the ERP, grounded in real inventory (e.g. "all i5 laptops in stock" → a broadcast message with real prices and links; a single laptop → a post with its real USPs and a branded photo card).
+
+**Follow-up (same day)**: the owner shared their actual real WhatsApp broadcast examples — a terse emoji-bulleted template (🚨title🚨 / 💫 spec bullets / 🕊 warranty+box / 📞 contact / 🏪 shop name; a "Bonanza"-style multi-product variant with 👉 bullets and "Price:- Call for best") — which didn't match the Phase 1 AI-authored prose. WhatsApp generation was switched to a **deterministic template** (`lib/marketing/whatsapp-template.ts`, zero AI cost, exact byte-for-byte reproducible), built from real spec data with a clean `brand + model (+ screen size/year)` title (deliberately not `web_title`, which turned out to be auto-populated with the verbose config-summary string on most SKUs — a real data-quality gap this design routes around rather than propagates). Also added `GET /api/marketing/suggest` + a "Today's Picks" tab (`lib/marketing/suggest.ts`) — 4 live-computed priority buckets matching the owner's stated order: **P1** new arrivals (published ≤7 days, in stock), **P2** high-end/MacBooks (Apple brand or top-quartile-priced laptop/desktop), **P3** aging stock (oldest published, still unsold), **P4** unique configurations (a spec combination that appears exactly once in the whole published catalogue). Instagram/Facebook/GBP still use the original AI caption path. Verified: 27/27 checks (real spec bullets present, zero AI cost for WhatsApp confirmed via `ai_model: null`, P3's top pick cross-checked against a direct SQL query, full cleanup re-confirmed). Typecheck/build clean, `get_advisors` unchanged.
+
+**Built this session (Phase 0 + Phase 1)**:
+- New `/dashboard/marketing` page (Single Product / Product List / Blog Draft / Drafts tabs), new `marketing` page key wired through every existing page-access surface (allowed_pages, profile_page_actions, UserManager, sidebar, Settings).
+- AI generation (`lib/marketing/generate.ts`, `@anthropic-ai/sdk`, same forced-tool structured-output pattern as `lib/recon/ai-extract.ts`) grounded in the `public_products` view — the model only ever supplies phrasing; every price/spec/availability fact is injected from real data, so cost/vendor fields are structurally unleakable and numbers can't be invented.
+- Branded PNG card rendering (`lib/marketing/card-templates.tsx`, `next/og`'s `ImageResponse`, no new dependency) in 4 formats: WhatsApp square, Instagram portrait/story, Facebook link.
+- wa.me share/direct links with UTM tagging baked in from day one (`lib/marketing/share-links.ts`) so a future attribution phase can read history retroactively.
+- `GET /api/sku-master` gained `spec=field:value`/`price_min`/`price_max`/`in_stock` filtering — this is what makes "all i5 laptops in stock" queryable for the first time (previously only free-text search existed).
+- New tables `marketing_assets`/`marketing_settings` (RLS enabled, no policies — service-role-only, same posture as `digest_channel_config`).
+- Verified: disposable script, 28/28 checks (auth gating, spec-filter correctness against a direct SQL count, zero cost/vendor leakage, UTM/share-link round-trip, all 4 card formats render valid PNGs, audit logging, status-change permission split, full cleanup with zero residue re-confirmed). `npx tsc --noEmit` and `npx next build` clean for both apps; `get_advisors` shows no new WARN/ERROR findings.
+- **Not built yet**: blog-post publishing UI on the website side, programmatic SEO landing pages, Google Merchant/Meta Catalog product feeds, Meta Pixel/Conversions API, UTM-to-sale attribution reporting, retention sends (abandoned cart / review requests / warranty upsell), and auto-publish to IG/FB (needs Meta Business verification — deliberately deferred to Phase 5).
 
 ## "DB" internal advisor — no-LLM, deterministic query/response layer over live data + a versioned manual
 

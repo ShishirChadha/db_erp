@@ -8,6 +8,18 @@ const DOC_LABELS: Record<string, string> = {
   proforma: 'PROFORMA INVOICE',
 }
 
+// jsPDF's built-in Helvetica has no ₹ glyph -- it silently substitutes an
+// unrelated character (renders as "¹") rather than erroring, so every amount
+// on the generated PDF was subtly wrong. "Rs." avoids embedding a custom
+// Unicode font just for the currency symbol.
+function money(n: number): string {
+  return `Rs. ${Number(n || 0).toFixed(2)}`
+}
+
+function filenameSafe(s: string): string {
+  return (s || 'Customer').trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'Customer'
+}
+
 export interface RenderedSalesDocumentPdf {
   buffer: ArrayBuffer
   document: any
@@ -74,19 +86,22 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   if (isGst && doc.customer_gst) { y += 5; pdf.text(`GSTIN: ${doc.customer_gst}`, margin, y) }
 
   const rows = items || []
+  // HSN/GST%/Tax columns are only meaningful for a GST-registered entity --
+  // showing them (even blank) on a non-GST document implies a tax treatment
+  // that doesn't apply.
   const head = isGst
     ? [['#', 'Description', 'HSN', 'Qty', 'Rate', 'GST%', 'Tax', 'Amount']]
-    : [['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount']]
+    : [['#', 'Description', 'Qty', 'Rate', 'Amount']]
 
   const body = rows.map((item: any, idx: number) => {
     const taxLabel = item.gst_type === 'IGST'
-      ? `IGST ₹${Number(item.igst_amount || 0).toFixed(2)}`
+      ? `IGST ${money(item.igst_amount)}`
       : item.gst_type === 'CGST_SGST'
-        ? `C ₹${Number(item.cgst_amount || 0).toFixed(2)} / S ₹${Number(item.sgst_amount || 0).toFixed(2)}`
+        ? `C ${money(item.cgst_amount)} / S ${money(item.sgst_amount)}`
         : '-'
     return isGst
-      ? [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), `₹${Number(item.rate).toFixed(2)}`, `${item.gst_rate || 0}%`, taxLabel, `₹${Number(item.amount).toFixed(2)}`]
-      : [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), `₹${Number(item.rate).toFixed(2)}`, `₹${Number(item.amount).toFixed(2)}`]
+      ? [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), money(item.rate), `${item.gst_rate || 0}%`, taxLabel, money(item.amount)]
+      : [String(idx + 1), item.description, String(item.quantity), money(item.rate), money(item.amount)]
   })
 
   autoTable(pdf, {
@@ -101,27 +116,36 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
 
   let finalY = (pdf as any).lastAutoTable.finalY + 8
   pdf.setFontSize(9.5)
-  pdf.text(`Subtotal: ₹${Number(doc.subtotal || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+  pdf.text(`Subtotal: ${money(doc.subtotal)}`, pageWidth - margin, finalY, { align: 'right' })
   if (isGst) {
     finalY += 5.5
-    pdf.text(`Estimated GST: ₹${Number(doc.total_gst || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+    pdf.text(`Estimated GST: ${money(doc.total_gst)}`, pageWidth - margin, finalY, { align: 'right' })
   }
   finalY += 6.5
   pdf.setFont('helvetica', 'bold')
   pdf.setFontSize(11)
-  pdf.text(`Total: ₹${Number(doc.grand_total || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+  pdf.text(`Total: ${money(doc.grand_total)}`, pageWidth - margin, finalY, { align: 'right' })
   pdf.setFont('helvetica', 'normal')
   pdf.setFontSize(9)
 
   finalY += 12
+  // splitTextToSize wraps to however many lines the text needs -- advancing
+  // finalY by a fixed amount regardless of that line count is what caused
+  // Terms & Conditions to overlap a multi-line Notes block.
+  const lineHeight = 4.2
   if (doc.notes) {
     pdf.setFont('helvetica', 'bold'); pdf.text('Notes:', margin, finalY); pdf.setFont('helvetica', 'normal')
-    finalY += 5; pdf.text(pdf.splitTextToSize(doc.notes, pageWidth - margin * 2), margin, finalY)
-    finalY += 10
+    finalY += 5
+    const noteLines = pdf.splitTextToSize(doc.notes, pageWidth - margin * 2)
+    pdf.text(noteLines, margin, finalY)
+    finalY += noteLines.length * lineHeight + 6
   }
   if (doc.terms_conditions) {
     pdf.setFont('helvetica', 'bold'); pdf.text('Terms & Conditions:', margin, finalY); pdf.setFont('helvetica', 'normal')
-    finalY += 5; pdf.text(pdf.splitTextToSize(doc.terms_conditions, pageWidth - margin * 2), margin, finalY)
+    finalY += 5
+    const termLines = pdf.splitTextToSize(doc.terms_conditions, pageWidth - margin * 2)
+    pdf.text(termLines, margin, finalY)
+    finalY += termLines.length * lineHeight
   }
 
   pdf.setFontSize(7.5)
@@ -133,9 +157,10 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
     pageWidth / 2, pdf.internal.pageSize.getHeight() - 8, { align: 'center' }
   )
 
+  const docLabel = doc.doc_type === 'quotation' ? 'Quotation' : 'Proforma'
   return {
     buffer: pdf.output('arraybuffer'),
     document: doc,
-    filename: `${doc.doc_type}_${doc.document_number.replace(/\//g, '-')}.pdf`,
+    filename: `${docLabel}_${filenameSafe(doc.customer_name)}_${doc.document_number.replace(/\//g, '-')}.pdf`,
   }
 }

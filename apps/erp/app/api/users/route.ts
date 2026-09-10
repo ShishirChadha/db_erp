@@ -8,7 +8,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
   'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'reports', 'quotations', 'rma',
+  'expenses', 'reports', 'quotations', 'rma', 'marketing',
 ]
 
 // Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches
@@ -17,7 +17,7 @@ const ALLOWED_PAGE_KEYS = [
 // 'reports' is also excluded -- it's pure view/analysis, no mutation exists to grant.
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma',
+  'expenses', 'quotations', 'rma', 'marketing',
 ]
 
 // ---------- GET: owner lists every user (auth + profile info combined) ----------

@@ -24,6 +24,7 @@ import {
   ListChecks,
   Search,
   Star,
+  Megaphone,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
@@ -147,6 +148,13 @@ export const menuGroups = [
     icon: CalendarDays,
     href: '/dashboard/activities',
     pageKey: 'activities',
+  },
+  {
+    key: 'marketing',
+    label: 'Marketing',
+    icon: Megaphone,
+    href: '/dashboard/marketing',
+    pageKey: 'marketing',
   },
   {
     key: 'settings',

@@ -60,7 +60,10 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
   const [qty, setQty] = useState<number | ''>('')
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [vendorId, setVendorId] = useState('')
-  const [unitPrice, setUnitPrice] = useState<number | ''>('')
+  // People naturally have the invoice's total in hand (e.g. "10 sticks for ₹5000"),
+  // not a pre-divided per-unit figure -- ask for the total and derive unit_price
+  // ourselves so the stored/displayed per-unit price is always correct.
+  const [totalPrice, setTotalPrice] = useState<number | ''>('')
   const [gstPercentage, setGstPercentage] = useState<number | ''>('')
   const [purchaseDate, setPurchaseDate] = useState(new Date().toISOString().slice(0, 10))
   const [paymentAccount, setPaymentAccount] = useState(PAYMENT_ACCOUNTS[0])
@@ -83,14 +86,14 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         quantity_change: qty,
         notes: remarks || 'Stock received',
         vendor_id: vendorId || undefined,
-        unit_price: unitPrice === '' ? undefined : unitPrice,
+        unit_price: totalPrice === '' ? undefined : totalPrice / qty,
         gst_percentage: gstPercentage === '' ? undefined : gstPercentage,
         purchase_date: purchaseDate || undefined,
         payment_account: paymentAccount,
       }),
     })
     if (!res.ok) { setErr((await res.json().catch(() => ({}))).error || 'Failed to record stock.'); return }
-    setOpen(false); setQty(''); setVendorId(''); setUnitPrice(''); setGstPercentage(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
+    setOpen(false); setQty(''); setVendorId(''); setTotalPrice(''); setGstPercentage(''); setPurchaseDate(new Date().toISOString().slice(0, 10))
     setPaymentAccount(PAYMENT_ACCOUNTS[0]); setRemarks('')
     onDone()
   })
@@ -133,9 +136,9 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
       <input
         type="number"
         min={0}
-        value={unitPrice}
-        onChange={(e) => setUnitPrice(e.target.value === '' ? '' : Number(e.target.value))}
-        placeholder="Unit price (optional)"
+        value={totalPrice}
+        onChange={(e) => setTotalPrice(e.target.value === '' ? '' : Number(e.target.value))}
+        placeholder="Total price paid (optional)"
         className="border p-1 w-full rounded text-xs"
       />
       <input

@@ -6,6 +6,7 @@ import { redactForRole, redactManyForRole } from '@/lib/auth/redact'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
 import { isSerializedCategory } from '@/lib/sku-categories'
+import { getSpecFieldNames } from '@/lib/spec-fields'
 
 // Used by SKU Master, PO wizard's inline SKU search (owner-only page), Sell's
 // Fix-SKU/Change-SKU picker, and the Accessories page/Sell's accessory picker (which
@@ -32,6 +33,15 @@ export async function GET(req: NextRequest) {
   // purchase_date-falls-back-to-created_at rule used everywhere else (getLastEntryVendorsBySku).
   const purchasedFrom = searchParams.get('purchased_from')
   const purchasedTo = searchParams.get('purchased_to')
+  // Structured spec filtering -- e.g. spec=cpu:i5,ram:8 -- for callers that need
+  // "all i5 laptops in stock" rather than the free-text `search` above (which only
+  // matches full_sku_code/sku_description, not specifications). Introduced for the
+  // Marketing Content Studio's product-list generator; field names are validated
+  // against the live category templates so this can't probe an arbitrary jsonb key.
+  const spec = searchParams.get('spec')
+  const priceMin = searchParams.get('price_min')
+  const priceMax = searchParams.get('price_max')
+  const inStockOnly = searchParams.get('in_stock') === 'true'
 
   // Shared by both the counts request and the main list -- search/category are
   // filter *context* every tab respects, unlike status/is_published/stock_filter
@@ -158,6 +168,19 @@ export async function GET(req: NextRequest) {
     }
     query = query.in('id', matchingIds.size > 0 ? [...matchingIds] : ['00000000-0000-0000-0000-000000000000'])
   }
+  if (spec) {
+    const validFieldNames = await getSpecFieldNames()
+    const pairs = spec.split(',').map((p) => p.trim()).filter(Boolean)
+    for (const pair of pairs) {
+      const [field, ...rest] = pair.split(':')
+      const value = rest.join(':').trim()
+      if (!field || !value || !validFieldNames.includes(field)) continue
+      query = query.eq(`specifications->>${field}`, value)
+    }
+  }
+  if (priceMin) query = query.gte('selling_price_default', Number(priceMin))
+  if (priceMax) query = query.lte('selling_price_default', Number(priceMax))
+  if (inStockOnly) query = query.gt('quantity_in_stock', 0)
   if (pagination) query = query.range(pagination.from, pagination.to)
 
   const { data, error, count } = await query

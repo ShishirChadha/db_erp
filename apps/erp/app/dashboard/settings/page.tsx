@@ -10,6 +10,7 @@ import TagsManager from '@/components/TagsManager'
 import WebsiteAdminManager from '@/components/WebsiteAdminManager'
 import FieldRedactionManager from '@/components/FieldRedactionManager'
 import DigestsManager from '@/components/DigestsManager'
+import MarketingSettingsManager from '@/components/MarketingSettingsManager'
 import AppearanceManager from '@/components/AppearanceManager'
 import NavigationManager from '@/components/NavigationManager'
 import AuditLogPage from './audit-log/page'
@@ -50,6 +51,7 @@ const CATEGORIES = [
   { key: 'website_admin', label: 'Website Admin', ownerOnly: true },
   { key: 'field_redaction', label: 'Field Redaction', ownerOnly: true },
   { key: 'digests', label: 'Digests', ownerOnly: true },
+  { key: 'marketing', label: 'Marketing', ownerOnly: true },
   { key: 'backup', label: 'Backup', ownerOnly: true },
 ] as const
 
@@ -258,6 +260,7 @@ function SettingsPage() {
           {category === 'website_admin' && <WebsiteAdminManager />}
           {category === 'field_redaction' && <FieldRedactionManager />}
           {category === 'digests' && <DigestsManager />}
+          {category === 'marketing' && <MarketingSettingsManager />}
           {category === 'backup' && <BackupPageGuarded />}
         </div>
       </div>

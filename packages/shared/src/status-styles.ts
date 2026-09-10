@@ -93,6 +93,15 @@ export const PO_STATUS_TONES: Record<string, Tone> = {
   cancelled: 'danger',
 }
 
+// marketing_assets.status (Marketing Content Studio)
+export const MARKETING_ASSET_STATUS_TONES: Record<string, Tone> = {
+  draft: 'neutral',
+  approved: 'info',
+  scheduled: 'purple',
+  published: 'success',
+  archived: 'danger',
+}
+
 function fallbackTone(): Tone {
   return 'neutral'
 }

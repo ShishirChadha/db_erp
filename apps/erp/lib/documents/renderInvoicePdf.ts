@@ -34,6 +34,18 @@ function amountInWords(n: number): string {
   return parts.join(' ')
 }
 
+// jsPDF's built-in Helvetica has no ₹ glyph -- it silently substitutes an
+// unrelated character (renders as "¹") rather than erroring, so every amount
+// on the generated PDF was subtly wrong. "Rs." avoids embedding a custom
+// Unicode font just for the currency symbol.
+function money(n: number): string {
+  return `Rs. ${Number(n || 0).toFixed(2)}`
+}
+
+function filenameSafe(s: string): string {
+  return (s || 'Customer').trim().replace(/[^a-zA-Z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40) || 'Customer'
+}
+
 export interface RenderedInvoicePdf {
   buffer: ArrayBuffer
   invoice: any
@@ -110,19 +122,22 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
 
   // ---------- Line items ----------
   const lineItems = items || []
+  // HSN/GST%/Tax columns are only meaningful for a GST-registered entity --
+  // showing them (even blank) on a non-GST document implies a tax treatment
+  // that doesn't apply.
   const head = isGst
     ? [['#', 'Description', 'HSN', 'Qty', 'Rate', 'GST%', 'Tax', 'Amount']]
-    : [['#', 'Description', 'HSN', 'Qty', 'Rate', 'Amount']]
+    : [['#', 'Description', 'Qty', 'Rate', 'Amount']]
 
   const body = lineItems.map((item: any, idx: number) => {
     const taxLabel = item.gst_type === 'IGST'
-      ? `IGST ₹${Number(item.igst_amount || 0).toFixed(2)}`
+      ? `IGST ${money(item.igst_amount)}`
       : item.gst_type === 'CGST_SGST'
-        ? `C ₹${Number(item.cgst_amount || 0).toFixed(2)} / S ₹${Number(item.sgst_amount || 0).toFixed(2)}`
+        ? `C ${money(item.cgst_amount)} / S ${money(item.sgst_amount)}`
         : '-'
     return isGst
-      ? [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), `₹${Number(item.rate).toFixed(2)}`, `${item.gst_rate || 0}%`, taxLabel, `₹${Number(item.amount).toFixed(2)}`]
-      : [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), `₹${Number(item.rate).toFixed(2)}`, `₹${Number(item.amount).toFixed(2)}`]
+      ? [String(idx + 1), item.description, item.hsn_code || '-', String(item.quantity), money(item.rate), `${item.gst_rate || 0}%`, taxLabel, money(item.amount)]
+      : [String(idx + 1), item.description, String(item.quantity), money(item.rate), money(item.amount)]
   })
 
   autoTable(doc, {
@@ -139,15 +154,15 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
 
   // ---------- Totals ----------
   doc.setFontSize(9.5)
-  doc.text(`Subtotal: ₹${Number(invoice.subtotal || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+  doc.text(`Subtotal: ${money(invoice.subtotal)}`, pageWidth - margin, finalY, { align: 'right' })
   if (isGst) {
     finalY += 5.5
-    doc.text(`Total GST: ₹${Number(invoice.total_gst || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+    doc.text(`Total GST: ${money(invoice.total_gst)}`, pageWidth - margin, finalY, { align: 'right' })
   }
   finalY += 6.5
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
-  doc.text(`Grand Total: ₹${Number(invoice.grand_total || 0).toFixed(2)}`, pageWidth - margin, finalY, { align: 'right' })
+  doc.text(`Grand Total: ${money(invoice.grand_total)}`, pageWidth - margin, finalY, { align: 'right' })
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9)
 
@@ -155,16 +170,24 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   doc.text(`Amount in Words: Indian Rupee ${amountInWords(Number(invoice.grand_total || 0))} Only`, margin, finalY)
 
   // ---------- Notes / terms / bank ----------
+  // splitTextToSize wraps to however many lines the text needs -- advancing
+  // finalY by a fixed amount regardless of that line count is what caused
+  // later sections to overlap a multi-line Notes/Terms block.
   finalY += 10
+  const lineHeight = 4.2
   if (invoice.notes) {
     doc.setFont('helvetica', 'bold'); doc.text('Notes:', margin, finalY); doc.setFont('helvetica', 'normal')
-    finalY += 5; doc.text(doc.splitTextToSize(invoice.notes, pageWidth - margin * 2), margin, finalY)
-    finalY += 10
+    finalY += 5
+    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - margin * 2)
+    doc.text(noteLines, margin, finalY)
+    finalY += noteLines.length * lineHeight + 6
   }
   if (invoice.terms_conditions) {
     doc.setFont('helvetica', 'bold'); doc.text('Terms & Conditions:', margin, finalY); doc.setFont('helvetica', 'normal')
-    finalY += 5; doc.text(doc.splitTextToSize(invoice.terms_conditions, pageWidth - margin * 2), margin, finalY)
-    finalY += 10
+    finalY += 5
+    const termLines = doc.splitTextToSize(invoice.terms_conditions, pageWidth - margin * 2)
+    doc.text(termLines, margin, finalY)
+    finalY += termLines.length * lineHeight + 6
   }
   if (bank?.bank_name) {
     doc.setFont('helvetica', 'bold'); doc.text('Bank Details:', margin, finalY); doc.setFont('helvetica', 'normal')
@@ -179,6 +202,6 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   return {
     buffer: doc.output('arraybuffer'),
     invoice,
-    filename: `Invoice_${invoice.invoice_number.replace(/\//g, '-')}.pdf`,
+    filename: `Invoice_${filenameSafe(invoice.customer_name)}_${invoice.invoice_number.replace(/\//g, '-')}.pdf`,
   }
 }

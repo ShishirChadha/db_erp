@@ -1,5 +1,7 @@
 import { supabaseAdmin } from './supabase/service'
 import { insertAccessoryMovement } from './accessory-movements'
+import { logFieldCorrections } from './field-corrections'
+import { logAuditEvent } from './audit-log'
 
 // A unit physically coming back from a customer -- shared by plain Return
 // (app/api/rma/route.ts, direction: 'from_customer') and Replacement's old-unit
@@ -71,7 +73,7 @@ export async function processCustomerReturn(
   // decremented as part of that sale and nothing has ever offset them either.
   const { data: saleRow } = await supabaseAdmin
     .from('sales')
-    .select('id, amount_paid, bundled_accessories')
+    .select('id, amount_paid, bundled_accessories, finalized, invoice_number')
     .eq('asset_ledger_id', assetId)
     .eq('is_deleted', false)
     .order('created_at', { ascending: false })
@@ -87,6 +89,38 @@ export async function processCustomerReturn(
       quantityChange: item.quantity,
       notes: `Customer return -- ${opts.reason}`,
       createdBy: opts.userId,
+    })
+  }
+
+  // The unit is physically back and its inventory/accessory effects are already
+  // reversed above -- leaving the original sale active would make it double-count
+  // (Sold Stock correctly stops showing it once status leaves 'sold', but the Sales
+  // Ledger has no other signal and would otherwise go on showing a sale that no
+  // longer reflects reality). Void it the same way a manual void does, minus the
+  // inventory reversal (already done here) -- finalized/invoiced sales are voided
+  // too since the physical return already happened regardless; that mismatch with
+  // the invoice is recorded in the audit reason for a human to reconcile.
+  if (saleRow) {
+    await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', saleRow.id)
+    const reason = `Customer return -- ${opts.reason}`
+    const fieldCorrectionIds = await logFieldCorrections(
+      'sales',
+      saleRow.id,
+      [{ field: 'is_deleted', oldValue: false, newValue: true }],
+      opts.userId,
+      saleRow.finalized
+        ? `${reason} (was already invoiced as ${saleRow.invoice_number || 'N/A'} -- reconcile invoice separately)`
+        : reason
+    )
+    await logAuditEvent({
+      actor: { id: opts.userId },
+      actionType: 'void',
+      module: 'sales',
+      tableName: 'sales',
+      recordId: saleRow.id,
+      recordLabel: saleRow.invoice_number || saleRow.id,
+      fieldCorrectionIds,
+      reason,
     })
   }
 

@@ -50,6 +50,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
     { key: 'reports', label: 'Reports' },
   ]},
   { label: 'Activity Hub', keys: [{ key: 'activities', label: 'Activity Hub' }] },
+  { label: 'Marketing', keys: [{ key: 'marketing', label: 'Marketing Content Studio' }] },
 ]
 
 // Dashboard/Pending Tasks/Reports are view-only nav/landing pages -- no "Can edit"
@@ -58,7 +59,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
   'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma',
+  'expenses', 'quotations', 'rma', 'marketing',
 ]
 
 function generatePassword() {

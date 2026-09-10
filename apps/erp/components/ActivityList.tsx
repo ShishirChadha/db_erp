@@ -16,7 +16,7 @@ import { SimpleModal } from '@/components/SimpleModal';
 // ---------- Type definitions ----------
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
 type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
-type RelatedType = 'customer' | 'sale' | 'purchase_order' | 'asset' | 'repair_job' | 'invoice' | 'vendor';
+type RelatedType = 'customer' | 'sale' | 'purchase_order' | 'asset' | 'repair_job' | 'invoice' | 'vendor' | 'recurring_expense' | 'marketing_asset';
 
 interface Activity {
   id: string;
@@ -77,10 +77,12 @@ interface ActivityDetail extends Activity {
 const RELATED_TYPE_LABELS: Record<RelatedType, string> = {
   customer: 'Customer', sale: 'Sale', purchase_order: 'Purchase Order',
   asset: 'Asset', repair_job: 'Repair Job', invoice: 'Invoice', vendor: 'Vendor',
+  recurring_expense: 'Recurring Expense', marketing_asset: 'Marketing Content',
 };
 // Only record types with a real detail route get a clickable deep link; the rest show as plain text.
 const RELATED_TYPE_LINK_BASE: Partial<Record<RelatedType, string>> = {
   asset: '/dashboard/stock', purchase_order: '/dashboard/purchase-orders', invoice: '/dashboard/invoices',
+  marketing_asset: '/dashboard/marketing',
 };
 
 const PRIORITY_STYLES: Record<Priority, string> = {
