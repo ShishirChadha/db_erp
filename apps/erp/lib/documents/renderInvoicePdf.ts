@@ -110,13 +110,23 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   const textX = branding.logo ? margin + logoW + 6 : margin
   if (branding.logo) drawFitted(doc, branding.logo, margin, 12, logoW, logoH)
 
+  // The company-name/address column must stop before the big title's actual
+  // rendered width, not a guessed constant -- "Digitalbluez Technologies
+  // Private Limited" next to a 20-22pt bold "TAX INVOICE"/"PROFORMA INVOICE"
+  // title is exactly the case a fixed guess got wrong (their horizontal zones
+  // genuinely overlapped), so the reserved gap is measured via getTextWidth.
+  const titleText = isGst ? 'TAX INVOICE' : 'BILL OF SUPPLY'
+  doc.setFontSize(20)
+  doc.setFont('helvetica', 'bold')
+  const titleWidth = doc.getTextWidth(titleText)
+
   // splitTextToSize wraps to however many lines the text actually needs --
   // using jsPDF's `maxWidth` text option wraps visually but doesn't report
   // how many lines it used, so a fixed y-advance after it (the old code) let
   // a wrapped second line of the company name run straight into the address
   // below it. Measuring lines up front and advancing by the real count fixes
   // it, same principle already applied to Notes/Terms further down this file.
-  const headerTextW = pageWidth - margin - textX - 46
+  const headerTextW = pageWidth - margin - textX - titleWidth - 8
   let y = 18
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
@@ -133,10 +143,10 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   }
   if (isGst && entity?.gstin) { y += 4.8; doc.text(`GSTIN: ${entity.gstin}`, textX, y) }
 
-  doc.setFontSize(22)
+  doc.setFontSize(20)
   doc.setFont('helvetica', 'bold')
   doc.setTextColor(90, 90, 90)
-  doc.text(isGst ? 'TAX INVOICE' : 'BILL OF SUPPLY', pageWidth - margin, 24, { align: 'right' })
+  doc.text(titleText, pageWidth - margin, 24, { align: 'right' })
   doc.setTextColor(0, 0, 0)
 
   const headerBottom = Math.max(36, y + 6)
@@ -175,7 +185,13 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   // Box height is measured from actual wrapped line counts (not a fixed guess)
   // so a long customer address never overflows the border and runs into the
   // item table below it.
-  const billRest = addrLines(invoice.customer_address, invoice.customer_gst)
+  // Bill To shows address/phone only when actually on file -- a customer with
+  // just a name shouldn't get empty "Phone:"/blank-address lines.
+  const billLinesFull: string[] = []
+  if (invoice.customer_address) billLinesFull.push(...doc.splitTextToSize(invoice.customer_address, halfW - 6))
+  if (invoice.customer_phone) billLinesFull.push(`Mobile: ${invoice.customer_phone}`)
+  if (isGst && invoice.customer_gst) billLinesFull.push(`GSTIN: ${invoice.customer_gst}`)
+  const billRest = billLinesFull
   const shipAddress = invoice.shipping_address || invoice.customer_address
   const shipRest = addrLines(shipAddress, null)
   const boxH = Math.max(30, 10 + Math.max(billRest.length, shipRest.length) * 4 + 3)
@@ -243,53 +259,11 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   const rightX = margin + leftW + 6
   const rightW = contentW - leftW - 6
 
-  doc.setFontSize(8.5)
-  doc.setFont('helvetica', 'bolditalic')
-  const wordsLines = doc.splitTextToSize(
-    `Total In Words: Indian Rupee ${amountInWords(Number(invoice.grand_total || 0))} Only`,
-    leftW
-  )
-  doc.text(wordsLines, margin, finalY)
-  let leftY = finalY + wordsLines.length * 4.2 + 4
-  doc.setFont('helvetica', 'normal')
-
-  const lineHeight = 4.2
-  const writeBlock = (label: string, text: string) => {
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
-    doc.text(label, margin, leftY)
-    doc.setFont('helvetica', 'normal')
-    leftY += 4.2
-    const lines = doc.splitTextToSize(text, leftW)
-    doc.text(lines, margin, leftY)
-    leftY += lines.length * lineHeight + 3.5
-  }
-
-  if (invoice.notes) writeBlock('Notes', invoice.notes)
-  if (bank?.bank_name) {
-    writeBlock('Bank Details',
-      `A/C Holder: ${bank.account_holder_name || ''}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ''}\nIFSC: ${bank.ifsc_code || ''}`
-    )
-  }
-  if (entity?.upi_id) { doc.setFontSize(8.5); doc.text(`UPI ID: ${entity.upi_id}`, margin, leftY); leftY += 5 }
-  if (invoice.terms_conditions) writeBlock('Terms & Conditions', invoice.terms_conditions)
-
-  if (branding.qrCode) {
-    // A fixed 28x28 box with a visible border -- large enough to stay
-    // scannable, aspect-preserved via drawFitted so a non-square source
-    // image (quiet-zone margins baked in unevenly) doesn't get squashed.
-    const qrBox = 28
-    doc.setDrawColor(...BORDER_GRAY)
-    doc.rect(margin, leftY, qrBox, qrBox)
-    drawFitted(doc, branding.qrCode, margin, leftY, qrBox, qrBox)
-    doc.setFontSize(7)
-    doc.setTextColor(120, 120, 120)
-    doc.text('Scan to pay', margin + qrBox / 2, leftY + qrBox + 4, { align: 'center' })
-    doc.setTextColor(0, 0, 0)
-    leftY += qrBox + 8
-  }
-
-  // Totals box -- Sub Total / GST rows / bold Total, right-aligned figures,
-  // via autoTable so the borders match the item table exactly.
+  // Right column (totals + signature) is drawn first, anchored to `finalY` on
+  // this page, before the left column below -- the left column's Notes/Terms
+  // can run long enough to trigger a page break (see ensureRoom below), and
+  // doing the right column afterward would draw it onto whatever page jsPDF's
+  // cursor happened to be on by then instead of staying with the item table.
   const totalsRows: [string, string][] = [['Sub Total', money(invoice.subtotal)]]
   if (isGst) {
     if (invoice.cgst_total !== undefined || invoice.sgst_total !== undefined) {
@@ -309,7 +283,7 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
     styles: { fontSize: 8.5, lineColor: BORDER_GRAY, lineWidth: 0.2, cellPadding: 2 },
     columnStyles: { 0: { fontStyle: 'normal' }, 1: { halign: 'right' } },
   })
-  let totalsY = (doc as any).lastAutoTable.finalY
+  const totalsY = (doc as any).lastAutoTable.finalY
   autoTable(doc, {
     startY: totalsY,
     body: [['Total', money(invoice.grand_total)]],
@@ -324,20 +298,80 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   // Stamp/signature centered under the totals box, "Authorized Signatory"
   // label beneath -- absent images just leave the space blank.
   if (branding.signature || branding.stamp) {
-    const boxW = 26
-    const boxH = 17
+    const sigBoxW = 26
+    const sigBoxH = 17
     const gap = 3
-    const totalW = (branding.stamp ? boxW : 0) + (branding.signature ? boxW : 0) + (branding.stamp && branding.signature ? gap : 0)
+    const totalW = (branding.stamp ? sigBoxW : 0) + (branding.signature ? sigBoxW : 0) + (branding.stamp && branding.signature ? gap : 0)
     let sigX = rightX + (rightW - totalW) / 2
-    if (branding.stamp) { drawFitted(doc, branding.stamp, sigX, sigY, boxW, boxH); sigX += boxW + gap }
-    if (branding.signature) drawFitted(doc, branding.signature, sigX, sigY, boxW, boxH)
-    sigY += boxH + 4
+    if (branding.stamp) { drawFitted(doc, branding.stamp, sigX, sigY, sigBoxW, sigBoxH); sigX += sigBoxW + gap }
+    if (branding.signature) drawFitted(doc, branding.signature, sigX, sigY, sigBoxW, sigBoxH)
+    sigY += sigBoxH + 4
   } else {
     sigY += 10
   }
   doc.setFontSize(8)
   doc.setFont('helvetica', 'normal')
   doc.text('Authorized Signatory', rightX + rightW / 2, sigY, { align: 'center' })
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bolditalic')
+  const wordsLines = doc.splitTextToSize(
+    `Total In Words: Indian Rupee ${amountInWords(Number(invoice.grand_total || 0))} Only`,
+    leftW
+  )
+  doc.text(wordsLines, margin, finalY)
+  let leftY = finalY + wordsLines.length * 4.2 + 4
+  doc.setFont('helvetica', 'normal')
+
+  const lineHeight = 4.2
+  const BOTTOM_MARGIN = 16
+  // Real Terms & Conditions/Bank Details text on this business's documents
+  // routinely runs to 8-12 wrapped lines -- with nothing checking remaining
+  // page space, that content (or the QR box after it) could run straight off
+  // the bottom of the page and collide with the footer disclaimer. Adding a
+  // page when a block won't fit keeps every block fully on one page or the
+  // next, never straddling/overlapping the boundary.
+  const ensureRoom = (neededHeight: number) => {
+    if (leftY + neededHeight > pageHeight - BOTTOM_MARGIN) {
+      doc.addPage()
+      leftY = 20
+    }
+  }
+  const writeBlock = (label: string, text: string) => {
+    const lines = doc.splitTextToSize(text, leftW)
+    ensureRoom(4.2 + lines.length * lineHeight + 3.5)
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
+    doc.text(label, margin, leftY)
+    doc.setFont('helvetica', 'normal')
+    leftY += 4.2
+    doc.text(lines, margin, leftY)
+    leftY += lines.length * lineHeight + 3.5
+  }
+
+  if (invoice.notes) writeBlock('Notes', invoice.notes)
+  if (bank?.bank_name) {
+    writeBlock('Bank Details',
+      `A/C Holder: ${bank.account_holder_name || ''}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ''}\nIFSC: ${bank.ifsc_code || ''}`
+    )
+  }
+  if (entity?.upi_id) { ensureRoom(5); doc.setFontSize(8.5); doc.text(`UPI ID: ${entity.upi_id}`, margin, leftY); leftY += 5 }
+  if (invoice.terms_conditions) writeBlock('Terms & Conditions', invoice.terms_conditions)
+
+  if (branding.qrCode) {
+    // A fixed 28x28 box with a visible border -- large enough to stay
+    // scannable, aspect-preserved via drawFitted so a non-square source
+    // image (quiet-zone margins baked in unevenly) doesn't get squashed.
+    const qrBox = 28
+    ensureRoom(qrBox + 8)
+    doc.setDrawColor(...BORDER_GRAY)
+    doc.rect(margin, leftY, qrBox, qrBox)
+    drawFitted(doc, branding.qrCode, margin, leftY, qrBox, qrBox)
+    doc.setFontSize(7)
+    doc.setTextColor(120, 120, 120)
+    doc.text('Scan to pay', margin + qrBox / 2, leftY + qrBox + 4, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
+    leftY += qrBox + 8
+  }
 
   doc.setFontSize(7.5)
   doc.setTextColor(140, 140, 140)

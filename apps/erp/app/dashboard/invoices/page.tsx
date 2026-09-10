@@ -29,6 +29,7 @@ import { toast } from "sonner";
 import DeleteInvoiceDialog from "@/components/DeleteInvoiceDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { apiFetch } from "@/lib/api-client";
+import { downloadPdfFromResponse } from "@/lib/download-pdf";
 import { Pagination } from "@/components/Pagination";
 import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
@@ -106,7 +107,7 @@ function InvoicesPage() {
 
   const [pendingKey, setPendingKey] = useState<string | null>(null);
 
-  const handleDownloadPDF = async (invoiceId: string) => {
+  const handleDownloadPDF = async (invoiceId: string, invoiceNumber: string) => {
     const key = `${invoiceId}:pdf`;
     if (pendingKey) return;
     setPendingKey(key);
@@ -116,9 +117,7 @@ function InvoicesPage() {
         toast.error("Failed to generate PDF");
         return;
       }
-      const pdfBlob = await res.blob();
-      const url = URL.createObjectURL(pdfBlob);
-      window.open(url, "_blank");
+      await downloadPdfFromResponse(res, `Invoice_${invoiceNumber}.pdf`);
     } finally {
       setPendingKey(null);
     }
@@ -245,7 +244,7 @@ function InvoicesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDownloadPDF(inv.id)}
+                          onClick={() => handleDownloadPDF(inv.id, inv.invoice_number)}
                           disabled={pendingKey === `${inv.id}:pdf`}
                         >
                           {pendingKey === `${inv.id}:pdf` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}

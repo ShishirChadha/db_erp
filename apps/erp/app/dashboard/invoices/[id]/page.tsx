@@ -10,6 +10,7 @@ import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import PdfPreviewDialog from "@/components/PdfPreviewDialog";
+import { downloadPdfFromResponse, previewablePdfUrl } from "@/lib/download-pdf";
 import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 
@@ -62,9 +63,7 @@ function ViewInvoicePage() {
       console.error("Failed to generate PDF", await res.text());
       return;
     }
-    const pdfBlob = await res.blob();
-    const url = URL.createObjectURL(pdfBlob);
-    window.open(url, "_blank");
+    await downloadPdfFromResponse(res, `Invoice_${invoice.invoice_number}.pdf`);
   });
 
   const { run: handlePreviewPDF, pending: previewing } = useAsyncAction(async () => {
@@ -74,8 +73,7 @@ function ViewInvoicePage() {
       console.error("Failed to generate PDF", await res.text());
       return;
     }
-    const pdfBlob = await res.blob();
-    setPreviewUrl(URL.createObjectURL(pdfBlob));
+    setPreviewUrl(await previewablePdfUrl(res, `Invoice_${invoice.invoice_number}.pdf`));
   });
 
   const { run: handleEmail, pending: emailing } = useAsyncAction(async () => {

@@ -71,12 +71,22 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   const textX = branding.logo ? margin + logoW + 6 : margin
   if (branding.logo) drawFitted(pdf, branding.logo, margin, 12, logoW, logoH)
 
+  // The company-name/address column must stop before the big title's actual
+  // rendered width, not a guessed constant -- "Digitalbluez Technologies
+  // Private Limited" next to a 20pt bold "QUOTATION"/"PROFORMA INVOICE" title
+  // is exactly the case a fixed guess got wrong (their horizontal zones
+  // genuinely overlapped), so the reserved gap is measured via getTextWidth.
+  const titleText = DOC_LABELS[doc.doc_type] || 'DOCUMENT'
+  pdf.setFontSize(20)
+  pdf.setFont('helvetica', 'bold')
+  const titleWidth = pdf.getTextWidth(titleText)
+
   // splitTextToSize wraps to however many lines the text actually needs --
   // using jsPDF's `maxWidth` text option wraps visually but doesn't report
   // how many lines it used, so a fixed y-advance after it let a wrapped
   // second line of the company name run straight into the address below it.
   // Measuring lines up front and advancing by the real count fixes it.
-  const headerTextW = pageWidth - margin - textX - 46
+  const headerTextW = pageWidth - margin - textX - titleWidth - 8
   let y = 18
   pdf.setFontSize(14)
   pdf.setFont('helvetica', 'bold')
@@ -96,7 +106,7 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   pdf.setFontSize(20)
   pdf.setFont('helvetica', 'bold')
   pdf.setTextColor(90, 90, 90)
-  pdf.text(DOC_LABELS[doc.doc_type] || 'DOCUMENT', pageWidth - margin, 22, { align: 'right' })
+  pdf.text(titleText, pageWidth - margin, 22, { align: 'right' })
   pdf.setFontSize(8)
   pdf.setFont('helvetica', 'italic')
   pdf.text('Not a Tax Invoice', pageWidth - margin, 28, { align: 'right' })
@@ -140,6 +150,7 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   const boxY = metaY + metaH + 4
   const toLines: string[] = []
   if (doc.customer_address) toLines.push(...pdf.splitTextToSize(doc.customer_address, contentW - 6))
+  if (doc.customer_phone) toLines.push(`Mobile: ${doc.customer_phone}`)
   if (isGst && doc.customer_gst) toLines.push(`GSTIN: ${doc.customer_gst}`)
   const boxH = Math.max(26, 10 + toLines.length * 4 + 3)
 
@@ -196,42 +207,12 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   const rightX = margin + leftW + 6
   const rightW = contentW - leftW - 6
   const lineHeight = 4.2
-  let leftY = finalY
 
-  const writeBlock = (label: string, text: string) => {
-    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5)
-    pdf.text(label, margin, leftY)
-    pdf.setFont('helvetica', 'normal')
-    leftY += 4.2
-    const lines = pdf.splitTextToSize(text, leftW)
-    pdf.text(lines, margin, leftY)
-    leftY += lines.length * lineHeight + 3.5
-  }
-
-  if (doc.notes) writeBlock('Notes', doc.notes)
-  if (bank?.bank_name) {
-    writeBlock('Bank Details',
-      `A/C Holder: ${bank.account_holder_name || ''}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ''}\nIFSC: ${bank.ifsc_code || ''}`
-    )
-  }
-  if (entity?.upi_id) { pdf.setFontSize(8.5); pdf.text(`UPI ID: ${entity.upi_id}`, margin, leftY); leftY += 5 }
-  if (doc.terms_conditions) writeBlock('Terms & Conditions', doc.terms_conditions)
-
-  if (branding.qrCode) {
-    // A fixed 28x28 box with a visible border -- large enough to stay
-    // scannable, aspect-preserved via drawFitted so a non-square source
-    // image (quiet-zone margins baked in unevenly) doesn't get squashed.
-    const qrBox = 28
-    pdf.setDrawColor(...BORDER_GRAY)
-    pdf.rect(margin, leftY, qrBox, qrBox)
-    drawFitted(pdf, branding.qrCode, margin, leftY, qrBox, qrBox)
-    pdf.setFontSize(7)
-    pdf.setTextColor(120, 120, 120)
-    pdf.text('Scan to pay', margin + qrBox / 2, leftY + qrBox + 4, { align: 'center' })
-    pdf.setTextColor(0, 0, 0)
-    leftY += qrBox + 8
-  }
-
+  // Right column (totals + signature) is drawn first, anchored to `finalY` on
+  // this page, before the left column below -- the left column's Notes/Terms
+  // can run long enough to trigger a page break (see ensureRoom below), and
+  // doing the right column afterward would draw it onto whatever page jsPDF's
+  // cursor happened to be on by then instead of staying with the item table.
   const totalsRows: [string, string][] = [['Subtotal', money(doc.subtotal)]]
   if (isGst) totalsRows.push(['Estimated GST', money(doc.total_gst)])
   autoTable(pdf, {
@@ -258,20 +239,70 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
   // Stamp/signature centered under the totals box, "Authorized Signatory"
   // label beneath -- absent images just leave the space blank.
   if (branding.signature || branding.stamp) {
-    const boxW = 26
-    const boxH = 17
+    const sigBoxW = 26
+    const sigBoxH = 17
     const gap = 3
-    const totalW = (branding.stamp ? boxW : 0) + (branding.signature ? boxW : 0) + (branding.stamp && branding.signature ? gap : 0)
+    const totalW = (branding.stamp ? sigBoxW : 0) + (branding.signature ? sigBoxW : 0) + (branding.stamp && branding.signature ? gap : 0)
     let sigX = rightX + (rightW - totalW) / 2
-    if (branding.stamp) { drawFitted(pdf, branding.stamp, sigX, sigY, boxW, boxH); sigX += boxW + gap }
-    if (branding.signature) drawFitted(pdf, branding.signature, sigX, sigY, boxW, boxH)
-    sigY += boxH + 4
+    if (branding.stamp) { drawFitted(pdf, branding.stamp, sigX, sigY, sigBoxW, sigBoxH); sigX += sigBoxW + gap }
+    if (branding.signature) drawFitted(pdf, branding.signature, sigX, sigY, sigBoxW, sigBoxH)
+    sigY += sigBoxH + 4
   } else {
     sigY += 10
   }
   pdf.setFontSize(8)
   pdf.setFont('helvetica', 'normal')
   pdf.text('Authorized Signatory', rightX + rightW / 2, sigY, { align: 'center' })
+
+  let leftY = finalY
+  const BOTTOM_MARGIN = 16
+  // Real Terms & Conditions/Bank Details text on this business's documents
+  // routinely runs to 8-12 wrapped lines -- with nothing checking remaining
+  // page space, that content (or the QR box after it) could run straight off
+  // the bottom of the page and collide with the footer disclaimer. Adding a
+  // page when a block won't fit keeps every block fully on one page or the
+  // next, never straddling/overlapping the boundary.
+  const ensureRoom = (neededHeight: number) => {
+    if (leftY + neededHeight > pageHeight - BOTTOM_MARGIN) {
+      pdf.addPage()
+      leftY = 20
+    }
+  }
+  const writeBlock = (label: string, text: string) => {
+    const lines = pdf.splitTextToSize(text, leftW)
+    ensureRoom(4.2 + lines.length * lineHeight + 3.5)
+    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8.5)
+    pdf.text(label, margin, leftY)
+    pdf.setFont('helvetica', 'normal')
+    leftY += 4.2
+    pdf.text(lines, margin, leftY)
+    leftY += lines.length * lineHeight + 3.5
+  }
+
+  if (doc.notes) writeBlock('Notes', doc.notes)
+  if (bank?.bank_name) {
+    writeBlock('Bank Details',
+      `A/C Holder: ${bank.account_holder_name || ''}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ''}\nIFSC: ${bank.ifsc_code || ''}`
+    )
+  }
+  if (entity?.upi_id) { ensureRoom(5); pdf.setFontSize(8.5); pdf.text(`UPI ID: ${entity.upi_id}`, margin, leftY); leftY += 5 }
+  if (doc.terms_conditions) writeBlock('Terms & Conditions', doc.terms_conditions)
+
+  if (branding.qrCode) {
+    // A fixed 28x28 box with a visible border -- large enough to stay
+    // scannable, aspect-preserved via drawFitted so a non-square source
+    // image (quiet-zone margins baked in unevenly) doesn't get squashed.
+    const qrBox = 28
+    ensureRoom(qrBox + 8)
+    pdf.setDrawColor(...BORDER_GRAY)
+    pdf.rect(margin, leftY, qrBox, qrBox)
+    drawFitted(pdf, branding.qrCode, margin, leftY, qrBox, qrBox)
+    pdf.setFontSize(7)
+    pdf.setTextColor(120, 120, 120)
+    pdf.text('Scan to pay', margin + qrBox / 2, leftY + qrBox + 4, { align: 'center' })
+    pdf.setTextColor(0, 0, 0)
+    leftY += qrBox + 8
+  }
 
   pdf.setFontSize(7.5)
   pdf.setTextColor(140, 140, 140)

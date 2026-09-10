@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { StatusBadge } from '@/components/StatusBadge'
 import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import PdfPreviewDialog from '@/components/PdfPreviewDialog'
+import { downloadPdfFromResponse, previewablePdfUrl } from '@/lib/download-pdf'
 import { EditSalesDocumentDialog } from '@/components/SalesDocumentForm'
 
 function money(n: number | null | undefined) {
@@ -41,15 +42,13 @@ function ViewSalesDocumentPage() {
   const { run: downloadPdf, pending: downloading } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/sales-documents/${id}/pdf`)
     if (!res.ok) return
-    const blob = await res.blob()
-    window.open(URL.createObjectURL(blob), '_blank')
+    await downloadPdfFromResponse(res, `${doc.document_number}.pdf`)
   })
 
   const { run: previewPdf, pending: previewing } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/sales-documents/${id}/pdf`)
     if (!res.ok) return
-    const blob = await res.blob()
-    setPreviewUrl(URL.createObjectURL(blob))
+    setPreviewUrl(await previewablePdfUrl(res, `${doc.document_number}.pdf`))
   })
 
   const { run: emailDoc, pending: emailing } = useAsyncAction(async () => {
