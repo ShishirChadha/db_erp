@@ -14,7 +14,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { MARKETING_ASSET_STATUS_TONES, toneFor } from '@db/shared'
-import { Copy, Download, MessageCircle, Loader2, Sparkles } from 'lucide-react'
+import { Copy, Download, MessageCircle, Loader2, Sparkles, Share2, ImageOff, Save, Star } from 'lucide-react'
 
 interface SkuOption { id: string; full_sku_code: string; web_title: string | null; brand: string | null; model_name: string | null; category: string; is_published: boolean }
 interface MarketingAsset {
@@ -22,6 +22,7 @@ interface MarketingAsset {
   body_text: string | null; hashtags: string[]; cta_text: string | null; status: string
   source_sku_ids: string[]; scheduled_for: string | null; created_at: string
 }
+interface GeneratedProduct { id: string; primary_image_path: string | null }
 
 const PLATFORMS = [
   { value: 'whatsapp', label: 'WhatsApp' },
@@ -55,6 +56,15 @@ function useProductSearch() {
   return { query, setQuery, results, loading }
 }
 
+function NoPhotoWarning() {
+  return (
+    <p className="text-xs text-warning flex items-center gap-1">
+      <ImageOff className="w-3.5 h-3.5" /> No photo uploaded for this item -- the card will be a plain color block.{' '}
+      <a href="/dashboard/sku-master" className="underline">Upload one in SKU Master &rarr; Website</a>
+    </p>
+  )
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false)
   return (
@@ -67,7 +77,46 @@ function CopyButton({ text }: { text: string }) {
   )
 }
 
-function CardDownloadButton({ skuId, label }: { skuId: string; label: string }) {
+// Opens the OS's native share sheet with the photo and text handed over together in
+// one action, when the browser supports the Web Share API's file-sharing capability
+// (mainly mobile Chrome/Safari) -- same picker WhatsApp/Instagram/etc. all register
+// into, so this is not "share to self," just a way to avoid the manual
+// attach-the-photo-after-opening-the-chat step that the wa.me link alone can't avoid.
+// Hidden entirely (not shown disabled) on browsers that don't support it, e.g. most desktop.
+function ShareButton({ text, skuId }: { text: string; skuId?: string }) {
+  const [supported, setSupported] = useState(false)
+  useEffect(() => { setSupported(typeof navigator !== 'undefined' && typeof navigator.share === 'function') }, [])
+
+  const { run, pending } = useAsyncAction(async () => {
+    let files: File[] = []
+    if (skuId) {
+      try {
+        const res = await apiFetch(`/api/marketing/card?sku_id=${skuId}&format=wa_square`)
+        if (res.ok) {
+          const blob = await res.blob()
+          files = [new File([blob], 'product.png', { type: 'image/png' })]
+        }
+      } catch {
+        // fall through to text-only share
+      }
+    }
+    const shareData: ShareData = files.length && navigator.canShare?.({ files }) ? { text, files } : { text }
+    try {
+      await navigator.share(shareData)
+    } catch {
+      // user cancelled the share sheet -- not an error
+    }
+  })
+
+  if (!supported) return null
+  return (
+    <Button type="button" variant="outline" className="h-8" onClick={() => run()} disabled={pending}>
+      {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Share2 className="w-3.5 h-3.5 mr-1.5" />} Share
+    </Button>
+  )
+}
+
+function CardDownloadButton({ skuId, label, hasPhoto }: { skuId: string; label: string; hasPhoto: boolean }) {
   const [format, setFormat] = useState('wa_square')
   const { run, pending } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/marketing/card?sku_id=${skuId}&format=${format}`)
@@ -80,20 +129,44 @@ function CardDownloadButton({ skuId, label }: { skuId: string; label: string }) 
     URL.revokeObjectURL(url)
   })
   return (
-    <div className="flex items-center gap-2">
-      <Select value={format} onValueChange={setFormat}>
-        <SelectTrigger className="h-8 w-64"><SelectValue /></SelectTrigger>
-        <SelectContent>{CARD_FORMATS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
-      </Select>
-      <Button type="button" variant="outline" className="h-8" onClick={() => run()} disabled={pending}>
-        {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download card
-      </Button>
+    <div className="space-y-1.5">
+      {!hasPhoto && <NoPhotoWarning />}
+      <div className="flex items-center gap-2">
+        <Select value={format} onValueChange={setFormat}>
+          <SelectTrigger className="h-8 w-64"><SelectValue /></SelectTrigger>
+          <SelectContent>{CARD_FORMATS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
+        </Select>
+        <Button type="button" variant="outline" className="h-8" onClick={() => run()} disabled={pending}>
+          {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download card
+        </Button>
+      </div>
     </div>
   )
 }
 
-function GeneratedResult({ asset, whatsappShareLink }: { asset: MarketingAsset; whatsappShareLink?: string }) {
+function GeneratedResult({ asset, whatsappShareLink, product }: { asset: MarketingAsset; whatsappShareLink?: string; product?: GeneratedProduct }) {
+  const { isOwner } = useRole()
   const skuId = asset.source_sku_ids?.[0]
+  const [body, setBody] = useState(asset.body_text || '')
+  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
+  const dirty = body !== (asset.body_text || '')
+
+  const { run: save, pending: saving } = useAsyncAction(async () => {
+    const res = await apiFetch(`/api/marketing/assets/${asset.id}`, { method: 'PATCH', body: JSON.stringify({ body_text: body }) })
+    if (res.ok) { setSaveState('saved'); setTimeout(() => setSaveState('idle'), 1500) }
+  })
+
+  const { run: saveFlavorLine, pending: savingFlavorLine } = useAsyncAction(async () => {
+    const line = window.prompt('Save this as a WhatsApp flavor line (shown in future 💫 bullets):', '')
+    if (!line || !line.trim()) return
+    const current = await apiFetch('/api/settings/marketing')
+    if (!current.ok) { alert('Only the owner can update Marketing settings.'); return }
+    const settings = await current.json()
+    const nextLines = [...(settings.whatsapp_flavor_lines || []), line.trim()]
+    await apiFetch('/api/settings/marketing', { method: 'PUT', body: JSON.stringify({ whatsapp_flavor_lines: nextLines }) })
+    alert('Saved -- it will show up in future WhatsApp generations.')
+  })
+
   return (
     <Card className="mt-4">
       <CardContent className="pt-6 space-y-3">
@@ -101,36 +174,45 @@ function GeneratedResult({ asset, whatsappShareLink }: { asset: MarketingAsset; 
           <div className="font-semibold">{asset.title}</div>
           <StatusBadge tone={toneFor(MARKETING_ASSET_STATUS_TONES, asset.status)}>{asset.status}</StatusBadge>
         </div>
-        <Textarea readOnly value={asset.body_text || ''} rows={10} className="font-mono text-sm" />
+        {product && !product.primary_image_path && <NoPhotoWarning />}
+        <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={10} className="font-mono text-sm" />
+        <div className="flex items-center gap-2">
+          <Button type="button" size="sm" variant="outline" className="h-7" disabled={!dirty || saving} onClick={() => save()}>
+            {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+            {saveState === 'saved' ? 'Saved' : 'Save edits'}
+          </Button>
+          {asset.platform === 'whatsapp' && isOwner && (
+            <Button type="button" size="sm" variant="ghost" className="h-7 text-muted-foreground" disabled={savingFlavorLine} onClick={() => saveFlavorLine()}>
+              <Star className="w-3.5 h-3.5 mr-1.5" /> Save as flavor line
+            </Button>
+          )}
+        </div>
         {asset.hashtags?.length > 0 && (
           <div className="text-sm text-muted-foreground">{asset.hashtags.map((h) => `#${h}`).join(' ')}</div>
         )}
         <div className="flex flex-wrap items-center gap-2">
-          <CopyButton text={[asset.body_text, asset.hashtags?.length ? asset.hashtags.map((h) => `#${h}`).join(' ') : null].filter(Boolean).join('\n\n')} />
+          <CopyButton text={[body, asset.hashtags?.length ? asset.hashtags.map((h) => `#${h}`).join(' ') : null].filter(Boolean).join('\n\n')} />
           {whatsappShareLink && (
             <a href={whatsappShareLink} target="_blank" rel="noreferrer">
               <Button type="button" variant="outline" className="h-8"><MessageCircle className="w-3.5 h-3.5 mr-1.5" /> Open in WhatsApp</Button>
             </a>
           )}
+          <ShareButton text={body} skuId={skuId} />
         </div>
-        {skuId && <CardDownloadButton skuId={skuId} label={asset.title || 'product'} />}
+        {skuId && <CardDownloadButton skuId={skuId} label={asset.title || 'product'} hasPhoto={!!product?.primary_image_path} />}
       </CardContent>
     </Card>
   )
 }
 
-interface SuggestionBucket {
-  priority: string
-  label: string
-  reason: string
-  products: { id: string; display_title: string; config_summary: string; web_price: number; category: string }[]
-}
+interface SuggestionProduct { id: string; display_title: string; config_summary: string; web_price: number; category: string; primary_image_path: string | null; received_at?: string | null }
+interface SuggestionBucket { priority: string; label: string; reason: string; products: SuggestionProduct[] }
 
 function TodaysPicksTab() {
   const [buckets, setBuckets] = useState<SuggestionBucket[] | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
+  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string; product?: GeneratedProduct } | null>(null)
   const [generatingId, setGeneratingId] = useState<string | null>(null)
 
   const load = async () => {
@@ -160,7 +242,7 @@ function TodaysPicksTab() {
   return (
     <div className="space-y-6 max-w-3xl">
       <p className="text-sm text-muted-foreground">
-        Ranked by priority for today's WhatsApp send -- P1 new arrivals, P2 high-end/MacBooks, P3 aging stock, P4 unique configurations.
+        Ranked by priority for today's WhatsApp send -- P1 new arrivals (by real stock-receipt date, not publish date), P2 high-end/MacBooks, P3 aging stock, P4 unique configurations.
       </p>
       {buckets.map((bucket, i) => (
         <div key={bucket.priority}>
@@ -176,7 +258,10 @@ function TodaysPicksTab() {
               {bucket.products.map((p) => (
                 <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
                   <div className="min-w-0">
-                    <div className="text-sm font-medium truncate">{p.display_title}</div>
+                    <div className="text-sm font-medium truncate flex items-center gap-1.5">
+                      {p.display_title}
+                      {!p.primary_image_path && <ImageOff className="w-3.5 h-3.5 text-warning shrink-0" />}
+                    </div>
                     <div className="text-xs text-muted-foreground truncate">{p.config_summary} · ₹{p.web_price.toLocaleString('en-IN')}</div>
                   </div>
                   <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={generatingId === p.id} onClick={() => generateFor(p.id)}>
@@ -189,7 +274,7 @@ function TodaysPicksTab() {
         </div>
       ))}
       {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
+      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} product={result.product} />}
     </div>
   )
 }
@@ -198,7 +283,7 @@ function SingleProductTab() {
   const { query, setQuery, results, loading } = useProductSearch()
   const [selected, setSelected] = useState<SkuOption | null>(null)
   const [platform, setPlatform] = useState('whatsapp')
-  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
+  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string; product?: GeneratedProduct } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const { run: generate, pending } = useAsyncAction(async () => {
@@ -244,7 +329,7 @@ function SingleProductTab() {
         {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Generate
       </Button>
       {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
+      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} product={result.product} />}
     </div>
   )
 }
@@ -306,6 +391,8 @@ function BlogTab() {
   const [category, setCategory] = useState('LAP')
   const [result, setResult] = useState<{ asset: MarketingAsset } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [body, setBody] = useState('')
+  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
 
   const { run: generate, pending } = useAsyncAction(async () => {
     if (!topic.trim()) return
@@ -317,6 +404,13 @@ function BlogTab() {
     const data = await res.json()
     if (!res.ok) { setError(data.error || 'Generation failed'); return }
     setResult(data)
+    setBody(data.asset.body_text || '')
+  })
+
+  const { run: save, pending: saving } = useAsyncAction(async () => {
+    if (!result) return
+    const res = await apiFetch(`/api/marketing/assets/${result.asset.id}`, { method: 'PATCH', body: JSON.stringify({ body_text: body }) })
+    if (res.ok) { setSaveState('saved'); setTimeout(() => setSaveState('idle'), 1500) }
   })
 
   return (
@@ -337,7 +431,11 @@ function BlogTab() {
         <Card className="mt-4">
           <CardContent className="pt-6 space-y-3">
             <div className="font-semibold">{result.asset.title}</div>
-            <Textarea readOnly value={result.asset.body_text || ''} rows={16} className="font-mono text-sm" />
+            <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16} className="font-mono text-sm" />
+            <Button type="button" size="sm" variant="outline" className="h-7" disabled={body === (result.asset.body_text || '') || saving} onClick={() => save()}>
+              {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
+              {saveState === 'saved' ? 'Saved' : 'Save edits'}
+            </Button>
             <p className="text-xs text-muted-foreground">Saved as a draft. Publishing a blog post live is a Phase 2 feature -- not yet available from this screen.</p>
           </CardContent>
         </Card>

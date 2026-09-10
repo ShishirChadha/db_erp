@@ -16,6 +16,8 @@ interface BusinessProfile {
   logo_url: string | null
   signature_url: string | null
   stamp_url: string | null
+  qr_code_url: string | null
+  upi_id: string | null
   bank_details: Record<string, string> | null
   invoice_prefix: string | null
   default_terms: string | null
@@ -33,6 +35,7 @@ const IMAGE_FIELDS = [
   { field: 'logo_url', label: 'Logo' },
   { field: 'signature_url', label: 'Signature' },
   { field: 'stamp_url', label: 'Stamp' },
+  { field: 'qr_code_url', label: 'Payment QR' },
 ] as const
 
 export default function BusinessProfileManager() {
@@ -256,6 +259,10 @@ export default function BusinessProfileManager() {
               <div>
                 <label className="block text-xs font-medium text-muted-foreground mb-1">IFSC</label>
                 <input className="border p-2 w-full rounded text-sm" value={e.bank_details?.ifsc_code || ''} onChange={(ev) => updateBankField(p.key, 'ifsc_code', ev.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">UPI ID</label>
+                <input className="border p-2 w-full rounded text-sm" placeholder="name@bank" value={e.upi_id || ''} onChange={(ev) => updateField(p.key, 'upi_id', ev.target.value)} />
               </div>
             </div>
 

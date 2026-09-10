@@ -103,6 +103,35 @@ export async function getAllPublishedProducts(): Promise<MarketingProduct[]> {
   return decorate(data || [])
 }
 
+// Latest real stock-receipt date per SKU -- "when did this SKU last enter stock,"
+// not "when was it published." Same effective-date resolution
+// (`purchase_date || created_at`) as /api/sku-master's purchasedFrom/purchasedTo
+// filter (app/api/sku-master/route.ts) -- one canonical definition of "receipt date"
+// reused here for the Today's Picks New Arrivals ranking, rather than a second one.
+// Naturally dedupes to one date per SKU (MAX across all its receipts), so a batch of
+// several identical units received on one PO collapses to a single entry, matching
+// how the rest of the ERP already treats a SKU as the unit of "an item."
+export async function getLatestReceiptDatesBySkuId(): Promise<Map<string, string>> {
+  const { data: movements } = await supabaseAdmin
+    .from('stock_movements')
+    .select('sku_id, purchase_date, created_at')
+    .eq('movement_type', 'receipt')
+  const latest = new Map<string, string>()
+  for (const m of movements || []) {
+    // Full created_at timestamp (not date-sliced) so two receipts landing on the same
+    // calendar day still rank deterministically by actual time -- unlike
+    // /api/sku-master's purchasedFrom/purchasedTo range filter (date-granularity is
+    // correct there, since it's bucketing into date ranges, not ranking). purchase_date
+    // is itself a date-only column, so it naturally sorts before a same-day timestamped
+    // created_at fallback, which is an acceptable, stable tie-break rule.
+    const effectiveDate: string = m.purchase_date || m.created_at || ''
+    if (!effectiveDate) continue
+    const current = latest.get(m.sku_id)
+    if (!current || effectiveDate > current) latest.set(m.sku_id, effectiveDate)
+  }
+  return latest
+}
+
 export interface RepresentativeUnit {
   battery_health_percent: number | null
   warranty_duration_months: number | null

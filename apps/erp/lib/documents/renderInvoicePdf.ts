@@ -2,6 +2,7 @@ import { jsPDF } from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { STATE_CODE_TO_NAME } from '@/lib/gstStateCodes'
+import { fetchEntityBranding, fitWithinBox, type EntityImage } from '@/lib/documents/entityBranding'
 
 function amountInWords(n: number): string {
   const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
@@ -52,8 +53,26 @@ export interface RenderedInvoicePdf {
   filename: string
 }
 
+const BORDER_GRAY: [number, number, number] = [200, 200, 200]
+
+// Draws an image fitted (aspect-preserved, centered) within a box instead of
+// stretching it to fill exact dimensions -- a source QR/logo/signature is
+// rarely exactly the box's aspect ratio, and force-stretching it (the old
+// behavior) is what made the QR unreadable and logos look distorted.
+function drawFitted(doc: jsPDF, image: EntityImage, boxX: number, boxY: number, boxW: number, boxH: number): { w: number; h: number } {
+  const props = doc.getImageProperties(image.bytes)
+  const { w, h } = fitWithinBox(props.width, props.height, boxW, boxH)
+  doc.addImage(image.bytes, image.format, boxX + (boxW - w) / 2, boxY + (boxH - h) / 2, w, h)
+  return { w, h }
+}
+
 // Shared renderer used by both the direct-download route and the email-send
-// route, so there is exactly one place that draws an invoice PDF.
+// route, so there is exactly one place that draws an invoice PDF. Layout
+// mirrors the boxed Zoho-style template the business used before the ERP
+// took over invoicing (logo + big title top, a bordered meta strip, boxed
+// Bill To/Ship To, a gridded item table, and a totals box + signature at
+// bottom-right) so switching from Zoho to the ERP doesn't change what staff
+// and customers are used to seeing.
 export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoicePdf | null> {
   const { data: invoice, error: invErr } = await supabaseAdmin
     .from('invoices')
@@ -76,49 +95,114 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
     .single()
 
   const isGst = !!entity?.is_gst_registered
-  const doc = new jsPDF()
-  const pageWidth = doc.internal.pageSize.getWidth()
-  const margin = 14
-  let y = 18
-
-  // ---------- Seller header ----------
-  doc.setFontSize(15)
-  doc.setFont('helvetica', 'bold')
-  doc.text(entity?.legal_name || 'Digitalbluez Technologies Private Limited', margin, y)
-  doc.setFontSize(9)
-  doc.setFont('helvetica', 'normal')
-  if (entity?.address) { y += 6; doc.text(entity.address, margin, y) }
-  if (isGst && entity?.gstin) { y += 5.5; doc.text(`GSTIN: ${entity.gstin}`, margin, y) }
+  const branding = await fetchEntityBranding(entity)
   const bank = entity?.bank_details as Record<string, string> | null
 
+  const doc = new jsPDF()
+  const pageWidth = doc.internal.pageSize.getWidth()
+  const pageHeight = doc.internal.pageSize.getHeight()
+  const margin = 14
+  const contentW = pageWidth - margin * 2
+
+  // ---------- Header: logo + seller block left, big doc title right ----------
+  const logoW = 34
+  const logoH = 20
+  const textX = branding.logo ? margin + logoW + 6 : margin
+  if (branding.logo) drawFitted(doc, branding.logo, margin, 12, logoW, logoH)
+
+  // splitTextToSize wraps to however many lines the text actually needs --
+  // using jsPDF's `maxWidth` text option wraps visually but doesn't report
+  // how many lines it used, so a fixed y-advance after it (the old code) let
+  // a wrapped second line of the company name run straight into the address
+  // below it. Measuring lines up front and advancing by the real count fixes
+  // it, same principle already applied to Notes/Terms further down this file.
+  const headerTextW = pageWidth - margin - textX - 46
+  let y = 18
   doc.setFontSize(14)
   doc.setFont('helvetica', 'bold')
-  doc.text(isGst ? 'TAX INVOICE' : 'BILL OF SUPPLY', pageWidth - margin, 18, { align: 'right' })
-
-  doc.line(margin, y + 5, pageWidth - margin, y + 5)
-  y += 14
-
-  // ---------- Invoice meta ----------
-  doc.setFontSize(9.5)
+  const nameLines = doc.splitTextToSize(entity?.legal_name || 'Digitalbluez Technologies Private Limited', headerTextW)
+  doc.text(nameLines, textX, y)
+  y += (nameLines.length - 1) * 5.5
+  doc.setFontSize(8.5)
   doc.setFont('helvetica', 'normal')
-  doc.text(`Invoice No: ${invoice.invoice_number}`, margin, y)
-  doc.text(`Date: ${invoice.invoice_date}`, pageWidth - margin, y, { align: 'right' })
-  y += 6
+  if (entity?.address) {
+    y += 5.5
+    const addrLines = doc.splitTextToSize(entity.address, headerTextW)
+    doc.text(addrLines, textX, y)
+    y += (addrLines.length - 1) * 4.2
+  }
+  if (isGst && entity?.gstin) { y += 4.8; doc.text(`GSTIN: ${entity.gstin}`, textX, y) }
+
+  doc.setFontSize(22)
+  doc.setFont('helvetica', 'bold')
+  doc.setTextColor(90, 90, 90)
+  doc.text(isGst ? 'TAX INVOICE' : 'BILL OF SUPPLY', pageWidth - margin, 24, { align: 'right' })
+  doc.setTextColor(0, 0, 0)
+
+  const headerBottom = Math.max(36, y + 6)
+  doc.setDrawColor(...BORDER_GRAY)
+  doc.line(margin, headerBottom, pageWidth - margin, headerBottom)
+
+  // ---------- Meta strip: #/Date left, Place of Supply right, boxed ----------
+  const metaY = headerBottom + 4
+  const metaH = 14
+  doc.rect(margin, metaY, contentW, metaH)
+  doc.line(margin + contentW * 0.55, metaY, margin + contentW * 0.55, metaY + metaH)
+  doc.setFontSize(9)
+  doc.setFont('helvetica', 'bold')
+  doc.text('#', margin + 3, metaY + 5.5)
+  doc.text('Date', margin + 3, metaY + 11)
+  doc.setFont('helvetica', 'normal')
+  doc.text(`: ${invoice.invoice_number}`, margin + 16, metaY + 5.5)
+  doc.text(`: ${invoice.invoice_date}`, margin + 16, metaY + 11)
   if (invoice.place_of_supply) {
     const label = STATE_CODE_TO_NAME[invoice.place_of_supply] || invoice.place_of_supply
-    doc.text(`Place of Supply: ${label}${invoice.place_of_supply ? ` (${invoice.place_of_supply})` : ''}`, margin, y)
-    y += 6
+    doc.setFont('helvetica', 'bold')
+    doc.text('Place Of Supply', margin + contentW * 0.55 + 4, metaY + 8.5)
+    doc.setFont('helvetica', 'normal')
+    doc.text(`: ${label} (${invoice.place_of_supply})`, margin + contentW * 0.55 + 34, metaY + 8.5)
   }
 
-  // ---------- Bill To ----------
-  y += 4
+  // ---------- Bill To / Ship To boxes ----------
+  const boxY = metaY + metaH + 4
+  const halfW = contentW / 2
+  const addrLines = (address: string | null, gst: string | null) => {
+    const lines: string[] = []
+    if (address) lines.push(...doc.splitTextToSize(address, halfW - 6))
+    if (isGst && gst) lines.push(`GSTIN: ${gst}`)
+    return lines
+  }
+  // Box height is measured from actual wrapped line counts (not a fixed guess)
+  // so a long customer address never overflows the border and runs into the
+  // item table below it.
+  const billRest = addrLines(invoice.customer_address, invoice.customer_gst)
+  const shipAddress = invoice.shipping_address || invoice.customer_address
+  const shipRest = addrLines(shipAddress, null)
+  const boxH = Math.max(30, 10 + Math.max(billRest.length, shipRest.length) * 4 + 3)
+
+  doc.setFillColor(245, 245, 245)
+  doc.rect(margin, boxY, halfW, 6, 'F')
+  doc.rect(margin + halfW, boxY, halfW, 6, 'F')
+  doc.setDrawColor(...BORDER_GRAY)
+  doc.rect(margin, boxY, halfW, boxH)
+  doc.rect(margin + halfW, boxY, halfW, boxH)
+  doc.setFontSize(8.5)
   doc.setFont('helvetica', 'bold')
-  doc.text('Bill To:', margin, y)
+  doc.text('Bill To', margin + 3, boxY + 4.2)
+  doc.text('Ship To', margin + halfW + 3, boxY + 4.2)
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bold')
+  let billLineY = boxY + 10
+  doc.text(invoice.customer_name || 'Customer', margin + 3, billLineY)
   doc.setFont('helvetica', 'normal')
-  y += 5.5
-  doc.text(invoice.customer_name || 'Customer', margin, y)
-  if (invoice.customer_address) { y += 5; doc.text(invoice.customer_address, margin, y) }
-  if (isGst && invoice.customer_gst) { y += 5; doc.text(`GSTIN: ${invoice.customer_gst}`, margin, y) }
+  billRest.forEach((line) => { billLineY += 4; doc.text(line, margin + 3, billLineY) })
+
+  let shipLineY = boxY + 10
+  doc.setFont('helvetica', 'bold')
+  doc.text(invoice.customer_name || 'Customer', margin + halfW + 3, shipLineY)
+  doc.setFont('helvetica', 'normal')
+  shipRest.forEach((line) => { shipLineY += 4; doc.text(line, margin + halfW + 3, shipLineY) })
 
   // ---------- Line items ----------
   const lineItems = items || []
@@ -141,63 +225,123 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   })
 
   autoTable(doc, {
-    startY: y + 8,
+    startY: boxY + boxH + 6,
     head,
     body,
     margin: { left: margin, right: margin },
     theme: 'grid',
-    headStyles: { fillColor: [15, 111, 184], textColor: 255, fontSize: 8 },
+    headStyles: { fillColor: [245, 245, 245], textColor: 30, fontStyle: 'bold', fontSize: 8, lineColor: BORDER_GRAY, lineWidth: 0.2 },
+    bodyStyles: { lineColor: BORDER_GRAY, lineWidth: 0.2 },
     styles: { fontSize: 8 },
   })
 
-  let finalY = (doc as any).lastAutoTable.finalY + 8
+  let finalY = (doc as any).lastAutoTable.finalY + 6
 
-  // ---------- Totals ----------
-  doc.setFontSize(9.5)
-  doc.text(`Subtotal: ${money(invoice.subtotal)}`, pageWidth - margin, finalY, { align: 'right' })
-  if (isGst) {
-    finalY += 5.5
-    doc.text(`Total GST: ${money(invoice.total_gst)}`, pageWidth - margin, finalY, { align: 'right' })
-  }
-  finalY += 6.5
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.text(`Grand Total: ${money(invoice.grand_total)}`, pageWidth - margin, finalY, { align: 'right' })
+  // ---------- Bottom-left: amount in words, notes, terms, bank/UPI/QR ----------
+  // ---------- Bottom-right: bordered totals box + signature/stamp ----------
+  const leftW = contentW * 0.58
+  const rightX = margin + leftW + 6
+  const rightW = contentW - leftW - 6
+
+  doc.setFontSize(8.5)
+  doc.setFont('helvetica', 'bolditalic')
+  const wordsLines = doc.splitTextToSize(
+    `Total In Words: Indian Rupee ${amountInWords(Number(invoice.grand_total || 0))} Only`,
+    leftW
+  )
+  doc.text(wordsLines, margin, finalY)
+  let leftY = finalY + wordsLines.length * 4.2 + 4
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
 
-  finalY += 8
-  doc.text(`Amount in Words: Indian Rupee ${amountInWords(Number(invoice.grand_total || 0))} Only`, margin, finalY)
-
-  // ---------- Notes / terms / bank ----------
-  // splitTextToSize wraps to however many lines the text needs -- advancing
-  // finalY by a fixed amount regardless of that line count is what caused
-  // later sections to overlap a multi-line Notes/Terms block.
-  finalY += 10
   const lineHeight = 4.2
-  if (invoice.notes) {
-    doc.setFont('helvetica', 'bold'); doc.text('Notes:', margin, finalY); doc.setFont('helvetica', 'normal')
-    finalY += 5
-    const noteLines = doc.splitTextToSize(invoice.notes, pageWidth - margin * 2)
-    doc.text(noteLines, margin, finalY)
-    finalY += noteLines.length * lineHeight + 6
+  const writeBlock = (label: string, text: string) => {
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8.5)
+    doc.text(label, margin, leftY)
+    doc.setFont('helvetica', 'normal')
+    leftY += 4.2
+    const lines = doc.splitTextToSize(text, leftW)
+    doc.text(lines, margin, leftY)
+    leftY += lines.length * lineHeight + 3.5
   }
-  if (invoice.terms_conditions) {
-    doc.setFont('helvetica', 'bold'); doc.text('Terms & Conditions:', margin, finalY); doc.setFont('helvetica', 'normal')
-    finalY += 5
-    const termLines = doc.splitTextToSize(invoice.terms_conditions, pageWidth - margin * 2)
-    doc.text(termLines, margin, finalY)
-    finalY += termLines.length * lineHeight + 6
-  }
+
+  if (invoice.notes) writeBlock('Notes', invoice.notes)
   if (bank?.bank_name) {
-    doc.setFont('helvetica', 'bold'); doc.text('Bank Details:', margin, finalY); doc.setFont('helvetica', 'normal')
-    finalY += 5
-    doc.text(`${bank.account_holder_name || ''}  |  ${bank.bank_name}  |  A/c: ${bank.account_number || ''}  |  IFSC: ${bank.ifsc_code || ''}`, margin, finalY)
+    writeBlock('Bank Details',
+      `A/C Holder: ${bank.account_holder_name || ''}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ''}\nIFSC: ${bank.ifsc_code || ''}`
+    )
   }
+  if (entity?.upi_id) { doc.setFontSize(8.5); doc.text(`UPI ID: ${entity.upi_id}`, margin, leftY); leftY += 5 }
+  if (invoice.terms_conditions) writeBlock('Terms & Conditions', invoice.terms_conditions)
+
+  if (branding.qrCode) {
+    // A fixed 28x28 box with a visible border -- large enough to stay
+    // scannable, aspect-preserved via drawFitted so a non-square source
+    // image (quiet-zone margins baked in unevenly) doesn't get squashed.
+    const qrBox = 28
+    doc.setDrawColor(...BORDER_GRAY)
+    doc.rect(margin, leftY, qrBox, qrBox)
+    drawFitted(doc, branding.qrCode, margin, leftY, qrBox, qrBox)
+    doc.setFontSize(7)
+    doc.setTextColor(120, 120, 120)
+    doc.text('Scan to pay', margin + qrBox / 2, leftY + qrBox + 4, { align: 'center' })
+    doc.setTextColor(0, 0, 0)
+    leftY += qrBox + 8
+  }
+
+  // Totals box -- Sub Total / GST rows / bold Total, right-aligned figures,
+  // via autoTable so the borders match the item table exactly.
+  const totalsRows: [string, string][] = [['Sub Total', money(invoice.subtotal)]]
+  if (isGst) {
+    if (invoice.cgst_total !== undefined || invoice.sgst_total !== undefined) {
+      if (Number(invoice.cgst_total) > 0) totalsRows.push(['CGST', money(invoice.cgst_total)])
+      if (Number(invoice.sgst_total) > 0) totalsRows.push(['SGST', money(invoice.sgst_total)])
+      if (Number(invoice.igst_total) > 0) totalsRows.push(['IGST', money(invoice.igst_total)])
+    } else {
+      totalsRows.push(['Total GST', money(invoice.total_gst)])
+    }
+  }
+  autoTable(doc, {
+    startY: finalY,
+    body: totalsRows,
+    margin: { left: rightX, right: margin },
+    tableWidth: rightW,
+    theme: 'grid',
+    styles: { fontSize: 8.5, lineColor: BORDER_GRAY, lineWidth: 0.2, cellPadding: 2 },
+    columnStyles: { 0: { fontStyle: 'normal' }, 1: { halign: 'right' } },
+  })
+  let totalsY = (doc as any).lastAutoTable.finalY
+  autoTable(doc, {
+    startY: totalsY,
+    body: [['Total', money(invoice.grand_total)]],
+    margin: { left: rightX, right: margin },
+    tableWidth: rightW,
+    theme: 'grid',
+    styles: { fontSize: 10, fontStyle: 'bold', lineColor: BORDER_GRAY, lineWidth: 0.2, cellPadding: 2.5 },
+    columnStyles: { 1: { halign: 'right' } },
+  })
+  let sigY = (doc as any).lastAutoTable.finalY + 10
+
+  // Stamp/signature centered under the totals box, "Authorized Signatory"
+  // label beneath -- absent images just leave the space blank.
+  if (branding.signature || branding.stamp) {
+    const boxW = 26
+    const boxH = 17
+    const gap = 3
+    const totalW = (branding.stamp ? boxW : 0) + (branding.signature ? boxW : 0) + (branding.stamp && branding.signature ? gap : 0)
+    let sigX = rightX + (rightW - totalW) / 2
+    if (branding.stamp) { drawFitted(doc, branding.stamp, sigX, sigY, boxW, boxH); sigX += boxW + gap }
+    if (branding.signature) drawFitted(doc, branding.signature, sigX, sigY, boxW, boxH)
+    sigY += boxH + 4
+  } else {
+    sigY += 10
+  }
+  doc.setFontSize(8)
+  doc.setFont('helvetica', 'normal')
+  doc.text('Authorized Signatory', rightX + rightW / 2, sigY, { align: 'center' })
 
   doc.setFontSize(7.5)
   doc.setTextColor(140, 140, 140)
-  doc.text('This is a computer generated invoice.', pageWidth / 2, doc.internal.pageSize.getHeight() - 8, { align: 'center' })
+  doc.text('This is a computer generated invoice.', pageWidth / 2, pageHeight - 8, { align: 'center' })
 
   return {
     buffer: doc.output('arraybuffer'),

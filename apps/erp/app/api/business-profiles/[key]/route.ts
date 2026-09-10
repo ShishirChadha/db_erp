@@ -18,7 +18,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
   const body = await req.json()
   const {
     legal_name, address, state, state_code, gstin, is_gst_registered,
-    logo_url, signature_url, stamp_url, bank_details, contact,
+    logo_url, signature_url, stamp_url, qr_code_url, upi_id, bank_details, contact,
     invoice_prefix, invoice_number_format, default_terms, default_notes, active,
     invoicing_mode,
   } = body
@@ -33,6 +33,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
   if (logo_url !== undefined) updates.logo_url = logo_url
   if (signature_url !== undefined) updates.signature_url = signature_url
   if (stamp_url !== undefined) updates.stamp_url = stamp_url
+  if (qr_code_url !== undefined) updates.qr_code_url = qr_code_url
+  if (upi_id !== undefined) updates.upi_id = upi_id
   if (bank_details !== undefined) updates.bank_details = bank_details
   if (contact !== undefined) updates.contact = contact
   if (invoice_prefix !== undefined) updates.invoice_prefix = invoice_prefix

@@ -4,20 +4,18 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Edit, Printer, FileText, Mail } from "lucide-react";
+import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark } from "lucide-react";
 import { format } from "date-fns";
 import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import PdfPreviewDialog from "@/components/PdfPreviewDialog";
+import { StatusBadge } from "@/components/StatusBadge";
+import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 
-const statusColors: Record<string, string> = {
-  draft: "bg-muted-foreground",
-  pending_approval: "bg-warning",
-  approved: "bg-primary",
-  paid: "bg-success",
-};
+function money(n: number | null | undefined) {
+  return `₹${Number(n || 0).toFixed(2)}`;
+}
 
 function ViewInvoicePage() {
   const { id } = useParams();
@@ -55,6 +53,8 @@ function ViewInvoicePage() {
     if (id) fetchInvoice();
   }, [id, supabase, router]);
 
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
   const { run: handleDownloadPDF, pending: downloading } = useAsyncAction(async () => {
     if (!invoice) return;
     const res = await apiFetch(`/api/invoices/${invoice.id}/pdf`);
@@ -65,6 +65,17 @@ function ViewInvoicePage() {
     const pdfBlob = await res.blob();
     const url = URL.createObjectURL(pdfBlob);
     window.open(url, "_blank");
+  });
+
+  const { run: handlePreviewPDF, pending: previewing } = useAsyncAction(async () => {
+    if (!invoice) return;
+    const res = await apiFetch(`/api/invoices/${invoice.id}/pdf`);
+    if (!res.ok) {
+      console.error("Failed to generate PDF", await res.text());
+      return;
+    }
+    const pdfBlob = await res.blob();
+    setPreviewUrl(URL.createObjectURL(pdfBlob));
   });
 
   const { run: handleEmail, pending: emailing } = useAsyncAction(async () => {
@@ -83,27 +94,32 @@ function ViewInvoicePage() {
     }
   });
 
-  if (loading) return <div className="p-6">Loading...</div>;
-  if (!invoice) return <div className="p-6">Invoice not found</div>;
+  if (loading) return <div className="p-6 text-muted-foreground">Loading...</div>;
+  if (!invoice) return <div className="p-6 text-muted-foreground">Invoice not found</div>;
+
+  const isGst = items.some((i) => i.gst_type);
 
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      <div className="flex justify-between items-center">
+    <div className="max-w-5xl mx-auto space-y-6">
+      {/* ---------- Toolbar ---------- */}
+      <div className="flex flex-wrap justify-between items-center gap-2">
         <Button variant="ghost" onClick={() => router.back()}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Back
         </Button>
-        <div className="space-x-2">
+        <div className="flex flex-wrap gap-2">
           {invoice.status === "draft" && (
             <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${id}/edit`)}>
               <Edit className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
+          <Button variant="outline" onClick={() => handlePreviewPDF()} loading={previewing}>
+            <Eye className="mr-2 h-4 w-4" /> Preview
+          </Button>
           <Button variant="outline" onClick={() => handleDownloadPDF()} loading={downloading}>
             <FileText className="mr-2 h-4 w-4" /> Download PDF
           </Button>
           <Button variant="outline" onClick={() => handleEmail()} loading={emailing}>
-            <Mail className="mr-2 h-4 w-4" />
-            Email
+            <Mail className="mr-2 h-4 w-4" /> Email
           </Button>
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print
@@ -111,107 +127,133 @@ function ViewInvoicePage() {
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <div className="flex justify-between">
-            <CardTitle>Invoice #{invoice.invoice_number}</CardTitle>
-            <Badge className={statusColors[invoice.status]}>
+      {/* ---------- Document sheet ---------- */}
+      <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
+        {/* Header band */}
+        <div className="p-5 md:p-6 border-b bg-muted/30">
+          <div className="flex flex-wrap justify-between items-start gap-4">
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1">
+                {isGst ? "Tax Invoice" : "Bill of Supply"}
+              </p>
+              <h1 className="text-3xl font-bold tabular-nums">#{invoice.invoice_number}</h1>
+              <p className="text-sm text-muted-foreground mt-1">
+                {format(new Date(invoice.invoice_date), "dd MMM yyyy")}
+                {invoice.place_of_supply && ` · Place of Supply: ${invoice.place_of_supply}`}
+              </p>
+            </div>
+            <StatusBadge tone={toneFor(INVOICE_STATUS_TONES, invoice.status)} className="text-sm px-3 py-1">
               {invoice.status.replace("_", " ").toUpperCase()}
-            </Badge>
+            </StatusBadge>
           </div>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <h3 className="font-semibold">Invoice Details</h3>
-              <p>Date: {format(new Date(invoice.invoice_date), "dd/MM/yyyy")}</p>
-              {invoice.place_of_supply && <p>Place of Supply: {invoice.place_of_supply}</p>}
+        </div>
+
+        <div className="p-5 md:p-6 space-y-6">
+          {/* Parties */}
+          <div className="grid md:grid-cols-2 gap-4">
+            <div className="border rounded-lg p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-2">
+                <User className="h-4 w-4" /> Bill To
+              </div>
+              <p className="text-base font-medium">{invoice.customer_name}</p>
+              {invoice.customer_address && <p className="text-sm text-muted-foreground mt-0.5">{invoice.customer_address}</p>}
+              {invoice.customer_gst && <p className="text-sm text-muted-foreground mt-0.5">GSTIN: {invoice.customer_gst}</p>}
+              {invoice.customer_phone && <p className="text-sm text-muted-foreground mt-0.5">Phone: {invoice.customer_phone}</p>}
+              {invoice.customer_email && <p className="text-sm text-muted-foreground mt-0.5">Email: {invoice.customer_email}</p>}
             </div>
-            <div>
-              <h3 className="font-semibold">Bill To</h3>
-              <p>{invoice.customer_name}</p>
-              {invoice.customer_address && <p>{invoice.customer_address}</p>}
-              {invoice.customer_gst && <p>GST: {invoice.customer_gst}</p>}
-              {invoice.customer_phone && <p>Phone: {invoice.customer_phone}</p>}
-              {invoice.customer_email && <p>Email: {invoice.customer_email}</p>}
-            </div>
+            {invoice.shipping_address ? (
+              <div className="border rounded-lg p-4">
+                <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-2">
+                  <Building2 className="h-4 w-4" /> Ship To
+                </div>
+                <p className="text-sm text-muted-foreground">{invoice.shipping_address}</p>
+              </div>
+            ) : <div />}
           </div>
 
-          {invoice.shipping_address && (
-            <div>
-              <h3 className="font-semibold">Ship To</h3>
-              <p>{invoice.shipping_address}</p>
-            </div>
-          )}
-
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
+          {/* Line items */}
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="border-b">
-                  <th className="text-left py-2">Description</th>
-                  <th className="text-left py-2">HSN</th>
-                  <th className="text-right py-2">Qty</th>
-                  <th className="text-right py-2">Rate</th>
-                  <th className="text-right py-2">GST%</th>
-                  <th className="text-right py-2">Tax</th>
-                  <th className="text-right py-2">Amount</th>
+                <tr className="bg-muted/50 text-left text-muted-foreground">
+                  <th className="py-2.5 px-3 font-medium">Description</th>
+                  <th className="py-2.5 px-3 font-medium">HSN</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Qty</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Rate</th>
+                  <th className="py-2.5 px-3 font-medium text-right">GST%</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Tax</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Amount</th>
                 </tr>
               </thead>
               <tbody>
                 {items.map((item) => (
-                  <tr key={item.id} className="border-b">
-                    <td className="py-2">{item.description}</td>
-                    <td className="py-2">{item.hsn_code || "-"}</td>
-                    <td className="text-right py-2">{item.quantity}</td>
-                    <td className="text-right py-2">₹{item.rate.toFixed(2)}</td>
-                    <td className="text-right py-2">{item.gst_rate}%</td>
-                    <td className="text-right py-2">
+                  <tr key={item.id} className="border-t">
+                    <td className="py-2.5 px-3">{item.description}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground">{item.hsn_code || "-"}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">{item.quantity}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">{money(item.rate)}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">{item.gst_rate}%</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
                       {item.gst_type === 'IGST'
-                        ? `IGST: ₹${(item.igst_amount || 0).toFixed(2)}`
-                        : `CGST: ₹${(item.cgst_amount || 0).toFixed(2)} / SGST: ₹${(item.sgst_amount || 0).toFixed(2)}`}
+                        ? `IGST ${money(item.igst_amount)}`
+                        : item.gst_type
+                          ? `C ${money(item.cgst_amount)} / S ${money(item.sgst_amount)}`
+                          : '-'}
                     </td>
-                    <td className="text-right py-2">₹{item.amount.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-right tabular-nums font-medium">{money(item.amount)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
 
-          <div className="flex flex-col items-end space-y-1">
-            <div className="w-64 flex justify-between">
-              <span>Subtotal:</span>
-              <span>₹{invoice.subtotal.toFixed(2)}</span>
-            </div>
-            <div className="w-64 flex justify-between">
-              <span>Total GST:</span>
-              <span>₹{invoice.total_gst.toFixed(2)}</span>
-            </div>
-            <div className="w-64 flex justify-between font-bold border-t pt-1">
-              <span>Grand Total:</span>
-              <span>₹{invoice.grand_total.toFixed(2)}</span>
+          {/* Totals */}
+          <div className="flex justify-end">
+            <div className="w-full max-w-xs space-y-1.5">
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Subtotal</span>
+                <span className="tabular-nums">{money(invoice.subtotal)}</span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Total GST</span>
+                <span className="tabular-nums">{money(invoice.total_gst)}</span>
+              </div>
+              <div className="flex justify-between text-lg font-bold border-t pt-2 mt-1">
+                <span>Grand Total</span>
+                <span className="tabular-nums">{money(invoice.grand_total)}</span>
+              </div>
             </div>
           </div>
 
-          {invoice.notes && (
-            <div>
-              <h3 className="font-semibold">Notes</h3>
-              <p className="text-sm text-muted-foreground">{invoice.notes}</p>
+          {/* Notes / terms / bank */}
+          {(invoice.notes || invoice.terms_conditions || invoice.bank_details) && (
+            <div className="grid md:grid-cols-3 gap-4 border-t pt-6">
+              {invoice.notes && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-1">Notes</h3>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{invoice.notes}</p>
+                </div>
+              )}
+              {invoice.terms_conditions && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-1">Terms & Conditions</h3>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{invoice.terms_conditions}</p>
+                </div>
+              )}
+              {invoice.bank_details && (
+                <div>
+                  <h3 className="text-sm font-semibold mb-1 flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5" /> Bank Details</h3>
+                  <p className="text-sm text-muted-foreground whitespace-pre-line">{invoice.bank_details}</p>
+                </div>
+              )}
             </div>
           )}
-          {invoice.terms_conditions && (
-            <div>
-              <h3 className="font-semibold">Terms & Conditions</h3>
-              <p className="text-sm text-muted-foreground">{invoice.terms_conditions}</p>
-            </div>
-          )}
-          {invoice.bank_details && (
-            <div>
-              <h3 className="font-semibold">Bank Details</h3>
-              <p className="text-sm text-muted-foreground">{invoice.bank_details}</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      {previewUrl && (
+        <PdfPreviewDialog url={previewUrl} title={`Invoice ${invoice.invoice_number}`} onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} />
+      )}
     </div>
   );
 }
