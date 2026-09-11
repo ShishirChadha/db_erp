@@ -62,7 +62,9 @@ export async function getPublishedProductById(id: string): Promise<MarketingProd
 
 export interface ProductFilter {
   category?: string
-  spec?: Record<string, string> // e.g. { cpu: 'i5', ram: '8' }
+  brand?: string // matches sku_master.brand directly, not specifications.brand -- guaranteed
+                  // present for every category, unlike a jsonb spec key that varies by template
+  spec?: Record<string, string> // e.g. { cpu: 'i5', ram: '8' } -- combined with brand/category via AND, same as this function's other filters
   priceMax?: number
   priceMin?: number
   inStockOnly?: boolean
@@ -82,6 +84,9 @@ export async function findPublishedProducts(filter: ProductFilter): Promise<Mark
   if (error) throw new Error(error.message)
 
   let rows = data || []
+  if (filter.brand) {
+    rows = rows.filter((r) => (r.brand || '').toLowerCase() === filter.brand!.toLowerCase())
+  }
   if (filter.spec) {
     for (const [field, value] of Object.entries(filter.spec)) {
       rows = rows.filter((r) => String(r.specifications?.[field] ?? '').toLowerCase() === value.toLowerCase())
@@ -153,4 +158,19 @@ export async function getRepresentativeUnit(skuId: string): Promise<Representati
     .limit(1)
     .maybeSingle()
   return data || null
+}
+
+// Up to `limit` photo storage paths for a SKU (primary first, then sort_order) --
+// same public_product_images view the storefront's own gallery reads
+// (apps/web/lib/queries.ts's getProductImages). Cards use this to build a
+// multi-photo collage instead of a single cropped hero shot.
+export async function getProductImagePaths(skuId: string, limit = 4): Promise<string[]> {
+  const { data } = await supabaseAdmin
+    .from('public_product_images')
+    .select('storage_path')
+    .eq('sku_id', skuId)
+    .order('is_primary', { ascending: false })
+    .order('sort_order', { ascending: true })
+    .limit(limit)
+  return (data || []).map((r) => r.storage_path as string)
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
-import { getPublishedProductById } from '@/lib/marketing/product-data'
+import { getPublishedProductById, getProductImagePaths } from '@/lib/marketing/product-data'
 import { renderProductCard, CARD_FORMATS, type CardFormat } from '@/lib/marketing/card-templates'
 
 // Renders a branded PNG product card on demand -- GET so it can be used directly as
@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
   if (!product) return NextResponse.json({ error: 'That SKU is not published on the website.' }, { status: 404 })
 
   try {
-    return await renderProductCard(product, format)
+    const imagePaths = await getProductImagePaths(skuId, 4)
+    return await renderProductCard(product, format, imagePaths)
   } catch (err: any) {
     return NextResponse.json({ error: err.message || 'Card rendering failed' }, { status: 500 })
   }

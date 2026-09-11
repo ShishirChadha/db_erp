@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     mode: 'single_product' | 'product_list' | 'blog'
     platform: 'whatsapp' | 'instagram' | 'facebook' | 'google_business' | 'blog'
     sku_id?: string
-    filter?: { category?: string; spec?: Record<string, string>; priceMin?: number; priceMax?: number; inStockOnly?: boolean }
+    filter?: { category?: string; brand?: string; spec?: Record<string, string>; priceMin?: number; priceMax?: number; inStockOnly?: boolean }
     theme?: string
     topic?: string
   }

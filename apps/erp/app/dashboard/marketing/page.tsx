@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
+import { useCustomOptions } from '@/lib/useCustomOptions'
+import { SearchableSelect } from '@/components/SearchableSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -336,20 +338,25 @@ function SingleProductTab() {
 
 function ProductListTab() {
   const [category, setCategory] = useState('LAP')
-  const [specField, setSpecField] = useState('')
-  const [specValue, setSpecValue] = useState('')
+  const [brand, setBrand] = useState('')
+  const [cpu, setCpu] = useState('')
   const [theme, setTheme] = useState('')
   const [inStockOnly, setInStockOnly] = useState(true)
   const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const { values: brandOptions } = useCustomOptions('brand')
+  const { values: cpuOptions } = useCustomOptions('cpu')
+
   const { run: generate, pending } = useAsyncAction(async () => {
     setError(null); setResult(null)
     const filter: Record<string, any> = { category, inStockOnly }
-    if (specField.trim() && specValue.trim()) filter.spec = { [specField.trim()]: specValue.trim() }
+    if (brand.trim()) filter.brand = brand.trim()
+    if (cpu.trim()) filter.spec = { cpu: cpu.trim() }
+    const themeParts = [brand, cpu, category].filter(Boolean)
     const res = await apiFetch('/api/marketing/generate', {
       method: 'POST',
-      body: JSON.stringify({ mode: 'product_list', theme: theme || `${category} in stock`, filter }),
+      body: JSON.stringify({ mode: 'product_list', theme: theme || `${themeParts.join(' ')} in stock`, filter }),
     })
     const data = await res.json()
     if (!res.ok) { setError(data.error || 'Generation failed'); return }
@@ -358,7 +365,7 @@ function ProductListTab() {
 
   return (
     <div className="space-y-4 max-w-2xl">
-      <p className="text-sm text-muted-foreground">e.g. "all i5 laptops in stock" -- category=Laptops, spec field=cpu, spec value=i5.</p>
+      <p className="text-sm text-muted-foreground">Combine filters, e.g. "all Dell i5 laptops in stock" -- category=LAP, brand=Dell, CPU=i5. Leave Brand/CPU blank to match any.</p>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="text-sm font-medium mb-1 block">Category code</label>
@@ -366,15 +373,21 @@ function ProductListTab() {
         </div>
         <div>
           <label className="text-sm font-medium mb-1 block">Broadcast theme (optional)</label>
-          <Input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="All i5 laptops in stock" />
+          <Input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="All Dell i5 laptops in stock" />
         </div>
         <div>
-          <label className="text-sm font-medium mb-1 block">Spec field (optional)</label>
-          <Input value={specField} onChange={(e) => setSpecField(e.target.value)} placeholder="cpu" />
+          <label className="text-sm font-medium mb-1 block">Brand (optional)</label>
+          <div className="flex gap-1">
+            <div className="flex-1"><SearchableSelect options={brandOptions} value={brand} onChange={setBrand} placeholder="Any brand" /></div>
+            {brand && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setBrand('')}>Clear</Button>}
+          </div>
         </div>
         <div>
-          <label className="text-sm font-medium mb-1 block">Spec value</label>
-          <Input value={specValue} onChange={(e) => setSpecValue(e.target.value)} placeholder="i5" />
+          <label className="text-sm font-medium mb-1 block">CPU (optional)</label>
+          <div className="flex gap-1">
+            <div className="flex-1"><SearchableSelect options={cpuOptions} value={cpu} onChange={setCpu} placeholder="Any CPU" /></div>
+            {cpu && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCpu('')}>Clear</Button>}
+          </div>
         </div>
       </div>
       <Button onClick={() => generate()} disabled={pending} className="h-8">
