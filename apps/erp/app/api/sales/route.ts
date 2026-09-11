@@ -6,6 +6,7 @@ import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 import { buildCustomerSummary } from '@/lib/customer-summary'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
 // This is the transactional/financial view (payment state, incentive attribution),
@@ -37,11 +38,12 @@ export async function GET(req: NextRequest) {
   // that drift -- a search still finds every sale for a matching customer even if
   // that particular sale's own snapshot text doesn't contain the search term.
   const searchCustomerIds = search
-    ? (await supabaseAdmin
-        .from('customers')
-        .select('id')
-        .or(`customer_name.ilike.%${search}%,contact_person.ilike.%${search}%`)
-      ).data?.map((c: any) => c.id) || []
+    ? (await withRetry(() =>
+        supabaseAdmin
+          .from('customers')
+          .select('id')
+          .or(`customer_name.ilike.%${search}%,contact_person.ilike.%${search}%`)
+      )).data?.map((c: any) => c.id) || []
     : []
   const searchFilter = search
     ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}`
@@ -54,12 +56,15 @@ export async function GET(req: NextRequest) {
   // unpaginated select('*') + JS .filter().length that silently plateaued at
   // PostgREST's row cap as the ledger grew.
   if (searchParams.get('counts') === 'true') {
-    const countQuery = (extra: (q: any) => any) => {
-      let q = supabaseAdmin.from('sales').select('id', { count: 'exact', head: true }).eq('is_deleted', voided)
-      if (paymentStatus) q = q.eq('payment_status', paymentStatus)
-      if (receivedInto) q = q.eq('payment_account', receivedInto)
-      if (search) q = q.or(searchFilter)
-      return extra(q)
+    const countQuery = (extra: (q: any) => any): Promise<{ count: number | null }> => {
+      const build = () => {
+        let q = supabaseAdmin.from('sales').select('id', { count: 'exact', head: true }).eq('is_deleted', voided)
+        if (paymentStatus) q = q.eq('payment_status', paymentStatus)
+        if (receivedInto) q = q.eq('payment_account', receivedInto)
+        if (search) q = q.or(searchFilter)
+        return extra(q)
+      }
+      return withRetry(build)
     }
     const [totalSold, pending, partial, awaitingInvoice] = await Promise.all([
       countQuery((q: any) => q),
@@ -106,27 +111,11 @@ export async function GET(req: NextRequest) {
   const unfinalizedCustomerIds = [...new Set(
     (data || []).filter((s: any) => !s.finalized && s.customer_id).map((s: any) => s.customer_id)
   )]
-  const { data: liveCustomers } = unfinalizedCustomerIds.length
-    ? await supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds)
-    : { data: [] as any[] }
-  const liveNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
-
   // Small disambiguation summary (type/contact/address/source) shown next to every
   // customer name in the ledger -- see lib/customer-summary.ts. Always live (not
   // frozen), for every sale regardless of finalized state, since it's informational
   // rather than a legal invoice field.
   const allCustomerIds = [...new Set((data || []).filter((s: any) => s.customer_id).map((s: any) => s.customer_id))]
-  const { data: summaryCustomers } = allCustomerIds.length
-    ? await supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds)
-    : { data: [] as any[] }
-  const customerSummaryById = new Map((summaryCustomers || []).map((c: any) => [c.id, buildCustomerSummary(c)]))
-
-  // Per-sale invoicing mode (Zoho transition): resolve each sale's entity from its
-  // payment_account and tag it 'erp' or 'external' so the ledger UI shows the right
-  // action -- "Generate Invoice" (ERP) vs "Record Zoho Invoice #" (external).
-  const { data: profiles } = await supabaseAdmin.from('business_profiles').select('key, invoicing_mode')
-  const modeByKey = new Map((profiles || []).map((p: any) => [p.key, p.invoicing_mode]))
-
   // Product description: accessory sales point at sku_master directly via
   // accessory_id; unit sales need asset_ledger_id -> its EFFECTIVE (current) sku_id
   // first -- resolveEffectiveSkuId prefers current_sku_id (set only by a post-
@@ -134,46 +123,76 @@ export async function GET(req: NextRequest) {
   // describes/RAM-SSDs/bills what was actually sold, not what was originally bought.
   // Same pattern as /api/stock/sold-accessories.
   const assetLedgerIds = [...new Set((data || []).map((s: any) => s.asset_ledger_id).filter(Boolean))]
-  const { data: assetLedgerRows } = assetLedgerIds.length
-    ? await supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', assetLedgerIds)
-    : { data: [] as any[] }
-  const skuIdByAssetLedgerId = new Map((assetLedgerRows || []).map((a: any) => [a.id, resolveEffectiveSkuId(a)]))
-
-  // Include specifications/category so the ledger can surface RAM/SSD directly
-  // (specifications.ram / specifications.ssd -- see sku_category_templates field
-  // naming convention, same keys used by website-admin upgrade rules).
-  const skuIds = [...new Set(
-    (data || [])
-      .map((s: any) => s.accessory_id || skuIdByAssetLedgerId.get(s.asset_ledger_id))
-      .filter(Boolean)
-  )]
-  const { data: skus } = skuIds.length
-    ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications').in('id', skuIds)
-    : { data: [] as any[] }
-  const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
-
   // Bundled accessories are stored inline on the unit's own sales row
   // (sales.bundled_accessories JSONB: [{accessory_id, quantity, unit_price}]) --
   // resolve each accessory_id to a display name in one batched lookup.
   const bundledAccessoryIds = [...new Set(
     (data || []).flatMap((s: any) => (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => b.accessory_id).filter(Boolean))
   )]
-  const { data: bundledSkus } = bundledAccessoryIds.length
-    ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
-    : { data: [] as any[] }
-  const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
-
   // Repair-derived sales rows (sales.repair_job_id) have no sku_master row --
   // resolve their display text from the linked repair_jobs row instead.
   const repairJobIds = [...new Set((data || []).map((s: any) => s.repair_job_id).filter(Boolean))]
-  const { data: repairJobs } = repairJobIds.length
-    ? await supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', repairJobIds)
-    : { data: [] as any[] }
+
+  // Every lookup below only depends on `data` (already fetched above), not on each
+  // other -- run them concurrently rather than as 7 sequential round trips, each of
+  // which is real network latency to Supabase, not query cost (these tables are
+  // small). This is what made a single Sales Ledger request take multiple seconds
+  // and, under load, occasionally exceed the serverless function's timeout entirely
+  // (surfacing client-side as "unable to fetch") -- same class of fix already applied
+  // to /api/stock's GET handler.
+  const [
+    { data: liveCustomers },
+    { data: summaryCustomers },
+    { data: profiles },
+    { data: assetLedgerRows },
+    { data: bundledSkus },
+    { data: repairJobs },
+    paymentDateBySaleId,
+  ] = await Promise.all([
+    unfinalizedCustomerIds.length
+      ? withRetry(() => supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds))
+      : Promise.resolve({ data: [] as any[] }),
+    allCustomerIds.length
+      ? withRetry(() => supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds))
+      : Promise.resolve({ data: [] as any[] }),
+    // Per-sale invoicing mode (Zoho transition): resolve each sale's entity from its
+    // payment_account and tag it 'erp' or 'external' so the ledger UI shows the right
+    // action -- "Generate Invoice" (ERP) vs "Record Zoho Invoice #" (external).
+    withRetry(() => supabaseAdmin.from('business_profiles').select('key, invoicing_mode')),
+    assetLedgerIds.length
+      ? withRetry(() => supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', assetLedgerIds))
+      : Promise.resolve({ data: [] as any[] }),
+    bundledAccessoryIds.length
+      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds))
+      : Promise.resolve({ data: [] as any[] }),
+    repairJobIds.length
+      ? withRetry(() => supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', repairJobIds))
+      : Promise.resolve({ data: [] as any[] }),
+    // Most recent sale_payments installment date per sale -- shown as "Payment Date"
+    // alongside sale_date; a sale with 2+ partial payments shows its latest one.
+    latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
+  ])
+  const liveNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
+  const customerSummaryById = new Map((summaryCustomers || []).map((c: any) => [c.id, buildCustomerSummary(c)]))
+  const modeByKey = new Map((profiles || []).map((p: any) => [p.key, p.invoicing_mode]))
+  const skuIdByAssetLedgerId = new Map((assetLedgerRows || []).map((a: any) => [a.id, resolveEffectiveSkuId(a)]))
+  const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
 
-  // Most recent sale_payments installment date per sale -- shown as "Payment Date"
-  // alongside sale_date; a sale with 2+ partial payments shows its latest one.
-  const paymentDateBySaleId = await latestPaymentDatesBySaleId((data || []).map((s: any) => s.id))
+  // Include specifications/category so the ledger can surface RAM/SSD directly
+  // (specifications.ram / specifications.ssd -- see sku_category_templates field
+  // naming convention, same keys used by website-admin upgrade rules). Depends on
+  // skuIdByAssetLedgerId above, so it can't join the concurrent batch -- it's the
+  // only genuinely second-stage lookup, everything else above is now one round trip.
+  const skuIds = [...new Set(
+    (data || [])
+      .map((s: any) => s.accessory_id || skuIdByAssetLedgerId.get(s.asset_ledger_id))
+      .filter(Boolean)
+  )]
+  const { data: skus } = skuIds.length
+    ? await withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications').in('id', skuIds))
+    : { data: [] as any[] }
+  const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
 
   const result = (data || []).map((s: any) => {
     const withName = !s.finalized && s.customer_id && liveNameById.has(s.customer_id)
@@ -184,6 +203,7 @@ export async function GET(req: NextRequest) {
     const sku = skuById.get(s.accessory_id || skuIdByAssetLedgerId.get(s.asset_ledger_id))
     withName.sku_description = sku?.sku_description || null
     withName.full_sku_code = sku?.full_sku_code || null
+    withName.cpu = sku?.specifications?.cpu || null
     withName.ram = sku?.specifications?.ram || null
     withName.ssd = sku?.specifications?.ssd || null
     withName.bundled_accessories_display = (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
@@ -226,6 +246,7 @@ function getSortValue(key: string): (s: any) => string | number {
     case 'customer_name': return (s) => s.customer_name || ''
     case 'item': return (s) => s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? 'Accessory' : s.repair_job_id ? (s.repair_job_number || 'Repair') : '')
     case 'description': return (s) => s.sku_description || s.full_sku_code || s.repair_description || ''
+    case 'cpu': return (s) => s.cpu || ''
     case 'ram': return (s) => s.ram || ''
     case 'ssd': return (s) => s.ssd || ''
     case 'bundle': return (s) => (s.bundled_accessories_display || []).length

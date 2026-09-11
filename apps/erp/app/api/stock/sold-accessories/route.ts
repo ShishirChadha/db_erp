@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 import { buildCustomerSummary } from '@/lib/customer-summary'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: sold accessories ----------
 // Read-only list of standalone accessory sales (sales.accessory_id set, no asset_ledger
@@ -36,10 +37,12 @@ export async function GET(req: NextRequest) {
     .order('id', { ascending: true })
 
   if (search) {
-    const { data: matchingSkus } = await supabaseAdmin
-      .from('sku_master')
-      .select('id')
-      .or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%,brand.ilike.%${search}%,model_name.ilike.%${search}%`)
+    const { data: matchingSkus } = await withRetry(() =>
+      supabaseAdmin
+        .from('sku_master')
+        .select('id')
+        .or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%,brand.ilike.%${search}%,model_name.ilike.%${search}%`)
+    )
     const skuIds = (matchingSkus || []).map((s) => s.id)
     const orClauses = [`customer_name.ilike.%${search}%`, `invoice_number.ilike.%${search}%`]
     if (skuIds.length > 0) orClauses.push(`accessory_id.in.(${skuIds.join(',')})`)
@@ -67,19 +70,23 @@ export async function GET(req: NextRequest) {
   // SKU info (name/code) via a separate lookup rather than an embedded join or
   // selecting base_cost -- employee-facing routes shouldn't select cost columns at
   // all (see lib/auth/redact.ts convention) rather than fetch-then-redact them.
+  // These three lookups only depend on `sales` (already fetched above), not on each
+  // other -- run them concurrently rather than as 3 sequential round trips, same fix
+  // already applied to /api/stock and /api/sales.
   const skuIds = [...new Set((sales || []).map((s: any) => s.accessory_id).filter(Boolean))]
-  const { data: skus } = skuIds.length
-    ? await supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category').in('id', skuIds)
-    : { data: [] as any[] }
-  const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
-  const paymentDateBySaleId = await latestPaymentDatesBySaleId((sales || []).map((s: any) => s.id))
-
-  // Same live (never frozen) disambiguation summary as /api/stock and /api/sales --
-  // see lib/customer-summary.ts.
   const customerIds = [...new Set((sales || []).map((s: any) => s.customer_id).filter(Boolean))]
-  const { data: customers } = customerIds.length
-    ? await supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', customerIds)
-    : { data: [] as any[] }
+  const [{ data: skus }, { data: customers }, paymentDateBySaleId] = await Promise.all([
+    skuIds.length
+      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category').in('id', skuIds))
+      : Promise.resolve({ data: [] as any[] }),
+    // Same live (never frozen) disambiguation summary as /api/stock and /api/sales --
+    // see lib/customer-summary.ts.
+    customerIds.length
+      ? withRetry(() => supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', customerIds))
+      : Promise.resolve({ data: [] as any[] }),
+    latestPaymentDatesBySaleId((sales || []).map((s: any) => s.id)),
+  ])
+  const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
   const customerById = new Map((customers || []).map((c: any) => [c.id, c]))
 
   const result = (sales || []).map((s: any) => {

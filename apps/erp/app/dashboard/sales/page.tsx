@@ -53,6 +53,7 @@ interface Sale {
   invoice_mode?: "erp" | "external";
   sku_description?: string | null;
   full_sku_code?: string | null;
+  cpu?: string | null;
   ram?: string | null;
   ssd?: string | null;
   bundled_accessories_display?: { name: string; quantity: number }[];
@@ -87,8 +88,15 @@ interface RowCtx {
   onDone: () => void;
 }
 
+// An asset_number only ever exists once a real PO has been attached (see
+// CLAUDE.md) -- a unit can be QC'd/sold entirely by serial_number before
+// that happens, and once it does, the serial number is still the physical
+// identifier staff read off the unit itself, so both stay visible rather
+// than the asset number silently hiding it.
 const item = (s: Sale) =>
-  s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? "Accessory" : s.repair_job_id ? (s.repair_job_number || "Repair") : "—");
+  s.asset_number
+    ? (s.serial_number ? `${s.asset_number} · SN: ${s.serial_number}` : s.asset_number)
+    : (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? "Accessory" : s.repair_job_id ? (s.repair_job_number || "Repair") : "—");
 
 const COLUMNS: ColumnDef[] = [
   {
@@ -144,14 +152,34 @@ const COLUMNS: ColumnDef[] = [
     className: "border p-2",
     defaultWidth: 200,
     sortable: true,
-    render: (s) => (
-      <>
-        {s.sku_description || s.full_sku_code || s.repair_description || "—"}
-        {s.sku_description && s.full_sku_code && (
-          <span className="text-muted-foreground"> · {s.full_sku_code}</span>
-        )}
-      </>
-    ),
+    render: (s) => {
+      // CPU/RAM/SSD already have their own columns, but a description that's
+      // copy-pasted or exported on its own (e.g. into an invoice/quotation
+      // line) is otherwise missing the actual configuration -- folding the
+      // spec into the description text itself keeps that one field complete.
+      const specParts = [s.cpu, s.ram, s.ssd].filter(Boolean);
+      return (
+        <>
+          {s.sku_description || s.full_sku_code || s.repair_description || "—"}
+          {s.sku_description && s.full_sku_code && (
+            <span className="text-muted-foreground"> · {s.full_sku_code}</span>
+          )}
+          {specParts.length > 0 && (
+            <span className="text-muted-foreground"> · {specParts.join(" / ")}</span>
+          )}
+        </>
+      );
+    },
+    optional: true,
+    defaultVisible: true,
+  },
+  {
+    key: "cpu",
+    label: "CPU",
+    className: "border p-2 whitespace-nowrap",
+    defaultWidth: 90,
+    sortable: true,
+    render: (s) => s.cpu || "—",
     optional: true,
     defaultVisible: true,
   },
@@ -486,7 +514,18 @@ function SalesLedgerPage() {
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  // searchInput updates on every keystroke (so the box feels responsive); search only
+  // catches up 300ms after typing stops, and is what actually drives fetchSales below --
+  // without this, every keystroke fired its own full /api/sales request (each doing
+  // several sequential DB round trips server-side over the full sales table), which
+  // piled up overlapping in-flight requests and was the real cause of "search is slow /
+  // sometimes errors" here. Same fix already applied to StockView.tsx's search box.
+  const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
   const [paymentFilter, setPaymentFilter] = useState("");
   const [receivedIntoFilter, setReceivedIntoFilter] = useState("");
   const [loading, setLoading] = useState(true);
@@ -721,8 +760,8 @@ function SalesLedgerPage() {
       <div ref={toolbarRef} className="sticky top-0 z-30 bg-muted pb-3">
         <div className="flex gap-4 flex-wrap items-center pt-1">
           <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search customer, asset, serial, invoice..."
             className="border p-2 rounded bg-card"
           />

@@ -6,6 +6,7 @@ import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { getLastVendorsBySku } from '@/lib/purchase-utils'
 import { getLastEntryVendorsBySku } from '@/lib/accessory-movements'
 import { redactManyForRole } from '@/lib/auth/redact'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: current (in-stock) accessories ----------
 // Counterpart to /api/stock/sold-accessories, for the main Stock page's new
@@ -49,18 +50,25 @@ export async function GET(req: NextRequest) {
   if (skus && skus.length > 0) {
     const skuIds = skus.map((s: any) => s.id)
 
-    const { data: unattached } = await supabaseAdmin
-      .from('stock_movements')
-      .select('sku_id, quantity_change')
-      .in('sku_id', skuIds)
-      .eq('movement_type', 'receipt')
-      .is('po_id', null)
+    // All three only depend on skuIds -- concurrent rather than 3 sequential round
+    // trips, same fix already applied to /api/stock and /api/sales.
+    const [{ data: unattached }, lastVendors, lastEntries] = await Promise.all([
+      withRetry(() =>
+        supabaseAdmin
+          .from('stock_movements')
+          .select('sku_id, quantity_change')
+          .in('sku_id', skuIds)
+          .eq('movement_type', 'receipt')
+          .is('po_id', null)
+      ),
+      withRetry(() => getLastVendorsBySku(skuIds)),
+      withRetry(() => getLastEntryVendorsBySku(skuIds)),
+    ])
     for (const m of unattached || []) {
       backlogBySkuId.set(m.sku_id, (backlogBySkuId.get(m.sku_id) || 0) + m.quantity_change)
     }
-
-    lastVendorBySkuId = await getLastVendorsBySku(skuIds)
-    lastEntryBySkuId = await getLastEntryVendorsBySku(skuIds)
+    lastVendorBySkuId = lastVendors
+    lastEntryBySkuId = lastEntries
   }
 
   const result = (skus || []).map((s: any) => {

@@ -9,6 +9,7 @@ import { SearchableSelect } from '@/components/SearchableSelect'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Card, CardContent } from '@/components/ui/card'
@@ -18,7 +19,13 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { MARKETING_ASSET_STATUS_TONES, toneFor } from '@db/shared'
 import { Copy, Download, MessageCircle, Loader2, Sparkles, Share2, ImageOff, Save, Star } from 'lucide-react'
 
-interface SkuOption { id: string; full_sku_code: string; web_title: string | null; brand: string | null; model_name: string | null; category: string; is_published: boolean }
+// A trimmed shape of lib/marketing/product-data.ts's MarketingProduct -- just what the
+// browse grid (Today's Picks) and the Single Product search picker need to render.
+interface PickProduct {
+  id: string; brand: string | null; model_name: string | null; full_sku_code: string
+  category: string; display_title: string; config_summary: string; config_diff: string
+  web_price: number; primary_image_path: string | null; available_count?: number
+}
 interface MarketingAsset {
   id: string; kind: string; platform: string; format: string; title: string | null
   body_text: string | null; hashtags: string[]; cta_text: string | null; status: string
@@ -39,17 +46,52 @@ const CARD_FORMATS = [
   { value: 'fb_link', label: 'Facebook Link (1200x630)' },
 ]
 
+function productImageUrl(path: string): string {
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/product-images/${path}`
+}
+
+function ProductThumb({ path, size = 56 }: { path: string | null; size?: number }) {
+  if (!path) {
+    return (
+      <div className="flex items-center justify-center bg-muted rounded text-muted-foreground shrink-0" style={{ width: size, height: size }}>
+        <ImageOff className="w-4 h-4" />
+      </div>
+    )
+  }
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={productImageUrl(path)} alt="" className="rounded border object-cover shrink-0" style={{ width: size, height: size }} />
+}
+
+// Groups Today's Picks' grid by brand, ascending -- Apple, then its items, then Dell,
+// and so on -- matching the same grouping buildProductListWhatsAppMessage applies to
+// the generated broadcast, so browsing here reads the same way the message will.
+// /api/marketing/products already returns items brand-sorted, so this only needs to
+// group adjacent-or-not entries under one heading per brand, not re-sort them.
+function groupByBrand(products: PickProduct[]): [string, PickProduct[]][] {
+  const groups = new Map<string, PickProduct[]>()
+  for (const p of products) {
+    const brand = p.brand || 'Other'
+    const existing = groups.get(brand)
+    if (existing) existing.push(p)
+    else groups.set(brand, [p])
+  }
+  return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
+}
+
+// Search-as-you-type over real current (live) stock, not the general SKU Master
+// picker -- same findInStockProducts source Today's Picks and Product List use, so
+// Single Product can promote any in-stock item over WhatsApp, not just published ones.
 function useProductSearch() {
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<SkuOption[]>([])
+  const [results, setResults] = useState<PickProduct[]>([])
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (query.trim().length < 2) { setResults([]); return }
     const t = setTimeout(async () => {
       setLoading(true)
-      const res = await apiFetch(`/api/sku-master?search=${encodeURIComponent(query)}&is_published=true`)
-      if (res.ok) setResults(await res.json())
+      const res = await apiFetch(`/api/marketing/products?search=${encodeURIComponent(query)}&limit=20`)
+      if (res.ok) { const data = await res.json(); setResults(data.products || []) }
       setLoading(false)
     }, 300)
     return () => clearTimeout(t)
@@ -201,89 +243,188 @@ function GeneratedResult({ asset, whatsappShareLink, product }: { asset: Marketi
           )}
           <ShareButton text={body} skuId={skuId} />
         </div>
-        {skuId && <CardDownloadButton skuId={skuId} label={asset.title || 'product'} hasPhoto={!!product?.primary_image_path} />}
+        {/* Card download is per-SKU (photo + spec) -- a product_list broadcast covers many
+            SKUs (often not all published, since findInStockProducts isn't publish-gated)
+            with no single "the" card to represent it, so this only shows for single_product. */}
+        {asset.kind === 'single_product' && skuId && (
+          <CardDownloadButton skuId={skuId} label={asset.title || 'product'} hasPhoto={!!product?.primary_image_path} />
+        )}
       </CardContent>
     </Card>
   )
 }
 
-interface SuggestionProduct { id: string; display_title: string; config_summary: string; web_price: number; category: string; primary_image_path: string | null; received_at?: string | null }
-interface SuggestionBucket { priority: string; label: string; reason: string; products: SuggestionProduct[] }
-
+// Browse + multi-select over real current (live) stock -- replaces the old fixed
+// P1-P4 priority-bucket suggestion engine (lib/marketing/suggest.ts, removed
+// 2026-09-11): the owner wanted to hand-pick items directly instead. Same
+// category/brand/CPU filters as Product List. Nothing ticked -> "Generate WhatsApp"
+// covers every item currently matching the filters (same as Product List's own bulk
+// generation); ticking specific items scopes generation to exactly those. Ticking 2+
+// items also enables a photo collage (one photo per selected item).
 function TodaysPicksTab() {
-  const [buckets, setBuckets] = useState<SuggestionBucket[] | null>(null)
+  const [category, setCategory] = useState('LAP')
+  const [brand, setBrand] = useState('')
+  const [cpu, setCpu] = useState('')
+  const [theme, setTheme] = useState('')
+  const [inStockOnly, setInStockOnly] = useState(true)
+  const [products, setProducts] = useState<PickProduct[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string; product?: GeneratedProduct } | null>(null)
-  const [generatingId, setGeneratingId] = useState<string | null>(null)
+
+  const { values: brandOptions } = useCustomOptions('brand')
+  const { values: cpuOptions } = useCustomOptions('cpu')
 
   const load = async () => {
-    setLoading(true)
-    const res = await apiFetch('/api/marketing/suggest')
-    if (res.ok) setBuckets(await res.json())
-    else setError('Failed to load suggestions')
+    setLoading(true); setLoadError(null)
+    const params = new URLSearchParams({ in_stock: String(inStockOnly) })
+    if (category.trim()) params.set('category', category.trim())
+    if (brand.trim()) params.set('brand', brand.trim())
+    if (cpu.trim()) params.set('cpu', cpu.trim())
+    const res = await apiFetch(`/api/marketing/products?${params}`)
+    const data = await res.json()
+    if (!res.ok) { setLoadError(data.error || 'Failed to load'); setProducts([]) }
+    else setProducts(data.products || [])
     setLoading(false)
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(); setSelected(new Set()) }, [category, brand, cpu, inStockOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const generateFor = async (skuId: string) => {
-    setGeneratingId(skuId); setError(null); setResult(null)
-    const res = await apiFetch('/api/marketing/generate', {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'single_product', platform: 'whatsapp', sku_id: skuId }),
+  const toggle = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
     })
-    const data = await res.json()
-    setGeneratingId(null)
-    if (!res.ok) { setError(data.error || 'Generation failed'); return }
-    setResult(data)
   }
 
-  if (loading) return <p className="text-sm text-muted-foreground">Loading today's picks...</p>
-  if (!buckets) return <ErrorBanner message={error || 'Could not load suggestions'} />
+  const { run: generate, pending: generating } = useAsyncAction(async () => {
+    setError(null); setResult(null)
+    const ids = [...selected]
+    const filter: Record<string, any> = ids.length > 0
+      ? { skuIds: ids, inStockOnly }
+      : { category: category || undefined, brand: brand || undefined, spec: cpu ? { cpu } : undefined, inStockOnly }
+    const themeParts = ids.length > 0 ? [] : [brand, cpu, category].filter(Boolean)
+    const autoTheme = ids.length > 0 ? `${ids.length} Selected Item${ids.length > 1 ? 's' : ''}` : `${themeParts.join(' ')} in stock`
+    const res = await apiFetch('/api/marketing/generate', {
+      method: 'POST',
+      body: JSON.stringify({ mode: 'product_list', theme: theme.trim() || autoTheme, filter }),
+    })
+    const data = await res.json()
+    if (!res.ok) { setError(data.error || 'Generation failed'); return }
+    setResult(data)
+  })
+
+  const { run: downloadCollage, pending: collaging } = useAsyncAction(async () => {
+    const ids = [...selected]
+    const res = await apiFetch(`/api/marketing/collage?sku_ids=${ids.join(',')}&format=wa_square`)
+    if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Collage generation failed'); return }
+    const blob = await res.blob()
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `collage-${ids.length}-items.png`
+    document.body.appendChild(a); a.click(); a.remove()
+    URL.revokeObjectURL(url)
+  })
+
+  const selectedList = [...selected]
+  const singleSelectedProduct = selectedList.length === 1 ? products.find((p) => p.id === selectedList[0]) : undefined
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Ranked by priority for today's WhatsApp send -- P1 new arrivals (by real stock-receipt date, not publish date), P2 high-end/MacBooks, P3 aging stock, P4 unique configurations.
+        Browse what's actually in stock right now. Tick items to hand-pick a broadcast -- leave nothing ticked to generate for everything matching the filters below. Tick 2 or more to also download a photo collage.
       </p>
-      {buckets.map((bucket, i) => (
-        <div key={bucket.priority}>
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-semibold px-2 py-0.5 rounded bg-muted">P{i + 1}</span>
-            <h3 className="font-medium">{bucket.label}</h3>
-            <span className="text-xs text-muted-foreground">{bucket.reason}</span>
-          </div>
-          {bucket.products.length === 0 ? (
-            <p className="text-sm text-muted-foreground mt-1 ml-1">Nothing in this bucket right now.</p>
-          ) : (
-            <div className="mt-2 space-y-1.5">
-              {bucket.products.map((p) => (
-                <div key={p.id} className="flex items-center justify-between gap-3 rounded-md border px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium truncate flex items-center gap-1.5">
-                      {p.display_title}
-                      {!p.primary_image_path && <ImageOff className="w-3.5 h-3.5 text-warning shrink-0" />}
-                    </div>
-                    <div className="text-xs text-muted-foreground truncate">{p.config_summary} · ₹{p.web_price.toLocaleString('en-IN')}</div>
-                  </div>
-                  <Button size="sm" variant="outline" className="h-7 shrink-0" disabled={generatingId === p.id} onClick={() => generateFor(p.id)}>
-                    {generatingId === p.id ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />} Generate WhatsApp
-                  </Button>
-                </div>
-              ))}
-            </div>
-          )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl">
+        <div>
+          <label className="text-sm font-medium mb-1 block">Category code</label>
+          <Input value={category} onChange={(e) => setCategory(e.target.value.toUpperCase())} placeholder="LAP" />
         </div>
-      ))}
+        <div>
+          <label className="text-sm font-medium mb-1 block">Brand</label>
+          <div className="flex gap-1">
+            <div className="flex-1"><SearchableSelect options={brandOptions} value={brand} onChange={setBrand} placeholder="Any brand" /></div>
+            {brand && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setBrand('')}>Clear</Button>}
+          </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium mb-1 block">CPU</label>
+          <div className="flex gap-1">
+            <div className="flex-1"><SearchableSelect options={cpuOptions} value={cpu} onChange={setCpu} placeholder="Any CPU" /></div>
+            {cpu && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCpu('')}>Clear</Button>}
+          </div>
+        </div>
+        <div>
+          <label className="text-sm font-medium mb-1 block">Broadcast theme (optional)</label>
+          <Input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="All Dell i5 laptops in stock" />
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      ) : loadError ? (
+        <ErrorBanner message={loadError} />
+      ) : products.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No items in stock match these filters.</p>
+      ) : (
+        // Grouped and ascending-sorted by brand -- Apple, then its items, then Dell, and
+        // so on -- matching how the generated WhatsApp message itself is grouped
+        // (buildProductListWhatsAppMessage), so picking here reads the same way the
+        // broadcast it produces will.
+        <div className="space-y-4">
+          {groupByBrand(products).map(([brandName, items]) => (
+            <div key={brandName}>
+              <h4 className="text-sm font-semibold mb-1.5">{brandName}</h4>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {items.map((p) => {
+                  const isSelected = selected.has(p.id)
+                  return (
+                    <button
+                      type="button" key={p.id} onClick={() => toggle(p.id)}
+                      className={`text-left border rounded-md p-2 flex gap-2 items-center ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : ''}`}
+                    >
+                      <Checkbox checked={isSelected} onCheckedChange={() => toggle(p.id)} />
+                      <ProductThumb path={p.primary_image_path} />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-medium truncate">{p.display_title}</div>
+                        <div className="text-[11px] text-muted-foreground truncate">{p.config_summary || p.config_diff || '\u00a0'}</div>
+                        {(p.available_count ?? 0) > 1 && <div className="text-[11px] text-muted-foreground">{p.available_count} in stock</div>}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => generate()} disabled={generating || products.length === 0} className="h-8">
+          {generating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+          Generate WhatsApp {selected.size > 0 ? `(${selected.size} selected)` : '(all filtered)'}
+        </Button>
+        {selected.size >= 2 && (
+          <Button onClick={() => downloadCollage()} disabled={collaging} variant="outline" className="h-8">
+            {collaging ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download collage ({selected.size} photos)
+          </Button>
+        )}
+        {singleSelectedProduct && (
+          <CardDownloadButton skuId={singleSelectedProduct.id} label={singleSelectedProduct.display_title} hasPhoto={!!singleSelectedProduct.primary_image_path} />
+        )}
+      </div>
+
       {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} product={result.product} />}
+      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
     </div>
   )
 }
 
 function SingleProductTab() {
   const { query, setQuery, results, loading } = useProductSearch()
-  const [selected, setSelected] = useState<SkuOption | null>(null)
+  const [selected, setSelected] = useState<PickProduct | null>(null)
   const [platform, setPlatform] = useState('whatsapp')
   const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string; product?: GeneratedProduct } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -303,18 +444,20 @@ function SingleProductTab() {
   return (
     <div className="space-y-4 max-w-2xl">
       <div>
-        <label className="text-sm font-medium mb-1 block">Product (published SKUs only)</label>
+        <label className="text-sm font-medium mb-1 block">Product (current stock)</label>
+        <p className="text-xs text-muted-foreground mb-1">WhatsApp works for any in-stock item. Instagram/Facebook/Google Business Profile need the item published on the website first (they include a product link).</p>
         <Input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null) }} placeholder="Search by brand, model, or SKU code..." />
         {loading && <p className="text-xs text-muted-foreground mt-1">Searching...</p>}
         {!selected && results.length > 0 && (
           <div className="border rounded-md mt-1 max-h-56 overflow-y-auto">
             {results.map((r) => (
               <button
-                key={r.id} type="button" onClick={() => { setSelected(r); setQuery(r.web_title || `${r.brand} ${r.model_name}`) }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-muted"
+                key={r.id} type="button" onClick={() => { setSelected(r); setQuery(r.display_title) }}
+                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
               >
-                {r.web_title || `${r.brand || ''} ${r.model_name || ''}`.trim() || r.full_sku_code}
-                <span className="text-muted-foreground ml-2">{r.full_sku_code}</span>
+                <ProductThumb path={r.primary_image_path} size={32} />
+                <span className="min-w-0 truncate">{r.display_title}</span>
+                <span className="text-muted-foreground ml-auto shrink-0">{r.full_sku_code}</span>
               </button>
             ))}
           </div>
@@ -332,69 +475,6 @@ function SingleProductTab() {
       </Button>
       {error && <ErrorBanner message={error} />}
       {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} product={result.product} />}
-    </div>
-  )
-}
-
-function ProductListTab() {
-  const [category, setCategory] = useState('LAP')
-  const [brand, setBrand] = useState('')
-  const [cpu, setCpu] = useState('')
-  const [theme, setTheme] = useState('')
-  const [inStockOnly, setInStockOnly] = useState(true)
-  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const { values: brandOptions } = useCustomOptions('brand')
-  const { values: cpuOptions } = useCustomOptions('cpu')
-
-  const { run: generate, pending } = useAsyncAction(async () => {
-    setError(null); setResult(null)
-    const filter: Record<string, any> = { category, inStockOnly }
-    if (brand.trim()) filter.brand = brand.trim()
-    if (cpu.trim()) filter.spec = { cpu: cpu.trim() }
-    const themeParts = [brand, cpu, category].filter(Boolean)
-    const res = await apiFetch('/api/marketing/generate', {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'product_list', theme: theme || `${themeParts.join(' ')} in stock`, filter }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setError(data.error || 'Generation failed'); return }
-    setResult(data)
-  })
-
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <p className="text-sm text-muted-foreground">Combine filters, e.g. "all Dell i5 laptops in stock" -- category=LAP, brand=Dell, CPU=i5. Leave Brand/CPU blank to match any.</p>
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="text-sm font-medium mb-1 block">Category code</label>
-          <Input value={category} onChange={(e) => setCategory(e.target.value.toUpperCase())} placeholder="LAP" />
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">Broadcast theme (optional)</label>
-          <Input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="All Dell i5 laptops in stock" />
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">Brand (optional)</label>
-          <div className="flex gap-1">
-            <div className="flex-1"><SearchableSelect options={brandOptions} value={brand} onChange={setBrand} placeholder="Any brand" /></div>
-            {brand && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setBrand('')}>Clear</Button>}
-          </div>
-        </div>
-        <div>
-          <label className="text-sm font-medium mb-1 block">CPU (optional)</label>
-          <div className="flex gap-1">
-            <div className="flex-1"><SearchableSelect options={cpuOptions} value={cpu} onChange={setCpu} placeholder="Any CPU" /></div>
-            {cpu && <Button type="button" variant="ghost" size="sm" className="h-8 px-2" onClick={() => setCpu('')}>Clear</Button>}
-          </div>
-        </div>
-      </div>
-      <Button onClick={() => generate()} disabled={pending} className="h-8">
-        {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Generate
-      </Button>
-      {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
     </div>
   )
 }
@@ -516,20 +596,18 @@ function MarketingPage() {
       <div>
         <h1 className="text-2xl font-semibold">Marketing Content Studio</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate WhatsApp, Instagram, Facebook and blog content grounded in your real published catalogue -- prices and specs are inserted from live data, never invented.
+          Generate WhatsApp content grounded in your real current stock -- Today's Picks covers everything Product List used to (filters, custom broadcast themes, bulk generation), plus browsing, multi-select, and a photo collage. Instagram/Facebook/blog content needs the item published on the website first, since those include a real product link -- specs and prices are always inserted from live data, never invented.
         </p>
       </div>
       <Tabs defaultValue="picks">
         <TabsList>
           <TabsTrigger value="picks">Today's Picks</TabsTrigger>
           <TabsTrigger value="single">Single Product</TabsTrigger>
-          <TabsTrigger value="list">Product List</TabsTrigger>
           <TabsTrigger value="blog">Blog Draft</TabsTrigger>
           <TabsTrigger value="drafts">Drafts</TabsTrigger>
         </TabsList>
         <TabsContent value="picks"><TodaysPicksTab /></TabsContent>
         <TabsContent value="single"><SingleProductTab /></TabsContent>
-        <TabsContent value="list"><ProductListTab /></TabsContent>
         <TabsContent value="blog"><BlogTab /></TabsContent>
         <TabsContent value="drafts"><DraftsTab /></TabsContent>
       </Tabs>

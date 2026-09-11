@@ -82,6 +82,60 @@ function Collage({ urls, w, h }: { urls: string[]; w: number; h: number }) {
   )
 }
 
+function gridDims(n: number): { cols: number; rows: number } {
+  if (n <= 1) return { cols: 1, rows: 1 }
+  if (n === 2) return { cols: 2, rows: 1 }
+  if (n <= 4) return { cols: 2, rows: 2 }
+  if (n <= 6) return { cols: 3, rows: 2 }
+  return { cols: 3, rows: 3 }
+}
+
+// Equal-weight N-photo grid (unlike Collage above, which hero-weights the first photo
+// for a single product's own gallery) -- one photo per selected product, so no single
+// item should visually dominate the others.
+function GridCollage({ urls, w, h }: { urls: string[]; w: number; h: number }) {
+  const { cols, rows } = gridDims(urls.length)
+  const gap = 6
+  const cellW = Math.floor((w - gap * (cols - 1)) / cols)
+  const cellH = Math.floor((h - gap * (rows - 1)) / rows)
+  const rowEls = []
+  for (let r = 0; r < rows; r++) {
+    const cellsInRow = []
+    for (let c = 0; c < cols; c++) {
+      const i = r * cols + c
+      cellsInRow.push(<ImgBox key={i} src={urls[i]} w={cellW} h={cellH} />)
+    }
+    rowEls.push(<div key={r} style={{ display: 'flex', flexDirection: 'row', gap }}>{cellsInRow}</div>)
+  }
+  return <div style={{ display: 'flex', flexDirection: 'column', width: w, height: h, gap }}>{rowEls}</div>
+}
+
+// Multi-product collage -- one photo per selected item (Today's Picks' multi-select),
+// not a multi-photo gallery of one product (that's renderProductCard/Collage above).
+// Deliberately carries no per-item title/spec text (several different products, no
+// single header makes sense) -- just the photo grid and the phone number, matching the
+// same minimal-card philosophy as the single-product card.
+export async function renderMultiItemCollage(imagePaths: string[], format: CardFormat): Promise<ImageResponse> {
+  const { width, height } = CARD_FORMATS[format]
+  const [bold] = await Promise.all([getFont('Archivo', 800)])
+  const urls = imagePaths.map(imageUrl)
+  const footerH = format === 'fb_link' ? 0 : 110
+
+  return new ImageResponse(
+    (
+      <div style={{ width, height, display: 'flex', flexDirection: 'column', background: '#ffffff', fontFamily: 'IBM Plex Sans' }}>
+        <GridCollage urls={urls} w={width} h={height - footerH} />
+        {footerH > 0 && (
+          <div style={{ display: 'flex', width, height: footerH, alignItems: 'center', justifyContent: 'center', background: '#ffffff' }}>
+            <div style={{ display: 'flex', fontFamily: 'Archivo', fontWeight: 800, fontSize: 32, color: INK }}>{PHONE_LINE}</div>
+          </div>
+        )}
+      </div>
+    ),
+    { width, height, fonts: [{ name: 'Archivo', data: bold, weight: 800 }] }
+  )
+}
+
 // Deliberately minimal by owner request (2026-09-11): a downloaded card carries only the
 // photo(s), the laptop's specification, and the DigitalBluez number -- no price, no
 // discount badge, no condition badge, no review strip. Title is built from brand + model

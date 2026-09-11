@@ -10,6 +10,7 @@ import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 import { buildCustomerSummary } from '@/lib/customer-summary'
 import { getSpecFieldNames } from '@/lib/spec-fields'
+import { withRetry } from '@/lib/db-retry'
 
 // business_profiles.invoicing_mode barely ever changes -- same short-TTL cache pattern
 // as getSpecFieldNames below, so it doesn't become another unconditional query on every
@@ -197,16 +198,18 @@ export async function GET(req: NextRequest) {
       (async () => {
         const specFieldNames = await getSpecFieldNames()
         const specClauses = specFieldNames.map((f) => `specifications->>${f}.ilike.%${search}%`)
-        const { data: matchingSkus } = await supabaseAdmin
-          .from('sku_master')
-          .select('id')
-          .or([
-            `full_sku_code.ilike.%${search}%`,
-            `sku_description.ilike.%${search}%`,
-            `brand.ilike.%${search}%`,
-            `model_name.ilike.%${search}%`,
-            ...specClauses,
-          ].join(','))
+        const { data: matchingSkus } = await withRetry(() =>
+          supabaseAdmin
+            .from('sku_master')
+            .select('id')
+            .or([
+              `full_sku_code.ilike.%${search}%`,
+              `sku_description.ilike.%${search}%`,
+              `brand.ilike.%${search}%`,
+              `model_name.ilike.%${search}%`,
+              ...specClauses,
+            ].join(','))
+        )
         return (matchingSkus || []).map((s) => s.id)
       })(),
       // A term can also match the customer a unit was sold to, or the (Zoho, during
@@ -215,11 +218,13 @@ export async function GET(req: NextRequest) {
       // below), so they have to be resolved here the same way SKU matches are: look up
       // matching sales first, then OR their asset_ledger_id into this query.
       (async () => {
-        const { data: matchingSales } = await supabaseAdmin
-          .from('sales')
-          .select('asset_ledger_id')
-          .or(`customer_name.ilike.%${search}%,invoice_number.ilike.%${search}%`)
-          .not('asset_ledger_id', 'is', null)
+        const { data: matchingSales } = await withRetry(() =>
+          supabaseAdmin
+            .from('sales')
+            .select('asset_ledger_id')
+            .or(`customer_name.ilike.%${search}%,invoice_number.ilike.%${search}%`)
+            .not('asset_ledger_id', 'is', null)
+        )
         return [...new Set((matchingSales || []).map((s: any) => s.asset_ledger_id))]
       })(),
     ])
@@ -297,19 +302,21 @@ export async function GET(req: NextRequest) {
     invoicingModeByKey,
   ] = await Promise.all([
     fallbackSkuIds.length
-      ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', fallbackSkuIds)
+      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', fallbackSkuIds))
       : Promise.resolve({ data: [] as any[] }),
     fallbackVendorIds.length
-      ? supabaseAdmin.from('vendors').select('id, company_name').in('id', fallbackVendorIds)
+      ? withRetry(() => supabaseAdmin.from('vendors').select('id, company_name').in('id', fallbackVendorIds))
       : Promise.resolve({ data: [] as any[] }),
     assetIds.length
-      ? supabaseAdmin.from('repair_jobs').select('asset_id, job_number').in('asset_id', assetIds).in('status', ['intake', 'in_progress'])
+      ? withRetry(() => supabaseAdmin.from('repair_jobs').select('asset_id, job_number').in('asset_id', assetIds).in('status', ['intake', 'in_progress']))
       : Promise.resolve({ data: [] as any[] }),
     soldIds.length
-      ? supabaseAdmin
-          .from('sales')
-          .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account')
-          .in('asset_ledger_id', soldIds)
+      ? withRetry(() =>
+          supabaseAdmin
+            .from('sales')
+            .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account')
+            .in('asset_ledger_id', soldIds)
+        )
       : Promise.resolve({ data: [] as any[] }),
     // Digitalbluez is currently in Zoho "external" invoicing mode during the
     // transition (docs/decisions.md, 2026-07-24) -- generating an ERP invoice for it
@@ -348,10 +355,10 @@ export async function GET(req: NextRequest) {
   // All three depend on salesRows above, but not on each other -- concurrent again.
   const [{ data: liveCustomers }, { data: bundledSkus }, paymentDateBySaleId] = await Promise.all([
     allCustomerIds.length
-      ? supabaseAdmin.from('customers').select('id, customer_name, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds)
+      ? withRetry(() => supabaseAdmin.from('customers').select('id, customer_name, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds))
       : Promise.resolve({ data: [] as any[] }),
     bundledAccessoryIds.length
-      ? supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds)
+      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds))
       : Promise.resolve({ data: [] as any[] }),
     latestPaymentDatesBySaleId((salesRows || []).map((s: any) => s.id)),
   ])

@@ -1,13 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
-import { getPublishedProductById, getProductImagePaths } from '@/lib/marketing/product-data'
+import { getInStockProductById, getProductImagePaths } from '@/lib/marketing/product-data'
 import { renderProductCard, CARD_FORMATS, type CardFormat } from '@/lib/marketing/card-templates'
 
 // Renders a branded PNG product card on demand -- GET so it can be used directly as
 // an <img src> / download link from the Studio UI. Auth still required (Bearer token
-// via a signed fetch, not a public route) since this reads sku_id from the
-// public_products view via the service-role client, same posture as every other
-// authenticated data read in this app.
+// via a signed fetch, not a public route) since this reads sku_id from sku_master via
+// the service-role client, same posture as every other authenticated data read in this
+// app. Sourced from current (live) stock, not website-publish status -- a card is just
+// a photo + spec + phone number, no product link, so there's nothing about it that
+// requires the SKU to be published (see product-data.ts's getInStockProductById).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -19,8 +21,8 @@ export async function GET(req: NextRequest) {
   if (!skuId) return NextResponse.json({ error: 'sku_id is required' }, { status: 400 })
   if (!(format in CARD_FORMATS)) return NextResponse.json({ error: `Unknown format: ${format}` }, { status: 400 })
 
-  const product = await getPublishedProductById(skuId)
-  if (!product) return NextResponse.json({ error: 'That SKU is not published on the website.' }, { status: 404 })
+  const product = await getInStockProductById(skuId)
+  if (!product) return NextResponse.json({ error: 'That item is not currently in stock.' }, { status: 404 })
 
   try {
     const imagePaths = await getProductImagePaths(skuId, 4)

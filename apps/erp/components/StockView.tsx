@@ -149,8 +149,14 @@ const OPTIONAL_COLUMNS = [
 ] as const
 type ColumnKey = typeof OPTIONAL_COLUMNS[number]['key']
 
+// An asset_number only ever exists once a real PO has been attached (see
+// CLAUDE.md) -- a unit can be QC'd/sold entirely by serial_number before
+// that happens, and once it does, the serial number is still the physical
+// identifier staff read off the unit itself, so both stay visible rather
+// than the asset number silently hiding it.
 function identifier(asset: AssetRow) {
-  return asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')
+  if (asset.asset_number) return asset.serial_number ? `${asset.asset_number} · SN: ${asset.serial_number}` : asset.asset_number
+  return asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —'
 }
 
 // Shared table/logic behind both the employee-facing Live Stock view (source=

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { getPublishedProductById, findPublishedProducts, getRepresentativeUnit, type MarketingProduct } from '@/lib/marketing/product-data'
+import { getPublishedProductById, getInStockProductById, findPublishedProducts, findInStockProducts, getRepresentativeUnit, type MarketingProduct } from '@/lib/marketing/product-data'
 import { generateSingleProductPost, generateBlogDraft, type BrandVoice } from '@/lib/marketing/generate'
 import { buildProductUrl, buildWhatsAppShareLink } from '@/lib/marketing/share-links'
 import { buildSingleProductWhatsAppMessage, buildProductListWhatsAppMessage, type WhatsAppTemplateSettings } from '@/lib/marketing/whatsapp-template'
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
     mode: 'single_product' | 'product_list' | 'blog'
     platform: 'whatsapp' | 'instagram' | 'facebook' | 'google_business' | 'blog'
     sku_id?: string
-    filter?: { category?: string; brand?: string; spec?: Record<string, string>; priceMin?: number; priceMax?: number; inStockOnly?: boolean }
+    filter?: { category?: string; brand?: string; spec?: Record<string, string>; priceMin?: number; priceMax?: number; inStockOnly?: boolean; limit?: number; skuIds?: string[]; search?: string }
     theme?: string
     topic?: string
   }
@@ -61,9 +61,20 @@ export async function POST(req: NextRequest) {
   try {
     if (mode === 'single_product') {
       if (!sku_id) return NextResponse.json({ error: 'sku_id is required' }, { status: 400 })
-      const product = await getPublishedProductById(sku_id)
-      if (!product) return NextResponse.json({ error: 'That SKU is not published on the website yet -- publish it first via SKU Master -> Website.' }, { status: 400 })
       if (platform === 'blog') return NextResponse.json({ error: 'Use mode=blog for blog posts.' }, { status: 400 })
+
+      // WhatsApp's template carries no product URL, so any currently-in-stock item can
+      // be promoted regardless of website-publish status (same reasoning as
+      // findInStockProducts / Product List). Instagram/Facebook/Google Business Profile
+      // content always ends with a real deep link (buildProductUrl below), which only
+      // resolves for a published SKU -- those platforms keep the publish requirement.
+      const product = platform === 'whatsapp' ? await getInStockProductById(sku_id) : await getPublishedProductById(sku_id)
+      if (!product) {
+        const message = platform === 'whatsapp'
+          ? 'That item is not currently in stock.'
+          : 'That SKU is not published on the website yet -- publish it first via SKU Master -> Website, or generate a WhatsApp message instead (WhatsApp doesn\'t require publishing).'
+        return NextResponse.json({ error: message }, { status: 400 })
+      }
 
       let bodyWithLink: string
       let hashtags: string[] = []
@@ -117,8 +128,14 @@ export async function POST(req: NextRequest) {
     }
 
     if (mode === 'product_list') {
-      const products = await findPublishedProducts({ ...filter, limit: 20 })
-      if (products.length === 0) return NextResponse.json({ error: 'No published products matched that filter.' }, { status: 400 })
+      // findInStockProducts, not findPublishedProducts -- this broadcast promotes real
+      // current inventory to an existing contact list, not the website (no product
+      // links in the template), so it isn't gated to published SKUs. limit defaults to
+      // 60 (not the old hard 20) so "all X in stock" with no other filter actually shows
+      // everything realistic; still bounded so a filterless, category-less request can't
+      // return the entire catalogue as one WhatsApp message.
+      const products = await findInStockProducts({ ...filter, limit: filter?.limit ?? 60 })
+      if (products.length === 0) return NextResponse.json({ error: 'No in-stock products matched that filter.' }, { status: 400 })
 
       const themeLabel = theme || 'Products in Stock'
       const bodyText = buildProductListWhatsAppMessage(themeLabel, products, waSettings)
