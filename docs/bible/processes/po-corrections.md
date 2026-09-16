@@ -3,6 +3,7 @@ slug: po-corrections
 title: Correcting a Purchase Order after creation
 kind: process
 audience: [owner]
+module: purchasing
 routes: [/dashboard/purchase-orders, '/dashboard/purchase-orders/[id]']
 keywords: [edit po, correct po, wrong quantity, wrong price, wrong gst, wrong vendor, hsn code, already invoiced, confirm despite invoice, fix purchase order, purchase order mistake]
 sources:
@@ -11,7 +12,7 @@ sources:
   - apps/erp/components/EditPoItemDialog.tsx
   - apps/erp/components/EditPoVendorDialog.tsx
   - apps/erp/lib/po-gst-calc.ts
-updated: 2026-08-30
+updated: 2026-09-15
 ---
 
 ## What this is

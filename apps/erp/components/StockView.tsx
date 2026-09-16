@@ -111,7 +111,7 @@ interface AccessoryStockRow {
   last_entry_date?: string | null
 }
 
-const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
+const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned', 'on_rent']
 
 const MONTH_OPTIONS = [
   { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
@@ -609,6 +609,7 @@ export default function StockView({
             <option value="qc_passed">QC Passed</option>
             <option value="ready_for_sale">Ready for Sale</option>
             <option value="faulty">Faulty</option>
+            <option value="on_rent">On Rent</option>
           </select>
         )}
         <input

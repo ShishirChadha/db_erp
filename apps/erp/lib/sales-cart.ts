@@ -190,11 +190,17 @@ export async function processSingleSaleItem(
   // of anything set directly on this row, so a value written here would be silently
   // wiped out the moment anyone adds a later installment via the existing "Add Payment"
   // ledger route.
+  // Exception to the above: a free item (sale_total <= 0) can never receive a payment
+  // leg (allocatePaymentLegs has nothing to allocate to it, and sale_payments.amount
+  // requires > 0 anyway), so the trigger will never fire to flip it off the 'pending'
+  // default. Nothing is owed, so it's set 'paid' directly here -- this can't be wiped
+  // out by a later installment the way a real payment could, because none is possible.
   const saleRecord = {
     ...base,
     sale_base_price: item.sale_base_price,
     sale_gst: gstAmount,
     sale_total: saleTotal,
+    ...(saleTotal <= 0 ? { payment_status: 'paid' } : {}),
   }
 
   // ---------- Standalone accessory line ----------

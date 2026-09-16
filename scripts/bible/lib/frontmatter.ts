@@ -13,6 +13,7 @@ export interface ChapterFrontmatter {
   title: string
   kind: ChapterKind
   audience: Audience[]
+  module?: string
   routes?: string[]
   keywords?: string[]
   sources?: string[]

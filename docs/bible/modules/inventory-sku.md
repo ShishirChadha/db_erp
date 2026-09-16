@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-08-30
+updated: 2026-09-16
 ---
 
 ## What this covers
@@ -52,6 +52,14 @@ the `specifications->>field ILIKE` clauses) for 60s rather than re-querying
 `sku_category_templates` on every keystroke — a short-TTL in-memory cache,
 same pattern as `lib/auth/redact.ts`'s redaction-rules cache. `StockView`'s
 own search box debounces input by 300ms before it drives that fetch at all.
+
+## Units out on rent
+
+A unit on rent stays an ordinary `asset_ledger`/`sku_master` row with
+`status = 'on_rent'` — there is no rental catalogue, no rental SKU category and no
+second quantity mechanism. It leaves stock through the normal `stock_movements` ledger
+(an `adjustment` of −1) and comes back the same way, so `quantity_in_stock` stays
+honest throughout. See **rentals**.
 
 ## Related
 

@@ -182,11 +182,10 @@ function genNavMap() {
 }
 
 // ---------------------------------------------------------------------------
-// 3b) generated-nav.json -- flat, advisor-consumable copy of the nav map.
-// Written into apps/erp/lib/advisor/ (not docs/bible/generated/) so it's a
-// plain JSON import Next.js bundles natively -- the advisor's locate resolver
-// never does a runtime fs read, per the performance contract (one indexed
-// round trip, nothing extra on the hot path).
+// 3b) generated-nav.json -- flat copy of the nav map, consumed by
+// NavSearchPalette.tsx (the sidebar's ⌘K page-jump search). Written into
+// apps/erp/lib/ so it's a plain JSON import Next.js bundles natively -- no
+// runtime fs read, nothing extra on the hot path.
 // ---------------------------------------------------------------------------
 function genNavJson(groups: NavItem[]) {
   const flat: { label: string; route: string; pageKey?: string; ownerOnly?: boolean }[] = []
@@ -196,10 +195,10 @@ function genNavJson(groups: NavItem[]) {
       if (c.href) flat.push({ label: `${g.label} > ${c.label}`, route: c.href, pageKey: c.pageKey, ownerOnly: c.ownerOnly })
     }
   }
-  const outDir = resolve(ROOT, 'apps/erp/lib/advisor')
+  const outDir = resolve(ROOT, 'apps/erp/lib')
   mkdirSync(outDir, { recursive: true })
   writeFileSync(resolve(outDir, 'generated-nav.json'), JSON.stringify(flat, null, 2) + '\n', 'utf8')
-  console.log('  wrote apps/erp/lib/advisor/generated-nav.json')
+  console.log('  wrote apps/erp/lib/generated-nav.json')
 }
 
 // ---------------------------------------------------------------------------

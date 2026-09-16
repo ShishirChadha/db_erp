@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/activities/**
   - apps/erp/lib/notifications.ts
   - apps/erp/lib/activities.ts
-updated: 2026-09-01
+updated: 2026-09-16
 ---
 
 ## `activities` is the single reusable task/collaboration model
@@ -39,6 +39,19 @@ the `activities` system and has no table of its own.
 `notifications`, keyed by `recipient_id` — never a per-module notifier.
 `lib/notifications.ts`'s `notify()`/`notifyMany()` is the one entry point;
 email is best-effort (`emailBestEffort`).
+
+## Rental reminders
+
+`activities.related_type` accepts `'rental_agreement'`. The `scan_rental_cycles()`
+pg_cron job (daily) raises a task plus an in-app notification when a rental billing
+cycle is due or a return is overdue — reusing the generic `activities` +
+`notifications` tables and the `task_assigned` type, never a rentals-specific task or
+notifier table. It uses the same atomic-claim idiom as `scan_activity_due_dates()`, so
+an overlapping tick cannot double-notify.
+
+Pending Tasks gains two derived sections, **Rentals Overdue** and **Rent Due to Bill**,
+computed live from agreement data — nothing about "overdue" or "due to bill" is stored.
+See **rentals**.
 
 ## Related
 

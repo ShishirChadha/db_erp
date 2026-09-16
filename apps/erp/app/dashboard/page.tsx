@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck } from 'lucide-react'
+import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck, CalendarClock } from 'lucide-react'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
@@ -31,13 +31,14 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const { from, to } = PRESETS[presetKey].range()
   const compare = prevPeriod(from, to)
 
-  const [kpisRes, purchaseRes, expensesRes, inventoryRes] = await Promise.all([
+  const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes] = await Promise.all([
     supabaseAdmin.rpc('report_kpis', {
       p_from: from, p_to: to, p_compare_from: compare.from, p_compare_to: compare.to, p_include_financials: includeFinancials,
     }),
     supabaseAdmin.rpc('report_purchase_kpis', { p_from: from, p_to: to }),
     supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to, p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_inventory', { p_include_financials: includeFinancials }),
+    supabaseAdmin.rpc('report_rentals', { p_from: from, p_to: to }),
   ])
 
   const kpis = kpisRes.data?.current
@@ -45,6 +46,7 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const purchase = purchaseRes.data
   const expenses = expensesRes.data
   const inv = inventoryRes.data?.units
+  const rentals = rentalsRes.data
 
   const purchaseGrowth = purchase?.prev_value > 0
     ? Math.round(((purchase.value - purchase.prev_value) / purchase.prev_value) * 1000) / 10
@@ -81,6 +83,14 @@ async function DashboardPageContent({ preset }: { preset: string }) {
     {
       title: 'Pending Payment (Value)', value: fmt(kpis?.outstanding),
       href: '/dashboard/sales', icon: Clock, color: 'text-purple', bg: 'bg-purple/15',
+    },
+    // Rental income is deliberately its own tile rather than folded into Total Sold:
+    // the owner asked to see it separately, and v_report_sale_lines' line_kind='rental'
+    // is what makes that separation possible.
+    {
+      title: 'Rent Billed', value: fmt(rentals?.rent_billed_incl),
+      sub: rentals ? `${rentals.units_on_rent} unit${rentals.units_on_rent === 1 ? '' : 's'} on rent` : undefined,
+      href: '/dashboard/rentals', icon: CalendarClock, color: 'text-info', bg: 'bg-info/15',
     },
     {
       title: 'Ready for Sale (Count)', value: inv?.sellable_count ?? '—',

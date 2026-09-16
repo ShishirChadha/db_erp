@@ -177,6 +177,41 @@ function ServicePageInner() {
   const [replacementUnit, setReplacementUnit] = useState<StockUnit | null>(null)
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
 
+  // Replacement-only: accessories are fungible (no per-unit row) so swapping one
+  // requires a SKU+quantity picker instead of the serialized UnitPicker -- see
+  // docs/decisions.md. Toggle only matters when subType === 'replacement'.
+  const [replacementItemKind, setReplacementItemKind] = useState<'unit' | 'accessory'>(
+    (searchParams.get('item_kind') as 'unit' | 'accessory') || 'unit'
+  )
+  const [oldAccessorySku, setOldAccessorySku] = useState<Accessory | null>(null)
+  const [oldAccessorySkuSearch, setOldAccessorySkuSearch] = useState('')
+  const [oldAccessorySkuOptions, setOldAccessorySkuOptions] = useState<Accessory[]>([])
+  const [oldAccessoryQty, setOldAccessoryQty] = useState<number | ''>('')
+  const [replacementSku, setReplacementSku] = useState<Accessory | null>(null)
+  const [replacementSkuSearch, setReplacementSkuSearch] = useState('')
+  const [replacementSkuOptions, setReplacementSkuOptions] = useState<Accessory[]>([])
+  const [replacementQty, setReplacementQty] = useState<number | ''>(1)
+
+  useEffect(() => {
+    if (!oldAccessorySkuSearch.trim()) { setOldAccessorySkuOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(oldAccessorySkuSearch)}`)
+      const data = await res.json()
+      setOldAccessorySkuOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [oldAccessorySkuSearch])
+
+  useEffect(() => {
+    if (!replacementSkuSearch.trim()) { setReplacementSkuOptions([]); return }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}&search=${encodeURIComponent(replacementSkuSearch)}`)
+      const data = await res.json()
+      setReplacementSkuOptions(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [replacementSkuSearch])
+
   const [partsUsed, setPartsUsed] = useState<{ sku_id: string; label: string; quantity: number; unit_price: number }[]>([])
   const [partsSearch, setPartsSearch] = useState('')
   const [partsOptions, setPartsOptions] = useState<PartOption[]>([])
@@ -310,6 +345,9 @@ function ServicePageInner() {
     setPaymentAccount('Digitalbluez')
     setReplacementUnit(null); setReturnItemKind('unit'); setReturnUnit(null); setReturnSku(null); setReturnSkuSearch(''); setReturnSkuOptions([]); setReturnQty('')
     setReturnReason(RETURN_REASONS[0]); setReturnNotes('')
+    setReplacementItemKind('unit')
+    setOldAccessorySku(null); setOldAccessorySkuSearch(''); setOldAccessorySkuOptions([]); setOldAccessoryQty('')
+    setReplacementSku(null); setReplacementSkuSearch(''); setReplacementSkuOptions([]); setReplacementQty(1)
     setServiceDate(today())
     setPartsUsed([]); setPartsSearch(''); setPartsOptions([])
     setOldSaleInfo(null); setBundled([]); setBundleSearch(''); setBundleOptions([])
@@ -318,14 +356,46 @@ function ServicePageInner() {
 
   const { run: handleSubmitRepairOrReplacement, pending: submittingRepair } = useAsyncAction(async () => {
     setError('')
+    const isAccessoryReplacement = subType === 'replacement' && replacementItemKind === 'accessory'
     if (!customerId) { setError('Select or add a customer.'); return }
-    if (isOwnStock && !ownUnit) { setError('Select the unit from our stock.'); return }
-    if (!isOwnStock && !deviceDescription.trim()) { setError('Describe the customer\'s device.'); return }
-    if (subType === 'replacement' && !replacementUnit) { setError('Select the replacement unit.'); return }
+    if (isAccessoryReplacement) {
+      if (isOwnStock && (!oldAccessorySku || !oldAccessoryQty || oldAccessoryQty <= 0)) {
+        setError('Select the accessory being returned and enter a quantity.'); return
+      }
+      if (!isOwnStock && !deviceDescription.trim()) { setError('Describe the customer\'s item.'); return }
+      if (!replacementSku || !replacementQty || replacementQty <= 0) {
+        setError('Select the replacement accessory and enter a quantity.'); return
+      }
+    } else {
+      if (isOwnStock && !ownUnit) { setError('Select the unit from our stock.'); return }
+      if (!isOwnStock && !deviceDescription.trim()) { setError('Describe the customer\'s device.'); return }
+      if (subType === 'replacement' && !replacementUnit) { setError('Select the replacement unit.'); return }
+    }
 
     try {
-      const endpoint = subType === 'replacement' ? '/api/replacement-jobs' : '/api/repair-jobs'
-      const payload = subType === 'replacement'
+      const endpoint = isAccessoryReplacement
+        ? '/api/accessory-replacement-jobs'
+        : subType === 'replacement' ? '/api/replacement-jobs' : '/api/repair-jobs'
+      const payload = isAccessoryReplacement
+        ? {
+            customer_id: customerId,
+            is_own_stock: isOwnStock,
+            old_sku_id: isOwnStock ? oldAccessorySku!.id : null,
+            old_quantity: isOwnStock ? oldAccessoryQty : null,
+            customer_device_description: deviceDescription,
+            replacement_sku_id: replacementSku!.id,
+            replacement_quantity: replacementQty,
+            problem_description: problem,
+            amount_charged: amountCharged === '' ? null : amountCharged,
+            payment_account: paymentAccount,
+            job_date: serviceDate,
+            parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: p.unit_price })),
+            sold_by: soldBy || undefined,
+            sale_type: saleType,
+            gst_percentage: saleType === 'GST' ? gstPercent : 0,
+            additional_amount_paid: additionalAmountPaid === '' ? 0 : additionalAmountPaid,
+          }
+        : subType === 'replacement'
         ? {
             customer_id: customerId,
             is_own_stock: isOwnStock,
@@ -468,12 +538,81 @@ function ServicePageInner() {
             </div>
           </div>
 
+          {subType === 'replacement' && (
+            <div>
+              <label className="block font-medium text-sm mb-1">Item Type</label>
+              <div className="flex mb-2 border rounded overflow-hidden w-fit">
+                {(['unit', 'accessory'] as const).map(k => (
+                  <button
+                    key={k}
+                    onClick={() => setReplacementItemKind(k)}
+                    className={`px-3 py-1.5 text-sm capitalize ${replacementItemKind === k ? 'bg-primary text-primary-foreground' : 'bg-card'}`}
+                  >
+                    {k}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center gap-2">
             <Checkbox id="ownStock" checked={isOwnStock} onCheckedChange={(v) => setIsOwnStock(!!v)} />
             <label htmlFor="ownStock" className="text-sm">This is our own stock (not a customer's personal device)</label>
           </div>
 
-          {isOwnStock ? (
+          {subType === 'replacement' && replacementItemKind === 'accessory' ? (
+            isOwnStock ? (
+              <div className="grid grid-cols-2 gap-4 items-start">
+                <div>
+                  <label className="block font-medium text-sm mb-1">Accessory Being Returned *</label>
+                  {oldAccessorySku ? (
+                    <div className="flex items-center justify-between border p-2 rounded bg-muted">
+                      <span>{oldAccessorySku.accessory_name}</span>
+                      <button onClick={() => setOldAccessorySku(null)} className="text-destructive text-xs underline">Change</button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        type="text"
+                        placeholder="Search accessory..."
+                        value={oldAccessorySkuSearch}
+                        onChange={(e) => setOldAccessorySkuSearch(e.target.value)}
+                        className="border p-2 w-full rounded"
+                      />
+                      {oldAccessorySkuOptions.length > 0 && (
+                        <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                          {oldAccessorySkuOptions.map(a => (
+                            <button
+                              key={a.id}
+                              onClick={() => { setOldAccessorySku(a); setOldAccessorySkuOptions([]) }}
+                              className="block w-full text-left px-2 py-1 hover:bg-muted text-sm"
+                            >
+                              {a.accessory_name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+                <div>
+                  <label className="block font-medium text-sm mb-1">Quantity *</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={oldAccessoryQty}
+                    onChange={(e) => setOldAccessoryQty(e.target.value === '' ? '' : Number(e.target.value))}
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+              </div>
+            ) : (
+              <div>
+                <label className="block font-medium text-sm mb-1">Device / Item Description *</label>
+                <input value={deviceDescription} onChange={(e) => setDeviceDescription(e.target.value)} placeholder="e.g. Customer's own charger, non-DB purchase" className="border p-2 w-full rounded" />
+              </div>
+            )
+          ) : isOwnStock ? (
             <div>
               <label className="block font-medium text-sm mb-1">Unit *</label>
               <UnitPicker
@@ -561,7 +700,54 @@ function ServicePageInner() {
             )}
           </div>
 
-          {subType === 'replacement' && (
+          {subType === 'replacement' && replacementItemKind === 'accessory' && (
+            <div className="grid grid-cols-2 gap-4 items-start">
+              <div>
+                <label className="block font-medium text-sm mb-1">Replacement Accessory (given to customer) *</label>
+                {replacementSku ? (
+                  <div className="flex items-center justify-between border p-2 rounded bg-muted">
+                    <span>{replacementSku.accessory_name}</span>
+                    <button onClick={() => setReplacementSku(null)} className="text-destructive text-xs underline">Change</button>
+                  </div>
+                ) : (
+                  <>
+                    <input
+                      type="text"
+                      placeholder="Search accessory..."
+                      value={replacementSkuSearch}
+                      onChange={(e) => setReplacementSkuSearch(e.target.value)}
+                      className="border p-2 w-full rounded"
+                    />
+                    {replacementSkuOptions.length > 0 && (
+                      <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                        {replacementSkuOptions.map(a => (
+                          <button
+                            key={a.id}
+                            onClick={() => { setReplacementSku(a); setReplacementSkuOptions([]) }}
+                            className="block w-full text-left px-2 py-1 hover:bg-muted text-sm"
+                          >
+                            {a.accessory_name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div>
+                <label className="block font-medium text-sm mb-1">Quantity *</label>
+                <input
+                  type="number"
+                  min={1}
+                  value={replacementQty}
+                  onChange={(e) => setReplacementQty(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="border p-2 w-full rounded"
+                />
+              </div>
+            </div>
+          )}
+
+          {subType === 'replacement' && replacementItemKind === 'unit' && (
             <div>
               <label className="block font-medium text-sm mb-1">Replacement Unit (given to customer) *</label>
               <UnitPicker
@@ -575,7 +761,7 @@ function ServicePageInner() {
             </div>
           )}
 
-          {subType === 'replacement' && (
+          {subType === 'replacement' && replacementItemKind === 'unit' && (
             <div>
               <label className="block font-medium text-sm mb-1">Bundled Accessories (given with the new unit)</label>
               <input

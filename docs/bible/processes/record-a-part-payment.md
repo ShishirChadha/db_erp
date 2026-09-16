@@ -3,13 +3,14 @@ slug: record-a-part-payment
 title: Recording a part payment / installment
 kind: process
 audience: [owner, manager, employee]
+module: sales-invoicing
 routes: [/dashboard/sales]
 keywords: [payment, installment, part payment, add payment, balance, outstanding, paisa liya, collect payment]
 sources:
   - apps/erp/app/api/sales/[id]/payments/route.ts
   - apps/erp/app/api/sales/[id]/payments/[paymentId]/route.ts
   - apps/erp/components/AddPaymentDialog.tsx
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

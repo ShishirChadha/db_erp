@@ -393,7 +393,7 @@ function SellPageInner() {
 
   const validate = () => {
     if (cartItems.length === 0) { setError('Add at least one item to sell.'); return false }
-    if (cartItems.some(l => !l.salePrice || l.salePrice <= 0)) { setError('Enter a valid selling price for every item.'); return false }
+    if (cartItems.some(l => l.salePrice == null || l.salePrice < 0)) { setError('Enter a valid selling price for every item (0 is allowed for a free item).'); return false }
     if (!customerId) { setError('Select or add a customer.'); return false }
     if (legsTotal > cartTotal + 0.01) { setError('Payment total cannot exceed the cart total.'); return false }
     return true

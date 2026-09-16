@@ -37,6 +37,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
     { key: 'live_stock', label: 'Live Stock' },
     { key: 'repair_jobs', label: 'Repair Jobs' },
     { key: 'replacement_jobs', label: 'Replacement Jobs' },
+    { key: 'rentals', label: 'Rentals' },
   ]},
   { label: 'Sales', keys: [
     { key: 'sales', label: 'Sales' },
@@ -59,7 +60,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
   'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals',
 ]
 
 function generatePassword() {

@@ -92,6 +92,8 @@ function PendingTasksPage() {
   const [needsPo, setNeedsPo] = useState<StockRow[]>([])
   const [needsInvoice, setNeedsInvoice] = useState<any[]>([])
   const [needsPoAccessories, setNeedsPoAccessories] = useState<AccessoryPoBacklog[]>([])
+  const [rentalsDueBack, setRentalsDueBack] = useState<any[]>([])
+  const [rentalsDueToBill, setRentalsDueToBill] = useState<any[]>([])
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -102,6 +104,14 @@ function PendingTasksPage() {
     setQcPending(stockRes.ok ? await stockRes.json() : [])
     const repairData = repairRes.ok ? await repairRes.json() : []
     setRepairJobs(repairData.filter((r: any) => ['intake', 'in_progress'].includes(r.status)))
+
+    // Both rental lists are derived here from live agreement data -- nothing about
+    // "overdue" or "due to bill" is stored, matching this page's whole premise.
+    const rentalRes = await apiFetch('/api/rentals?status=active')
+    const rentalData = rentalRes.ok ? await rentalRes.json() : []
+    const today = new Date().toISOString().slice(0, 10)
+    setRentalsDueBack(rentalData.filter((r: any) => r.is_overdue))
+    setRentalsDueToBill(rentalData.filter((r: any) => r.next_billing_date && r.next_billing_date <= today))
 
     if (isOwner) {
       const [rmaRes, salesRes, stockIntakeRes, salesEntryRes, accessoryPoRes] = await Promise.all([
@@ -129,6 +139,7 @@ function PendingTasksPage() {
     && qcPending.length === 0 && repairJobs.length === 0 && rmaOpen.length === 0
     && paymentPending.length === 0 && needsPo.length === 0 && needsInvoice.length === 0
     && needsPoAccessories.length === 0
+    && rentalsDueBack.length === 0 && rentalsDueToBill.length === 0
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -141,6 +152,24 @@ function PendingTasksPage() {
       {nothingPending && <div className="text-muted-foreground text-sm">Nothing pending -- you're all caught up.</div>}
 
       <div className="space-y-4">
+        <Section title="Rentals Overdue" count={rentalsDueBack.length} href="/dashboard/rentals" loading={loading}>
+          {rentalsDueBack.slice(0, 8).map((r: any) => (
+            <Row key={r.id}>
+              <span className="font-medium">{r.agreement_number}</span> -- {r.customer_name || 'Unknown'},
+              {' '}{r.units_on_rent} unit(s) due back {r.expected_return_date}
+            </Row>
+          ))}
+        </Section>
+
+        <Section title="Rent Due to Bill" count={rentalsDueToBill.length} href="/dashboard/rentals" loading={loading}>
+          {rentalsDueToBill.slice(0, 8).map((r: any) => (
+            <Row key={r.id}>
+              <span className="font-medium">{r.agreement_number}</span> -- {r.customer_name || 'Unknown'},
+              {' '}cycle from {r.next_billing_date}
+            </Row>
+          ))}
+        </Section>
+
         <Section title="Repair Jobs In Progress" count={repairJobs.length} href="/dashboard/repair-jobs" loading={loading}>
           {repairJobs.slice(0, 8).map(job => (
             <Row key={job.id}>

@@ -115,7 +115,11 @@ Purchase Orders ───────────┘        │
   └─ purchase_order_items           ├─→ sales (one row per sale, unit or accessory)
   └─ purchase_invoices (invoices)   │     └─→ invoices (invoice_type='sales', entity_key)
                                     ├─→ repair_jobs (repair / replacement / return-adjacent)
+                                    ├─→ rental_agreement_items (unit currently out on rent)
                                     └─→ asset_rma_events (vendor returns, customer returns)
+
+rental_agreements ──→ rental_agreement_items (one per unit out)
+                  ──→ sales (rental_agreement_id: one row per billing cycle; buyouts also set asset_ledger_id)
 
 business_profiles (Digitalbluez/Techtenth/Cash) ──→ invoices.entity_key, sales_documents.entity_key
                                                   ──→ invoice_sequences (per-entity, per-doc-type numbering)
@@ -282,6 +286,29 @@ UI: `components/ActivityList.tsx` (table + filters, priority, assignee picker, r
 
 Customer/vendor returns use the older, separately-built `asset_rma_events` table (`direction` = `'to_vendor'` or `'from_customer'`) via `/api/rma` — vendor returns are owner-only (touch vendor identity); customer returns (Return sub-tab in `/dashboard/entry/service`) are open to both roles and simply move the unit back into the QC funnel.
 
+**Accessory replacement (2026-09-16):** same relationship as `accessory_rma_events` to
+`asset_rma_events` — a new `accessory_replacement_jobs` table (+ `accessory_replacement_job_parts`)
+mirrors `replacement_jobs`/`replacement_job_parts` with `old_sku_id`+`old_quantity`/
+`replacement_sku_id`+`replacement_quantity` in place of `asset_id`/`replacement_asset_id`.
+Reuses the *same* `RPL-YY-###` job-number sequence (`generate_replacement_job_number()`) —
+one business record type regardless of what's being swapped, same as invoice numbers.
+`POST /api/accessory-replacement-jobs` composes two already-existing pieces rather than
+inventing new mechanics: the old item's return leg calls `lib/accessory-rma.ts`'s
+`processAccessoryFromCustomer` (same helper a plain accessory Return uses — increments
+stock immediately, leaves an `accessory_rma_events` audit row as a side effect, exactly
+like a serialized replacement's old-unit leg leaves an `asset_rma_events` row); the new
+item's sale leg calls `lib/sales-cart.ts`'s `processSingleSaleItem` with `accessory_id`/
+`accessory_quantity` set (the same "standalone accessory line" branch the Sell cart
+already uses — no `asset_ledger` involved at all). One real difference from the serialized
+flow: an accessory sale isn't traceable back to one specific prior sale (a fungible item
+sold in bulk has no per-unit identity), so there's no `carriedOverPaid` — `amount_charged`/
+`additional_amount_paid` are always a fresh manual entry, never auto-carried-over. UI:
+`/dashboard/replacement-jobs` gained the same Units/Accessories tab split as `/dashboard/rma`
+(two tables, incompatible row shapes); the Replacement sub-tab in `/dashboard/entry/service`
+gained an Item Type (Unit/Accessory) toggle that swaps `UnitPicker`s for SKU+quantity
+pickers and hides the unit-only "Bundled Accessories" section (bundling accessories onto
+an accessory sale isn't a real scenario).
+
 **Accessory returns/replacements (2026-09-09):** `asset_rma_events`/`replacement_jobs` are
 both hard FK'd to `asset_ledger`, which an accessory (quantity-only, no per-unit row) can
 never have — a new parallel table, `accessory_rma_events`, keyed on `sku_id` + `quantity`
@@ -309,10 +336,47 @@ a Units/Accessories tab toggle (separate create form + table, since the two even
 have incompatible row shapes); the Return sub-tab in `/dashboard/entry/service` gained the
 same unit/accessory toggle for `from_customer` returns.
 
-### The Bible (`docs/bible/**`) and "DB", the internal advisor
+### Laptop Rentals (`rental_agreements`, `rental_agreement_items`)
+
+Renting serialized units out to a customer, built 2026-09-16. **Rental stock is
+ordinary sellable stock** — a unit temporarily carries `asset_ledger.status = 'on_rent'`
+(the 17th value, added the same additive way as `reserved_web`). There is no rental
+fleet table and no rental SKU category. Because `on_rent` is not in
+`SELLABLE_STATUSES`, the unit drops out of the Sell picker, the cart validator, the
+atomic sale guard and the website's `reserve_order_items` reservation with no change to
+any of them; it stays visible on Stock/Live Stock under an "On Rent" filter.
+
+**The rent charge is a `sales` row**, not a separate ledger — `rental_agreement_id` is a
+fourth discriminator FK alongside `asset_ledger_id`/`accessory_id`/`repair_job_id`,
+exactly the repair-job precedent, which is why `sale_payments`, the
+`sync_sale_payment_totals` trigger, `createInvoiceFromSales` and `finalize-batch` all
+work on it unchanged. A rent charge leaves `asset_ledger_id` NULL (otherwise the rented
+unit reads as sold and its full purchase cost is charged as COGS against one month's
+rent); a rent-to-own **buyout** sets it and stays an ordinary unit sale with real COGS.
+Rental invoice lines are `item_type='rental'` carrying **SAC 997313**, since leasing
+goods is a supply of service.
+
+Stock arithmetic: handover `adjustment −1`, return `adjustment +1` (net zero round
+trip), buyout writes **nothing** (the unit never came back, so the handover decrement is
+the sale's decrement — net −1, same as any sale). This is why the buyout route is its
+own codepath rather than `processSingleSaleItem`, which would decrement twice. A
+returned unit re-enters at `qc_pending`, never straight to `ready_for_sale`.
+
+Billing interval is per-agreement (`one_time`/`monthly`/`quarterly`). The
+`scan_rental_cycles()` pg_cron job raises an `activities` task + `notification` when a
+cycle is due or a return is overdue — it never creates the sales row; a person does.
+Overdue is always derived (`expected_return_date` passed AND a unit still `on_rent`),
+never stored. The **security deposit** lives on the agreement and is never a sales row
+while held (a liability, not revenue, and must not attract GST); settling is owner-only
+and any withheld portion is then recorded as real rental income.
+`v_report_sale_lines.line_kind` gained `'rental'` and `report_rentals(from,to)` reports
+rent and `deposits_held` separately from unit sales.
+
+### The Bible (`docs/bible/**`) and DB Guide, its one reading surface
 A versioned internal manual, split between hand-written chapters
 (`modules/`, `processes/`, `rules/` — YAML frontmatter with `slug`,
-`audience`, `keywords` including Hinglish synonyms, and a `sources` glob list
+`audience`, `module` (process chapters only — which module chapter they nest
+under), `keywords` including Hinglish synonyms, and a `sources` glob list
 that ties the chapter to the code it describes) and 8 auto-generated
 reference appendices (`generated/**`, never hand-edited — full schema,
 every API route's auth/role guards, the nav map, the live permissions matrix,
@@ -320,33 +384,40 @@ SKU category templates, dropdown options, RPC signatures, and every CHECK-
 constraint-enforced status value, all rebuilt from live truth by
 `scripts/bible/generate.ts`). Two tables, `kb_chapters`/`kb_chapter_sections`
 (read-only to any `authenticated` role, written only by
-`scripts/bible/sync.ts`), hold a synced, full-text-searchable copy for
-runtime lookups.
+`scripts/bible/sync.ts`), hold a synced copy for runtime lookups.
 
 **What keeps it from rotting**: `npm run bible:check` fails loudly (a
 warn-only `pre-push` hook) when a chapter's declared source files changed
 more recently than the chapter itself — see `docs/decisions.md` (2026-08-29)
-for the full mechanism and a new `.claude/skills/bible/SKILL.md` (`/bible`)
-that drafts the fix.
+for the full mechanism and `.claude/skills/bible/SKILL.md` (`/bible`) that
+drafts the fix. This is what keeps DB Guide current on any ERP/website
+change, not a manual reminder — a chapter whose `sources` files change
+without its own `updated` date moving fails the check.
 
-**"DB"** (`apps/erp/lib/advisor/**`) is the advisor that reads this manual
-plus the `report_*` RPCs to answer report/revenue/how-to/"where is X"
-questions — built with **no LLM**: every question in scope is a retrieval
-problem (an intent router matches record-number / metric-keyword /
-how-to-phrase / where-is-phrase patterns to an existing RPC, chapter, or nav
-entry — `lib/advisor/router.ts`), not a reasoning one, so it answers in
-milliseconds and cannot hallucinate a figure, at zero recurring cost. `⌘K`
-anywhere in the dashboard opens the ask palette (`AdvisorLauncher` /
-`AdvisorPalette`, lazy-loaded so it adds ~0 to the initial bundle). Every
-question logs to `advisor_queries` (owner-readable miss log) regardless of
-whether a resolver matched — that log is what prioritizes which Bible
-chapters/keywords to write next. Record lookups reuse the exact same
-role guards and `redactManyForRole()` calls the underlying page's own route
-uses, so cost/vendor visibility is identical whether asked through DB or
-viewed on the page directly. Phase 0 (the Bible) and Phase 1 (this
-deterministic layer) are complete; draft/execute action tiers and a
-Settings-configurable tone/voice/Hinglish layer are not yet built — see
-`docs/current-progress.md`.
+**DB Guide** (`/dashboard/help`, sidebar entry below Settings) is the one
+place to read this manual — a browsable index grouping every module chapter
+with its nested process ("how-to") chapters underneath, plus a standalone
+rules section, with a client-side search box. Visible to every signed-in
+role with zero admin setup (no `pageKey`, same pattern `settings` uses — see
+**roles-permissions** in the Bible), each role seeing only what its
+`audience` includes. Backed by `GET /api/db-guide` (list) and
+`GET /api/db-guide/[slug]` (one chapter), both audience-filtered server-side
+with the service-role client — `kb_chapters`' own RLS is `SELECT`-open with
+no audience filter at all, so these routes' own `.contains('audience', ...)`
+check is the real boundary, not RLS. 67 chapters as of 2026-09-16 (15
+modules, incl. **Marketing**, 50 processes, 2 rules).
+
+DB Guide used to be one of two read surfaces over this content, alongside an
+"Ask DB" `⌘K` Q&A palette (intent router answering report/revenue/record/
+how-to/"where is X" questions, no LLM). That palette was removed 2026-09-16
+— see `docs/decisions.md` — in favor of DB Guide as the sole surface, one
+place instead of two doing overlapping jobs. `⌘K` still opens something,
+just much simpler now: `apps/erp/components/NavSearch.tsx` +
+`NavSearchPalette.tsx`, a plain client-side page-jump search over
+`apps/erp/lib/generated-nav.json` (the same generated file the old advisor's
+locate resolver used) — no server call, no Bible content, just "type a page
+name, go there." It's also the only way to reach a nav item hidden via
+Settings → My Navigation without un-hiding it there first.
 
 ## Roles and permissions summary
 | Action | Employee | Owner |
@@ -364,6 +435,8 @@ Settings-configurable tone/voice/Hinglish layer are not yet built — see
 | Record an accessory receipt's vendor + unit price (informal, see below) | ✅ (2026-08-24) | ✅ |
 | Browse the vendor list (accessory-tagged vendors only, no contact/GST) | ✅ (2026-08-24) | ✅ (full list) |
 | Create a new vendor (always accessory-tagged) / edit or delete an existing vendor | ✅ create-only (2026-08-24) / ❌ | ✅ |
+| Open a rental, hand over/return a unit, raise a rent charge, record a buyout | ✅ (page-edit grant, 2026-09-16) | ✅ |
+| Refund or withhold a rental security deposit | ❌ | ✅ |
 
 Note the split above: **reassigning** which SKU an asset points to is open to both
 roles (it never reads or writes cost/vendor data), while **editing** a SKU's own

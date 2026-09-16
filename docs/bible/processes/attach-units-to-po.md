@@ -3,6 +3,7 @@ slug: attach-units-to-po
 title: Attaching units to a Purchase Order (retroactive paperwork)
 kind: process
 audience: [owner]
+module: purchasing
 routes: [/dashboard/purchase-orders]
 keywords: [attach units, attach po, reserve assets, po paperwork, formalize purchase, link po, move unit, move po, existing po, add units from stock, entry date]
 sources:
@@ -13,7 +14,7 @@ sources:
   - apps/erp/app/api/purchase-orders/[id]/move-unit/route.ts
   - apps/erp/components/AttachUnitsDialog.tsx
   - apps/erp/components/MoveUnitDialog.tsx
-updated: 2026-08-30
+updated: 2026-09-15
 ---
 
 ## What this is

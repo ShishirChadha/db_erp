@@ -52,7 +52,7 @@ export async function GET(req: NextRequest) {
   // PostgREST's row cap once a source/status bucket exceeds it. This mirrors the
   // pattern already used correctly in /api/sku-master's counts=true branch.
   if (searchParams.get('counts') === 'true') {
-    const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned']
+    const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned', 'on_rent']
     const applySource = (q: any) => {
       if (source) q = q.eq('source', source)
       if (excludeSource) q = q.neq('source', excludeSource)

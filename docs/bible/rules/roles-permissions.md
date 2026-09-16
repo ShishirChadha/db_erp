@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-08-31
+updated: 2026-09-16
 ---
 
 ## The three roles
@@ -66,6 +66,18 @@ handler, via `getSessionUser()` (Bearer-token, for API routes) or
 route that skips this check is a real security hole, not a cosmetic one — the
 whole app runs on `supabaseAdmin` (service role), which bypasses Postgres RLS
 entirely, so RLS policies are not a backstop here.
+
+## Owner-only is about money leaving, not about seniority
+
+Rentals is the clearest illustration of the line this app actually draws. Opening a
+rental, handing units over, recording a return, raising the rent charge, a rent-to-own
+buyout and closing the agreement all run on the ordinary `rentals` page-edit grant —
+they are operational work, and operational work is never gated behind the owner.
+Settling a **security deposit** is owner-only, because that is money going back out of
+the business, the same line already drawn around correcting a sale payment.
+
+Generating the GST invoice for a rental needs no new rule at all: it goes through the
+existing owner-only sales finalize routes like every other invoice.
 
 ## A quick way to answer "can X role do Y?"
 

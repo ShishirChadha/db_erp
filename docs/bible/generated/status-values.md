@@ -5,16 +5,21 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 
 | Table | Column | Constraint | Definition |
 |---|---|---|---|
+| accessory_replacement_jobs | payment_account | accessory_replacement_jobs_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| accessory_replacement_jobs | status | accessory_replacement_jobs_status_check | `CHECK ((status = ANY (ARRAY['intake'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
+| accessory_rma_events | direction | accessory_rma_events_direction_check | `CHECK ((direction = ANY (ARRAY['to_vendor'::text, 'from_customer'::text])))` |
+| accessory_rma_events | quantity | accessory_rma_events_quantity_check | `CHECK ((quantity > 0))` |
+| accessory_rma_events | status | accessory_rma_events_status_check | `CHECK ((status = ANY (ARRAY['initiated'::text, 'shipped'::text, 'vendor_accepted'::text, 'vendor_rejected'::text, 'replacement_received'::text, 'refund_received'::text, 'restocked'::text, 'scrapped'::text, 'closed'::text])))` |
 | activities | priority | activities_priority_check | `CHECK ((priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text])))` |
 | activities | related_type | activities_related_pair_check | `CHECK (((related_type IS NULL) = (related_id IS NULL)))` |
-| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text, 'recurring_expense'::text]))))` |
+| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text, 'recurring_expense'::text, 'marketing_asset'::text, 'rental_agreement'::text]))))` |
 | activities | status | activities_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
 | asset_ledger | battery_health_percent | asset_ledger_battery_health_percent_check | `CHECK (((battery_health_percent IS NULL) OR ((battery_health_percent >= 0) AND (battery_health_percent <= 100))))` |
 | asset_ledger | estimated_backup_hours | asset_ledger_estimated_backup_hours_check | `CHECK (((estimated_backup_hours IS NULL) OR (estimated_backup_hours >= (0)::numeric)))` |
 | asset_ledger | qc_grade | asset_ledger_qc_grade_check | `CHECK ((qc_grade = ANY (ARRAY['A'::text, 'B'::text, 'C'::text, 'D'::text, 'Scrap'::text])))` |
 | asset_ledger | qc_status | asset_ledger_qc_status_check | `CHECK ((qc_status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'passed'::text, 'failed'::text])))` |
 | asset_ledger | source | asset_ledger_source_check | `CHECK ((source = ANY (ARRAY['purchase_order'::text, 'legacy_purchase'::text, 'employee_intake'::text])))` |
-| asset_ledger | status | asset_ledger_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'reserved'::text, 'received'::text, 'in_stock'::text, 'sold'::text, 'faulty'::text, 'returned'::text, 'qc_pending'::text, 'qc_passed'::text, 'ready_for_sale'::text, 'rma_sent'::text, 'rma_returned'::text, 'scrapped'::text, 'pending_sale'::text, 'pending_replacement'::text, 'reserved_web'::text])))` |
+| asset_ledger | status | asset_ledger_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'reserved'::text, 'received'::text, 'in_stock'::text, 'sold'::text, 'faulty'::text, 'returned'::text, 'qc_pending'::text, 'qc_passed'::text, 'ready_for_sale'::text, 'rma_sent'::text, 'rma_returned'::text, 'scrapped'::text, 'pending_sale'::text, 'pending_replacement'::text, 'reserved_web'::text, 'on_rent'::text])))` |
 | asset_ledger | warranty_type | asset_ledger_warranty_type_check | `CHECK ((warranty_type = ANY (ARRAY['none'::text, 'vendor'::text, 'in_house'::text])))` |
 | asset_qc_checks | result | asset_qc_checks_result_check | `CHECK ((result = ANY (ARRAY['pass'::text, 'fail'::text, 'na'::text])))` |
 | asset_rma_events | direction | asset_rma_events_direction_check | `CHECK ((direction = ANY (ARRAY['to_vendor'::text, 'from_customer'::text])))` |
@@ -33,7 +38,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | bank_column_profiles | source_format | bank_column_profiles_source_format_check | `CHECK ((source_format = ANY (ARRAY['csv'::text, 'pdf'::text])))` |
 | bank_statements | continuity_status | bank_statements_continuity_status_check | `CHECK ((continuity_status = ANY (ARRAY['ok'::text, 'gap'::text, 'mismatch'::text])))` |
 | bank_transaction_matches | amount_applied | bank_transaction_matches_amount_applied_check | `CHECK ((amount_applied > (0)::numeric))` |
-| bank_transaction_matches | match_type | bank_transaction_matches_match_type_check | `CHECK ((match_type = ANY (ARRAY['sale_payment'::text, 'vendor_payment'::text, 'expense'::text, 'transfer_pair'::text])))` |
+| bank_transaction_matches | match_type | bank_transaction_matches_match_type_check | `CHECK ((match_type = ANY (ARRAY['sale_payment'::text, 'vendor_payment'::text, 'expense'::text, 'transfer_pair'::text, 'stock_purchase'::text])))` |
 | bank_transactions | recon_status | bank_transactions_recon_status_check | `CHECK ((recon_status = ANY (ARRAY['open'::text, 'matched'::text, 'split'::text, 'explained'::text, 'transfer'::text, 'ignored'::text])))` |
 | blog_posts | status | blog_posts_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | business_profiles | invoicing_mode | business_profiles_invoicing_mode_check | `CHECK ((invoicing_mode = ANY (ARRAY['erp'::text, 'external'::text])))` |
@@ -56,14 +61,19 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | expenses | source | expenses_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'bank_recon'::text])))` |
 | extraction_templates | template_kind | extraction_templates_template_kind_check | `CHECK ((template_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
-| invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text])))` |
+| invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text, 'rental'::text])))` |
 | invoices | invoice_type | invoices_invoice_type_check | `CHECK ((invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])))` |
 | invoices | source | invoices_source_check | `CHECK ((source = ANY (ARRAY['system_issued'::text, 'imported_zoho'::text])))` |
 | kb_chapters | kind | kb_chapters_kind_check | `CHECK ((kind = ANY (ARRAY['module'::text, 'process'::text, 'rule'::text, 'generated'::text])))` |
+| marketing_assets | format | marketing_assets_format_check | `CHECK ((format = ANY (ARRAY['wa_text'::text, 'wa_square'::text, 'ig_portrait'::text, 'ig_story'::text, 'fb_link'::text, 'none'::text])))` |
+| marketing_assets | kind | marketing_assets_kind_check | `CHECK ((kind = ANY (ARRAY['single_product'::text, 'product_list'::text, 'educational'::text, 'offer'::text, 'testimonial'::text, 'blog'::text, 'newsletter'::text])))` |
+| marketing_assets | platform | marketing_assets_platform_check | `CHECK ((platform = ANY (ARRAY['whatsapp'::text, 'instagram'::text, 'facebook'::text, 'google_business'::text, 'blog'::text, 'email'::text])))` |
+| marketing_assets | status | marketing_assets_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'scheduled'::text, 'published'::text, 'archived'::text])))` |
+| marketing_settings | id | marketing_settings_id_check | `CHECK (id)` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
-| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text])))` |
-| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text]))` |
+| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text])))` |
+| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text]))` |
 | profiles | role | profiles_role_check | `CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'employee'::text])))` |
 | promotions | promo_type | promotions_check | `CHECK ((((promo_type = 'percent_off'::text) AND (discount_percent IS NOT NULL)) OR ((promo_type = 'flat_off'::text) AND (discount_flat IS NOT NULL)) OR ((promo_type = 'free_gift'::text) AND (free_gift_sku_id IS NOT NULL)) OR (promo_type = 'coupon_code'::text)))` |
 | promotions | ends_at | promotions_check1 | `CHECK ((ends_at > starts_at))` |
@@ -80,6 +90,11 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | recon_sessions | status | recon_sessions_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'closed'::text])))` |
 | recurring_expense_rules | interval_unit | recurring_expense_rules_interval_unit_check | `CHECK ((interval_unit = ANY (ARRAY['weekly'::text, 'monthly'::text, 'yearly'::text])))` |
 | recurring_expense_rules | payment_account | recurring_expense_rules_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| rental_agreement_items | item_status | rental_agreement_items_item_status_check | `CHECK ((item_status = ANY (ARRAY['on_rent'::text, 'returned'::text, 'bought_out'::text, 'lost_damaged'::text])))` |
+| rental_agreements | billing_interval | rental_agreements_billing_interval_check | `CHECK ((billing_interval = ANY (ARRAY['one_time'::text, 'monthly'::text, 'quarterly'::text])))` |
+| rental_agreements | deposit_payment_account | rental_agreements_deposit_payment_account_check | `CHECK (((deposit_payment_account IS NULL) OR (deposit_payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text]))))` |
+| rental_agreements | payment_account | rental_agreements_payment_account_check | `CHECK (((payment_account IS NULL) OR (payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text]))))` |
+| rental_agreements | status | rental_agreements_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'active'::text, 'closed'::text, 'cancelled'::text])))` |
 | reorder_rules | reorder_quantity | reorder_rules_reorder_quantity_check | `CHECK ((reorder_quantity > 0))` |
 | repair_jobs | job_type | repair_jobs_job_type_check | `CHECK ((job_type = ANY (ARRAY['repair'::text, 'replacement'::text])))` |
 | repair_jobs | payment_account | repair_jobs_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |

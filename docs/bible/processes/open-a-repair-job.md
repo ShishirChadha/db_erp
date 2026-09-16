@@ -3,12 +3,13 @@ slug: open-a-repair-job
 title: Opening and closing a repair job
 kind: process
 audience: [owner, manager, employee]
+module: repairs-replacements-rma
 routes: [/dashboard/repair-jobs]
 keywords: [repair job, service, repair karna, fix, job number, RJ, mark done, repair charge]
 sources:
   - apps/erp/app/api/repair-jobs/route.ts
   - apps/erp/app/api/repair-jobs/[id]/finalize/route.ts
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

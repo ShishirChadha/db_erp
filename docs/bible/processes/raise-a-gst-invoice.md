@@ -3,12 +3,13 @@ slug: raise-a-gst-invoice
 title: Raising a GST invoice
 kind: process
 audience: [owner, manager]
+module: sales-invoicing
 routes: [/dashboard/invoices/new, /dashboard/invoices]
 keywords: [invoice, gst invoice, raise invoice, generate invoice, billing, tax invoice, DBI number]
 sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

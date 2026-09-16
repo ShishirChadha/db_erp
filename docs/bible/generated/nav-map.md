@@ -17,6 +17,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Operations > Live Stock | `/dashboard/live-stock` | live_stock |  |
 | Operations > Repair Jobs | `/dashboard/repair-jobs` | repair_jobs |  |
 | Operations > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
+| Operations > Rentals | `/dashboard/rentals` | rentals |  |
 | Operations > RMA (Vendor Returns) | `/dashboard/rma` | rma |  |
 | Sales > Sales | `/dashboard/sales` | sales |  |
 | Sales > Invoices | `/dashboard/invoices` | invoices |  |
@@ -30,4 +31,6 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Finance > Bank Reconciliation | `/dashboard/recon/bank` |  | yes |
 | Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |
 | Activity Hub | `/dashboard/activities` | activities |  |
+| Marketing | `/dashboard/marketing` | marketing |  |
 | Settings | `/dashboard/settings` |  |  |
+| DB Guide | `/dashboard/help` |  |  |

@@ -1,8 +1,8 @@
 #!/usr/bin/env tsx
 // Content-hashes every docs/bible/**/*.md chapter and upserts changed ones into
-// kb_chapters (the table the advisor's search resolver reads at runtime). Deletes
-// rows for chapters removed from the repo. Runs on `postbuild`, so a deploy can never
-// ship app code that's newer than the Bible rows it references.
+// kb_chapters (the table DB Guide reads at runtime). Deletes rows for chapters
+// removed from the repo. Runs on `postbuild`, so a deploy can never ship app
+// code that's newer than the Bible rows it references.
 //
 // Usage: npx tsx scripts/bible/sync.ts
 import { createHash } from 'node:crypto'
@@ -55,6 +55,8 @@ async function main() {
   console.log(`Found ${files.length} hand-written chapters.`)
 
   const seenSlugs = new Set<string>()
+  const moduleSlugs = new Set<string>()
+  const processModuleRefs: { slug: string; module: string }[] = []
   let upserted = 0, skipped = 0
 
   for (const rel of files) {
@@ -62,6 +64,8 @@ async function main() {
     const chapter = parseChapterFile(abs)
     const { meta, body } = chapter
     seenSlugs.add(meta.slug)
+    if (meta.kind === 'module') moduleSlugs.add(meta.slug)
+    if (meta.kind === 'process' && meta.module) processModuleRefs.push({ slug: meta.slug, module: meta.module })
 
     const contentHash = createHash('sha256').update(chapter.raw).digest('hex')
 
@@ -81,6 +85,7 @@ async function main() {
       title: meta.title,
       kind: meta.kind,
       audience: meta.audience,
+      module: meta.module ?? null,
       routes: meta.routes || [],
       keywords: meta.keywords || [],
       summary: summarize(body),
@@ -116,6 +121,18 @@ async function main() {
   if (orphans.length > 0) {
     await supabaseAdmin.from('kb_chapters').delete().in('slug', orphans)
     console.log(`  removed ${orphans.length} orphaned chapter(s): ${orphans.join(', ')}`)
+  }
+
+  // A process chapter's `module:` must point at a real module chapter's slug --
+  // checked here rather than via a DB foreign key, since chapters are upserted one
+  // file at a time with no ordering guarantee (see the kb_chapters.module column
+  // comment). Fails loudly instead of silently orphaning the reference.
+  const badRefs = processModuleRefs.filter((r) => !moduleSlugs.has(r.module))
+  if (badRefs.length > 0) {
+    for (const r of badRefs) {
+      console.error(`  BAD MODULE REF: ${r.slug} declares module: ${r.module}, no such module chapter exists`)
+    }
+    process.exitCode = 1
   }
 
   console.log(`Done. ${upserted} synced, ${skipped} unchanged, ${orphans.length} removed.`)

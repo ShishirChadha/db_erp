@@ -1,6 +1,11 @@
 import { supabaseAdmin } from './supabase/service'
 import { resolveEffectiveSkuId } from './effective-sku'
 
+// Leasing of computers is SAC 997313 (a supply of SERVICE, not goods). Declared here
+// rather than imported from lib/rentals.ts, which imports resolveEntityKey from this
+// file -- pulling it across would make the two modules circular.
+const RENTAL_SAC_CODE = '997313'
+
 // Maps sales.payment_account ('Digitalbluez'/'Techtenth'/'Cash') to the
 // business_profiles.key that should issue the invoice. This is the same
 // field the project already uses to track which of the business's accounts
@@ -61,7 +66,7 @@ export function classifyGst(
 // batch (all linked units/accessories still exist) before minting a real
 // invoice number or creating any row.
 export async function resolveSaleItemDescriptor(sale: any): Promise<{
-  item_type: 'accessory' | 'asset' | 'repair'
+  item_type: 'accessory' | 'asset' | 'repair' | 'rental'
   description: string
   hsn_code: string | null
   quantity: number
@@ -87,6 +92,31 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
       repair_job_id: sale.repair_job_id,
       description: `Repair — ${job?.problem_description || 'Service'} (Job ${job?.job_number || sale.repair_job_id})`,
       hsn_code: null,
+      quantity: 1,
+    }
+  }
+
+  // A rental charge has no asset/accessory/repair link at all -- only
+  // rental_agreement_id -- so without this branch it would fall through to the asset
+  // lookup below and throw, making it impossible to invoice a rental. A rent-to-own
+  // BUYOUT deliberately does carry asset_ledger_id and must keep itemizing as the
+  // real unit it is, which is why this checks for the absence of that id.
+  if (sale.rental_agreement_id && !sale.asset_ledger_id && !sale.accessory_id && !sale.repair_job_id) {
+    const { data: agreement } = await supabaseAdmin
+      .from('rental_agreements')
+      .select('agreement_number')
+      .eq('id', sale.rental_agreement_id)
+      .single()
+    const period = sale.rental_period_start && sale.rental_period_end
+      ? ` (${sale.rental_period_start} to ${sale.rental_period_end})`
+      : ''
+    return {
+      item_type: 'rental',
+      description: sale.asset_description
+        || `Laptop rental — ${agreement?.agreement_number || sale.rental_agreement_id}${period}`,
+      // Renting goods is a supply of SERVICE under GST, so the line carries a SAC
+      // code (997313, leasing of computers), not a goods HSN.
+      hsn_code: RENTAL_SAC_CODE,
       quantity: 1,
     }
   }

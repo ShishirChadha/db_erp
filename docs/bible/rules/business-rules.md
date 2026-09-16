@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-08-29
+updated: 2026-09-16
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -67,10 +67,16 @@ row instead and let the trigger do its job.
 
 ## Numbering always goes through the atomic RPC — never a manual counter
 
-Asset numbers, PO numbers, invoice numbers, repair job numbers: each has its
-own RPC (`reserve_assets`, `generate_po_number`, `increment_invoice_number`,
-`generate_repair_job_number`). A client-side MAX-scan or manual increment can
+Asset numbers, PO numbers, invoice numbers, repair job numbers, rental agreement
+numbers: each has its own RPC (`reserve_assets`, `generate_po_number`,
+`increment_invoice_number`, `generate_repair_job_number`,
+`generate_rental_agreement_number`). A client-side MAX-scan or manual increment can
 race under concurrent use and hand out a duplicate number — the RPC can't.
+
+Note the distinction a rental makes clear: `generate_rental_agreement_number` mints an
+internal job number (`RNT-26-001`), while the *tax invoice* for that rental still comes
+from `next_document_number()` like every other legal document. An internal reference
+and a statutory number are never the same series.
 
 ## Asset numbers are a Purchase Order artifact, not proof a unit exists
 

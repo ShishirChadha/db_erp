@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-09-01
+updated: 2026-09-16
 ---
 
 ## What this covers
@@ -46,6 +46,17 @@ Both pages read `asset_ledger`; Live Stock filters `source = 'employee_intake'`,
 main ERP Stock filters the opposite. Same underlying component
 (`components/StockView.tsx`), parameterized, mounted at two routes — not two
 copies. See **inventory-sku** for why they're kept apart.
+
+## On rent — a unit that is out but not gone
+
+`asset_ledger.status` has a seventeenth value, `on_rent`, for a unit currently out with
+a rental customer. It is not in `SELLABLE_STATUSES`, so it drops out of the Sell
+picker and the website automatically, but it still shows on Stock / Live Stock under
+the **On Rent** filter — out of the sellable pool, never invisible.
+
+When the unit comes back it re-enters this module at `qc_pending` with
+`qc_status = 'pending'`, exactly like a customer return, so it is re-checked before it
+can be sold or rented again. See **rentals**.
 
 ## Related
 

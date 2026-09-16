@@ -3,12 +3,13 @@ slug: qc-a-unit
 title: QC'ing a unit
 kind: process
 audience: [owner, manager, employee]
+module: live-stock-qc
 routes: ['/dashboard/stock/[id]']
 keywords: [qc, quality check, grading, grade, testing, checklist, battery health, condition grade]
 sources:
   - apps/erp/app/api/asset-ledger/[id]/qc/route.ts
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

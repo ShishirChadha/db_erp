@@ -117,8 +117,8 @@ export async function POST(req: NextRequest) {
     if (!item.asset_ledger_id && !item.accessory_id) {
       return NextResponse.json({ error: 'Every item needs either asset_ledger_id or accessory_id.' }, { status: 400 })
     }
-    if (!item.sale_base_price || item.sale_base_price <= 0) {
-      return NextResponse.json({ error: 'Every item needs a valid selling price.' }, { status: 400 })
+    if (item.sale_base_price == null || item.sale_base_price < 0) {
+      return NextResponse.json({ error: 'Every item needs a valid selling price (0 is allowed for a free item).' }, { status: 400 })
     }
   }
 

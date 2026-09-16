@@ -132,6 +132,10 @@ export async function GET(req: NextRequest) {
   // Repair-derived sales rows (sales.repair_job_id) have no sku_master row --
   // resolve their display text from the linked repair_jobs row instead.
   const repairJobIds = [...new Set((data || []).map((s: any) => s.repair_job_id).filter(Boolean))]
+  // Rental-derived sales rows (sales.rental_agreement_id) likewise have no sku_master
+  // row of their own -- a rent charge has no asset/accessory link at all, so its
+  // display text comes from the linked agreement.
+  const rentalAgreementIds = [...new Set((data || []).map((s: any) => s.rental_agreement_id).filter(Boolean))]
 
   // Every lookup below only depends on `data` (already fetched above), not on each
   // other -- run them concurrently rather than as 7 sequential round trips, each of
@@ -147,6 +151,7 @@ export async function GET(req: NextRequest) {
     { data: assetLedgerRows },
     { data: bundledSkus },
     { data: repairJobs },
+    { data: rentalAgreements },
     paymentDateBySaleId,
   ] = await Promise.all([
     unfinalizedCustomerIds.length
@@ -168,6 +173,9 @@ export async function GET(req: NextRequest) {
     repairJobIds.length
       ? withRetry(() => supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', repairJobIds))
       : Promise.resolve({ data: [] as any[] }),
+    rentalAgreementIds.length
+      ? withRetry(() => supabaseAdmin.from('rental_agreements').select('id, agreement_number').in('id', rentalAgreementIds))
+      : Promise.resolve({ data: [] as any[] }),
     // Most recent sale_payments installment date per sale -- shown as "Payment Date"
     // alongside sale_date; a sale with 2+ partial payments shows its latest one.
     latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
@@ -178,6 +186,7 @@ export async function GET(req: NextRequest) {
   const skuIdByAssetLedgerId = new Map((assetLedgerRows || []).map((a: any) => [a.id, resolveEffectiveSkuId(a)]))
   const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
+  const rentalAgreementById = new Map((rentalAgreements || []).map((r: any) => [r.id, r]))
 
   // Include specifications/category so the ledger can surface RAM/SSD directly
   // (specifications.ram / specifications.ssd -- see sku_category_templates field
@@ -204,6 +213,7 @@ export async function GET(req: NextRequest) {
     withName.sku_description = sku?.sku_description || null
     withName.full_sku_code = sku?.full_sku_code || null
     withName.cpu = sku?.specifications?.cpu || null
+    withName.generation = sku?.specifications?.generation || null
     withName.ram = sku?.specifications?.ram || null
     withName.ssd = sku?.specifications?.ssd || null
     withName.bundled_accessories_display = (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
@@ -213,6 +223,13 @@ export async function GET(req: NextRequest) {
     const repairJob = s.repair_job_id ? repairJobById.get(s.repair_job_id) : null
     withName.repair_job_number = repairJob?.job_number || null
     withName.repair_description = repairJob?.problem_description || null
+    const rentalAgreement = s.rental_agreement_id ? rentalAgreementById.get(s.rental_agreement_id) : null
+    withName.rental_agreement_number = rentalAgreement?.agreement_number || null
+    // A buyout carries asset_ledger_id and is an ordinary unit sale; only a row with
+    // rental_agreement_id and NO asset link is rent revenue.
+    withName.is_rental_charge = !!s.rental_agreement_id && !s.asset_ledger_id
+    withName.rental_period = s.rental_period_start && s.rental_period_end
+      ? `${s.rental_period_start} to ${s.rental_period_end}` : null
     withName.payment_date = paymentDateBySaleId.get(s.id) || null
     return withName
   })
@@ -244,9 +261,8 @@ function getSortValue(key: string): (s: any) => string | number {
     case 'sale_date': return (s) => s.sale_date || ''
     case 'payment_date': return (s) => s.payment_date || ''
     case 'customer_name': return (s) => s.customer_name || ''
-    case 'item': return (s) => s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? 'Accessory' : s.repair_job_id ? (s.repair_job_number || 'Repair') : '')
-    case 'description': return (s) => s.sku_description || s.full_sku_code || s.repair_description || ''
-    case 'cpu': return (s) => s.cpu || ''
+    case 'item': return (s) => s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? 'Accessory' : s.repair_job_id ? (s.repair_job_number || 'Repair') : s.is_rental_charge ? (s.rental_agreement_number || 'Rental') : '')
+    case 'description': return (s) => s.sku_description || s.full_sku_code || s.repair_description || (s.is_rental_charge ? s.asset_description : '') || ''
     case 'ram': return (s) => s.ram || ''
     case 'ssd': return (s) => s.ssd || ''
     case 'bundle': return (s) => (s.bundled_accessories_display || []).length

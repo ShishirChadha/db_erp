@@ -54,6 +54,7 @@ interface Sale {
   sku_description?: string | null;
   full_sku_code?: string | null;
   cpu?: string | null;
+  generation?: string | null;
   ram?: string | null;
   ssd?: string | null;
   bundled_accessories_display?: { name: string; quantity: number }[];
@@ -157,7 +158,8 @@ const COLUMNS: ColumnDef[] = [
       // copy-pasted or exported on its own (e.g. into an invoice/quotation
       // line) is otherwise missing the actual configuration -- folding the
       // spec into the description text itself keeps that one field complete.
-      const specParts = [s.cpu, s.ram, s.ssd].filter(Boolean);
+      const cpuPart = s.cpu ? `${s.generation ? `${s.generation} Gen ` : ""}${s.cpu}` : null;
+      const specParts = [cpuPart, s.ram, s.ssd].filter(Boolean);
       return (
         <>
           {s.sku_description || s.full_sku_code || s.repair_description || "—"}
@@ -170,16 +172,6 @@ const COLUMNS: ColumnDef[] = [
         </>
       );
     },
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "cpu",
-    label: "CPU",
-    className: "border p-2 whitespace-nowrap",
-    defaultWidth: 90,
-    sortable: true,
-    render: (s) => s.cpu || "—",
     optional: true,
     defaultVisible: true,
   },

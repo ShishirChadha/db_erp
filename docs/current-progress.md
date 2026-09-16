@@ -1,6 +1,63 @@
 # Current Progress
 
-Last updated: 2026-09-11 — Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
+Last updated: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
+
+
+## Laptop Rentals — COMPLETE (2026-09-16)
+
+Full plan: `~/.claude/plans/i-have-given-few-abstract-popcorn.md`.
+Decision record: `docs/decisions.md` (2026-09-16 × 4).
+Bible: `docs/bible/modules/rentals.md` + three process chapters
+(`rent-out-a-laptop`, `bill-a-rental-cycle`, `return-a-rented-laptop`).
+
+Built because the owner started renting laptops out and the ERP had no concept of it —
+a rented unit still counted as sellable stock (and was reservable on the website) while
+sitting on a customer's desk, and the rent had nowhere to be recorded.
+
+**Schema.** New `rental_agreements` + `rental_agreement_items` (both `is_staff()`-gated
+RLS, matching `asset_ledger`), `rental_agreement_counter` +
+`generate_rental_agreement_number()` (the `generate_repair_job_number` upsert template,
+`RNT-26-001`). `sales` gained `rental_agreement_id`/`rental_period_start`/
+`rental_period_end`. Extended CHECKs: `asset_ledger.status` (+`on_rent`),
+`activities.related_type` (+`rental_agreement`), `invoice_items.item_type` (+`rental`),
+and both page-key constraints (+`rentals`). A partial unique index on
+`rental_agreement_items(asset_id) WHERE item_status='on_rent'` makes it impossible for
+one unit to be on two live rentals. `movement_type_enum` deliberately untouched.
+
+**Key invariants (see decisions.md for the why):** a rent charge is a `sales` row with
+`asset_ledger_id` NULL; a buyout sets it and keeps real COGS; handover writes
+`adjustment −1`, return `+1`, buyout nothing; the deposit is never a sales row while
+held; overdue is always derived, never stored.
+
+**Reporting.** `v_report_sale_lines.line_kind` gained `'rental'` (placed after the
+`unit` branch, which is what keeps buyouts correct). New `report_rentals(p_from, p_to)`
+RPC — service-role only, EXECUTE revoked from anon/authenticated after
+`get_advisors` flagged it. New dashboard "Rent Billed" tile.
+
+**Reminders.** `scan_rental_cycles()` pg_cron job (`scan-rental-cycles`, daily 22:00
+UTC) raises `activities` tasks + `notifications` for billing-due and overdue-return,
+using the mandatory atomic-claim idiom. It never creates a `sales` row — money stays
+human-initiated, same as `scan_recurring_expenses`.
+
+**UI.** `/dashboard/rentals` (repair-jobs template: date-first default-desc sort,
+stat-card filters, server pagination, `RentalRow` with a `variant` prop for the phone
+card layout), `/dashboard/rentals/[id]` (units, billing history, owner-only deposit
+panel — reusing `AddPaymentDialog`/`RecordZohoInvoiceDialog` directly),
+`NewRentalDialog`, `RentalActionDialogs`. Two new Pending Tasks sections.
+
+**Verification.** Disposable live-HTTP script, 51/51 assertions passing against a
+running dev server, including: the buyout net-stock check (−1 across handover+buyout,
+not −2), zero GST for Cash/Techtenth vs 18% for Digitalbluez, `line_kind`/`cogs_known`
+for both rent and buyout, cron run twice with no duplicate tasks, the four access-control
+tiers, and no cost/vendor leakage into employee responses. Every created row and auth
+user deleted, then re-queried to confirm — an FK-ordering bug in the script's own
+cleanup (`rental_agreement_items.buyout_sale_id` blocking the buyout sale's delete) was
+caught by that re-query and fixed. The agreement counter was reset to 0 afterwards so
+the first real rental is `RNT-26-001`.
+
+**Not built (deliberate):** renting fungible accessories, auto-generating the rent
+charge without a human, rental agreement PDFs, automatic late fees, rentals on the
+website.
 
 ## Marketing Content Studio — Phase 0/1 of a 5-phase growth-engine plan
 
@@ -81,7 +138,158 @@ router can't cover.
 - **A real security finding caught by `get_advisors`, not just the two from Phase 0**: `kb_search` initially remained callable by `anon` after a first attempt at locking it down (`revoke ... from public` only) — Supabase auto-grants `EXECUTE` on every new public-schema function to `anon`/`authenticated` directly via project-level default privileges, independent of the `PUBLIC` pseudo-role grant, so revoking from `PUBLIC` alone didn't touch it. This mattered because `kb_search` takes `p_role` as a caller-supplied parameter used for audience filtering — an anon caller could otherwise pass `p_role='owner'` directly via `/rest/v1/rpc/kb_search` and read owner-restricted chapter content. Fixed by revoking from `anon, authenticated, public` explicitly and confirmed via a direct anon-key RPC call (`permission denied for function kb_search`) and `information_schema.role_routine_grants` (only `service_role`/`postgres` remain).
 - Verified end-to-end via a disposable script: real owner + employee test users, real HTTP against the running dev server, 29/29 checks passing (metric numbers cross-checked against a direct RPC call, redaction verified both ways, PO lookup fully refused for an employee since Purchases is an owner-only nav group, injection-shaped text produces no write since Phase 1 has no write path at all, miss log confirmed via re-query) — cleaned up and re-queried for zero residue (advisor_queries rows, profiles rows, and the auth users themselves all confirmed actually deleted, not just "should be"). `npx tsc --noEmit` clean (same one pre-existing, unrelated error in the owner's own untracked `digests/run/route.ts`). `get_advisors` clean of anything introduced by this phase after the `kb_search` fix. No `next build` run — dev server was live; all new code is either pure-function/route (no build-time coupling) or lazy-loaded client code.
 
-**Not yet built, flagged as follow-ups**: Phase 2 (Settings → AI Advisor tone/voice/Hinglish config), Phase 3-4 (draft/execute tiers + confirm-card UI), Phase 5 (proactive briefings). Full phase plan in the approved plan doc (`~/.claude/plans/model-ids-pricing-tool-peaceful-thacker.md`). The remaining ~16 process chapters (Phase 0 backlog) — the miss log built this phase is exactly the mechanism meant to prioritize which ones actually get written next. A full `/dashboard/advisor` landing page (separate from the `⌘K` palette) was in the original file list but deliberately not built — the palette already is the advisor UI, and a second surface would just duplicate it without new value; revisit only if a real use case needs one.
+**Not yet built, flagged as follow-ups**: Phase 2 (Settings → AI Advisor tone/voice/Hinglish config), Phase 3-4 (draft/execute tiers + confirm-card UI), Phase 5 (proactive briefings). Full phase plan in the approved plan doc (`~/.claude/plans/model-ids-pricing-tool-peaceful-thacker.md`). The miss log built this phase is exactly the mechanism that flagged the one real content gap (a replacement job against an already-PO'd unit) that DB Guide's build below closed. The note that a standalone browsable page was "deliberately not built" is now superseded — see DB Guide immediately below; a real use case (browsing without knowing what to search for) did show up.
+
+## DB Guide — a browsable Help page over the same Bible data "DB" already searches
+
+Full rationale/decision record: `docs/decisions.md` (2026-09-16 entry). Not a
+new content system — a third read surface over `kb_chapters`/`kb_chapter_sections`,
+for browsing on purpose (`/dashboard/help`, sidebar entry "DB Guide" below
+Settings) rather than only reachable by typing a question into `⌘K`.
+
+- **`kb_chapters.module`** (new, nullable text column, no FK) + a matching
+  `module:` frontmatter field, hand-added to all 10 existing process
+  chapters. Rejected inferring this from `routes`/`keywords` overlap —
+  concretely wrong on 2 of 10 (`qc-a-unit`, `publish-a-sku-to-website`), see
+  decisions.md for the specifics. `scripts/bible/sync.ts` now validates every
+  non-null `module` reference against a real module slug after its sync
+  loop, failing loudly on a bad reference.
+- **`GET /api/advisor/bible`** (new, sibling to the existing `[slug]` route) —
+  lists every chapter visible to the caller's role (`slug, title, kind,
+  module, summary, routes, keywords, updated_at`), same
+  `.contains('audience', [role])` server-side filter as the detail route.
+  `kb_chapters`' own RLS is `SELECT`-open with no audience filter at all, so
+  this route's filter is the real boundary, not RLS.
+- **`/dashboard/help` page** — fetches the list once, groups client-side into
+  14 module sections (each showing its nested how-to chapters), a "Rules &
+  policies" section, and a defensive "Other how-to guides" catch-all for any
+  future process chapter that forgets its `module:` tag. One text input
+  filters all three client-side (title/summary/keywords) — no server
+  round-trip, since the whole list is ~30 rows.
+- **Sidebar entry** — no `pageKey`, no `ownerOnly` (mirrors `settings`),
+  visible to every signed-in role with zero admin action required.
+- **`SimpleMarkdown` fixed in place** (`lib/advisor/simple-markdown.tsx`) —
+  numbered `## Steps` lines were being collapsed into the same buffer as
+  bulleted lines and always rendered as `<ul>`; now tracks list type and
+  renders `<ol>` for numbered runs. Benefits the existing `⌘K`
+  process-resolver card too, not just this page.
+- **New chapter written now, not deferred**: `open-a-replacement-job.md` —
+  the one real, repeated question in the miss log (replacement against an
+  already-PO'd unit) had zero coverage. Confirmed from the actual
+  `replacement-jobs` API routes that PO/asset-number state never affects the
+  swap logic, and that a replacement can be any sellable unit regardless of
+  spec (upgrade/downgrade pricing is a manual entry, not calculated).
+  Remaining backlog, not written this pass: `reconcile-a-vendor-invoice` /
+  `reconcile-a-bank-statement` (Reconciliation module has zero process
+  chapters), `log-an-expense` / `settle-staff-reimbursements` (Expenses,
+  same gap), `create-a-purchase-order` (only the two correction/retroactive
+  PO chapters exist today), `create-a-quotation` (documented only in
+  CHANGELOG prose so far).
+- Verified: `scripts/bible/sync.ts` run directly (all 27 chapters, zero
+  FAILED/bad-module-reference lines); SQL read confirmed every process row's
+  `module` resolves and every module/rule row's is null; `tsc --noEmit`
+  clean; `bible:generate` idempotent (byte-identical second run) with the
+  new nav entry showing in `nav-map.md`/`generated-nav.json`/`permissions.md`;
+  `bible:check` clean at 27 chapters; disposable script (real
+  owner/manager/employee Supabase users, real HTTP) — 10/10 checks passed,
+  including the two security-shaped ones (employee/manager list responses
+  exclude all 7 owner-only slugs; a raw `authenticated`-key query against
+  `kb_chapters` *does* leak them, proving the route's filter — not RLS — is
+  the real boundary), cleanup verified by re-query. `get_advisors` after the
+  `kb_chapters.module` migration showed no new findings.
+- **Not verified**: actual browser rendering (search-box filtering, the
+  numbered-list fix, the sidebar entry) — no browser automation tool was
+  available in this environment (no `chromium-cli`, no Playwright, and
+  installing one would contradict this feature's own no-new-dependencies
+  posture). Flagged for the owner to check directly rather than claimed.
+
+**Same-day follow-up — 27 → 67 chapters.** The owner searched "upgrade"
+right after shipping and found nothing (the "Change SKU" upgrade/downgrade
+dialog was completely undocumented), then asked for comprehensive coverage
+of "every functionality." Full rationale/decision record:
+`docs/decisions.md` (2026-09-16, "same day follow-up" entry).
+- Two chapters (`change-a-units-sku`, `manage-upgrade-pricing`) answered the
+  reported gap directly and immediately. A separate Explore-agent audit then
+  covered all 14 then-existing modules against real dashboard pages/
+  components (not just page.tsx files), producing a file-path-specific gap
+  list, which drove two waves of parallel writing agents (3 then 4 agents).
+- **New module: `marketing`** — the WhatsApp/social content generator
+  (Today's Picks, Single Product, cards/collages) had zero bible presence
+  despite being a full sidebar feature; judged to deserve its own module
+  since it's independent of website-publish status.
+- **41 new process chapters** across every module — user management (incl.
+  the owner's "view password" tool), backup/restore (selective, not
+  all-or-nothing), field redaction, digests, business profiles, asset
+  numbering, activity tags, nav/appearance self-service, reconciliation
+  (vendor invoices, bank statements, sessions), vendor payments, PO/Purchase
+  Invoice creation, SKU create/edit/merge, SKU category templates,
+  accessory receipt/quantity correction, accessory archiving, Quotations,
+  Zoho invoice recording, sale editing, Price Cockpit, the Reports page's 10
+  tabs, task/activity management, calendar-feed subscription, Pending Tasks,
+  audit log, customers, vendors, expense logging, staff reimbursements,
+  recurring expenses.
+- **Real bug hit twice during writing**: an unquoted `[id]`/`@mention` token
+  inside a YAML `[...]` flow sequence breaks `js-yaml` parsing (both are
+  reserved flow indicators) — the `[id]`-in-routes case was already a known
+  gotcha in `.claude/skills/bible/SKILL.md`, but general-purpose writing
+  agents don't consult it, so it recurred 6 times. Fixed each time; added a
+  standalone pre-sync `js-yaml` validation pass over every chapter's
+  frontmatter as the standing pre-flight step for any future bulk-authoring
+  pass, since `sync.ts`'s own mid-run failure aborts the batch partway
+  through instead of validating everything up front.
+- **Three real product findings, deliberately not fixed (a docs task, not a
+  patch task) — flagged to the owner**: (1) `/api/settings/asset-counters`
+  PUT/POST has no `isOwner()` check server-side, unlike every sibling
+  Settings-admin write route — only the UI hides the tab; (2)
+  `POST /api/sku-master/[id]/stock-movement` with `movement_type:
+  'adjustment'` (accessory "Correct Quantity") has the same gap — UI-hidden
+  from non-owners, not server-enforced; (3) `SkuCategoryTemplatesManager.tsx`
+  is fully built but mounted nowhere, and its create-category action
+  wouldn't work even if mounted (`POST /api/sku-category-templates` was
+  never implemented — only `GET` and per-category `PATCH` exist).
+- Verified: standalone `js-yaml` frontmatter validation (0 bad across 67
+  files); `sync.ts` run to completion (0 FAILED, 0 bad-module-reference
+  lines); SQL confirmed 0 process rows with a null/dangling `module` across
+  all 50; `bible:generate` clean; `bible:check` clean at 67 chapters;
+  `tsc --noEmit` clean; live `curl` against the running dev server confirmed
+  `GET /api/advisor/bible` still 401s with no token. Role-differentiated
+  access re-verification wasn't re-run for this batch — the route/auth code
+  is unchanged from earlier today's build, already proven with 10/10 passing
+  checks; only chapter content changed. Browser rendering still not
+  verified, same reason as above.
+
+**Same-day follow-up #2 — "Ask DB" removed, DB Guide is now the sole
+reading surface.** Full rationale: `docs/decisions.md` (2026-09-16, "third
+pass" entry). Deleted (not disabled): `AdvisorLauncher.tsx`,
+`AdvisorPalette.tsx`, `api/advisor/ask/route.ts`, `lib/advisor/router.ts`,
+all 5 resolvers, `period-parse.ts`, `types.ts`; DB: `kb_search` RPC and
+`advisor_queries` table both dropped (backed up first). Renamed rather than
+deleted, since DB Guide depends on them: `simple-markdown.tsx` and
+`generated-nav.json` moved out of `lib/advisor/` into `lib/`;
+`api/advisor/bible/**` → `api/db-guide/**`;
+`dashboard/advisor/bible/[slug]` → `dashboard/help/[slug]` (folded into the
+existing DB Guide route tree — its back-link simplified from a `?from=`
+param to a hardcoded `/dashboard/help` now that `⌘K` isn't a second entry
+point). New, replacing the deleted palette for the one thing kept:
+`NavSearch.tsx` + `NavSearchPalette.tsx` — `⌘K` still opens something, but
+now it's a plain client-side page-jump search (fuzzy filter over
+`generated-nav.json`, no server call, no Bible content), the same feature
+the sidebar's own "Search..." button already exposed, kept because removing
+it would've broken the only way to reach a nav item hidden via My
+Navigation without going into Settings to un-hide it.
+- Verified: full-repo grep for every deleted symbol/path clean outside
+  historical doc prose; `bible:generate`/`bible:check` clean at 67 chapters
+  (code-only change, no chapter content touched); `get_advisors` post-
+  migration clean, confirmed `kb_search`/`advisor_queries` no longer appear
+  in any finding; `tsc --noEmit` clean on all real source (one unrelated
+  pre-existing error in untracked `api/rentals/[id]/deposit/route.ts` —
+  confirmed via `git status` as concurrent unrelated work, not touched).
+- **Known non-blocking issue**: a currently-running dev server's own
+  `.next/types/validator.ts` (Next's typed-routes cache) still references
+  the deleted routes until that process does a full restart/rebuild —
+  deliberately not forced, since a second concurrent session may be
+  actively using that server (the untracked `rentals` work surfaced
+  mid-build, confirming live concurrent activity).
 
 ## E-commerce website — Test Reports, Upgrade Options, Promotions, Cross-sell, SEO
 

@@ -19,6 +19,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Operations > Live Stock | if granted `live_stock` | if granted `live_stock` |
 | Operations > Repair Jobs | if granted `repair_jobs` | if granted `repair_jobs` |
 | Operations > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
+| Operations > Rentals | if granted `rentals` | if granted `rentals` |
 | Operations > RMA (Vendor Returns) | if granted `rma` | if granted `rma` |
 | Sales > Sales | if granted `sales` | if granted `sales` |
 | Sales > Invoices | if granted `invoices` | if granted `invoices` |
@@ -32,7 +33,9 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Finance > Bank Reconciliation | owner-only | owner-only |
 | Finance > Recon Sessions | owner-only | owner-only |
 | Activity Hub | if granted `activities` | if granted `activities` |
+| Marketing | if granted `marketing` | if granted `marketing` |
 | Settings | visible to all signed-in staff | visible to all signed-in staff |
+| DB Guide | visible to all signed-in staff | visible to all signed-in staff |
 
 ## Edit grants currently configured (`profile_page_actions`)
 
@@ -43,6 +46,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | live_stock | employee |
 | new_entry | employee |
 | quotations | employee |
+| rentals | employee |
 | repair_jobs | employee |
 | replacement_jobs | employee |
 | sku_master | employee |

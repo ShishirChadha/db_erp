@@ -3,13 +3,14 @@ slug: sell-a-unit
 title: Selling a unit (in-store)
 kind: process
 audience: [owner, manager, employee]
+module: sales-invoicing
 routes: [/dashboard/entry/sell, /dashboard/entry]
 keywords: [sell, sale, bech, bechna, sale entry, stock out, customer ko dena, billing, sold, laptop, desktop, monitor, tablet, accessory, device, unit]
 sources:
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/sales-entry.ts
   - apps/erp/app/dashboard/entry/sell/page.tsx
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

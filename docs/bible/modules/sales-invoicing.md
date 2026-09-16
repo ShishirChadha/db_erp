@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/sales-entry.ts
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-08-29
+updated: 2026-09-16
 ---
 
 ## What this covers
@@ -41,6 +41,20 @@ guess. See **business-rules**.
 `sale_payments` — any role can add an installment; only the owner can delete/
 correct one. `sales.amount_paid`/`payment_status` are trigger-derived, never
 written directly. See **record-a-part-payment**.
+
+## Rental charges are sales rows too
+
+Rentals add a fourth row-kind discriminator to `sales`: `rental_agreement_id` (plus
+`rental_period_start`/`rental_period_end`), alongside `asset_ledger_id`,
+`accessory_id` and `repair_job_id`. A rent charge is an ordinary sale — same payment
+ledger, same part-payments, same multi-item invoice combining.
+
+Two things distinguish it. A **rent charge** leaves `asset_ledger_id` NULL (it is pure
+revenue, and filling it in would make the rented unit read as sold and charge its whole
+purchase cost against one month of rent), and it invoices as `item_type = 'rental'`
+with **SAC 997313** rather than a goods HSN, because renting goods is a supply of
+service. A **rent-to-own buyout** does carry `asset_ledger_id` and is billed as the
+ordinary unit sale it is. See **rentals**.
 
 ## Related
 

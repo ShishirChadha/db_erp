@@ -25,13 +25,14 @@ import {
   Search,
   Star,
   Megaphone,
+  HelpCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { apiFetch } from '@/lib/api-client'
 import NotificationBell from '@/components/NotificationBell'
-import { useNavPalette } from '@/components/AdvisorLauncher'
+import { useNavSearch } from '@/components/NavSearch'
 import { useNavPrefs } from '@/lib/useNavPrefs'
 
 // ---------- Menu structure with categories ----------
@@ -97,6 +98,7 @@ export const menuGroups = [
       { key: 'live_stock', href: '/dashboard/live-stock', label: 'Live Stock', pageKey: 'live_stock' },
       { key: 'repair_jobs', href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
       { key: 'replacement_jobs', href: '/dashboard/replacement-jobs', label: 'Replacement Jobs', pageKey: 'replacement_jobs' },
+      { key: 'rentals', href: '/dashboard/rentals', label: 'Rentals', pageKey: 'rentals' },
       { key: 'rma', href: '/dashboard/rma', label: 'RMA (Vendor Returns)', pageKey: 'rma' },
     ],
   },
@@ -166,6 +168,15 @@ export const menuGroups = [
     // the 9 admin tabs inside it (incl. the relocated Audit Log/Backup) stay
     // owner-gated at the tab level, not the page level. See settings/page.tsx.
   },
+  {
+    key: 'help',
+    label: 'DB Guide',
+    icon: HelpCircle,
+    href: '/dashboard/help',
+    // No pageKey, no ownerOnly -- deliberately visible to every signed-in role
+    // with zero admin setup, same pattern as `settings` above. See
+    // docs/bible/rules/roles-permissions.md.
+  },
 ]
 
 // ---------- Sidebar Content (with collapsible groups) ----------
@@ -193,7 +204,7 @@ function SidebarContent({
   const childPath = (href: string) => href.split('?')[0]
 
   const { hiddenItems, pinnedItems, groupOrder, togglePinned } = useNavPrefs()
-  const { open: openSearch } = useNavPalette()
+  const { open: openSearch } = useNavSearch()
 
   const roleFilteredGroups = useMemo(
     () => menuGroups

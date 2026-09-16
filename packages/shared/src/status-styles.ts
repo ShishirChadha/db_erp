@@ -45,6 +45,7 @@ export const ASSET_STATUS_TONES: Record<string, Tone> = {
   rma_sent: 'purple',
   rma_returned: 'purple',
   scrapped: 'danger',
+  on_rent: 'purple',
 }
 
 // repair_jobs.status
@@ -53,6 +54,22 @@ export const REPAIR_JOB_STATUS_TONES: Record<string, Tone> = {
   in_progress: 'info',
   done: 'success',
   cancelled: 'danger',
+}
+
+// rental_agreements.status
+export const RENTAL_STATUS_TONES: Record<string, Tone> = {
+  draft: 'neutral',
+  active: 'info',
+  closed: 'success',
+  cancelled: 'danger',
+}
+
+// rental_agreement_items.item_status
+export const RENTAL_ITEM_STATUS_TONES: Record<string, Tone> = {
+  on_rent: 'info',
+  returned: 'success',
+  bought_out: 'purple',
+  lost_damaged: 'danger',
 }
 
 // sales.payment_status / repair_jobs.payment_status

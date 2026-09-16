@@ -3,11 +3,12 @@ slug: publish-a-sku-to-website
 title: Publishing a SKU to the website
 kind: process
 audience: [owner]
+module: website
 routes: [/dashboard/sku-master]
 keywords: [publish, website, online, list on site, digitalbluez.com, web price, unpublish]
 sources:
   - apps/erp/components/SkuWebPublishDialog.tsx
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

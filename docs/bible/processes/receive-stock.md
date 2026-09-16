@@ -3,12 +3,13 @@ slug: receive-stock
 title: Receiving stock (serialized units and accessories)
 kind: process
 audience: [owner, manager, employee]
+module: live-stock-qc
 routes: [/dashboard/entry/intake, /dashboard/accessories]
 keywords: [receive, intake, stock in, naya maal aaya, new stock, add stock, incoming, delivery]
 sources:
   - apps/erp/app/api/stock-intake/route.ts
   - apps/erp/lib/accessory-movements.ts
-updated: 2026-08-29
+updated: 2026-09-15
 ---
 
 ## What this is

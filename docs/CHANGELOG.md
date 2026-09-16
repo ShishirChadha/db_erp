@@ -4,7 +4,94 @@ Plain-language, dated log of feature changes to the ERP. Newest entries at
 the top. This is the **one file to check** for "what changed and when" — see
 `docs/README.md` for how this fits with the other docs in this folder.
 
+## 2026-09-16 — Laptop Rentals
+
+You can now track laptops given out on rent. Rentals live under Operations → Rentals.
+
+- Open a rental for a customer with one or more laptops from your normal sellable
+  stock. There is no separate "rental stock" to maintain — a laptop goes out, comes
+  back, and is sellable again.
+- A laptop that is out on rent disappears from the Sell screen and from the website
+  straight away, so it can't be sold by mistake. You can still see it on the Stock page
+  under the new "On Rent" filter.
+- Choose monthly, quarterly, or one-time billing per rental. A few days before each
+  cycle is due you get a task and a notification; you click once to raise the rent
+  charge. Nothing is ever billed automatically behind your back.
+- Rent charges appear in the Sales Ledger like any other sale, so part payments, GST
+  invoices, and combining a rental onto one invoice with the customer's other purchases
+  all work exactly as you're used to. Rental invoices correctly show the rental service
+  code (SAC 997313) rather than a product code.
+- Security deposits are tracked but never counted as income while you're holding them
+  (a deposit isn't revenue, and doesn't attract GST). When you settle up, anything you
+  keep for damage is recorded as income at that point. Only an owner can refund or
+  withhold a deposit.
+- When a laptop comes back it goes into the QC queue rather than straight onto the
+  shelf, so it's always re-checked before being sold or rented again.
+- If a renter decides to keep the laptop, "Buyout" turns it into a normal sale.
+- Overdue rentals and rent that's due to be billed both show on Pending Tasks, and the
+  dashboard has a new "Rent Billed" tile. Rental income is reported separately from
+  laptop sales, so it never gets mixed into your sales figures.
+
 ---
+
+## 2026-09-16 — "Ask DB" removed; DB Guide is now the one place to read the manual
+
+The `⌘K` Q&A feature ("Ask DB" — type a question, get a report number/record/
+how-to answer) is gone. DB Guide covers the same ground and more, is always
+visible without needing to know the right question to ask, and one surface
+is simpler than two doing overlapping jobs.
+
+- `⌘K` still works, for something different: a plain **page-jump search** —
+  type a page name, hit enter, you're there. This is also the only way to
+  get back to a nav item you've hidden via Settings → My Navigation without
+  going into Settings to un-hide it.
+- Nothing else changes for you — DB Guide (sidebar, bottom, below Settings)
+  works exactly as before.
+
+## 2026-09-16 — DB Guide: a browsable help page for everyone
+
+A new **DB Guide** page (sidebar, bottom, below Settings) — the same internal
+manual "Ask DB" already searches, now browsable on purpose instead of only
+reachable by typing a question into `⌘K`. Every module and how-to guide,
+grouped by feature, with a search box that filters as you type. Visible to
+owner, manager, and employee alike — each sees only what's relevant to their
+own role, exactly like everywhere else in the app.
+
+- Numbered "Steps" in how-to guides now render as an actual numbered list
+  (1, 2, 3...) — previously showed as plain bullets.
+- New how-to guide: **Replacing a customer's unit with another one** —
+  covers what happens with the outgoing and incoming units regardless of
+  whether either has a Purchase Order attached yet, and how a spec upgrade
+  or downgrade on the replacement is priced (there's no automatic
+  calculation — it's a manual entry, same as any sale).
+- Nothing to configure — it reuses the same internal manual built up since
+  late August.
+
+## 2026-09-16 — DB Guide filled out: 41 new how-to guides, one new module
+
+Following up the same day: after finding that searching DB Guide for
+"upgrade" turned up nothing despite the feature existing (the "Change SKU"
+upgrade/downgrade dialog reachable from Stock and Sell), every module got a
+real audit — not just that one gap. Result: **67 chapters now, up from 26** —
+41 new how-to guides plus a brand-new **Marketing** module (the WhatsApp/
+social content generator had zero documentation anywhere before today).
+Covers, among many others: managing users/access (including the "view
+password" tool), backup/restore (and that restore is selective, not
+all-or-nothing), reconciliation (vendor invoices, bank statements, sessions),
+Purchase Orders/Invoices, SKU merge, Quotations, recording a Zoho-issued
+invoice, the Price Cockpit, the Reports page's 10 tabs, tasks/calendar
+subscription, customers/vendors, and expenses/reimbursements/recurring
+expenses.
+
+- **Three real gaps found along the way, not just documentation gaps —
+  flagged, not silently fixed**: the asset-numbering settings screen and the
+  accessory "Correct Quantity" action are both hidden from non-owners in the
+  UI but have **no owner check on their underlying API** — either could be
+  called directly by any signed-in employee, bypassing the intended
+  restriction. Separately, the SKU category-templates editor is a finished
+  component that was never wired into any page, and its "create category"
+  button wouldn't work even if it were (the server route only supports
+  editing an existing category, not creating one).
 
 ## 2026-08-29 — "DB" can now answer questions (Phase 1)
 

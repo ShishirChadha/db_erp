@@ -12,7 +12,7 @@ sources:
   - apps/erp/lib/reports.ts
   - apps/erp/lib/gstCalculation.ts
   - apps/erp/app/dashboard/reports/reports-client.tsx
-updated: 2026-09-04
+updated: 2026-09-16
 ---
 
 ## The single reporting dispatcher
@@ -122,6 +122,19 @@ Digitalbluez (GST-registered, home state UP-09) and Techtenth (+ Cash) are two
 payment/entity identities under one business — GST invoicing logic branches on
 which one a sale belongs to, but they're never treated as separate vendors or
 competing businesses. See **business-rules**.
+
+## Rental income is reported separately
+
+`v_report_sale_lines.line_kind` gained a `'rental'` value, so rent never inflates unit
+sales figures and can be sliced out on its own. Because a rent charge has no
+`asset_ledger_id`, it also comes back with `cogs_known = false` — a laptop's purchase
+cost is never counted as the cost of one month's rent. A rent-to-own buyout stays
+`line_kind = 'unit'` with real COGS.
+
+`report_rentals(p_from, p_to)` gives the rental picture on its own: active agreements,
+units on rent, overdue count, rent billed/collected/outstanding, and `deposits_held`.
+Deposits are reported apart from every revenue figure because a held deposit is a
+liability, not income. See **rentals**.
 
 ## Related
 
