@@ -28,16 +28,19 @@ interface SkuLite {
 interface VendorComparisonRow {
   vendor_name: string
   times_bought: number
-  last_price: number
   last_date: string | null
-  min_price: number
-  avg_price: number
+  last_price_excl_gst: number
+  last_price_incl_gst: number
+  min_price_excl_gst: number
+  avg_price_excl_gst: number
 }
 
 interface HistoryRow {
   date: string | null
   vendor_name: string | null
-  price: number | null
+  price_excl_gst: number | null
+  price_incl_gst: number | null
+  gst_percentage: number | null
   quantity: number
   source: string
   ref: string | null
@@ -48,6 +51,7 @@ interface Observation {
   competitor: string
   price: number
   condition_grade: string | null
+  warranty_months: number | null
   source_url: string | null
   notes: string | null
   observed_at: string
@@ -141,6 +145,7 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
       <h2 className="font-semibold mb-1">Vendor Comparison</h2>
       <p className="text-xs text-muted-foreground mb-3">
         Who you've bought this from, and at what price — the "I bought this from ABC 3x, here's XYZ's price" view.
+        All prices below are unit cost; Excl. GST and Incl. GST are shown side by side since purchases carry different GST%.
       </p>
       {data.vendor_comparison.length === 0 ? (
         <p className="text-sm text-muted-foreground">No purchase history found for this item yet.</p>
@@ -152,9 +157,10 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
                 <th className="p-2">Last Bought</th>
                 <th className="p-2">Vendor</th>
                 <th className="p-2 text-right">Times Bought</th>
-                <th className="p-2 text-right">Last Price</th>
-                <th className="p-2 text-right">Min Price</th>
-                <th className="p-2 text-right">Avg Price</th>
+                <th className="p-2 text-right">Last Price (Excl. GST)</th>
+                <th className="p-2 text-right">Last Price (Incl. GST)</th>
+                <th className="p-2 text-right">Min Price (Excl. GST)</th>
+                <th className="p-2 text-right">Avg Price (Excl. GST)</th>
               </tr>
             </thead>
             <tbody className="divide-y">
@@ -163,9 +169,10 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
                   <td className="p-2">{v.last_date?.slice(0, 10) || '—'}</td>
                   <td className="p-2 font-medium">{v.vendor_name}</td>
                   <td className="p-2 text-right tabular-nums">{v.times_bought}</td>
-                  <td className="p-2 text-right tabular-nums">{money(v.last_price)}</td>
-                  <td className="p-2 text-right tabular-nums">{money(v.min_price)}</td>
-                  <td className="p-2 text-right tabular-nums">{money(v.avg_price)}</td>
+                  <td className="p-2 text-right tabular-nums">{money(v.last_price_excl_gst)}</td>
+                  <td className="p-2 text-right tabular-nums">{money(v.last_price_incl_gst)}</td>
+                  <td className="p-2 text-right tabular-nums">{money(v.min_price_excl_gst)}</td>
+                  <td className="p-2 text-right tabular-nums">{money(v.avg_price_excl_gst)}</td>
                 </tr>
               ))}
             </tbody>
@@ -185,7 +192,9 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
                   <tr className="text-left text-muted-foreground">
                     <th className="p-2">Date</th>
                     <th className="p-2">Vendor</th>
-                    <th className="p-2 text-right">Price</th>
+                    <th className="p-2 text-right">Price (Excl. GST)</th>
+                    <th className="p-2 text-right">GST%</th>
+                    <th className="p-2 text-right">Price (Incl. GST)</th>
                     <th className="p-2 text-right">Qty</th>
                     <th className="p-2">Source</th>
                     <th className="p-2">Ref</th>
@@ -196,7 +205,9 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
                     <tr key={idx}>
                       <td className="p-2">{h.date?.slice(0, 10) || '—'}</td>
                       <td className="p-2">{h.vendor_name || '—'}</td>
-                      <td className="p-2 text-right tabular-nums">{money(h.price)}</td>
+                      <td className="p-2 text-right tabular-nums">{money(h.price_excl_gst)}</td>
+                      <td className="p-2 text-right tabular-nums">{h.gst_percentage != null ? `${h.gst_percentage}%` : '—'}</td>
+                      <td className="p-2 text-right tabular-nums">{money(h.price_incl_gst)}</td>
                       <td className="p-2 text-right tabular-nums">{h.quantity}</td>
                       <td className="p-2 text-xs text-muted-foreground">{SOURCE_LABELS[h.source] || h.source}</td>
                       <td className="p-2 text-xs text-muted-foreground">{h.ref || '—'}</td>
@@ -214,7 +225,7 @@ function VendorComparisonPanel({ data }: { data: PriceIntel }) {
 
 // ---------- Sell-side margin calculator panel ----------
 function MarginCalculatorPanel({ data, onSaved }: { data: PriceIntel; onSaved: () => void }) {
-  const lastCost = data.vendor_comparison[0]?.last_price ?? data.sku.base_cost ?? 0
+  const lastCost = data.vendor_comparison[0]?.last_price_excl_gst ?? data.sku.base_cost ?? 0
   const [cost, setCost] = useState(lastCost)
   const [markupPct, setMarkupPct] = useState(20)
   const [price, setPrice] = useState(() => priceFromMarkup(lastCost, 20))
@@ -351,8 +362,9 @@ function MarginCalculatorPanel({ data, onSaved }: { data: PriceIntel; onSaved: (
 }
 
 // ---------- Competitor benchmark panel ----------
-function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
+function CompetitorPanel({ skuId, configSummary, observations, benchmark, onChanged }: {
   skuId: string
+  configSummary: string
   observations: Observation[]
   benchmark: PriceIntel['market_benchmark']
   onChanged: () => void
@@ -360,16 +372,22 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
   const { values: competitors } = useCustomOptions('competitors')
   const [competitor, setCompetitor] = useState('')
   const [price, setPrice] = useState('')
+  const [warrantyMonths, setWarrantyMonths] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
 
   const { run: handleAdd, pending: adding } = useAsyncAction(async () => {
     if (!competitor.trim() || !price) { toast.error('Competitor and price are required'); return }
     const res = await apiFetch(`/api/sku-master/${skuId}/market-observations`, {
       method: 'POST',
-      body: JSON.stringify({ competitor, price: Number(price), source_url: sourceUrl || undefined }),
+      body: JSON.stringify({
+        competitor,
+        price: Number(price),
+        warranty_months: warrantyMonths ? Number(warrantyMonths) : undefined,
+        source_url: sourceUrl || undefined,
+      }),
     })
     if (!res.ok) { toast.error('Failed to save observation'); return }
-    setCompetitor(''); setPrice(''); setSourceUrl('')
+    setCompetitor(''); setPrice(''); setWarrantyMonths(''); setSourceUrl('')
     onChanged()
   })
 
@@ -387,8 +405,16 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
   return (
     <div className="border rounded-lg p-4">
       <h2 className="font-semibold mb-1">Competitor Benchmark</h2>
-      <p className="text-xs text-muted-foreground mb-3">
+      {configSummary && (
+        <p className="text-xs text-muted-foreground">Benchmarking: <span className="font-medium">{configSummary}</span></p>
+      )}
+      <p className="text-xs text-muted-foreground mb-1">
         Log prices you look up (Cashify, New Jaisa, Sudewala…) so a benchmark builds up over time.
+      </p>
+      <p className="text-xs text-muted-foreground mb-3">
+        Nothing here is fetched automatically — this is a manual log. The link is just a reference to revisit later; pasting
+        a competitor's URL does not scrape or auto-refresh its price, so keep the price and date current by re-entering
+        them whenever you recheck.
       </p>
 
       {benchmark && (
@@ -406,8 +432,12 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
           <label className="block text-xs text-muted-foreground mb-1">Price (₹)</label>
           <Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} />
         </div>
+        <div className="w-32">
+          <label className="block text-xs text-muted-foreground mb-1">Warranty (months)</label>
+          <Input type="number" min={0} value={warrantyMonths} onChange={(e) => setWarrantyMonths(e.target.value)} placeholder="e.g. 6" />
+        </div>
         <div className="w-56">
-          <label className="block text-xs text-muted-foreground mb-1">Link (optional)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Link (optional, reference only)</label>
           <Input value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} placeholder="https://..." />
         </div>
         <Button loading={adding} onClick={() => handleAdd()}>Add</Button>
@@ -420,9 +450,10 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
           <table className="min-w-full text-sm">
             <thead>
               <tr className="text-left text-muted-foreground">
-                <th className="p-2">Date</th>
+                <th className="p-2">Observed On</th>
                 <th className="p-2">Competitor</th>
                 <th className="p-2 text-right">Price</th>
+                <th className="p-2 text-right">Warranty</th>
                 <th className="p-2">Link</th>
                 <th className="p-2"></th>
               </tr>
@@ -433,6 +464,7 @@ function CompetitorPanel({ skuId, observations, benchmark, onChanged }: {
                   <td className="p-2">{o.observed_at?.slice(0, 10)}</td>
                   <td className="p-2">{o.competitor}</td>
                   <td className="p-2 text-right tabular-nums">{money(o.price)}</td>
+                  <td className="p-2 text-right tabular-nums">{o.warranty_months != null ? `${o.warranty_months} mo` : '—'}</td>
                   <td className="p-2">
                     {o.source_url ? <a href={o.source_url} target="_blank" rel="noreferrer" className="text-primary underline text-xs">view</a> : '—'}
                   </td>
@@ -525,6 +557,7 @@ function PriceCockpitInner() {
           <MarginCalculatorPanel data={data} onSaved={fetchIntel} />
           <CompetitorPanel
             skuId={data.sku.id}
+            configSummary={buildConfigSummary(data.sku.category, data.sku.specifications, templates)}
             observations={data.observations}
             benchmark={data.market_benchmark}
             onChanged={fetchIntel}

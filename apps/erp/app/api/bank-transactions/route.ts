@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { findCreditCandidates, guessPayerCustomer } from '@/lib/recon/credit-matcher'
 import { findPurchaseCandidates } from '@/lib/recon/purchase-matcher'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: paginated transaction list, with optional credit-candidate suggestions ----------
 export async function GET(req: NextRequest) {
@@ -29,7 +30,7 @@ export async function GET(req: NextRequest) {
   if (dateTo) query = query.lte('txn_date', dateTo)
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error, count } = await query
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   let rows: any[] = data || []
@@ -39,13 +40,13 @@ export async function GET(req: NextRequest) {
       const entityKey = t.bank_accounts?.entity_key || 'digitalbluez'
       if (t.credit) {
         const [candidates, payerGuess] = await Promise.all([
-          findCreditCandidates({ amount: t.credit, txnDate: t.txn_date, entityKey }),
-          guessPayerCustomer(t.narration),
+          withRetry(() => findCreditCandidates({ amount: t.credit, txnDate: t.txn_date, entityKey })),
+          withRetry(() => guessPayerCustomer(t.narration)),
         ])
         return { ...t, credit_candidates: candidates, payer_guess: payerGuess }
       }
       if (t.debit) {
-        const candidates = await findPurchaseCandidates({ narration: t.narration, amount: t.debit, txnDate: t.txn_date, entityKey })
+        const candidates = await withRetry(() => findPurchaseCandidates({ narration: t.narration, amount: t.debit, txnDate: t.txn_date, entityKey }))
         return { ...t, purchase_candidates: candidates }
       }
       return t

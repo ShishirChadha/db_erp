@@ -20,6 +20,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { ResizableHeader } from '@/components/ResizableHeader'
 import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
+import { withRetry } from '@/lib/db-retry'
 
 const PAGE_SIZE = 25
 
@@ -87,9 +88,15 @@ function VendorsPage() {
     }
     query = query.order(sortField || 'company_name', { ascending: sortOrder === 'asc' })
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
-    const { data, count } = await query
-    setVendors(data || [])
-    setTotal(count || 0)
+    try {
+      const { data, error, count } = await withRetry(() => query)
+      if (error) throw error
+      setVendors(data || [])
+      setTotal(count || 0)
+    } catch (err) {
+      console.error(err)
+      toast.error('Unable to load vendors -- check your connection and try again.')
+    }
   }
 
   useEffect(() => { fetchVendors() }, [showDeleted, search, sortField, sortOrder, page])

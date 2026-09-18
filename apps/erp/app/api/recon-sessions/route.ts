@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { computeSessionSummary } from '@/lib/recon/session-summary'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list sessions, optionally scoped to one account ----------
 export async function GET(req: NextRequest) {
@@ -14,7 +15,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin.from('recon_sessions').select('*, bank_accounts(label)').order('period_start', { ascending: false })
   if (bankAccountId) query = query.eq('bank_account_id', bankAccountId)
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)
 }

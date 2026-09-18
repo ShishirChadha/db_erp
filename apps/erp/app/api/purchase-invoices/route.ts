@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 // Purchase Invoices carry vendor/cost/GST data -- owner-only, no employee access.
 // ---------- GET: list purchase invoices ----------
@@ -28,7 +29,7 @@ export async function GET(req: NextRequest) {
   if (date_from) invoiceQuery = invoiceQuery.gte('invoice_date', date_from)
   if (date_to) invoiceQuery = invoiceQuery.lte('invoice_date', date_to)
 
-  const { data: invoices, error } = await invoiceQuery
+  const { data: invoices, error } = await withRetry(() => invoiceQuery)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // Collect unique PO ids
@@ -39,10 +40,10 @@ export async function GET(req: NextRequest) {
   let poMap: Record<string, any> = {}
   const lastPaymentByPo = new Map<string, string>()
   if (poIds.length > 0) {
-    const { data: pos } = await supabaseAdmin
+    const { data: pos } = await withRetry(() => supabaseAdmin
       .from('purchase_orders')
       .select('id, po_number, vendor_name')
-      .in('id', poIds)
+      .in('id', poIds))
 
     pos?.forEach((po: any) => {
       poMap[po.id] = po
@@ -50,11 +51,11 @@ export async function GET(req: NextRequest) {
 
     // A PI's "payment date" is the vendor_payments ledger for its PO -- vendor
     // payments are recorded once against the PO, not per-invoice.
-    const { data: payments } = await supabaseAdmin
+    const { data: payments } = await withRetry(() => supabaseAdmin
       .from('vendor_payments')
       .select('po_id, paid_on')
       .in('po_id', poIds)
-      .order('paid_on', { ascending: false })
+      .order('paid_on', { ascending: false }))
     for (const p of payments || []) {
       if (!lastPaymentByPo.has(p.po_id)) lastPaymentByPo.set(p.po_id, p.paid_on)
     }

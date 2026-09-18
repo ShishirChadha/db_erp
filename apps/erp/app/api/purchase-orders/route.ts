@@ -4,6 +4,7 @@ import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
 import { getSessionUser, isOwner, isManagerOrAbove } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 // Purchase Orders carry vendor/cost/GST data end-to-end -- no employee access. Managers
 // may view (needed to approve/submit) but only owners can create/edit.
@@ -42,17 +43,17 @@ export async function GET(req: NextRequest) {
   if (date_to) query = query.lte('po_date', date_to)
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  let { data: pos, error, count } = await query
+  let { data: pos, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // Ensure pos is an array
   pos = pos || []
 
   if (exclude_invoiced) {
-    const { data: invoices } = await supabaseAdmin
+    const { data: invoices } = await withRetry(() => supabaseAdmin
       .from('invoices')
       .select('po_id')
-      .eq('invoice_type', 'purchase')
+      .eq('invoice_type', 'purchase'))
 
     const invoicedIds = new Set((invoices || []).map(inv => inv.po_id).filter(Boolean))
     pos = pos.filter(po => !invoicedIds.has(po.id))

@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list expenses ----------
 // The 'expenses' page key -- previously this table had no API route at all (the page
@@ -37,7 +38,7 @@ export async function GET(req: NextRequest) {
   if (dateTo) query = query.lte('expense_date', dateTo)
   query = query.order(sortField, { ascending: sortAscending })
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   let rows = data || []

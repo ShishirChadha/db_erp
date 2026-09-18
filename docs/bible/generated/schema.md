@@ -888,7 +888,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~402 rows (estimate)
+~410 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

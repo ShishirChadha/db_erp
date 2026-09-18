@@ -5,7 +5,7 @@ kind: process
 audience: [owner]
 module: repairs-replacements-rma
 routes: [/dashboard/rma]
-keywords: [rma, vendor return, faulty, defective, return to vendor, vendor replace]
+keywords: [rma, vendor return, faulty, defective, return to vendor, vendor replace, accessory, accessories, accessory rma, accessory return, accessory_rma_events]
 sources:
   - apps/erp/app/api/rma/route.ts
   - apps/erp/app/api/rma/[id]/route.ts

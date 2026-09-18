@@ -5,6 +5,7 @@ import { generateReplacementJobNumber } from '@/lib/accessory-replacement-jobs'
 import { processAccessoryFromCustomer } from '@/lib/accessory-rma'
 import { BaseSaleFields, CartItemInput, processSingleSaleItem } from '@/lib/sales-cart'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
 
   if (status) query = query.in('status', status.split(',').map((s) => s.trim()))
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   return NextResponse.json(data)
 }

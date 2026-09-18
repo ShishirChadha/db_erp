@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { processAccessoryFromCustomer, processAccessoryToVendor } from '@/lib/accessory-rma'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list accessory RMA events ----------
 // Same non-owner scoping as GET /api/rma -- a to_vendor row joins vendor_id, which
@@ -31,7 +32,7 @@ export async function GET(req: NextRequest) {
   if (direction) query = query.eq('direction', direction)
   if (status) query = query.eq('status', status)
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   return NextResponse.json(data)

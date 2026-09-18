@@ -14,6 +14,10 @@ import {
   Search, ShoppingCart, Activity,
 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
+
+const SALES_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories', 'Repair', 'Rental']
+const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
 import {
   toDateStr, monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod,
 } from '@/lib/reports'
@@ -251,6 +255,7 @@ function SalesTab({ period, active }: { period: Period; active: boolean }) {
   const [byEntity, setByEntity] = useState<any[] | null>(null)
   const [byType, setByType] = useState<any[] | null>(null)
   const [topCustomers, setTopCustomers] = useState<any[] | null>(null)
+  const [matrix, setMatrix] = useState<MatrixRow[] | null>(null)
 
   useEffect(() => {
     if (!active) return
@@ -260,15 +265,26 @@ function SalesTab({ period, active }: { period: Period; active: boolean }) {
     getReport('breakdown', { ...p, dimension: 'entity', limit: '5' }).then(setByEntity)
     getReport('breakdown', { ...p, dimension: 'sale_type', limit: '5' }).then(setByType)
     getReport('breakdown', { ...p, dimension: 'customer', limit: '10' }).then(setTopCustomers)
+    getReport('category_entity_matrix', { ...p, source: 'sales' }).then(setMatrix)
   }, [active, period.from, period.to])
 
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <BreakdownCard title="Revenue by Brand" rows={byBrand} />
-      <BreakdownCard title="Revenue by Staff" rows={byStaff} />
-      <BreakdownCard title="Revenue by Entity" rows={byEntity} />
-      <ChartPie title="GST vs Cash Split" rows={byType} valueKey="units" />
-      <BreakdownCard title="Top Customers" rows={topCustomers} className="md:col-span-2" />
+    <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Sales: Value & Count by Entity and Category</CardTitle></CardHeader>
+        <CardContent>
+          {!matrix ? <p className="text-sm text-muted-foreground">Loading…</p> : (
+            <CategoryEntityMatrixTable title="" rows={matrix} categoryOrder={SALES_CATEGORY_ORDER} />
+          )}
+        </CardContent>
+      </Card>
+      <div className="grid md:grid-cols-2 gap-6">
+        <BreakdownCard title="Revenue by Brand" rows={byBrand} />
+        <BreakdownCard title="Revenue by Staff" rows={byStaff} />
+        <BreakdownCard title="Revenue by Entity" rows={byEntity} />
+        <ChartPie title="GST vs Cash Split" rows={byType} valueKey="units" />
+        <BreakdownCard title="Top Customers" rows={topCustomers} className="md:col-span-2" />
+      </div>
     </div>
   )
 }
@@ -469,17 +485,31 @@ function StatTile({ label, value, sub, warn }: { label: string; value: any; sub?
 // ── Purchasing & Vendors ─────────────────────────────────────────────
 function PurchasingTab({ period, active, includeFinancials }: { period: Period; active: boolean; includeFinancials: boolean }) {
   const [byVendor, setByVendor] = useState<any[] | null>(null)
-  const [byCategory, setByCategory] = useState<any[] | null>(null)
+  const [matrix, setMatrix] = useState<MatrixRow[] | null>(null)
 
   useEffect(() => {
     if (!active) return
     getReport('breakdown', { from: period.from, to: period.to, dimension: 'vendor', limit: '15' }).then(setByVendor)
+    getReport('category_entity_matrix', { from: period.from, to: period.to, source: 'purchases' }).then(setMatrix)
   }, [active, period.from, period.to])
 
   if (!includeFinancials) return <p className="text-sm text-muted-foreground">Purchasing figures are owner-only.</p>
 
   return (
     <div className="space-y-6">
+      <Card>
+        <CardHeader><CardTitle className="text-base">Purchases: Value & Count by Entity and Category</CardTitle></CardHeader>
+        <CardContent>
+          {!matrix ? <p className="text-sm text-muted-foreground">Loading…</p> : (
+            <CategoryEntityMatrixTable
+              title=""
+              subtitle="Repair and Rental don't have their own purchase category — repair parts and rental units are already counted as Accessories/Laptop/Desktop purchases here."
+              rows={matrix}
+              categoryOrder={PURCHASE_CATEGORY_ORDER}
+            />
+          )}
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader><CardTitle className="text-base">Spend by Vendor</CardTitle></CardHeader>
         <CardContent>

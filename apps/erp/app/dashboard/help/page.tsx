@@ -52,12 +52,18 @@ export default function HelpCenterPage() {
     return () => { cancelled = true }
   }, [])
 
-  const q = query.trim().toLowerCase()
-  const matches = (c: ChapterListItem) =>
-    !q ||
-    c.title.toLowerCase().includes(q) ||
-    c.summary.toLowerCase().includes(q) ||
-    c.keywords.some((k) => k.toLowerCase().includes(q))
+  // Word-level AND matching, not whole-phrase substring -- a chapter whose
+  // "accessory"/"accessories" and "replacement" live as two separate
+  // keywords should still match a query typed as one phrase ("accessories
+  // replacement"), in either word order. Every typed word must appear
+  // somewhere across title/summary/keywords; found this the hard way when
+  // real content existed but a two-word search came up empty.
+  const qWords = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const matches = (c: ChapterListItem) => {
+    if (qWords.length === 0) return true
+    const haystack = `${c.title} ${c.summary} ${c.keywords.join(' ')}`.toLowerCase()
+    return qWords.every((w) => haystack.includes(w))
+  }
 
   const modules = useMemo(
     () => (chapters ?? []).filter((c) => c.kind === 'module').sort((a, b) => a.title.localeCompare(b.title)),
@@ -101,7 +107,7 @@ export default function HelpCenterPage() {
 
       {modules.map((mod) => {
         const children = (processesByModule.get(mod.slug) ?? []).filter(matches)
-        if (q && !matches(mod) && children.length === 0) return null
+        if (qWords.length > 0 && !matches(mod) && children.length === 0) return null
         return (
           <section key={mod.slug} className="mb-6">
             <Link href={chapterHref(mod.slug)} className="text-lg font-semibold hover:underline">

@@ -30,6 +30,7 @@ import DeleteInvoiceDialog from "@/components/DeleteInvoiceDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { apiFetch } from "@/lib/api-client";
 import { downloadPdfFromResponse } from "@/lib/download-pdf";
+import { withRetry } from "@/lib/db-retry";
 import { Pagination } from "@/components/Pagination";
 import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
@@ -72,8 +73,8 @@ function InvoicesPage() {
     query = query.order("created_at", { ascending: false });
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-    const { data, error, count } = await query;
-    if (error) console.error(error);
+    const { data, error, count } = await withRetry(() => query);
+    if (error) { console.error(error); toast.error("Unable to load invoices -- check your connection and try again."); }
     else { setInvoices(data || []); setTotal(count || 0); }
     setLoading(false);
   }, [searchTerm, statusFilter, showDeleted, page, supabase]);

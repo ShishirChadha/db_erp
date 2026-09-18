@@ -15,7 +15,7 @@ export async function POST(
 
   const { id } = await params
   const body = await req.json()
-  const { competitor, price, condition_grade, source_url, notes } = body
+  const { competitor, price, condition_grade, source_url, notes, warranty_months } = body
 
   if (!competitor || typeof competitor !== 'string' || !competitor.trim()) {
     return NextResponse.json({ error: 'Competitor is required' }, { status: 400 })
@@ -23,6 +23,13 @@ export async function POST(
   const priceNum = Number(price)
   if (!Number.isFinite(priceNum) || priceNum <= 0) {
     return NextResponse.json({ error: 'A positive price is required' }, { status: 400 })
+  }
+  let warrantyMonthsNum: number | null = null
+  if (warranty_months !== undefined && warranty_months !== null && warranty_months !== '') {
+    warrantyMonthsNum = Number(warranty_months)
+    if (!Number.isFinite(warrantyMonthsNum) || warrantyMonthsNum < 0) {
+      return NextResponse.json({ error: 'Warranty (months) must be a non-negative number' }, { status: 400 })
+    }
   }
 
   const { data, error } = await supabaseAdmin
@@ -32,6 +39,7 @@ export async function POST(
       competitor: competitor.trim(),
       price: priceNum,
       condition_grade: condition_grade || null,
+      warranty_months: warrantyMonthsNum,
       source_url: source_url || null,
       notes: notes || null,
       observed_by: sessionUser.id,
@@ -54,7 +62,7 @@ export async function GET(
   const { id } = await params
   const { data, error } = await supabaseAdmin
     .from('market_price_observations')
-    .select('id, competitor, price, condition_grade, source_url, notes, observed_at')
+    .select('id, competitor, price, condition_grade, warranty_months, source_url, notes, observed_at')
     .eq('sku_id', id)
     .eq('is_deleted', false)
     .order('observed_at', { ascending: false })

@@ -5,6 +5,7 @@ import { generateRepairJobNumber, resolveRepairGstPercent, consumeRepairParts } 
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list repair jobs ----------
 export async function GET(req: NextRequest) {
@@ -41,10 +42,10 @@ export async function GET(req: NextRequest) {
   // customer ids first so search can span both the job's own text fields and its customer.
   if (search) {
     const term = `%${search}%`
-    const { data: matchingCustomers } = await supabaseAdmin
+    const { data: matchingCustomers } = await withRetry(() => supabaseAdmin
       .from('customers')
       .select('id')
-      .ilike('customer_name', term)
+      .ilike('customer_name', term))
     const customerIds = (matchingCustomers || []).map((c: any) => c.id)
     const orParts = [
       `job_number.ilike.${term}`,
@@ -58,7 +59,7 @@ export async function GET(req: NextRequest) {
 
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error, count } = await query
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // A job can now have MULTIPLE linked sales -- the labor charge (created at Mark

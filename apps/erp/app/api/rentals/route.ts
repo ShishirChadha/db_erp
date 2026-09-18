@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 import {
   generateRentalAgreementNumber, handOverUnit, addInterval, isAgreementOverdue,
   BILLING_INTERVALS, PAYMENT_ACCOUNTS,
@@ -42,9 +43,9 @@ export async function GET(req: NextRequest) {
 
   if (searchParams.get('counts') === 'true') {
     const countOf = async (build: (q: any) => any) => {
-      const { count } = await build(
+      const { count } = await withRetry<any>(() => build(
         supabaseAdmin.from('rental_agreements').select('id', { count: 'exact', head: true }).eq('is_deleted', false)
-      )
+      ))
       return count || 0
     }
     const [total, active, closed, dueToBill] = await Promise.all([
@@ -55,11 +56,11 @@ export async function GET(req: NextRequest) {
     ])
     // Overdue can't be expressed as a single PostgREST count (it needs "an item is
     // still on_rent"), so it's derived from the same rows the list uses.
-    const { data: activeRows } = await supabaseAdmin
+    const { data: activeRows } = await withRetry(() => supabaseAdmin
       .from('rental_agreements')
       .select('status, expected_return_date, rental_agreement_items ( item_status )')
       .eq('is_deleted', false)
-      .eq('status', 'active')
+      .eq('status', 'active'))
     const overdue = (activeRows || []).filter((r: any) => isAgreementOverdue(r)).length
     return NextResponse.json({ total, active, closed, due_to_bill: dueToBill, overdue })
   }
@@ -78,11 +79,11 @@ export async function GET(req: NextRequest) {
   if (status) query = query.in('status', status.split(','))
 
   if (search) {
-    const { data: matchedCustomers } = await supabaseAdmin
+    const { data: matchedCustomers } = await withRetry(() => supabaseAdmin
       .from('customers')
       .select('id')
       .ilike('customer_name', `%${search}%`)
-      .limit(200)
+      .limit(200))
     const orParts = [`agreement_number.ilike.%${search}%`, `notes.ilike.%${search}%`]
     if (matchedCustomers?.length) orParts.push(`customer_id.in.(${matchedCustomers.map((c) => c.id).join(',')})`)
     query = query.or(orParts.join(','))
@@ -96,7 +97,7 @@ export async function GET(req: NextRequest) {
 
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error, count } = await query
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   const rows = (data || []).map((r: any) => ({

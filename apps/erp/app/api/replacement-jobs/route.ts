@@ -7,6 +7,7 @@ import { processCustomerReturn } from '@/lib/rma'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
 import { BaseSaleFields, CartItemInput, processSingleSaleItem } from '@/lib/sales-cart'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -35,7 +36,7 @@ export async function GET(req: NextRequest) {
   if (status) query = query.in('status', status.split(',').map(s => s.trim()))
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error, count } = await query
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   if (pagination) return NextResponse.json({ data, total: count ?? 0 })
   return NextResponse.json(data)

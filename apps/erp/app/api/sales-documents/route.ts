@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { mintSalesDocumentNumber, computeLineGst } from '@/lib/sales-documents'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list quotations/proformas ----------
 export async function GET(req: NextRequest) {
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
   if (!showDeleted) query = query.eq('is_deleted', false)
   if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error, count } = await query
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   if (pagination) return NextResponse.json({ data, total: count ?? 0 })
   return NextResponse.json(data)

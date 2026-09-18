@@ -5,7 +5,7 @@ kind: process
 module: repairs-replacements-rma
 audience: [owner, manager, employee]
 routes: [/dashboard/replacement-jobs]
-keywords: [replacement, replace, swap, exchange, badalna, upgrade, downgrade, different spec, already has po, po already raised, asset number, replacement job, RJ number]
+keywords: [replacement, replace, swap, exchange, badalna, upgrade, downgrade, different spec, already has po, po already raised, asset number, replacement job, RJ number, accessory, accessories, accessory replacement, charger, cable, mouse, keyboard, item type toggle]
 sources:
   - apps/erp/app/api/replacement-jobs/route.ts
   - apps/erp/app/api/replacement-jobs/[id]/route.ts

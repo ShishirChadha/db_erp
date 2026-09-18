@@ -5,6 +5,10 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod } from '@/lib/reports'
+import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
+
+const SALES_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories', 'Repair', 'Rental']
+const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
 
 // Correctness note (2026-08-29 reporting rebuild): this page used to read the
 // legacy `purchases` table with no is_deleted filters and no period selector at
@@ -31,7 +35,7 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const { from, to } = PRESETS[presetKey].range()
   const compare = prevPeriod(from, to)
 
-  const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes] = await Promise.all([
+  const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes, salesMatrixRes, purchaseMatrixRes] = await Promise.all([
     supabaseAdmin.rpc('report_kpis', {
       p_from: from, p_to: to, p_compare_from: compare.from, p_compare_to: compare.to, p_include_financials: includeFinancials,
     }),
@@ -39,6 +43,8 @@ async function DashboardPageContent({ preset }: { preset: string }) {
     supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to, p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_inventory', { p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_rentals', { p_from: from, p_to: to }),
+    supabaseAdmin.rpc('report_category_entity_matrix', { p_from: from, p_to: to, p_source: 'sales', p_include_financials: includeFinancials }),
+    supabaseAdmin.rpc('report_category_entity_matrix', { p_from: from, p_to: to, p_source: 'purchases', p_include_financials: includeFinancials }),
   ])
 
   const kpis = kpisRes.data?.current
@@ -47,6 +53,8 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const expenses = expensesRes.data
   const inv = inventoryRes.data?.units
   const rentals = rentalsRes.data
+  const salesMatrix = (salesMatrixRes.data || []) as MatrixRow[]
+  const purchaseMatrix = (purchaseMatrixRes.data || []) as MatrixRow[]
 
   const purchaseGrowth = purchase?.prev_value > 0
     ? Math.round(((purchase.value - purchase.prev_value) / purchase.prev_value) * 1000) / 10
@@ -151,6 +159,22 @@ async function DashboardPageContent({ preset }: { preset: string }) {
           see Reports → Profitability for the full cost-coverage breakdown.
         </p>
       )}
+
+      <div className="grid lg:grid-cols-2 gap-6 mt-8">
+        <CategoryEntityMatrixTable
+          title="Sales: Value & Count by Entity and Category"
+          rows={salesMatrix}
+          categoryOrder={SALES_CATEGORY_ORDER}
+        />
+        {includeFinancials && (
+          <CategoryEntityMatrixTable
+            title="Purchases: Value & Count by Entity and Category"
+            subtitle="Repair/Rental have no purchase category of their own — those purchases already show up as Accessories/Laptop/Desktop."
+            rows={purchaseMatrix}
+            categoryOrder={PURCHASE_CATEGORY_ORDER}
+          />
+        )}
+      </div>
     </div>
   )
 }

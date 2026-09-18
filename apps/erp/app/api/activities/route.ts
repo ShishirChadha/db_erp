@@ -8,6 +8,7 @@ import {
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -48,21 +49,21 @@ export async function GET(req: NextRequest) {
   const dbColumn = columnMap[sortBy] || 'created_at'
   query = query.order(dbColumn, { ascending: sortOrder, nullsFirst: false })
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const activityIds = (data || []).map((a) => a.id)
   const [assigneesByActivity, watchersByActivity, checklistCounts] = await Promise.all([
-    getAssigneesForActivities(activityIds),
-    getWatchersForActivities(activityIds),
-    getChecklistCountsForActivities(activityIds),
+    withRetry(() => getAssigneesForActivities(activityIds)),
+    withRetry(() => getWatchersForActivities(activityIds)),
+    withRetry(() => getChecklistCountsForActivities(activityIds)),
   ])
   const allUserIds = [
     ...(data || []).map((a) => a.created_by),
     ...Array.from(assigneesByActivity.values()).flat(),
     ...Array.from(watchersByActivity.values()).flat(),
   ]
-  const profileMap = await getProfileMap(allUserIds)
+  const profileMap = await withRetry(() => getProfileMap(allUserIds))
 
   const enriched = (data || []).map((a) => {
     const assigneeIds = assigneesByActivity.get(a.id) || []

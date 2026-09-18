@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { processCustomerReturn } from '@/lib/rma'
 import { logAuditEvent } from '@/lib/audit-log'
+import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: list RMA events ----------
 // An 'rma' grant (non-owner) is scoped to from_customer returns only -- to_vendor rows
@@ -34,7 +35,7 @@ export async function GET(req: NextRequest) {
   if (direction) query = query.eq('direction', direction)
   if (status) query = query.eq('status', status)
 
-  const { data, error } = await query
+  const { data, error } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   return NextResponse.json(data)

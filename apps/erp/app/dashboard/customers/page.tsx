@@ -29,6 +29,8 @@ import RequirePageAccess from "@/components/RequirePageAccess";
 import { Pagination } from "@/components/Pagination";
 import { CustomerNameLink } from "@/components/CustomerNameLink";
 import { buildCustomerSummary } from "@/lib/customer-summary";
+import { withRetry } from "@/lib/db-retry";
+import { toast } from "sonner";
 
 const PAGE_SIZE = 25
 
@@ -80,8 +82,8 @@ function CustomersPage() {
     query = query.order(sortField, { ascending: sortOrder === "asc" });
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
-    const { data, error, count } = await query;
-    if (error) console.error(error);
+    const { data, error, count } = await withRetry(() => query);
+    if (error) { console.error(error); toast.error("Unable to load customers -- check your connection and try again."); }
     else { setCustomers(data || []); setTotal(count || 0); }
     setLoading(false);
   }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);

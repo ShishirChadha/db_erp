@@ -8,7 +8,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
 import { REPORT_DIMENSIONS, type ReportDimension } from '@/lib/reports'
 
-const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries', 'purchase_kpis', 'web_funnel', 'web_funnel_timeseries', 'website_health'] as const
+const METRICS = ['kpis', 'timeseries', 'breakdown', 'inventory', 'receivables', 'gst_summary', 'data_health', 'expenses', 'expense_timeseries', 'purchase_kpis', 'category_entity_matrix', 'web_funnel', 'web_funnel_timeseries', 'website_health'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -106,6 +106,22 @@ export async function GET(req: NextRequest) {
           const { value, prev_value, ...rest } = data
           return NextResponse.json(rest)
         }
+        return NextResponse.json(data)
+      }
+      case 'category_entity_matrix': {
+        // Purchases side is gated inside the RPC itself (returns [] when
+        // !p_include_financials, same as the 'vendor' breakdown dimension) since
+        // purchase value/count are cost figures; sales side has no such gate --
+        // selling price isn't a redacted field.
+        if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
+        const source = sp.get('source')
+        if (source !== 'sales' && source !== 'purchases') {
+          return NextResponse.json({ error: 'source must be "sales" or "purchases"' }, { status: 400 })
+        }
+        const { data, error } = await supabaseAdmin.rpc('report_category_entity_matrix', {
+          p_from: from, p_to: to, p_source: source, p_include_financials: includeFinancials,
+        })
+        if (error) throw error
         return NextResponse.json(data)
       }
       case 'expense_timeseries': {
