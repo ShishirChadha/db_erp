@@ -7,9 +7,10 @@ import { renderProductCard, CARD_FORMATS, type CardFormat } from '@/lib/marketin
 // an <img src> / download link from the Studio UI. Auth still required (Bearer token
 // via a signed fetch, not a public route) since this reads sku_id from sku_master via
 // the service-role client, same posture as every other authenticated data read in this
-// app. Sourced from current (live) stock, not website-publish status -- a card is just
-// a photo + spec + phone number, no product link, so there's nothing about it that
-// requires the SKU to be published (see product-data.ts's getInStockProductById).
+// app. Sourced from any active SKU, not gated on current stock or website-publish
+// status -- a card is just a photo + spec + phone number, no product link and no "in
+// stock" claim, so it works equally for an item on the shelf and one already on a
+// Purchase Order but not yet received (see product-data.ts's getInStockProductById).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
   if (!(format in CARD_FORMATS)) return NextResponse.json({ error: `Unknown format: ${format}` }, { status: 400 })
 
   const product = await getInStockProductById(skuId)
-  if (!product) return NextResponse.json({ error: 'That item is not currently in stock.' }, { status: 404 })
+  if (!product) return NextResponse.json({ error: 'That SKU does not exist or is not active.' }, { status: 404 })
 
   try {
     const imagePaths = await getProductImagePaths(skuId, 4)

@@ -9,7 +9,10 @@ keywords: [correct accessory, fix quantity, galat entry thik karna, edit receipt
 sources:
   - apps/erp/app/dashboard/accessories/[id]/page.tsx
   - apps/erp/app/api/stock-movements/[id]/route.ts
-updated: 2026-09-16
+  - apps/erp/lib/accessory-movements.ts
+  - apps/erp/app/api/purchase-orders/from-accessory-stock/route.ts
+  - apps/erp/app/api/stock/accessories/route.ts
+updated: 2026-09-19
 ---
 
 ## What this is
@@ -85,6 +88,25 @@ fields above.
 3. Apply. This posts a new `adjustment` `stock_movements` row; `sku_master.
    quantity_in_stock` updates via the sync trigger, same as any other
    movement.
+
+## Effect on the "needs PO" backlog (fixed 2026-09-19)
+
+A Correct Quantity adjustment now correctly shrinks (or grows) the "needs PO"
+backlog shown on `/dashboard/accessories` and the Stock page's Accessories
+tab — e.g. correcting a receipt of 10 down to 5 (because only 5 actually
+arrived) drops "10 received, no PO" to "5 received, no PO". Before this fix,
+the backlog only ever counted `receipt` movements, so a correction was
+invisible to it — the indicator stayed stuck at the pre-correction number,
+and worse, the owner could still attach the stale (too-large) quantity to a
+PO, formalizing a purchase for units that were never actually received.
+`getUnattachedBacklogBySku`/`claimAccessoryBacklog` (`lib/accessory-movements.ts`)
+and the backlog queries in `/api/purchase-orders/from-accessory-stock` and
+`/api/stock/accessories` now all net in `adjustment` rows alongside `receipt`
+rows (both still `po_id IS NULL` only — an adjustment already tied to a real
+PO, e.g. a PO-line correction, is never counted here). This does **not**
+apply to sales — selling some of what was received still doesn't shrink the
+backlog; only a correction to the received-quantity record itself does (see
+`docs/project-context.md`'s Accessories section for the full invariant).
 
 ## Common mix-ups
 

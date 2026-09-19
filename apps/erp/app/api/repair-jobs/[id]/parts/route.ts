@@ -31,7 +31,10 @@ export async function POST(
     .single()
   if (!job) return NextResponse.json({ error: 'Repair job not found' }, { status: 404 })
   if (job.status === 'cancelled') return NextResponse.json({ error: 'This job is cancelled.' }, { status: 400 })
-  if (!job.payment_account) {
+  // No customer on this job (an internal fix on our own stock, see POST /api/repair-jobs)
+  // means a part is a plain unpriced stock adjustment, not a sale -- no invoicing entity
+  // needed. Only a customer-billed job requires "Received Into" before adding a part.
+  if (job.customer_id && !job.payment_account) {
     return NextResponse.json({ error: 'Set "Received Into" on this job before adding priced parts.' }, { status: 400 })
   }
 

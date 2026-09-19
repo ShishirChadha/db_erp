@@ -121,7 +121,6 @@ export async function POST(req: NextRequest) {
     problem_description, amount_charged, payment_account, gst_percentage, job_date, parts,
   } = body
 
-  if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
   if (is_own_stock && !asset_id) {
     return NextResponse.json({ error: 'asset_id is required when this is our own stock.' }, { status: 400 })
   }
@@ -132,16 +131,36 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'job_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
 
+  // customer_id is only truly optional for an internal fix on our own stock that
+  // hasn't sold yet (e.g. a QC-failed unit needing a part before it can go back for
+  // re-inspection) -- verified server-side against the asset's real status, never
+  // trusted from the client, since a repair on an already-sold unit still needs a
+  // customer for warranty/goodwill tracking.
+  let isInternalOwnStockRepair = false
+  if (!customer_id) {
+    if (!is_own_stock) {
+      return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
+    }
+    const { data: asset } = await supabaseAdmin.from('asset_ledger').select('status').eq('id', asset_id).maybeSingle()
+    if (!asset) return NextResponse.json({ error: 'Unit not found.' }, { status: 404 })
+    if (asset.status === 'sold') {
+      return NextResponse.json({ error: 'customer_id is required for a repair on a unit that has already been sold.' }, { status: 400 })
+    }
+    isInternalOwnStockRepair = true
+  }
+
   // Parts consumed during the repair (accessory sku_master rows -- battery, screen,
   // keyboard, etc.) become real, priced accessory sales (sales.repair_job_id) the
   // moment the job is created -- see lib/repair-jobs.ts's consumeRepairParts, which
   // reuses the same cart machinery (lib/sales-cart.ts) as a normal accessory sale.
   // A priced sale needs an invoicing entity, so payment_account is required whenever
-  // parts are present.
+  // parts are present -- except for an internal own-stock repair (no customer to
+  // bill), where a part is a plain unpriced stock adjustment instead (see
+  // consumeRepairParts), so there's nothing to invoice.
   const partsToConsume: Array<{ sku_id: string; quantity: number; unit_price: number }> = Array.isArray(parts)
     ? parts.filter((p: any) => p?.sku_id && p?.quantity > 0).map((p: any) => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: Number(p.unit_price) || 0 }))
     : []
-  if (partsToConsume.length > 0 && !payment_account) {
+  if (partsToConsume.length > 0 && !payment_account && !isInternalOwnStockRepair) {
     return NextResponse.json({ error: '"Received Into" is required to add parts.' }, { status: 400 })
   }
 
@@ -160,7 +179,7 @@ export async function POST(req: NextRequest) {
     .from('repair_jobs')
     .insert({
       job_number: jobNumber,
-      customer_id,
+      customer_id: customer_id || null,
       is_own_stock: !!is_own_stock,
       asset_id: is_own_stock ? asset_id : null,
       customer_device_description: is_own_stock ? null : customer_device_description,
@@ -192,12 +211,14 @@ export async function POST(req: NextRequest) {
   // surfaced back to the caller as a warning rather than rolling back the job.
   let partsWarning: string | undefined
   if (partsToConsume.length > 0) {
-    const { data: customer } = await supabaseAdmin.from('customers').select('customer_name').eq('id', customer_id).single()
+    const customer = customer_id
+      ? (await supabaseAdmin.from('customers').select('customer_name').eq('id', customer_id).single()).data
+      : null
     const gstPct = await resolveRepairGstPercent(payment_account, gst_percentage)
     const result = await consumeRepairParts({
       jobId: job.id,
       jobNumber: job.job_number,
-      customerId: customer_id,
+      customerId: customer_id || null,
       customerName: customer?.customer_name || null,
       paymentAccount: payment_account,
       gstPercent: gstPct,

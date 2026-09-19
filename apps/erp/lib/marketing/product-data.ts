@@ -322,13 +322,21 @@ export async function getPrimaryImagePathsBySkuIds(skuIds: string[]): Promise<Ma
 }
 
 // Single-SKU counterpart to findInStockProducts -- for the Single Product tab and
-// Today's Picks' per-item "Generate WhatsApp" action, which need to fetch and generate
-// content for one specific, currently-in-stock item regardless of website-publish
-// status (WhatsApp's own template carries no product link, so publishing isn't a
-// prerequisite the way it is for Instagram/Facebook/Google Business Profile -- see
-// generate/route.ts). Returns null if the SKU isn't genuinely in current (live) stock.
+// Today's Picks' per-item "Generate WhatsApp"/card action, which need to fetch and
+// generate content for one specific item regardless of website-publish status
+// (WhatsApp's own template carries no product link, so publishing isn't a prerequisite
+// the way it is for Instagram/Facebook/Google Business Profile -- see generate/route.ts).
+// Deliberately does NOT require quantity_in_stock > 0 (unlike the plural
+// findInStockProducts default): the id passed in here was already selected through a
+// picker upstream -- Today's Picks' "not in stock yet" toggle deliberately surfaces
+// active SKUs with zero quantity (e.g. already on a Purchase Order but not yet
+// received) so they can be promoted ahead of arrival. The WhatsApp/card content itself
+// carries no quantity or "in stock" claim (see whatsapp-template.ts / card-templates.tsx),
+// so nothing here misstates availability by resolving one. A non-`active` or nonexistent
+// SKU still resolves to null -- `status='active'` is enforced unconditionally inside
+// findInStockProducts, which is the real existence gate now that quantity isn't.
 export async function getInStockProductById(id: string): Promise<MarketingProduct | null> {
-  const results = await findInStockProducts({ skuIds: [id] })
+  const results = await findInStockProducts({ skuIds: [id], inStockOnly: false })
   return results[0] || null
 }
 

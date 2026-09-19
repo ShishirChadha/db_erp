@@ -28,7 +28,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage')
+    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage, asset_id, is_own_stock')
     .eq('id', id)
     .single()
 
@@ -50,6 +50,18 @@ export async function POST(
     recordId: id,
     recordLabel: job.job_number,
   })
+
+  // A repair on our own not-yet-sold stock just had work done on it -- send it back
+  // for re-inspection automatically, the same qc_pending/qc_status reset
+  // processCustomerReturn (lib/rma.ts) already uses for a customer return, instead of
+  // leaving that as a separate manual trip to the Stock page that's easy to forget.
+  // A unit already 'sold' (a warranty repair for its buyer) is left untouched.
+  if (job.is_own_stock && job.asset_id) {
+    const { data: asset } = await supabaseAdmin.from('asset_ledger').select('status').eq('id', job.asset_id).maybeSingle()
+    if (asset && asset.status !== 'sold') {
+      await supabaseAdmin.from('asset_ledger').update({ status: 'qc_pending', qc_status: 'pending' }).eq('id', job.asset_id)
+    }
+  }
 
   // Bring the repair charge into the Sales Ledger the moment the job is done, so it
   // can be combined with any other sale for this customer into one invoice via the

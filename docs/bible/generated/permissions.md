@@ -20,7 +20,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Operations > Repair Jobs | if granted `repair_jobs` | if granted `repair_jobs` |
 | Operations > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
 | Operations > Rentals | if granted `rentals` | if granted `rentals` |
-| Operations > RMA (Vendor Returns) | if granted `rma` | if granted `rma` |
+| Operations > Returns / RMA | if granted `rma` | if granted `rma` |
 | Sales > Sales | if granted `sales` | if granted `sales` |
 | Sales > Invoices | if granted `invoices` | if granted `invoices` |
 | Sales > Quotations | if granted `quotations` | if granted `quotations` |

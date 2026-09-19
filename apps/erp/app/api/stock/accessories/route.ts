@@ -4,7 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { getLastVendorsBySku } from '@/lib/purchase-utils'
-import { getLastEntryVendorsBySku } from '@/lib/accessory-movements'
+import { getLastEntryVendorsBySku, getUnattachedBacklogBySku } from '@/lib/accessory-movements'
 import { redactManyForRole } from '@/lib/auth/redact'
 import { withRetry } from '@/lib/db-retry'
 
@@ -52,21 +52,12 @@ export async function GET(req: NextRequest) {
 
     // All three only depend on skuIds -- concurrent rather than 3 sequential round
     // trips, same fix already applied to /api/stock and /api/sales.
-    const [{ data: unattached }, lastVendors, lastEntries] = await Promise.all([
-      withRetry(() =>
-        supabaseAdmin
-          .from('stock_movements')
-          .select('sku_id, quantity_change')
-          .in('sku_id', skuIds)
-          .eq('movement_type', 'receipt')
-          .is('po_id', null)
-      ),
+    const [backlog, lastVendors, lastEntries] = await Promise.all([
+      withRetry(() => getUnattachedBacklogBySku(skuIds)),
       withRetry(() => getLastVendorsBySku(skuIds)),
       withRetry(() => getLastEntryVendorsBySku(skuIds)),
     ])
-    for (const m of unattached || []) {
-      backlogBySkuId.set(m.sku_id, (backlogBySkuId.get(m.sku_id) || 0) + m.quantity_change)
-    }
+    backlogBySkuId = backlog
     lastVendorBySkuId = lastVendors
     lastEntryBySkuId = lastEntries
   }

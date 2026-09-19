@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
@@ -17,10 +18,10 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { MARKETING_ASSET_STATUS_TONES, toneFor } from '@db/shared'
-import { Copy, Download, MessageCircle, Loader2, Sparkles, Share2, ImageOff, Save, Star } from 'lucide-react'
+import { Copy, Download, MessageCircle, Loader2, Sparkles, Share2, ImageOff, Save, Star, Calendar, Trash2, Plus } from 'lucide-react'
 
-// A trimmed shape of lib/marketing/product-data.ts's MarketingProduct -- just what the
-// browse grid (Today's Picks) and the Single Product search picker need to render.
+// A trimmed shape of lib/marketing/product-data.ts's MarketingProduct -- just what
+// Today's Picks' browse grid and SKU search picker need to render.
 interface PickProduct {
   id: string; brand: string | null; model_name: string | null; full_sku_code: string
   category: string; display_title: string; config_summary: string; config_diff: string
@@ -32,13 +33,10 @@ interface MarketingAsset {
   source_sku_ids: string[]; scheduled_for: string | null; created_at: string
 }
 interface GeneratedProduct { id: string; primary_image_path: string | null }
+interface FestivalEntry {
+  id: string; name: string; festival_date: string; is_major: boolean
+}
 
-const PLATFORMS = [
-  { value: 'whatsapp', label: 'WhatsApp' },
-  { value: 'instagram', label: 'Instagram' },
-  { value: 'facebook', label: 'Facebook' },
-  { value: 'google_business', label: 'Google Business Profile' },
-]
 const CARD_FORMATS = [
   { value: 'wa_square', label: 'WhatsApp Square (1080x1080)' },
   { value: 'ig_portrait', label: 'Instagram Portrait (1080x1350)' },
@@ -76,28 +74,6 @@ function groupByBrand(products: PickProduct[]): [string, PickProduct[]][] {
     else groups.set(brand, [p])
   }
   return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b))
-}
-
-// Search-as-you-type over real current (live) stock, not the general SKU Master
-// picker -- same findInStockProducts source Today's Picks and Product List use, so
-// Single Product can promote any in-stock item over WhatsApp, not just published ones.
-function useProductSearch() {
-  const [query, setQuery] = useState('')
-  const [results, setResults] = useState<PickProduct[]>([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    if (query.trim().length < 2) { setResults([]); return }
-    const t = setTimeout(async () => {
-      setLoading(true)
-      const res = await apiFetch(`/api/marketing/products?search=${encodeURIComponent(query)}&limit=20`)
-      if (res.ok) { const data = await res.json(); setResults(data.products || []) }
-      setLoading(false)
-    }, 300)
-    return () => clearTimeout(t)
-  }, [query])
-
-  return { query, setQuery, results, loading }
 }
 
 function NoPhotoWarning() {
@@ -160,18 +136,46 @@ function ShareButton({ text, skuId }: { text: string; skuId?: string }) {
   )
 }
 
-function CardDownloadButton({ skuId, label, hasPhoto }: { skuId: string; label: string; hasPhoto: boolean }) {
+// Shows the generated card/collage PNG right in the ERP (not just a download link) so
+// the photo and the WhatsApp text (already visible above, via Copy text) are both on
+// screen together -- previously the only way to see the card at all was to blind-download
+// it. /api/marketing/card and /api/marketing/collage are Bearer-authed routes, so a plain
+// <img src> can't hit them directly; fetched as a blob via apiFetch (same as the download
+// button always did) and shown from an object URL instead.
+// `endpoint` is the full querystring-bearing path (sku_id=... for one item, sku_ids=...
+// for a collage) minus the &format=, which this component appends itself per format
+// selection -- callers don't need to know the two routes differ.
+function CardPreview({ endpointBase, filenameBase, hasPhoto }: { endpointBase: string; filenameBase: string; hasPhoto: boolean }) {
   const [format, setFormat] = useState('wa_square')
-  const { run, pending } = useAsyncAction(async () => {
-    const res = await apiFetch(`/api/marketing/card?sku_id=${skuId}&format=${format}`)
-    if (!res.ok) { alert('Card rendering failed'); return }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
+  const [imgUrl, setImgUrl] = useState<string | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let cancelled = false
+    let objectUrl: string | null = null
+    setLoading(true); setLoadError(null)
+    apiFetch(`${endpointBase}&format=${format}`).then(async (res) => {
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        if (!cancelled) setLoadError(d.error || 'Card rendering failed')
+        return
+      }
+      const blob = await res.blob()
+      if (cancelled) return
+      objectUrl = URL.createObjectURL(blob)
+      setImgUrl(objectUrl)
+    }).finally(() => { if (!cancelled) setLoading(false) })
+    return () => { cancelled = true; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+  }, [endpointBase, format])
+
+  const download = () => {
+    if (!imgUrl) return
     const a = document.createElement('a')
-    a.href = url; a.download = `${label.replace(/\s+/g, '-').toLowerCase()}-${format}.png`
+    a.href = imgUrl; a.download = `${filenameBase.replace(/\s+/g, '-').toLowerCase()}-${format}.png`
     document.body.appendChild(a); a.click(); a.remove()
-    URL.revokeObjectURL(url)
-  })
+  }
+
   return (
     <div className="space-y-1.5">
       {!hasPhoto && <NoPhotoWarning />}
@@ -180,10 +184,23 @@ function CardDownloadButton({ skuId, label, hasPhoto }: { skuId: string; label: 
           <SelectTrigger className="h-8 w-64"><SelectValue /></SelectTrigger>
           <SelectContent>{CARD_FORMATS.map((f) => <SelectItem key={f.value} value={f.value}>{f.label}</SelectItem>)}</SelectContent>
         </Select>
-        <Button type="button" variant="outline" className="h-8" onClick={() => run()} disabled={pending}>
-          {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download card
+        <Button type="button" variant="outline" className="h-8" onClick={download} disabled={!imgUrl}>
+          <Download className="w-3.5 h-3.5 mr-1.5" /> Download
         </Button>
       </div>
+      <div className="border rounded-md bg-muted/30 flex items-center justify-center overflow-hidden" style={{ maxWidth: 320, aspectRatio: '1 / 1' }}>
+        {loading ? (
+          <Loader2 className="w-5 h-5 animate-spin text-muted-foreground" />
+        ) : loadError ? (
+          <p className="text-xs text-destructive p-3 text-center">{loadError}</p>
+        ) : imgUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgUrl} alt="Generated card preview" className="w-full h-full object-contain" />
+        ) : null}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Long-press (mobile) or drag the image above into WhatsApp, then paste the copied text -- or use Share below on mobile to send both at once.
+      </p>
     </div>
   )
 }
@@ -243,11 +260,18 @@ function GeneratedResult({ asset, whatsappShareLink, product }: { asset: Marketi
           )}
           <ShareButton text={body} skuId={skuId} />
         </div>
-        {/* Card download is per-SKU (photo + spec) -- a product_list broadcast covers many
-            SKUs (often not all published, since findInStockProducts isn't publish-gated)
-            with no single "the" card to represent it, so this only shows for single_product. */}
+        {/* Single item (single_product, or a product_list generated from exactly one
+            ticked item in Today's Picks) -> its own photo+spec card. A product_list
+            broadcast covering several SKUs -> a collage (one photo per item) instead,
+            since there's no single "the" card to represent many different products. */}
         {asset.kind === 'single_product' && skuId && (
-          <CardDownloadButton skuId={skuId} label={asset.title || 'product'} hasPhoto={!!product?.primary_image_path} />
+          <CardPreview endpointBase={`/api/marketing/card?sku_id=${skuId}`} filenameBase={asset.title || 'product'} hasPhoto={!!product?.primary_image_path} />
+        )}
+        {asset.kind === 'product_list' && asset.source_sku_ids?.length === 1 && (
+          <CardPreview endpointBase={`/api/marketing/card?sku_id=${asset.source_sku_ids[0]}`} filenameBase={asset.title || 'product'} hasPhoto />
+        )}
+        {asset.kind === 'product_list' && asset.source_sku_ids?.length >= 2 && (
+          <CardPreview endpointBase={`/api/marketing/collage?sku_ids=${asset.source_sku_ids.join(',')}`} filenameBase={asset.title || `${asset.source_sku_ids.length}-items`} hasPhoto />
         )}
       </CardContent>
     </Card>
@@ -261,6 +285,68 @@ function GeneratedResult({ asset, whatsappShareLink, product }: { asset: Marketi
 // covers every item currently matching the filters (same as Product List's own bulk
 // generation); ticking specific items scopes generation to exactly those. Ticking 2+
 // items also enables a photo collage (one photo per selected item).
+// One selectable product row -- shared by the filtered browse grid, the free-text SKU
+// search results, and the "Selected" summary strip below, so a picked item looks the
+// same wherever it's shown.
+function ProductRow({ product, isSelected, onToggle }: { product: PickProduct; isSelected: boolean; onToggle: () => void }) {
+  return (
+    <button
+      type="button" onClick={onToggle}
+      className={`text-left border rounded-md p-2 flex gap-2 items-center w-full ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : ''}`}
+    >
+      <Checkbox checked={isSelected} onCheckedChange={onToggle} />
+      <ProductThumb path={product.primary_image_path} />
+      <div className="min-w-0 flex-1">
+        <div className="text-xs font-medium truncate">{product.display_title}</div>
+        <div className="text-[11px] text-muted-foreground truncate">{product.config_summary || product.config_diff || ' '}</div>
+        {(product.available_count ?? 0) > 1 && <div className="text-[11px] text-muted-foreground">{product.available_count} in stock</div>}
+        {(product.available_count ?? 0) === 0 && <div className="text-[11px] text-warning">Not in stock yet (on order)</div>}
+      </div>
+    </button>
+  )
+}
+
+// A free-text search over the same underlying data as the browse grid (any active
+// SKU, gated on inStockOnly the same way), so an item that doesn't happen to match the
+// current category/brand/CPU filters -- or a specific model you already know the name
+// of -- can still be found and ticked without changing the browse filters at all.
+function SkuSearchPicker({ inStockOnly, selectedIds, onToggle }: { inStockOnly: boolean; selectedIds: Set<string>; onToggle: (p: PickProduct) => void }) {
+  const [term, setTerm] = useState('')
+  const [results, setResults] = useState<PickProduct[]>([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    if (term.trim().length < 2) { setResults([]); return }
+    setLoading(true)
+    const t = setTimeout(async () => {
+      const params = new URLSearchParams({ search: term.trim(), in_stock: String(inStockOnly), limit: '20' })
+      const res = await apiFetch(`/api/marketing/products?${params}`)
+      const data = await res.json().catch(() => ({}))
+      setResults(res.ok ? (data.products || []) : [])
+      setLoading(false)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [term, inStockOnly])
+
+  return (
+    <div className="max-w-md">
+      <label className="text-sm font-medium mb-1 block">Search SKU by brand, model, or code</label>
+      <Input value={term} onChange={(e) => setTerm(e.target.value)} placeholder="e.g. Dell Latitude, i5, DBLAP..." />
+      {loading && <p className="text-xs text-muted-foreground mt-1">Searching...</p>}
+      {results.length > 0 && (
+        <div className="border rounded-md mt-1 max-h-72 overflow-y-auto p-1 space-y-1">
+          {results.map((p) => (
+            <ProductRow key={p.id} product={p} isSelected={selectedIds.has(p.id)} onToggle={() => onToggle(p)} />
+          ))}
+        </div>
+      )}
+      <p className="text-xs text-muted-foreground mt-1">
+        Ticking a result here adds it to your selection below -- it stays selected even after you search again or change the browse filters.
+      </p>
+    </div>
+  )
+}
+
 function TodaysPicksTab() {
   const [category, setCategory] = useState('LAP')
   const [brand, setBrand] = useState('')
@@ -270,7 +356,12 @@ function TodaysPicksTab() {
   const [products, setProducts] = useState<PickProduct[]>([])
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Keyed by id, not a bare Set<string> -- so an item picked via search (or a previous
+  // filter view) can still be rendered in the "Selected" strip and fed to the card
+  // preview/generate/collage actions after it has scrolled out of the current browse
+  // grid or search results. Selection is deliberately never cleared by a filter or
+  // search change (see below) -- only by unticking an item or generating.
+  const [selectedMap, setSelectedMap] = useState<Map<string, PickProduct>>(new Map())
   const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -289,20 +380,21 @@ function TodaysPicksTab() {
     else setProducts(data.products || [])
     setLoading(false)
   }
-  useEffect(() => { load(); setSelected(new Set()) }, [category, brand, cpu, inStockOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load() }, [category, brand, cpu, inStockOnly]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (id: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
+  const toggle = (product: PickProduct) => {
+    setSelectedMap((prev) => {
+      const next = new Map(prev)
+      if (next.has(product.id)) next.delete(product.id)
+      else next.set(product.id, product)
       return next
     })
   }
+  const selectedIds = new Set(selectedMap.keys())
 
   const { run: generate, pending: generating } = useAsyncAction(async () => {
     setError(null); setResult(null)
-    const ids = [...selected]
+    const ids = [...selectedMap.keys()]
     const filter: Record<string, any> = ids.length > 0
       ? { skuIds: ids, inStockOnly }
       : { category: category || undefined, brand: brand || undefined, spec: cpu ? { cpu } : undefined, inStockOnly }
@@ -318,7 +410,7 @@ function TodaysPicksTab() {
   })
 
   const { run: downloadCollage, pending: collaging } = useAsyncAction(async () => {
-    const ids = [...selected]
+    const ids = [...selectedMap.keys()]
     const res = await apiFetch(`/api/marketing/collage?sku_ids=${ids.join(',')}&format=wa_square`)
     if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Collage generation failed'); return }
     const blob = await res.blob()
@@ -329,13 +421,33 @@ function TodaysPicksTab() {
     URL.revokeObjectURL(url)
   })
 
-  const selectedList = [...selected]
-  const singleSelectedProduct = selectedList.length === 1 ? products.find((p) => p.id === selectedList[0]) : undefined
+  const selectedList = [...selectedMap.values()]
+  const singleSelectedProduct = selectedList.length === 1 ? selectedList[0] : undefined
+
+  // "Select all" acts on the currently filtered/loaded browse grid (respecting
+  // category/brand/CPU/in-stock-only above), not the whole catalogue -- toggling a
+  // filter after selecting all does not retroactively add/remove anything, same as
+  // ticking items individually.
+  const allFilteredSelected = products.length > 0 && products.every((p) => selectedIds.has(p.id))
+  const toggleSelectAllFiltered = () => {
+    setSelectedMap((prev) => {
+      const next = new Map(prev)
+      if (allFilteredSelected) {
+        for (const p of products) next.delete(p.id)
+      } else {
+        for (const p of products) next.set(p.id, p)
+      }
+      return next
+    })
+  }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
-        Browse what's actually in stock right now. Tick items to hand-pick a broadcast -- leave nothing ticked to generate for everything matching the filters below. Tick 2 or more to also download a photo collage.
+        Browse what's actually in stock right now -- or untick "In stock only" below to also find items already on
+        order (an active SKU with zero quantity, e.g. on a Purchase Order but not yet received) so you can promote
+        them ahead of arrival. Tick items to hand-pick a broadcast -- leave nothing ticked to generate for everything
+        matching the filters below. Tick 2 or more to also download a photo collage.
       </p>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-4xl">
         <div>
@@ -361,13 +473,47 @@ function TodaysPicksTab() {
           <Input value={theme} onChange={(e) => setTheme(e.target.value)} placeholder="All Dell i5 laptops in stock" />
         </div>
       </div>
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={inStockOnly} onCheckedChange={(v) => setInStockOnly(v === true)} />
+          In stock only
+        </label>
+        {products.length > 0 && (
+          <Button type="button" variant="outline" size="sm" className="h-7" onClick={toggleSelectAllFiltered}>
+            {allFilteredSelected ? 'Deselect all' : `Select all (${products.length})`}
+          </Button>
+        )}
+      </div>
+
+      <SkuSearchPicker inStockOnly={inStockOnly} selectedIds={selectedIds} onToggle={toggle} />
+
+      {selectedMap.size > 0 && (
+        <div className="border rounded-md p-2 bg-muted/20">
+          <div className="text-xs font-medium text-muted-foreground mb-1.5">
+            Selected ({selectedMap.size}) -- kept across searches and filter changes
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {selectedList.map((p) => (
+              <button
+                key={p.id} type="button" onClick={() => toggle(p)}
+                className="flex items-center gap-1.5 border rounded-full pl-1 pr-2 py-0.5 bg-background text-xs hover:bg-muted"
+                title="Remove from selection"
+              >
+                <ProductThumb path={p.primary_image_path} size={20} />
+                <span className="max-w-[160px] truncate">{p.display_title}</span>
+                <span className="text-muted-foreground">&times;</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-sm text-muted-foreground">Loading...</p>
       ) : loadError ? (
         <ErrorBanner message={loadError} />
       ) : products.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No items in stock match these filters.</p>
+        <p className="text-sm text-muted-foreground">No {inStockOnly ? 'in-stock' : ''} items match these filters.</p>
       ) : (
         // Grouped and ascending-sorted by brand -- Apple, then its items, then Dell, and
         // so on -- matching how the generated WhatsApp message itself is grouped
@@ -378,21 +524,160 @@ function TodaysPicksTab() {
             <div key={brandName}>
               <h4 className="text-sm font-semibold mb-1.5">{brandName}</h4>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                {items.map((p) => {
-                  const isSelected = selected.has(p.id)
+                {items.map((p) => (
+                  <ProductRow key={p.id} product={p} isSelected={selectedIds.has(p.id)} onToggle={() => toggle(p)} />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button onClick={() => generate()} disabled={generating || (products.length === 0 && selectedMap.size === 0)} className="h-8">
+          {generating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
+          Generate WhatsApp {selectedMap.size > 0 ? `(${selectedMap.size} selected)` : '(all filtered)'}
+        </Button>
+        {selectedMap.size >= 2 && (
+          <Button onClick={() => downloadCollage()} disabled={collaging} variant="outline" className="h-8">
+            {collaging ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download collage ({selectedMap.size} photos)
+          </Button>
+        )}
+      </div>
+
+      {singleSelectedProduct && (
+        <CardPreview endpointBase={`/api/marketing/card?sku_id=${singleSelectedProduct.id}`} filenameBase={singleSelectedProduct.display_title} hasPhoto={!!singleSelectedProduct.primary_image_path} />
+      )}
+
+      {error && <ErrorBanner message={error} />}
+      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
+    </div>
+  )
+}
+
+function yearOf(dateStr: string): number {
+  return Number(dateStr.slice(0, 4))
+}
+
+// Plain reference calendar of Indian festivals (major + minor) -- no post/card
+// generation, that's what Today's Picks already covers for promoting actual stock.
+// The year dropdown is computed live off today's date (currentYear-3 .. currentYear,
+// plus whatever future years are seeded) so it "refreshes" every year on its own --
+// nothing to run or update when a new year starts, it just shifts the window forward.
+function FestivalCalendarTab() {
+  const { canEditPage } = useRole()
+  const [festivals, setFestivals] = useState<FestivalEntry[]>([])
+  const [loading, setLoading] = useState(true)
+  const currentYear = new Date().getFullYear()
+  const [year, setYear] = useState(currentYear)
+  const [yearTouched, setYearTouched] = useState(false)
+  const [showAdd, setShowAdd] = useState(false)
+  const [name, setName] = useState('')
+  const [date, setDate] = useState('')
+  const [isMajor, setIsMajor] = useState(true)
+
+  const load = async () => {
+    setLoading(true)
+    const res = await apiFetch('/api/marketing/festivals')
+    const data = await res.json().catch(() => [])
+    setFestivals(Array.isArray(data) ? data : [])
+    setLoading(false)
+  }
+  useEffect(() => { load() }, [])
+
+  const years = Array.from(new Set([
+    ...festivals.map((f) => yearOf(f.festival_date)),
+    currentYear - 3, currentYear - 2, currentYear - 1, currentYear,
+  ])).sort((a, b) => a - b)
+
+  const yearFestivals = festivals.filter((f) => yearOf(f.festival_date) === year)
+
+  // The single nearest festival from today onward, across all years -- not just the
+  // selected year -- so switching years still shows which row it is when you land back
+  // on the year it falls in. festivals is already date-ascending from the API.
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const nextFestival = festivals.find((f) => f.festival_date >= todayStr)
+  const nextFestivalId = nextFestival?.id
+
+  // Jumps to the next festival's year once the calendar loads (e.g. late December ->
+  // next festival is New Year's Day, in year+1) -- never overrides a year the user
+  // already picked themselves.
+  useEffect(() => {
+    if (!yearTouched && nextFestival) setYear(yearOf(nextFestival.festival_date))
+  }, [nextFestival, yearTouched])
+
+  const monthName = (dateStr: string) => new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-IN', { month: 'long' })
+  const formatDate = (dateStr: string) => new Date(`${dateStr}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' })
+
+  const groupedByMonth: [string, FestivalEntry[]][] = (() => {
+    const groups = new Map<string, FestivalEntry[]>()
+    for (const f of yearFestivals) {
+      const m = monthName(f.festival_date)
+      const existing = groups.get(m)
+      if (existing) existing.push(f)
+      else groups.set(m, [f])
+    }
+    return Array.from(groups.entries())
+  })()
+
+  const { run: add, pending: adding } = useAsyncAction(async () => {
+    if (!name.trim() || !date) { toast.error('Name and date are required'); return }
+    const res = await apiFetch('/api/marketing/festivals', { method: 'POST', body: JSON.stringify({ name, festival_date: date, is_major: isMajor }) })
+    if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Failed to add'); return }
+    setName(''); setDate(''); setIsMajor(true)
+    load()
+  })
+
+  const remove = async (id: string) => {
+    if (!confirm('Remove this festival from the calendar?')) return
+    await apiFetch(`/api/marketing/festivals/${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  return (
+    <div className="space-y-4 max-w-2xl">
+      <p className="text-sm text-muted-foreground">
+        Reference calendar of major and minor Indian festivals, so you know what's coming up without checking
+        elsewhere. Pick a year below -- the last 3 years plus upcoming ones are always available.
+      </p>
+
+      <div className="flex items-center gap-2">
+        <Calendar className="size-4 text-muted-foreground" />
+        <label className="text-sm font-medium">Year</label>
+        <Select value={String(year)} onValueChange={(v) => { setYear(Number(v)); setYearTouched(true) }}>
+          <SelectTrigger className="h-8 w-36"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {years.map((y) => <SelectItem key={y} value={String(y)}>{y}{y === currentYear ? ' (current)' : ''}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading...</p>
+      ) : yearFestivals.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No festivals recorded for {year} yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {groupedByMonth.map(([month, items]) => (
+            <div key={month}>
+              <h4 className="text-sm font-semibold mb-1.5">{month}</h4>
+              <div className="border rounded-md divide-y">
+                {items.map((f) => {
+                  const isNext = f.id === nextFestivalId
                   return (
-                    <button
-                      type="button" key={p.id} onClick={() => toggle(p.id)}
-                      className={`text-left border rounded-md p-2 flex gap-2 items-center ${isSelected ? 'border-primary ring-1 ring-primary bg-primary/5' : ''}`}
-                    >
-                      <Checkbox checked={isSelected} onCheckedChange={() => toggle(p.id)} />
-                      <ProductThumb path={p.primary_image_path} />
-                      <div className="min-w-0 flex-1">
-                        <div className="text-xs font-medium truncate">{p.display_title}</div>
-                        <div className="text-[11px] text-muted-foreground truncate">{p.config_summary || p.config_diff || '\u00a0'}</div>
-                        {(p.available_count ?? 0) > 1 && <div className="text-[11px] text-muted-foreground">{p.available_count} in stock</div>}
+                    <div key={f.id} className={`flex items-center justify-between px-3 py-2 text-sm ${isNext ? 'bg-primary/10 ring-1 ring-inset ring-primary/40' : ''}`}>
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-muted-foreground w-28 shrink-0">{formatDate(f.festival_date)}</span>
+                        <span className={f.is_major ? 'font-medium truncate' : 'truncate'}>{f.name}</span>
+                        {!f.is_major && <span className="text-[10px] text-muted-foreground border rounded-full px-1.5 py-0.5 shrink-0">minor</span>}
+                        {isNext && <span className="text-[10px] font-medium text-primary border border-primary/40 rounded-full px-1.5 py-0.5 shrink-0">Next up</span>}
                       </div>
-                    </button>
+                      {canEditPage('marketing') && (
+                        <button type="button" onClick={() => remove(f.id)} className="text-destructive shrink-0" title="Remove">
+                          <Trash2 className="size-3.5" />
+                        </button>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -401,191 +686,31 @@ function TodaysPicksTab() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Button onClick={() => generate()} disabled={generating || products.length === 0} className="h-8">
-          {generating ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 mr-1.5" />}
-          Generate WhatsApp {selected.size > 0 ? `(${selected.size} selected)` : '(all filtered)'}
-        </Button>
-        {selected.size >= 2 && (
-          <Button onClick={() => downloadCollage()} disabled={collaging} variant="outline" className="h-8">
-            {collaging ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Download className="w-3.5 h-3.5 mr-1.5" />} Download collage ({selected.size} photos)
-          </Button>
-        )}
-        {singleSelectedProduct && (
-          <CardDownloadButton skuId={singleSelectedProduct.id} label={singleSelectedProduct.display_title} hasPhoto={!!singleSelectedProduct.primary_image_path} />
-        )}
-      </div>
-
-      {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} />}
-    </div>
-  )
-}
-
-function SingleProductTab() {
-  const { query, setQuery, results, loading } = useProductSearch()
-  const [selected, setSelected] = useState<PickProduct | null>(null)
-  const [platform, setPlatform] = useState('whatsapp')
-  const [result, setResult] = useState<{ asset: MarketingAsset; whatsapp_share_link?: string; product?: GeneratedProduct } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  const { run: generate, pending } = useAsyncAction(async () => {
-    if (!selected) return
-    setError(null); setResult(null)
-    const res = await apiFetch('/api/marketing/generate', {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'single_product', platform, sku_id: selected.id }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setError(data.error || 'Generation failed'); return }
-    setResult(data)
-  })
-
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <div>
-        <label className="text-sm font-medium mb-1 block">Product (current stock)</label>
-        <p className="text-xs text-muted-foreground mb-1">WhatsApp works for any in-stock item. Instagram/Facebook/Google Business Profile need the item published on the website first (they include a product link).</p>
-        <Input value={query} onChange={(e) => { setQuery(e.target.value); setSelected(null) }} placeholder="Search by brand, model, or SKU code..." />
-        {loading && <p className="text-xs text-muted-foreground mt-1">Searching...</p>}
-        {!selected && results.length > 0 && (
-          <div className="border rounded-md mt-1 max-h-56 overflow-y-auto">
-            {results.map((r) => (
-              <button
-                key={r.id} type="button" onClick={() => { setSelected(r); setQuery(r.display_title) }}
-                className="w-full text-left px-3 py-2 text-sm hover:bg-muted flex items-center gap-2"
-              >
-                <ProductThumb path={r.primary_image_path} size={32} />
-                <span className="min-w-0 truncate">{r.display_title}</span>
-                <span className="text-muted-foreground ml-auto shrink-0">{r.full_sku_code}</span>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1 block">Platform</label>
-        <Select value={platform} onValueChange={setPlatform}>
-          <SelectTrigger className="w-64"><SelectValue /></SelectTrigger>
-          <SelectContent>{PLATFORMS.map((p) => <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      <Button onClick={() => generate()} disabled={!selected || pending} className="h-8">
-        {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Generate
-      </Button>
-      {error && <ErrorBanner message={error} />}
-      {result && <GeneratedResult asset={result.asset} whatsappShareLink={result.whatsapp_share_link} product={result.product} />}
-    </div>
-  )
-}
-
-function BlogTab() {
-  const [topic, setTopic] = useState('')
-  const [category, setCategory] = useState('LAP')
-  const [result, setResult] = useState<{ asset: MarketingAsset } | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [body, setBody] = useState('')
-  const [saveState, setSaveState] = useState<'idle' | 'saved'>('idle')
-
-  const { run: generate, pending } = useAsyncAction(async () => {
-    if (!topic.trim()) return
-    setError(null); setResult(null)
-    const res = await apiFetch('/api/marketing/generate', {
-      method: 'POST',
-      body: JSON.stringify({ mode: 'blog', topic, filter: { category, inStockOnly: true } }),
-    })
-    const data = await res.json()
-    if (!res.ok) { setError(data.error || 'Generation failed'); return }
-    setResult(data)
-    setBody(data.asset.body_text || '')
-  })
-
-  const { run: save, pending: saving } = useAsyncAction(async () => {
-    if (!result) return
-    const res = await apiFetch(`/api/marketing/assets/${result.asset.id}`, { method: 'PATCH', body: JSON.stringify({ body_text: body }) })
-    if (res.ok) { setSaveState('saved'); setTimeout(() => setSaveState('idle'), 1500) }
-  })
-
-  return (
-    <div className="space-y-4 max-w-2xl">
-      <div>
-        <label className="text-sm font-medium mb-1 block">Topic</label>
-        <Input value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="Best i5 laptops under ₹25,000" />
-      </div>
-      <div>
-        <label className="text-sm font-medium mb-1 block">Ground in category (optional)</label>
-        <Input value={category} onChange={(e) => setCategory(e.target.value.toUpperCase())} placeholder="LAP" />
-      </div>
-      <Button onClick={() => generate()} disabled={!topic.trim() || pending} className="h-8">
-        {pending ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Generate draft
-      </Button>
-      {error && <ErrorBanner message={error} />}
-      {result && (
-        <Card className="mt-4">
-          <CardContent className="pt-6 space-y-3">
-            <div className="font-semibold">{result.asset.title}</div>
-            <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={16} className="font-mono text-sm" />
-            <Button type="button" size="sm" variant="outline" className="h-7" disabled={body === (result.asset.body_text || '') || saving} onClick={() => save()}>
-              {saving ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <Save className="w-3.5 h-3.5 mr-1.5" />}
-              {saveState === 'saved' ? 'Saved' : 'Save edits'}
-            </Button>
-            <p className="text-xs text-muted-foreground">Saved as a draft. Publishing a blog post live is a Phase 2 feature -- not yet available from this screen.</p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function DraftsTab() {
-  const { canEditPage } = useRole()
-  const [assets, setAssets] = useState<MarketingAsset[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const load = async () => {
-    setLoading(true)
-    const res = await apiFetch('/api/marketing/assets')
-    if (res.ok) setAssets(await res.json())
-    setLoading(false)
-  }
-  useEffect(() => { load() }, [])
-
-  const setStatus = async (id: string, status: string) => {
-    await apiFetch(`/api/marketing/assets/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) })
-    load()
-  }
-  const remove = async (id: string) => {
-    if (!confirm('Delete this draft?')) return
-    await apiFetch(`/api/marketing/assets/${id}`, { method: 'DELETE' })
-    load()
-  }
-
-  if (loading) return <p className="text-sm text-muted-foreground">Loading...</p>
-  if (assets.length === 0) return <p className="text-sm text-muted-foreground">No content generated yet.</p>
-
-  return (
-    <div className="space-y-3">
-      {assets.map((a) => (
-        <Card key={a.id}>
-          <CardContent className="pt-4 pb-4 flex items-start justify-between gap-4">
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="font-medium">{a.title || '(untitled)'}</span>
-                <StatusBadge tone={toneFor(MARKETING_ASSET_STATUS_TONES, a.status)}>{a.status}</StatusBadge>
-                <span className="text-xs text-muted-foreground">{a.platform} · {a.kind}</span>
+      {canEditPage('marketing') && (
+        <div className="pt-2 border-t">
+          <button type="button" onClick={() => setShowAdd((v) => !v)} className="text-xs text-primary underline flex items-center gap-1">
+            <Plus className="size-3" /> {showAdd ? 'Hide' : 'Add a festival'}
+          </button>
+          {showAdd && (
+            <div className="flex flex-wrap items-end gap-2 mt-2">
+              <div className="w-48">
+                <label className="block text-xs text-muted-foreground mb-1">Name</label>
+                <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Baisakhi" />
               </div>
-              <p className="text-sm text-muted-foreground line-clamp-2 mt-1">{a.body_text}</p>
+              <div className="w-40">
+                <label className="block text-xs text-muted-foreground mb-1">Date</label>
+                <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+              </div>
+              <label className="flex items-center gap-1.5 text-xs pb-2">
+                <Checkbox checked={isMajor} onCheckedChange={(v) => setIsMajor(v === true)} /> Major
+              </label>
+              <Button type="button" className="h-8" disabled={adding} onClick={() => add()}>
+                {adding ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Add
+              </Button>
             </div>
-            {canEditPage('marketing') && (
-              <div className="flex gap-2 shrink-0">
-                {a.status === 'draft' && <Button size="sm" variant="outline" className="h-7" onClick={() => setStatus(a.id, 'approved')}>Approve</Button>}
-                {a.status === 'approved' && <Button size="sm" variant="outline" className="h-7" onClick={() => setStatus(a.id, 'published')}>Mark published</Button>}
-                <Button size="sm" variant="outline" className="h-7 text-destructive" onClick={() => remove(a.id)}>Delete</Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      ))}
+          )}
+        </div>
+      )}
     </div>
   )
 }
@@ -596,20 +721,16 @@ function MarketingPage() {
       <div>
         <h1 className="text-2xl font-semibold">Marketing Content Studio</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Generate WhatsApp content grounded in your real current stock -- Today's Picks covers everything Product List used to (filters, custom broadcast themes, bulk generation), plus browsing, multi-select, and a photo collage. Instagram/Facebook/blog content needs the item published on the website first, since those include a real product link -- specs and prices are always inserted from live data, never invented.
+          Generate WhatsApp content grounded in your real current stock -- Today's Picks covers browsing, filters, custom broadcast themes, bulk or hand-picked generation, and a photo collage.
         </p>
       </div>
       <Tabs defaultValue="picks">
         <TabsList>
           <TabsTrigger value="picks">Today's Picks</TabsTrigger>
-          <TabsTrigger value="single">Single Product</TabsTrigger>
-          <TabsTrigger value="blog">Blog Draft</TabsTrigger>
-          <TabsTrigger value="drafts">Drafts</TabsTrigger>
+          <TabsTrigger value="calendar">Festival Calendar</TabsTrigger>
         </TabsList>
         <TabsContent value="picks"><TodaysPicksTab /></TabsContent>
-        <TabsContent value="single"><SingleProductTab /></TabsContent>
-        <TabsContent value="blog"><BlogTab /></TabsContent>
-        <TabsContent value="drafts"><DraftsTab /></TabsContent>
+        <TabsContent value="calendar"><FestivalCalendarTab /></TabsContent>
       </Tabs>
     </div>
   )

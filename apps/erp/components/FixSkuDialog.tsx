@@ -180,6 +180,7 @@ export function FixSkuDialog({
       <ComponentStockFollowUp
         changes={pendingChanges}
         newSkuLabel={newSkuLabel}
+        assetId={assetId}
         onDone={() => { onReassigned(); onClose() }}
       />
     )
@@ -276,41 +277,66 @@ export function FixSkuDialog({
 }
 
 // Shown only when the reassignment actually changed RAM and/or SSD -- one row per
-// changed field, each independently searchable/skippable, so staff aren't forced
-// to log anything that doesn't apply (e.g. the part was sourced externally).
+// changed field, each independently searchable. "Done" is disabled until every row
+// is resolved (stock deducted/received, or skipped with a typed reason) -- staff
+// aren't forced to log anything that doesn't apply (e.g. the part was sourced
+// externally), but they can't silently close this leaving the unit's spec and the
+// accessory's stock count out of sync with no trace of why.
 function ComponentStockFollowUp({
   changes,
   newSkuLabel,
+  assetId,
   onDone,
 }: {
   changes: ComponentChange[]
   newSkuLabel: string
+  assetId: string
   onDone: () => void
 }) {
+  const [resolved, setResolved] = useState<boolean[]>(() => changes.map(() => false))
+  const allResolved = resolved.every(Boolean)
+
   return (
-    <SimpleModal isOpen onClose={onDone} title="Change SKU">
+    <SimpleModal isOpen onClose={() => allResolved && onDone()} title="Change SKU">
       <div className="space-y-3">
         <p className="text-sm text-muted-foreground">
           Reassigned to <span className="font-medium">{newSkuLabel}</span>. This changed:
         </p>
-        {changes.map((c) => (
-          <ComponentStockRow key={c.field} change={c} />
+        {changes.map((c, i) => (
+          <ComponentStockRow
+            key={c.field}
+            change={c}
+            assetId={assetId}
+            onResolved={() => setResolved((prev) => prev.map((v, idx) => (idx === i ? true : v)))}
+          />
         ))}
+        {!allResolved && (
+          <p className="text-xs text-muted-foreground">Resolve every row above (deduct/receive stock, or skip with a reason) to continue.</p>
+        )}
         <div className="flex justify-end pt-2">
-          <button type="button" onClick={onDone} className="px-4 py-2 bg-primary text-primary-foreground rounded">Done</button>
+          <button
+            type="button"
+            onClick={onDone}
+            disabled={!allResolved}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50"
+          >
+            Done
+          </button>
         </div>
       </div>
     </SimpleModal>
   )
 }
 
-function ComponentStockRow({ change }: { change: ComponentChange }) {
+function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentChange; assetId: string; onResolved: () => void }) {
   const [search, setSearch] = useState('')
   const [options, setOptions] = useState<SkuOption[]>([])
   const [selected, setSelected] = useState<SkuOption | null>(null)
   const [qty, setQty] = useState('1')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [skipping, setSkipping] = useState(false)
+  const [skipReason, setSkipReason] = useState('')
   const [skipped, setSkipped] = useState(false)
   const [err, setErr] = useState('')
 
@@ -350,13 +376,32 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
       return
     }
     setDone(true)
+    onResolved()
+  }
+
+  const confirmSkip = async () => {
+    if (!skipReason.trim()) return
+    setSubmitting(true)
+    setErr('')
+    const res = await apiFetch(`/api/asset-ledger/${assetId}/component-upgrade-skip`, {
+      method: 'POST',
+      body: JSON.stringify({ field: change.field, from: change.from, to: change.to, reason: skipReason.trim() }),
+    })
+    setSubmitting(false)
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}))
+      setErr(e.error || 'Failed to record the skip reason.')
+      return
+    }
+    setSkipped(true)
+    onResolved()
   }
 
   if (done) {
     return <div className="border rounded p-2 text-sm text-success">✓ {label}: stock updated.</div>
   }
   if (skipped) {
-    return <div className="border rounded p-2 text-sm text-muted-foreground">{label}: skipped.</div>
+    return <div className="border rounded p-2 text-sm text-muted-foreground">{label}: skipped -- {skipReason}</div>
   }
 
   return (
@@ -399,8 +444,28 @@ function ComponentStockRow({ change }: { change: ComponentChange }) {
           ))}
         </ul>
       )}
-      {!selected && (
-        <button type="button" onClick={() => setSkipped(true)} className="text-xs text-muted-foreground underline">Skip</button>
+      {!selected && !skipping && (
+        <button type="button" onClick={() => setSkipping(true)} className="text-xs text-muted-foreground underline">Skip</button>
+      )}
+      {!selected && skipping && (
+        <div className="flex items-center gap-2">
+          <input
+            value={skipReason}
+            onChange={(e) => setSkipReason(e.target.value)}
+            placeholder="Why? e.g. customer supplied their own RAM"
+            className="border p-1 flex-1 rounded text-sm"
+            autoFocus
+          />
+          <button
+            type="button"
+            disabled={submitting || !skipReason.trim()}
+            onClick={confirmSkip}
+            className="text-xs bg-muted-foreground/20 px-2 py-1 rounded disabled:opacity-50 shrink-0"
+          >
+            {submitting ? '...' : 'Confirm Skip'}
+          </button>
+          <button type="button" onClick={() => setSkipping(false)} className="text-xs text-muted-foreground underline shrink-0">Cancel</button>
+        </div>
       )}
     </div>
   )

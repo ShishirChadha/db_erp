@@ -184,14 +184,36 @@ same idiom as `stock_movements`/`asset_qc_checks` — supports multiple upgrades
 a unit's life with an audit trail), surfaced via an owner-only panel on the asset
 detail page (`/dashboard/stock/[id]`) alongside the original `cost_price`.
 
+When the reassignment changes RAM and/or SSD (`diffComponents`, comparing the old vs.
+new SKU's `specifications`), `FixSkuDialog` prompts a follow-up
+(`ComponentStockFollowUp`) to deduct (or, on a downgrade, receive back) the matching
+accessory SKU's stock — so the unit's new spec and the actual accessory inventory
+count move together. **Enforced (2026-09-19), not just prompted**: the dialog can't be
+closed until every changed field is resolved, either by actually moving the accessory
+stock, or by a "Skip" that now requires a typed reason and calls
+`POST /api/asset-ledger/[id]/component-upgrade-skip`, which logs the reason to the
+Audit Log (`logAuditEvent`, `module: 'sku_master'`) — before this, "Skip" was a bare
+one-click close with no trace, so a unit's spec and its accessory's stock count could
+silently drift apart with nothing to show why.
+
 ### Accessories (`sku_master` + `stock_movements` — no separate table)
 Accessories (RAM, SSD, CPU, GPU, keyboard, mouse, and anything else via the generic `ACC` category) are `sku_master` rows like a laptop, not a separate catalog — see `docs/decisions.md` (2026-07-23) for why the earlier `accessories`/`accessory_movements` table pair was retired. They're tracked purely via `stock_movements` (trigger-maintained `sku_master.quantity_in_stock`) with **no `asset_ledger` row** — fungible/quantity-only items don't need per-unit serial/QC/warranty tracking. A newly employee-created accessory SKU is immediately live and sellable, same as a new laptop SKU (`/dashboard/accessories`); the owner attaches a real vendor/PO/cost later via a deferred-PO-attach step (one `purchase_order_items` line, `quantity = N`, no per-unit asset number), mirroring `/api/purchase-orders/from-intake`'s "employee stock-in now, owner paperwork later" pattern.
 
 The reconciliation invariant (surfaced explicitly in the UI, not just implicit in the
 ledger): `in_stock = Σreceipts + Σadjustments − Σsales`, while the "needs PO" backlog on
-`/dashboard/accessories` is `Σ unattached receipts` — **independent of sales**. Selling 1
-of 10 received units doesn't shrink the backlog to 9; it still correctly says 10 need a
-PO (that's what was bought), while in-stock correctly shows 9. Full per-accessory
+`/dashboard/accessories` is `Σ unattached (receipts + adjustments)` — **independent of
+sales, but not of corrections** (fixed 2026-09-19). Selling 1 of 10 received units doesn't
+shrink the backlog to 9; it still correctly says 10 need a PO (that's what was bought),
+while in-stock correctly shows 9. But a *correction* (e.g. "Correct Quantity" down from 10
+to 5 because only 5 actually arrived) does shrink the backlog to 5 — a correction isn't
+consuming previously-received stock the way a sale does, it's revising the record of how
+much was ever actually received, so there's nothing left to formalize a PO for beyond the
+corrected amount. `lib/accessory-movements.ts`'s `getUnattachedBacklogBySku`/
+`claimAccessoryBacklog` and the two `/api/purchase-orders/from-accessory-stock`/
+`/api/stock/accessories` backlog queries all net in `movement_type IN ('receipt',
+'adjustment')` with `po_id IS NULL`, not `'receipt'` alone — the earlier receipt-only
+version let the owner attach more units to a PO than physically existed after a downward
+correction. Full per-accessory
 purchase history (vendor/cost per PO) and the raw movement ledger live at
 `/dashboard/accessories/[id]` (`GET /api/sku-master/[id]/history`); the main Stock page
 (`components/StockView.tsx`) also has a read-only "Accessories" tab (`GET
@@ -283,6 +305,24 @@ UI: `components/ActivityList.tsx` (table + filters, priority, assignee picker, r
 
 ### Repair / Replacement / Return (`repair_jobs`, `asset_rma_events`)
 `repair_jobs.job_type` ∈ `('repair','replacement')`, `is_own_stock` boolean (our unit vs. customer's own device). A `replacement` job swaps in one of our units for the customer's broken one — that swapped-in unit is marked `sold` **immediately** at job creation (same "live" principle as a sale), not gated behind owner approval. `status`/`payment_status`/`payment_account`/`amount_charged`/`amount_paid` track the job itself, separately from inventory state.
+
+**Internal repairs on not-yet-sold stock (2026-09-19):** `repair_jobs.customer_id` is
+nullable — a repair on our own stock that hasn't sold yet (e.g. a QC-failed unit that
+needs a part before it can go back for re-inspection) doesn't need a customer to bill,
+since there's no one to charge. `POST /api/repair-jobs` verifies this server-side against
+the asset's *current* status (never trusts a client flag): a `customer_id`-less repair is
+only accepted when `is_own_stock` and the asset isn't `'sold'`; a repair on an already-sold
+unit still requires a real customer for warranty/goodwill tracking, exactly as before. Parts
+consumed on a customer-less job are plain unpriced `stock_movements` adjustments
+(`consumeRepairParts` in `lib/repair-jobs.ts`) instead of priced accessory sales — there's
+no one to invoice — but still recorded in `repair_job_parts` (`sale_id: null`) so the job's
+history stays complete. Finalizing (`POST /api/repair-jobs/[id]/finalize`) on such a job
+skips the sales-row step (nothing charged, per the existing "job with nothing to charge
+never gets a sales row" rule) and instead automatically returns the asset to
+`qc_pending`/`qc_status: 'pending'` — the same reset `processCustomerReturn` (`lib/rma.ts`)
+already uses for a customer return — so "fixed it, needs re-inspection" no longer depends
+on someone remembering a separate manual trip to the Stock page. A job on an already-sold
+unit is left untouched by this (no QC reset — it's the customer's device now).
 
 Customer/vendor returns use the older, separately-built `asset_rma_events` table (`direction` = `'to_vendor'` or `'from_customer'`) via `/api/rma` — vendor returns are owner-only (touch vendor identity); customer returns (Return sub-tab in `/dashboard/entry/service`) are open to both roles and simply move the unit back into the QC funnel.
 

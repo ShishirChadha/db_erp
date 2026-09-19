@@ -18,7 +18,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Operations > Repair Jobs | `/dashboard/repair-jobs` | repair_jobs |  |
 | Operations > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
 | Operations > Rentals | `/dashboard/rentals` | rentals |  |
-| Operations > RMA (Vendor Returns) | `/dashboard/rma` | rma |  |
+| Operations > Returns / RMA | `/dashboard/rma` | rma |  |
 | Sales > Sales | `/dashboard/sales` | sales |  |
 | Sales > Invoices | `/dashboard/invoices` | invoices |  |
 | Sales > Quotations | `/dashboard/quotations` | quotations |  |

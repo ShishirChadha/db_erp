@@ -10,7 +10,8 @@ sources:
   - apps/erp/components/FixSkuDialog.tsx
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/lib/effective-sku.ts
-updated: 2026-09-16
+  - apps/erp/app/api/asset-ledger/[id]/component-upgrade-skip/route.ts
+updated: 2026-09-19
 ---
 
 ## What this is
@@ -73,17 +74,36 @@ situation, just one worth a conscious decision.
    - **Downgrade** (e.g. SSD 512GB → 256GB): "log the removed component back
      into stock?" — optionally search for the SKU and receive it back in.
    - Either row can be skipped if it doesn't apply (e.g. the part was
-     sourced externally, not from our own stock).
+     sourced externally, not from our own stock) — **but skipping now
+     requires typing a reason** (2026-09-19). This isn't optional anymore:
+     you can't close this step without resolving every changed row, one way
+     or the other.
 
 A reassignment that doesn't change RAM/SSD (a plain data-entry correction, or
 a change to some other field) skips the follow-up step entirely and closes
 immediately.
+
+## Why the follow-up can't be skipped silently (2026-09-19)
+
+Before this, "Skip" was a single click with no trace — a unit's SKU could say
+"16GB RAM" while nothing was ever actually deducted from accessory stock,
+and nothing anywhere would show that happened or why. Now: the **Done**
+button on the follow-up step stays disabled (as does closing via the X or
+clicking outside — same underlying close handler) until every changed row is
+resolved. A row is resolved by either actually moving the accessory stock
+(as before), or by clicking Skip, typing a reason (e.g. "customer supplied
+their own RAM"), and confirming — which is recorded to the **Audit Log**
+(`POST /api/asset-ledger/[id]/component-upgrade-skip`) so there's always a
+findable answer to "why doesn't the accessory count match this unit's spec."
 
 ## Common mix-ups
 
 - **"I changed the SKU but nothing asked about stock."** — the automatic
   upgrade/downgrade follow-up only fires for RAM and SSD specifically; other
   spec fields (CPU, screen size, etc.) don't trigger it.
+- **"I can't close the dialog."** — every changed RAM/SSD row needs to be
+  resolved first (stock moved, or skipped with a reason) — see above. This is
+  intentional, not a bug.
 - **"Why didn't this update the Purchase Order?"** — by design; see "What it
   does and doesn't change" above. Use **po-corrections** if the PO record
   itself is actually wrong.

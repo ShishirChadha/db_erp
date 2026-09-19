@@ -17,7 +17,7 @@ sources:
   - apps/erp/app/api/accessory-replacement-jobs/[id]/finalize/route.ts
   - apps/erp/lib/accessory-replacement-jobs.ts
   - apps/erp/lib/accessory-rma.ts
-updated: 2026-09-16
+updated: 2026-09-19
 ---
 
 ## What this is
@@ -121,3 +121,28 @@ via `?item_kind=accessory` on the deep link). Everything else works the same way
   `sales` row's own payment ledger (Sales Ledger → Add Payment / owner-only
   correction), not through the replacement job record itself — there's no
   `amount_paid` field on `replacement_jobs` to edit.
+- **"The customer already paid for the original unit — why does the
+  replacement show as unpaid / free?"** (real incident, 2026-09,
+  `DBAS26-196`/`RPL-26-004`) — the already-paid amount only carries over up
+  to whatever `amount_charged` is typed in at step 4. If that field is left
+  at 0 (e.g. staff forgot it, or it was meant as a placeholder to fill in
+  later), the carried-over payment is clamped to 0 too — the job silently
+  looks like a free/unpaid swap even though money was already collected on
+  the original sale. There is no warning for this; the form doesn't display
+  or prefill the old sale's amount as a reference. Fix: check the *old*
+  unit's sale (Sales Ledger, by its asset/serial number, before the return)
+  for what was actually paid, then correct the *new* sale's price via the
+  owner-only Sales Ledger edit so the figures — and the carried-over
+  payment — are right.
+- **"I corrected the sale price afterward and the Replacement Jobs list
+  still shows the old amount."** (real incident, 2026-09, `DBAS26-258`/
+  `RPL-26-007`) — `replacement_jobs.amount_charged` is only a snapshot
+  written once at job creation (step 5); there is no live FK from a sale
+  back to its replacement job, so a later correction made directly on the
+  `sales` row (e.g. voiding an incorrect ₹0 entry and re-entering the real
+  price) doesn't automatically update it. `GET /api/replacement-jobs`
+  (2026-09-19) now overrides the displayed `amount_charged` with the
+  linked unit's current, non-voided sale total when one exists, so the list
+  self-corrects — but the underlying `replacement_jobs.amount_charged`
+  column itself stays stale unless also edited directly (owner-only, via
+  this record's own PATCH).

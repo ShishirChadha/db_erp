@@ -75,7 +75,7 @@
     "ownerOnly": false
   },
   {
-    "label": "Operations > RMA (Vendor Returns)",
+    "label": "Operations > Returns / RMA",
     "route": "/dashboard/rma",
     "pageKey": "rma",
     "ownerOnly": false

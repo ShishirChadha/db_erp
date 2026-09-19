@@ -99,7 +99,7 @@ export const menuGroups = [
       { key: 'repair_jobs', href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
       { key: 'replacement_jobs', href: '/dashboard/replacement-jobs', label: 'Replacement Jobs', pageKey: 'replacement_jobs' },
       { key: 'rentals', href: '/dashboard/rentals', label: 'Rentals', pageKey: 'rentals' },
-      { key: 'rma', href: '/dashboard/rma', label: 'RMA (Vendor Returns)', pageKey: 'rma' },
+      { key: 'rma', href: '/dashboard/rma', label: 'Returns / RMA', pageKey: 'rma' },
     ],
   },
   {

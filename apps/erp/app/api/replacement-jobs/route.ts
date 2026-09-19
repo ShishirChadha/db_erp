@@ -38,8 +38,35 @@ export async function GET(req: NextRequest) {
 
   const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  if (pagination) return NextResponse.json({ data, total: count ?? 0 })
-  return NextResponse.json(data)
+
+  // amount_charged on this row is a snapshot frozen at job creation -- if the linked sale's
+  // price is corrected afterward (e.g. a free/placeholder entry voided and re-entered
+  // correctly via the Sales Ledger, as opposed to editing this job's own amount_charged),
+  // this list would keep showing the stale original figure forever. There's no real FK
+  // between the two (a replacement's sale is only ever found by asset_ledger_id), so the
+  // best available fix is to look up each job's current, non-voided sale on the replacement
+  // unit here and prefer its live sale_total for display.
+  const jobs = data || []
+  const assetIds = jobs.map((j: any) => j.replacement_asset_id).filter(Boolean)
+  if (assetIds.length > 0) {
+    const { data: liveSales } = await supabaseAdmin
+      .from('sales')
+      .select('asset_ledger_id, sale_total, created_at')
+      .in('asset_ledger_id', assetIds)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+    const latestByAsset = new Map<string, number>()
+    for (const s of liveSales || []) {
+      if (!latestByAsset.has(s.asset_ledger_id)) latestByAsset.set(s.asset_ledger_id, s.sale_total)
+    }
+    for (const job of jobs) {
+      const liveTotal = latestByAsset.get(job.replacement_asset_id)
+      if (liveTotal !== undefined) job.amount_charged = liveTotal
+    }
+  }
+
+  if (pagination) return NextResponse.json({ data: jobs, total: count ?? 0 })
+  return NextResponse.json(jobs)
 }
 
 // ---------- POST: swap a customer's unit for another one from our stock ----------

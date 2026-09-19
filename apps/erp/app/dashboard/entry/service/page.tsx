@@ -354,10 +354,15 @@ function ServicePageInner() {
     setAdditionalAmountPaid(''); setSoldBy(''); setSaleType('GST'); setGstPercent(18); setRepairGstPercent(18)
   }
 
+  // Customer is optional only for a repair on our own stock that hasn't sold yet
+  // (an internal fix, e.g. a QC-failed unit needing a part) -- every other case
+  // still needs a real customer, enforced again server-side.
+  const customerOptionalForRepair = subType === 'repair' && isOwnStock && !!ownUnit && ownUnit.status !== 'sold'
+
   const { run: handleSubmitRepairOrReplacement, pending: submittingRepair } = useAsyncAction(async () => {
     setError('')
     const isAccessoryReplacement = subType === 'replacement' && replacementItemKind === 'accessory'
-    if (!customerId) { setError('Select or add a customer.'); return }
+    if (!customerId && !customerOptionalForRepair) { setError('Select or add a customer.'); return }
     if (isAccessoryReplacement) {
       if (isOwnStock && (!oldAccessorySku || !oldAccessoryQty || oldAccessoryQty <= 0)) {
         setError('Select the accessory being returned and enter a quantity.'); return
@@ -415,7 +420,7 @@ function ServicePageInner() {
             additional_amount_paid: additionalAmountPaid === '' ? 0 : additionalAmountPaid,
           }
         : {
-            customer_id: customerId,
+            customer_id: customerId || undefined,
             is_own_stock: isOwnStock,
             asset_id: isOwnStock ? ownUnit!.id : null,
             customer_device_description: deviceDescription,
@@ -527,7 +532,9 @@ function ServicePageInner() {
           </div>
 
           <div>
-            <label className="block font-medium text-sm mb-1">Customer *</label>
+            <label className="block font-medium text-sm mb-1">
+              {customerOptionalForRepair ? 'Customer (optional -- not yet sold, no one to bill)' : 'Customer *'}
+            </label>
             <div className="flex gap-2 items-start">
               <div className="flex-1">
                 <SearchableCustomerSelect key={customerRefreshKey} value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />

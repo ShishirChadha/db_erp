@@ -64,11 +64,20 @@ export async function claimAccessoryBacklog(
   requestedQty: number,
   target: { poId: string; poItemId: string; createdBy: string }
 ): Promise<{ error?: string }> {
+  // 'adjustment' rows are included alongside 'receipt' here -- a downward "Correct
+  // Quantity" correction (e.g. only 5 of 10 supposedly-received units actually arrived)
+  // is a real stock event, same as it already is for quantity_in_stock
+  // (in_stock = Σreceipts + Σadjustments − Σsales, see docs/project-context.md); leaving
+  // it out would let `available` below stay stuck at the pre-correction (too large)
+  // figure and let the owner attach more units to a PO than physically exist. Safe to
+  // include: every code path that sets po_id on an 'adjustment' row points it at an
+  // already-real PO, so a correction from "Correct Quantity" always has po_id null here,
+  // never double-counting something already attached (see docs/decisions.md).
   const { data: movements, error } = await supabaseAdmin
     .from('stock_movements')
     .select('id, quantity_change, vendor_id, unit_price, purchase_date, payment_account, notes')
     .eq('sku_id', skuId)
-    .eq('movement_type', 'receipt')
+    .in('movement_type', ['receipt', 'adjustment'])
     .is('po_id', null)
     .order('created_at', { ascending: true })
   if (error) return { error: error.message }
@@ -127,6 +136,33 @@ export async function claimAccessoryBacklog(
     }
   }
   return {}
+}
+
+// Net unattached ('receipt'/'adjustment', po_id IS NULL) quantity per SKU -- the "needs
+// PO" backlog. Includes 'adjustment' for the same reason claimAccessoryBacklog does (see
+// its comment): a downward correction is a real stock event and must shrink the backlog,
+// not just quantity_in_stock. Positive-only in the returned map (a SKU with net <= 0
+// unattached has nothing needing a PO); callers that need the raw signed sum (e.g. to
+// bound a requested attach quantity) should query directly instead, same as
+// claimAccessoryBacklog does.
+export async function getUnattachedBacklogBySku(skuIds: string[]): Promise<Map<string, number>> {
+  const result = new Map<string, number>()
+  if (skuIds.length === 0) return result
+
+  const { data } = await supabaseAdmin
+    .from('stock_movements')
+    .select('sku_id, quantity_change')
+    .in('sku_id', skuIds)
+    .in('movement_type', ['receipt', 'adjustment'])
+    .is('po_id', null)
+
+  for (const m of data || []) {
+    result.set(m.sku_id, (result.get(m.sku_id) || 0) + m.quantity_change)
+  }
+  for (const [skuId, qty] of result) {
+    if (qty <= 0) result.delete(skuId)
+  }
+  return result
 }
 
 // Employee-entered vendor + unit price + purchase date, captured optionally at receipt

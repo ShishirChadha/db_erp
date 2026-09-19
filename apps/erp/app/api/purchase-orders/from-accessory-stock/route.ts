@@ -8,8 +8,10 @@ import { claimAccessoryBacklog } from '@/lib/accessory-movements'
 
 // ---------- GET: owner's backlog of accessory SKUs with stock received but no PO yet ----------
 // Same "needs paperwork" concept as /api/stock-intake's GET, just for quantity-only
-// SKUs: sums unattached 'receipt' movements per SKU instead of counting asset_ledger
-// rows with po_id IS NULL.
+// SKUs: sums unattached 'receipt'/'adjustment' movements per SKU instead of counting
+// asset_ledger rows with po_id IS NULL. 'adjustment' is included alongside 'receipt' so a
+// downward "Correct Quantity" correction shrinks this backlog too, not just
+// quantity_in_stock -- see claimAccessoryBacklog's comment in lib/accessory-movements.ts.
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
@@ -17,7 +19,7 @@ export async function GET(req: NextRequest) {
   const { data: movements, error } = await supabaseAdmin
     .from('stock_movements')
     .select('sku_id, quantity_change, sku_master(full_sku_code, sku_description, category)')
-    .eq('movement_type', 'receipt')
+    .in('movement_type', ['receipt', 'adjustment'])
     .is('po_id', null)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
@@ -104,11 +106,14 @@ export async function POST(req: NextRequest) {
   // rest for a later PO.
   const resolvedLines: { sku_id: string; cost_price: number; gst_percentage: number; qty: number; base_sku_code: string; variant_number: number }[] = []
   for (const li of lineInputs) {
+    // 'adjustment' included alongside 'receipt' -- same reason as the GET handler above
+    // and claimAccessoryBacklog: a correction must shrink what can be attached, not just
+    // quantity_in_stock.
     const { data: movements, error: movementsErr } = await supabaseAdmin
       .from('stock_movements')
       .select('quantity_change')
       .eq('sku_id', li.sku_id)
-      .eq('movement_type', 'receipt')
+      .in('movement_type', ['receipt', 'adjustment'])
       .is('po_id', null)
     if (movementsErr) return NextResponse.json({ error: movementsErr.message }, { status: 500 })
     const available = (movements || []).reduce((sum, m) => sum + m.quantity_change, 0)

@@ -45,7 +45,11 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
     { key: 'quotations', label: 'Quotations' },
   ]},
   { label: 'Contacts', keys: [{ key: 'customers', label: 'Customers' }] },
-  { label: 'Service', keys: [{ key: 'rma', label: 'RMA (Vendor Returns)' }] },
+  // For a non-owner grant, this key only unlocks the "From Customer" side of the
+  // RMA page (post-sale returns) -- the "To Vendor" side stays owner-only
+  // server-side (see app/api/rma/route.ts) regardless of this checkbox. Labeled
+  // to reflect what an employee actually gets, not the page's owner-facing name.
+  { label: 'Service', keys: [{ key: 'rma', label: 'Returns (Customer Returns / RMA)' }] },
   { label: 'Finance', keys: [
     { key: 'expenses', label: 'Expenses' },
     { key: 'reports', label: 'Reports' },

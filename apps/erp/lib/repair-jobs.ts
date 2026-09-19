@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabase/service'
 import { resolveEntityKey } from './invoice-finalize'
 import { reverseSaleInventoryEffects } from './sales-entry'
 import { CartItemInput, BaseSaleFields, validateCartItems, processSingleSaleItem } from './sales-cart'
+import { insertAccessoryMovement } from './accessory-movements'
 
 export async function generateRepairJobNumber(): Promise<string> {
   const { data, error } = await supabaseAdmin.rpc('generate_repair_job_number')
@@ -41,7 +42,7 @@ export type RepairPartInput = { sku_id: string; quantity: number; unit_price: nu
 export async function consumeRepairParts(input: {
   jobId: string
   jobNumber: string
-  customerId: string
+  customerId: string | null
   customerName: string | null
   paymentAccount: string
   gstPercent: number
@@ -64,6 +65,30 @@ export async function consumeRepairParts(input: {
   const validation = await validateCartItems(cartItems)
   if (!validation.ok) {
     return { ok: false, status: 400, message: 'One or more parts could not be added.', itemErrors: validation.itemErrors }
+  }
+
+  // No customer to bill (an internal fix on our own not-yet-sold stock, e.g. a
+  // QC-failed unit) -- a part here is a plain, unpriced stock adjustment instead of
+  // a sale nobody's paying for. Still recorded in repair_job_parts (sale_id null) so
+  // the job's history stays complete.
+  if (!customerId) {
+    for (const p of parts) {
+      const { error: moveErr } = await insertAccessoryMovement({
+        skuId: p.sku_id,
+        movementType: 'adjustment',
+        quantityChange: -p.quantity,
+        notes: `Used in repair job ${jobNumber} (internal, no customer)`,
+        createdBy: sessionUserId,
+      })
+      if (moveErr) return { ok: false, status: 400, message: moveErr.message }
+      await supabaseAdmin.from('repair_job_parts').insert({
+        repair_job_id: jobId,
+        sku_id: p.sku_id,
+        quantity: p.quantity,
+        sale_id: null,
+      })
+    }
+    return { ok: true, saleIds: [] }
   }
 
   const saleDateObj = new Date(`${saleDate}T12:00:00.000Z`)

@@ -28,12 +28,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid bucket' }, { status: 400 });
   }
 
-  // product-images is website-publishing content -- gated by the 'website' edit
-  // grant (owner always passes canEditPage), same access level as the SKU
-  // Website dialog's image-management endpoints.
+  // product-images is website-publishing content, gated by the 'website' edit grant
+  // (same as the SKU Website dialog's image-management endpoints).
   if (bucket === 'product-images') {
     const sessionUser = await getCookieSessionUser();
-    if (!canEditPage(sessionUser, 'website')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    if (!canEditPage(sessionUser, 'website')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+    }
   }
 
   // documents holds recon source material (vendor invoices, bank statements) --

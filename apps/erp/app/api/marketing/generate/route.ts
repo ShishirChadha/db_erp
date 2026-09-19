@@ -63,15 +63,17 @@ export async function POST(req: NextRequest) {
       if (!sku_id) return NextResponse.json({ error: 'sku_id is required' }, { status: 400 })
       if (platform === 'blog') return NextResponse.json({ error: 'Use mode=blog for blog posts.' }, { status: 400 })
 
-      // WhatsApp's template carries no product URL, so any currently-in-stock item can
-      // be promoted regardless of website-publish status (same reasoning as
-      // findInStockProducts / Product List). Instagram/Facebook/Google Business Profile
-      // content always ends with a real deep link (buildProductUrl below), which only
-      // resolves for a published SKU -- those platforms keep the publish requirement.
+      // WhatsApp's template carries no product URL, so any active SKU can be promoted
+      // regardless of current stock or website-publish status (same reasoning as
+      // findInStockProducts / Product List -- see getInStockProductById; this covers an
+      // item already on a Purchase Order but not yet received, same as Today's Picks'
+      // "not in stock yet" toggle). Instagram/Facebook/Google Business Profile content
+      // always ends with a real deep link (buildProductUrl below), which only resolves
+      // for a published SKU -- those platforms keep the publish requirement.
       const product = platform === 'whatsapp' ? await getInStockProductById(sku_id) : await getPublishedProductById(sku_id)
       if (!product) {
         const message = platform === 'whatsapp'
-          ? 'That item is not currently in stock.'
+          ? 'That SKU does not exist or is not active.'
           : 'That SKU is not published on the website yet -- publish it first via SKU Master -> Website, or generate a WhatsApp message instead (WhatsApp doesn\'t require publishing).'
         return NextResponse.json({ error: message }, { status: 400 })
       }
@@ -135,7 +137,7 @@ export async function POST(req: NextRequest) {
       // everything realistic; still bounded so a filterless, category-less request can't
       // return the entire catalogue as one WhatsApp message.
       const products = await findInStockProducts({ ...filter, limit: filter?.limit ?? 60 })
-      if (products.length === 0) return NextResponse.json({ error: 'No in-stock products matched that filter.' }, { status: 400 })
+      if (products.length === 0) return NextResponse.json({ error: 'No products matched that filter.' }, { status: 400 })
 
       const themeLabel = theme || 'Products in Stock'
       const bodyText = buildProductListWhatsAppMessage(themeLabel, products, waSettings)

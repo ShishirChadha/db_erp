@@ -31,6 +31,17 @@ to sell.
    QC/condition columns — `qc_status` moves from `pending`/`in_progress` to
    `passed` or `failed`.
 
+## A failed check needs a part replaced (e.g. dead RAM, broken keyboard)
+
+There's no direct link from a failed checklist item to a part — that's still
+a manual step. Open a **Repair Job** on this same unit (Live Stock has a
+one-click "Repair" button per row), tick "This is our own stock," pick the
+unit, and add the accessory part consumed. Since the unit hasn't sold yet,
+**no customer is required** for this job — see **open-a-repair-job**'s
+"Repairing our own not-yet-sold stock" section. Marking that repair job Done
+automatically sends the unit back here (`qc_pending`) for re-inspection —
+you don't need to manually flip its status.
+
 ## Where this data goes next
 
 If the SKU is later published to the website, `asset_qc_checks` is the
