@@ -39,9 +39,18 @@ function parseLeadingInt(v: any): number | null {
   return m ? parseInt(m[0], 10) : null
 }
 
-// Compares the unit's spec before vs. after a reassignment on RAM/SSD only --
-// skips a field entirely if either side is missing/unparseable/equal, so a plain
-// data-entry correction (e.g. fixing a brand typo) never triggers a false positive.
+// A spec value with no digits in it (real data in this business: "No", "N/A", "",
+// missing entirely) means "nothing installed" -- zero capacity, not "can't compare."
+// Treating it as null/skip (the original behavior) silently missed the exact case
+// this feature exists for: a "No RAM" unit getting real RAM added.
+function componentCapacity(v: any): number {
+  return parseLeadingInt(v) ?? 0
+}
+
+// Compares the unit's spec before vs. after a reassignment on RAM/SSD only -- skips
+// a field only when there's truly nothing to compare (no new value) or the capacity
+// is unchanged (covers both a plain data-entry correction, e.g. fixing a brand typo,
+// and two different-looking "nothing installed" spellings like "No" -> "").
 function diffComponents(
   oldSpecs: Record<string, any> | null | undefined,
   newSpecs: Record<string, any> | null | undefined
@@ -51,11 +60,11 @@ function diffComponents(
   for (const field of COMPONENT_FIELDS) {
     const from = oldSpecs[field]
     const to = newSpecs[field]
-    if (!from || !to || from === to) continue
-    const fromNum = parseLeadingInt(from)
-    const toNum = parseLeadingInt(to)
-    if (fromNum === null || toNum === null || fromNum === toNum) continue
-    changes.push({ field, from: String(from), to: String(to), direction: toNum < fromNum ? 'down' : 'up' })
+    if (to === undefined || to === null || from === to) continue
+    const fromNum = componentCapacity(from)
+    const toNum = componentCapacity(to)
+    if (fromNum === toNum) continue
+    changes.push({ field, from: from ? String(from) : 'None', to: String(to), direction: toNum < fromNum ? 'down' : 'up' })
   }
   return changes
 }
