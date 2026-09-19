@@ -4,8 +4,16 @@ import Link from "next/link";
 import { getPublishedProducts, getCategories } from "@/lib/queries";
 import { CATEGORY_SLUGS, slugToCategory } from "@/lib/categories";
 import { ProductCard } from "@/components/ProductCard";
+import { ProductFilters } from "@/components/ProductFilters";
+import { getFilterFacets, filterProducts, parseFiltersFromSearchParams } from "@/lib/product-filters";
 
 export const revalidate = 60;
+
+// Filters only ship on these two listing pages for now (see plan) -- Laptop
+// and Desktop are the two categories with rich enough specs (CPU/RAM/Storage/
+// GPU/OS) to make faceted filtering worthwhile; every other category page
+// stays a plain grid.
+const FILTERABLE_SLUGS = new Set(["laptops", "desktops"]);
 
 // A fixed, small set of category codes -- enumerating them here (rather than
 // relying on dynamicParams on-demand generation) is what makes this route
@@ -43,14 +51,21 @@ export async function generateMetadata({
 
 export default async function CategoryPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ categorySlug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { categorySlug } = await params;
   const category = await resolveCategory(categorySlug);
   if (!category) notFound();
 
-  const products = await getPublishedProducts({ category: category.code });
+  const allProducts = await getPublishedProducts({ category: category.code });
+
+  const isFilterable = FILTERABLE_SLUGS.has(categorySlug);
+  const facets = isFilterable ? getFilterFacets(allProducts) : null;
+  const activeFilters = isFilterable ? parseFiltersFromSearchParams(await searchParams) : null;
+  const products = activeFilters ? filterProducts(allProducts, activeFilters) : allProducts;
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -98,17 +113,25 @@ export default async function CategoryPage({
         <p className="text-sm text-muted-foreground">{products.length} product{products.length !== 1 ? "s" : ""}</p>
       </div>
 
-      {products.length === 0 ? (
-        <p className="mt-10 rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-          No {category.displayName.toLowerCase()}s published yet — check back soon.
-        </p>
-      ) : (
-        <div className="stagger mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} templates={category.templates} />
-          ))}
+      <div className="mt-6 flex flex-col gap-6 lg:flex-row">
+        {facets && <ProductFilters facets={facets} />}
+
+        <div className="flex-1">
+          {products.length === 0 ? (
+            <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
+              {allProducts.length === 0
+                ? `No ${category.displayName.toLowerCase()}s published yet — check back soon.`
+                : "No products match your selected filters — try clearing one or two."}
+            </p>
+          ) : (
+            <div className="stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} templates={category.templates} />
+              ))}
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </main>
   );
 }

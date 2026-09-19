@@ -15,7 +15,9 @@ const SHOP_LINKS = [
   { code: 'LAP', label: 'Laptops' },
   { code: 'DES', label: 'Desktops' },
   { code: 'MON', label: 'Monitors' },
+  { code: 'TAB', label: 'Tablets' },
   { code: 'ACC', label: 'Accessories' },
+  { code: 'ADP', label: 'Adapters / Chargers' },
 ]
 
 const SOCIAL_ICONS = [
@@ -49,7 +51,7 @@ const SOCIAL_ICONS = [
 
 export function SiteFooter() {
   return (
-    <footer className="mt-16 border-t border-border bg-secondary/40">
+    <footer id="site-footer" className="mt-16 border-t border-border bg-secondary/40">
       <div className="border-b border-border">
         <div className="mx-auto flex max-w-6xl flex-col items-start justify-between gap-4 px-4 py-8 sm:flex-row sm:items-center sm:px-6 lg:px-8">
           <div>

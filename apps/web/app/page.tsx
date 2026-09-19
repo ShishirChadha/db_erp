@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { getPublishedProducts, getCategories } from "@/lib/queries";
+import { getPublishedProducts, getCategories, getActiveBanners } from "@/lib/queries";
 import { categoryToSlug } from "@/lib/categories";
 import { ProductCard } from "@/components/ProductCard";
 import { CategoryTile } from "@/components/CategoryTile";
@@ -7,6 +7,7 @@ import { TrustBadges } from "@/components/TrustBadges";
 import { ProcessSteps } from "@/components/ProcessSteps";
 import { GoogleReviews } from "@/components/GoogleReviews";
 import { StoreLocation } from "@/components/StoreLocation";
+import { HomeBanners } from "@/components/HomeBanners";
 
 export const revalidate = 60;
 
@@ -18,15 +19,21 @@ const HERO_CATEGORIES = [
   { code: "ACC", label: "Accessories" },
 ];
 
+// "Shop by category" tile grid only -- kept separate from the hero pills above
+// (which stay focused on the five primary categories) since Adapters/Chargers
+// was previously invisible in the storefront's nav entirely (see AGENTS/plan).
+const CATEGORY_TILES = [...HERO_CATEGORIES, { code: "ADP", label: "Adapters/Chargers" }];
+
 function discountPercent(price: number, marketPrice: number | null): number {
   if (!marketPrice || marketPrice <= price) return 0;
   return Math.round(((marketPrice - price) / marketPrice) * 100);
 }
 
 export default async function HomePage() {
-  const [products, templates] = await Promise.all([
+  const [products, templates, banners] = await Promise.all([
     getPublishedProducts({ limit: 24 }),
     getCategories(),
+    getActiveBanners(),
   ]);
 
   const bestDeals = [...products]
@@ -38,6 +45,8 @@ export default async function HomePage() {
 
   return (
     <main>
+      <HomeBanners banners={banners} />
+
       <section className="relative overflow-hidden border-b border-border">
         <div
           className="absolute inset-0 -z-10"
@@ -82,8 +91,8 @@ export default async function HomePage() {
 
       <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
         <h2 className="mb-5 font-heading text-lg font-bold text-foreground">Shop by category</h2>
-        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-          {HERO_CATEGORIES.map((c) => (
+        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+          {CATEGORY_TILES.map((c) => (
             <CategoryTile key={c.code} href={`/${categoryToSlug(c.code)}`} code={c.code} label={c.label} />
           ))}
         </div>

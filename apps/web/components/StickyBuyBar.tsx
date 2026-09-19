@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PriceTag } from './PriceTag'
 import { AddToCartButton } from './AddToCartButton'
+import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 
 // Looks up its target by id (rather than a ref) because it's a sibling of the
 // observed element, not an ancestor -- a ref can't cross that boundary as a
@@ -14,11 +15,13 @@ export function StickyBuyBar({
   marketPrice,
   skuId,
   disabled,
+  whatsappHref,
 }: {
   price: number
   marketPrice: number | null
   skuId: string
   disabled?: boolean
+  whatsappHref: string
 }) {
   const [visible, setVisible] = useState(false)
 
@@ -36,10 +39,13 @@ export function StickyBuyBar({
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 p-3 pr-16 backdrop-blur sm:hidden">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex items-center justify-between gap-2">
         <PriceTag price={price} marketPrice={marketPrice} />
-        <div className="w-36 shrink-0">
-          <AddToCartButton skuId={skuId} disabled={disabled} />
+        <div className="flex shrink-0 items-center gap-2">
+          <WhatsAppOrderButton href={whatsappHref} compact />
+          <div className="w-32">
+            <AddToCartButton skuId={skuId} disabled={disabled} />
+          </div>
         </div>
       </div>
     </div>

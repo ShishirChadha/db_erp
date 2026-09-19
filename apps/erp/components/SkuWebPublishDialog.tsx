@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { SimpleModal } from '@/components/SimpleModal'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
+import { useCustomOptions } from '@/lib/useCustomOptions'
 
 const CONDITION_GRADES = ['Excellent', 'Very Good', 'Good', 'Fair']
 
@@ -65,6 +66,8 @@ export function SkuWebPublishDialog({
   const [webDescription, setWebDescription] = useState('')
   const [webHighlights, setWebHighlights] = useState('')
   const [conditionGrade, setConditionGrade] = useState('')
+  const [warrantyLabel, setWarrantyLabel] = useState('')
+  const { values: warrantyOptions } = useCustomOptions('warranty_label')
 
   const defaultTitle = buildConfigSummary(sku.category, sku.specifications, templates) ||
     [sku.brand, sku.model_name].filter(Boolean).join(' ')
@@ -87,6 +90,7 @@ export function SkuWebPublishDialog({
         setWebDescription(d.web_description || '')
         setWebHighlights((d.web_highlights || []).join('\n'))
         setConditionGrade(d.web_condition_grade || '')
+        setWarrantyLabel(d.warranty_label || '')
       }
       if (imagesRes.ok) setImages(await imagesRes.json())
       setLoading(false)
@@ -181,6 +185,7 @@ export function SkuWebPublishDialog({
           web_description: webDescription || null,
           web_highlights: webHighlights.split('\n').map((s) => s.trim()).filter(Boolean),
           web_condition_grade: conditionGrade || null,
+          warranty_label: warrantyLabel || null,
         }),
       })
       if (!res.ok) {
@@ -279,12 +284,21 @@ export function SkuWebPublishDialog({
             <textarea value={webHighlights} onChange={(e) => setWebHighlights(e.target.value)} rows={3} className="border p-2 w-full rounded" placeholder={'Fast SSD storage\n6 month warranty\nFree delivery'} />
           </div>
 
-          <div>
-            <label className="block text-xs text-muted-foreground mb-1">Condition grade</label>
-            <select value={conditionGrade} onChange={(e) => setConditionGrade(e.target.value)} className="border p-2 w-full rounded">
-              <option value="">Not set</option>
-              {CONDITION_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
-            </select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Condition grade</label>
+              <select value={conditionGrade} onChange={(e) => setConditionGrade(e.target.value)} className="border p-2 w-full rounded">
+                <option value="">Not set</option>
+                {CONDITION_GRADES.map((g) => <option key={g} value={g}>{g}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-muted-foreground mb-1">Warranty</label>
+              <select value={warrantyLabel} onChange={(e) => setWarrantyLabel(e.target.value)} className="border p-2 w-full rounded">
+                <option value="">Not set</option>
+                {warrantyOptions.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

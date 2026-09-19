@@ -51,6 +51,7 @@ export async function PUT(
     'web_description',
     'web_highlights',
     'web_condition_grade',
+    'warranty_label',
   ]
   const bodyKeys = Object.keys(body)
   const onlyWebFields = bodyKeys.length > 0 && bodyKeys.every((k) => WEB_FIELD_KEYS.includes(k))

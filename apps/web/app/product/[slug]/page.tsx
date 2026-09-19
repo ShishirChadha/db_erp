@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { isSerializedCategory } from "@db/shared";
+import { isSerializedCategory, formatCurrency } from "@db/shared";
+import { WHATSAPP_NUMBER } from "@/lib/business-info";
 import {
   getProductBySlug,
   getProductImages,
@@ -113,6 +114,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const rows = specRows(product.specifications, template?.field_schema);
   const title = product.web_title || [product.brand, product.model_name].filter(Boolean).join(" ");
   const categorySlug = categoryToSlug(product.category);
+  const productUrl = `${SITE_URL}/product/${slug}`;
+  const whatsappMessage = `Hi, I'm interested in this: ${title}\n${productUrl}\nPrice: ${formatCurrency(product.web_price)}`;
+  const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
 
   // Only ever show "this exact unit" when there's exactly one sellable,
   // graded unit -- a SKU can carry quantity 1-2, and showing a single serial
@@ -195,7 +199,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
               <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{title}</h1>
               <div className="flex shrink-0 items-center gap-2">
                 <WishlistButton skuId={product.id} />
-                <ShareButtons url={`${SITE_URL}/product/${slug}`} title={title} />
+                <ShareButtons url={productUrl} title={title} />
               </div>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -242,6 +246,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 basePrice={product.web_price}
                 disabled={product.availability_bucket === "sold_out"}
                 options={upgradeOptions}
+                whatsappHref={whatsappHref}
               />
             </div>
 
@@ -288,6 +293,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         marketPrice={product.market_price}
         skuId={product.id}
         disabled={product.availability_bucket === "sold_out"}
+        whatsappHref={whatsappHref}
       />
     </>
   );

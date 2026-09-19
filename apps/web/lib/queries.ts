@@ -19,6 +19,7 @@ export interface PublicProduct {
   published_at: string
   availability_bucket: 'in_stock' | 'low_stock' | 'sold_out'
   primary_image_path: string | null
+  warranty_label: string | null
 }
 
 export interface PublicProductImage {
@@ -36,7 +37,7 @@ export interface CategoryTemplate {
 }
 
 const PRODUCT_COLUMNS =
-  'id, web_slug, full_sku_code, category, item_type, brand, model_name, specifications, web_title, web_description, web_highlights, web_condition_grade, web_price, market_price, hsn_code, published_at, availability_bucket, primary_image_path'
+  'id, web_slug, full_sku_code, category, item_type, brand, model_name, specifications, web_title, web_description, web_highlights, web_condition_grade, web_price, market_price, hsn_code, published_at, availability_bucket, primary_image_path, warranty_label'
 
 export async function getPublishedProducts(opts: {
   category?: string | string[]
@@ -105,6 +106,25 @@ export async function getProductImages(skuId: string): Promise<PublicProductImag
     .order('is_primary', { ascending: false })
     .order('sort_order', { ascending: true })
   return (data ?? []) as PublicProductImage[]
+}
+
+export interface HomeBanner {
+  id: string
+  image_path: string
+  link_url: string | null
+  title: string | null
+  theme: 'default' | 'diwali' | 'christmas' | 'sale' | 'custom'
+  custom_color: string | null
+  sort_order: number
+}
+
+export async function getActiveBanners(): Promise<HomeBanner[]> {
+  const supabase = createPublicSupabaseClient()
+  const { data } = await supabase
+    .from('public_banners')
+    .select('id, image_path, link_url, title, theme, custom_color, sort_order')
+    .order('sort_order', { ascending: true })
+  return (data ?? []) as HomeBanner[]
 }
 
 export async function getCategories(): Promise<CategoryTemplate[]> {

@@ -6,6 +6,7 @@ import type { UpgradeOption } from '@/lib/queries'
 import type { SelectedUpgrade } from '@/lib/upgrades'
 import { UpgradeSelector } from './UpgradeSelector'
 import { AddToCartButton } from './AddToCartButton'
+import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 
 // Holds the upgrade-selection state so both the selector and the buy button
 // share it. Scope note: the sticky mobile buy bar (rendered separately,
@@ -17,11 +18,13 @@ export function PurchaseUpgradeArea({
   basePrice,
   disabled,
   options,
+  whatsappHref,
 }: {
   skuId: string
   basePrice: number
   disabled: boolean
   options: UpgradeOption[]
+  whatsappHref: string
 }) {
   const [selected, setSelected] = useState<SelectedUpgrade[]>([])
   const upgradeTotal = selected.reduce((sum, u) => sum + u.price_delta, 0)
@@ -34,7 +37,8 @@ export function PurchaseUpgradeArea({
           Total with upgrades: {formatCurrency(basePrice + upgradeTotal)}
         </p>
       )}
-      <div id="main-buy-cta" className="mt-3">
+      <div id="main-buy-cta" className="mt-3 flex flex-col gap-2">
+        <WhatsAppOrderButton href={whatsappHref} />
         <AddToCartButton skuId={skuId} disabled={disabled} selectedUpgrades={selected} />
       </div>
     </div>

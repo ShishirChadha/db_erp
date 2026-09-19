@@ -17,6 +17,7 @@ export const CATEGORY_SLUGS: Record<string, string> = {
   ADP: 'adapters-chargers',
   ACC: 'accessories',
   OTHER: 'other',
+  CCTV: 'cctv',
 }
 
 const SLUG_TO_CATEGORY: Record<string, string> = Object.fromEntries(

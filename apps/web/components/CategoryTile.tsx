@@ -32,6 +32,12 @@ const ICONS: Record<string, React.ReactNode> = {
       <rect x="17" y="13" width="4" height="6" rx="1.2" />
     </>
   ),
+  ADP: (
+    <>
+      <rect x="7" y="3" width="10" height="6" rx="1.2" />
+      <path d="M9 9v3a3 3 0 003 3v0a3 3 0 003-3V9M12 15v3M9 21h6" />
+    </>
+  ),
 }
 
 export function CategoryTile({ href, code, label }: { href: string; code: string; label: string }) {

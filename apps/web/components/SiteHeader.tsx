@@ -2,13 +2,14 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { categoryToSlug } from '@/lib/categories'
 import { HeaderAccountState } from './HeaderAccountState'
+import { HeaderSearch } from './HeaderSearch'
+import { AccessoriesNavGroup } from './AccessoriesNavGroup'
 
 const NAV_CATEGORIES = [
   { code: 'LAP', label: 'Laptops' },
   { code: 'DES', label: 'Desktops' },
   { code: 'MON', label: 'Monitors' },
   { code: 'TAB', label: 'Tablets' },
-  { code: 'ACC', label: 'Accessories' },
 ]
 
 // No cookie/session reads here -- account state and cart count are fetched
@@ -42,15 +43,9 @@ export function SiteHeader() {
               {c.label}
             </Link>
           ))}
+          <AccessoriesNavGroup />
         </nav>
-        <form action="/search" className="ml-auto flex w-full max-w-xs items-center">
-          <input
-            type="search"
-            name="q"
-            placeholder="Search laptops, brands..."
-            className="w-full rounded-full border border-input bg-background px-3.5 py-1.5 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30"
-          />
-        </form>
+        <HeaderSearch />
         <HeaderAccountState />
       </div>
     </header>

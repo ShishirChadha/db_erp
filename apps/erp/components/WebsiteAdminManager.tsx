@@ -1,9 +1,14 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { Loader2, Trash2, Upload } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
+
+function publicImageUrl(storagePath: string) {
+  return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/product-images/${storagePath}`
+}
 
 interface UpgradeRule {
   id: string
@@ -535,10 +540,254 @@ function CrossSellSection() {
   )
 }
 
+interface Banner {
+  id: string
+  image_path: string
+  link_url: string | null
+  title: string | null
+  theme: 'default' | 'diwali' | 'christmas' | 'sale' | 'custom'
+  custom_color: string | null
+  starts_at: string | null
+  ends_at: string | null
+  is_active: boolean
+  sort_order: number
+}
+
+const THEME_OPTIONS: { value: Banner['theme']; label: string }[] = [
+  { value: 'default', label: 'Default (no tint)' },
+  { value: 'diwali', label: 'Diwali (gold / red)' },
+  { value: 'christmas', label: 'Christmas (red / green)' },
+  { value: 'sale', label: 'Sale (blue)' },
+  { value: 'custom', label: 'Custom color' },
+]
+
+// Wide hero-strip aspect ratio -- matches how HomeBanners.tsx (apps/web) always
+// displays a banner, regardless of the raw uploaded file's exact pixels: it's
+// rendered inside a fixed aspect-ratio box with object-fit: cover, which crops
+// to fill rather than distorting or breaking layout. So this size is a
+// recommendation for what looks best, not a hard requirement -- a slightly
+// off-ratio upload still displays correctly, just center-cropped.
+const RECOMMENDED_BANNER_HINT = 'Recommended: 1600×500px (wide banner), JPG/PNG/WebP, under 3MB. Other sizes are automatically cropped to fit on the homepage, so this isn’t a hard requirement.'
+
+function BannersSection() {
+  const [banners, setBanners] = useState<Banner[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [error, setError] = useState('')
+
+  const [imagePath, setImagePath] = useState('')
+  const [linkUrl, setLinkUrl] = useState('')
+  const [title, setTitle] = useState('')
+  const [theme, setTheme] = useState<Banner['theme']>('default')
+  const [customColor, setCustomColor] = useState('#c0392b')
+  const [startsAt, setStartsAt] = useState('')
+  const [endsAt, setEndsAt] = useState('')
+  const [sortOrder, setSortOrder] = useState('0')
+
+  const fetchBanners = async () => {
+    setLoading(true)
+    const res = await apiFetch('/api/website-admin/banners')
+    if (res.ok) setBanners(await res.json())
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchBanners() }, [])
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setError('')
+    try {
+      const urlRes = await apiFetch('/api/storage/upload-url', {
+        method: 'POST',
+        body: JSON.stringify({
+          fileName: file.name,
+          contentType: file.type,
+          bucket: 'product-images',
+          folder: 'banners',
+          fileType: 'banner',
+        }),
+      })
+      if (!urlRes.ok) throw new Error('Could not get upload URL')
+      const { uploadUrl, key } = await urlRes.json()
+      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+      setImagePath(key)
+    } catch (err: any) {
+      setError(err.message || 'Upload failed')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
+  const addBanner = async () => {
+    setError('')
+    if (!imagePath) {
+      setError('Upload a banner image first.')
+      return
+    }
+    setSaving(true)
+    try {
+      const res = await apiFetch('/api/website-admin/banners', {
+        method: 'POST',
+        body: JSON.stringify({
+          image_path: imagePath,
+          link_url: linkUrl.trim() || null,
+          title: title.trim() || null,
+          theme,
+          custom_color: theme === 'custom' ? customColor : null,
+          starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+          ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+          sort_order: Number(sortOrder) || 0,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.error || 'Failed to add banner')
+        return
+      }
+      setImagePath(''); setLinkUrl(''); setTitle(''); setTheme('default')
+      setStartsAt(''); setEndsAt(''); setSortOrder('0')
+      await fetchBanners()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleActive = async (banner: Banner) => {
+    await apiFetch(`/api/website-admin/banners/${banner.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !banner.is_active }) })
+    await fetchBanners()
+  }
+
+  const removeBanner = async (id: string) => {
+    if (!confirm('Delete this banner?')) return
+    await apiFetch(`/api/website-admin/banners/${id}`, { method: 'DELETE' })
+    await fetchBanners()
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Add one or more banners for the storefront homepage (e.g. a Diwali or festival sale announcement). Multiple
+        active banners auto-rotate; only one is shown at a time if just one is active. Use the start/end dates to
+        schedule a banner in advance and have it disappear automatically when the sale ends.
+      </p>
+
+      <div className="border rounded-lg p-4 mb-4 space-y-3">
+        <h3 className="text-sm font-semibold">Add Banner</h3>
+        {error && <div className="text-destructive text-sm">{error}</div>}
+
+        <div>
+          <label className="block text-xs font-medium mb-1">Image</label>
+          <p className="text-xs text-muted-foreground mb-2">{RECOMMENDED_BANNER_HINT}</p>
+          {imagePath && (
+            <div className="mb-2 w-full max-w-sm overflow-hidden rounded border" style={{ aspectRatio: '1600 / 500' }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={publicImageUrl(imagePath)} alt="" className="w-full h-full object-cover" />
+            </div>
+          )}
+          <label className="inline-flex items-center gap-2 px-3 py-2 rounded border cursor-pointer text-sm hover:bg-accent w-fit">
+            {uploading ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
+            {uploading ? 'Uploading…' : imagePath ? 'Replace image' : 'Upload image'}
+            <input type="file" accept="image/*" className="hidden" onChange={handleUpload} disabled={uploading} />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">Title (optional overlay text)</label>
+            <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Diwali Dhamaka Sale" className="border p-2 w-full rounded" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Link (optional, where the banner goes)</label>
+            <input type="text" value={linkUrl} onChange={(e) => setLinkUrl(e.target.value)} placeholder="/laptops or a full URL" className="border p-2 w-full rounded" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Theme</label>
+            <select value={theme} onChange={(e) => setTheme(e.target.value as Banner['theme'])} className="border p-2 w-full rounded">
+              {THEME_OPTIONS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </div>
+          {theme === 'custom' && (
+            <div>
+              <label className="block text-xs font-medium mb-1">Custom accent color</label>
+              <input type="color" value={customColor} onChange={(e) => setCustomColor(e.target.value)} className="border p-1 w-full rounded h-10" />
+            </div>
+          )}
+          <div>
+            <label className="block text-xs font-medium mb-1">Starts (optional)</label>
+            <input type="datetime-local" value={startsAt} onChange={(e) => setStartsAt(e.target.value)} className="border p-2 w-full rounded" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Ends (optional)</label>
+            <input type="datetime-local" value={endsAt} onChange={(e) => setEndsAt(e.target.value)} className="border p-2 w-full rounded" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Sort order (lower shows first)</label>
+            <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="border p-2 w-full rounded" />
+          </div>
+        </div>
+        <button onClick={addBanner} disabled={saving || uploading} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
+          {saving ? 'Adding…' : 'Add Banner'}
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : banners.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No banners configured yet.</p>
+      ) : (
+        <table className="min-w-full border">
+          <thead>
+            <tr>
+              <th className="border p-2 text-left">Image</th>
+              <th className="border p-2 text-left">Title</th>
+              <th className="border p-2 text-left">Theme</th>
+              <th className="border p-2 text-left">Window</th>
+              <th className="border p-2 text-center">Active</th>
+              <th className="border p-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {banners.map((b) => (
+              <tr key={b.id} className={b.is_active ? '' : 'opacity-50'}>
+                <td className="border p-2">
+                  <div className="w-24 h-8 overflow-hidden rounded border">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={publicImageUrl(b.image_path)} alt="" className="w-full h-full object-cover" />
+                  </div>
+                </td>
+                <td className="border p-2">{b.title || '—'}</td>
+                <td className="border p-2">{THEME_OPTIONS.find((t) => t.value === b.theme)?.label || b.theme}</td>
+                <td className="border p-2 text-xs">
+                  {b.starts_at || b.ends_at
+                    ? `${b.starts_at ? new Date(b.starts_at).toLocaleDateString() : 'Now'} → ${b.ends_at ? new Date(b.ends_at).toLocaleDateString() : 'Forever'}`
+                    : 'Always on'}
+                </td>
+                <td className="border p-2 text-center">
+                  <button onClick={() => toggleActive(b)} className="text-primary underline text-xs">{b.is_active ? 'Deactivate' : 'Activate'}</button>
+                </td>
+                <td className="border p-2">
+                  <button onClick={() => removeBanner(b.id)} className="text-destructive underline text-xs inline-flex items-center gap-1">
+                    <Trash2 className="size-3" /> Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 const TABS = [
   { key: 'upgrade_pricing', label: 'Upgrade Pricing' },
   { key: 'promotions', label: 'Promotions' },
   { key: 'cross_sell', label: 'Cross-sell' },
+  { key: 'banners', label: 'Banners' },
 ] as const
 
 export default function WebsiteAdminManager() {
@@ -562,6 +811,7 @@ export default function WebsiteAdminManager() {
       {tab === 'upgrade_pricing' && <UpgradePricingSection />}
       {tab === 'promotions' && <PromotionsSection />}
       {tab === 'cross_sell' && <CrossSellSection />}
+      {tab === 'banners' && <BannersSection />}
     </div>
   )
 }
