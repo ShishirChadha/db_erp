@@ -4,9 +4,12 @@ import "./globals.css";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
 import { WhatsAppButton } from "@/components/WhatsAppButton";
+import { SiteThemeAccent } from "@/components/SiteThemeAccent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BUSINESS_PHONE_TEL, GOOGLE_RATING, GOOGLE_REVIEW_COUNT, SOCIAL_LINKS } from "@/lib/business-info";
+import { getActiveBanners } from "@/lib/queries";
+import { resolveSiteAccent } from "@/lib/banner-themes";
 
 // Archivo carries the storefront's retail energy in headlines/prices/badges;
 // IBM Plex Sans handles body copy and UI text and has solid tabular numerals
@@ -93,11 +96,14 @@ const websiteJsonLd = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const activeBanners = await getActiveBanners();
+  const siteAccent = resolveSiteAccent(activeBanners);
+
   return (
     <html lang="en" className={`${archivo.variable} ${ibmPlexSans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-background font-sans text-foreground">
@@ -111,6 +117,7 @@ export default function RootLayout({
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
+        <SiteThemeAccent accentColor={siteAccent} />
         <SiteHeader />
         <div className="flex-1">{children}</div>
         <SiteFooter />

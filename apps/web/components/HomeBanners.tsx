@@ -5,34 +5,24 @@ import Link from 'next/link'
 import Image from 'next/image'
 import type { HomeBanner } from '@/lib/queries'
 import { productImageUrl } from '@/lib/image-url'
-
-// Per-theme accent color -- drives only this banner's own CTA/label styling
-// (via an inline CSS var scoped to the banner's own container), never the
-// site's global colors. A temporary festival/sale promo shouldn't repaint
-// unrelated pages/components for a feature the owner touches a few times a
-// year; the festive feel comes from the banner's own image + accent + CTA.
-const THEME_COLORS: Record<HomeBanner['theme'], string | null> = {
-  default: null,
-  diwali: '#D4A017',
-  christmas: '#1E7145',
-  sale: '#1D4ED8',
-  custom: null, // resolved per-banner from custom_color instead
-}
+import { resolveThemeColor } from '@/lib/banner-themes'
 
 const ROTATE_MS = 5000
+const DEFAULT_ASPECT = '1600 / 500' // fallback only for banners uploaded before dimensions were captured
 
 function BannerSlide({ banner }: { banner: HomeBanner }) {
-  const accent = banner.theme === 'custom' ? banner.custom_color : THEME_COLORS[banner.theme]
+  const accent = resolveThemeColor(banner)
+  const aspect = banner.image_width && banner.image_height
+    ? `${banner.image_width} / ${banner.image_height}`
+    : DEFAULT_ASPECT
 
+  // The container's aspect-ratio now matches the uploaded image's own natural
+  // dimensions (captured at upload time in the ERP), so object-cover never
+  // needs to crop anything away -- a banner with a logo near the edge (or any
+  // other shape) displays in full, edge-to-edge, instead of being force-fit
+  // into a fixed ratio.
   const content = (
-    // Fixed aspect-ratio + object-cover -- displays correctly regardless of the
-    // uploaded image's exact pixel dimensions (auto-crops to fill rather than
-    // distorting or breaking layout), so the ERP's recommended-size hint is a
-    // recommendation, not a hard requirement.
-    <div
-      className="relative w-full overflow-hidden rounded-xl bg-muted"
-      style={{ aspectRatio: '1600 / 500', ...(accent ? { ['--banner-accent' as string]: accent } : {}) }}
-    >
+    <div className="relative w-full overflow-hidden bg-muted" style={{ aspectRatio: aspect }}>
       <Image src={productImageUrl(banner.image_path)} alt={banner.title || ''} fill sizes="100vw" className="object-cover" priority />
       {banner.title && (
         <div className="absolute inset-0 flex items-end bg-gradient-to-t from-black/60 via-black/10 to-transparent p-4 sm:p-6">
@@ -56,30 +46,65 @@ function BannerSlide({ banner }: { banner: HomeBanner }) {
 
 export function HomeBanners({ banners }: { banners: HomeBanner[] }) {
   const [index, setIndex] = useState(0)
+  const [paused, setPaused] = useState(false)
 
   useEffect(() => {
-    if (banners.length < 2) return
+    if (banners.length < 2 || paused) return
     const timer = setInterval(() => setIndex((i) => (i + 1) % banners.length), ROTATE_MS)
     return () => clearInterval(timer)
-  }, [banners.length])
+  }, [banners.length, paused])
 
   if (banners.length === 0) return null
 
+  const goTo = (i: number) => setIndex((i + banners.length) % banners.length)
+
   return (
-    <section className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">
+    // Full-bleed (no max-width/side padding) -- a hero banner strip reads as a
+    // hero, not another content-column item, and it's what makes "full width"
+    // actually mean the full browser width rather than the site's ~1152px
+    // content column.
+    <section
+      className="relative w-full"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+    >
       <BannerSlide banner={banners[index]} />
+
       {banners.length > 1 && (
-        <div className="mt-3 flex justify-center gap-1.5">
-          {banners.map((b, i) => (
-            <button
-              key={b.id}
-              type="button"
-              aria-label={`Show banner ${i + 1}`}
-              onClick={() => setIndex(i)}
-              className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-brand-orange' : 'w-1.5 bg-border'}`}
-            />
-          ))}
-        </div>
+        <>
+          <button
+            type="button"
+            aria-label="Previous banner"
+            onClick={() => goTo(index - 1)}
+            className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition-colors hover:bg-black/60 sm:left-4"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            aria-label="Next banner"
+            onClick={() => goTo(index + 1)}
+            className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition-colors hover:bg-black/60 sm:right-4"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+              <path d="M9 18l6-6-6-6" />
+            </svg>
+          </button>
+
+          <div className="absolute inset-x-0 bottom-3 flex justify-center gap-1.5">
+            {banners.map((b, i) => (
+              <button
+                key={b.id}
+                type="button"
+                aria-label={`Show banner ${i + 1}`}
+                onClick={() => goTo(i)}
+                className={`h-1.5 rounded-full transition-all ${i === index ? 'w-6 bg-white' : 'w-1.5 bg-white/50'}`}
+              />
+            ))}
+          </div>
+        </>
       )}
     </section>
   )

@@ -543,6 +543,8 @@ function CrossSellSection() {
 interface Banner {
   id: string
   image_path: string
+  image_width: number | null
+  image_height: number | null
   link_url: string | null
   title: string | null
   theme: 'default' | 'diwali' | 'christmas' | 'sale' | 'custom'
@@ -561,13 +563,21 @@ const THEME_OPTIONS: { value: Banner['theme']; label: string }[] = [
   { value: 'custom', label: 'Custom color' },
 ]
 
-// Wide hero-strip aspect ratio -- matches how HomeBanners.tsx (apps/web) always
-// displays a banner, regardless of the raw uploaded file's exact pixels: it's
-// rendered inside a fixed aspect-ratio box with object-fit: cover, which crops
-// to fill rather than distorting or breaking layout. So this size is a
-// recommendation for what looks best, not a hard requirement -- a slightly
-// off-ratio upload still displays correctly, just center-cropped.
-const RECOMMENDED_BANNER_HINT = 'Recommended: 1600×500px (wide banner), JPG/PNG/WebP, under 3MB. Other sizes are automatically cropped to fit on the homepage, so this isn’t a hard requirement.'
+function toLocalDatetimeInputBanner(iso?: string | null) {
+  if (!iso) return ''
+  return new Date(iso).toISOString().slice(0, 16)
+}
+
+// The homepage now renders every banner at its OWN uploaded aspect ratio (full
+// width, no cropping) rather than forcing a fixed ratio -- see HomeBanners.tsx.
+// So there's no hard size requirement; this is purely a suggestion for what
+// tends to look best as a homepage strip.
+const RECOMMENDED_BANNER_HINT = 'Suggested: a wide/landscape image (e.g. 1600×500px), JPG/PNG/WebP, under 3MB. Any size works -- it displays edge-to-edge at its own aspect ratio, nothing gets cropped.'
+
+const emptyBannerForm = {
+  imagePath: '', imageWidth: 0, imageHeight: 0, linkUrl: '', title: '',
+  theme: 'default' as Banner['theme'], customColor: '#c0392b', startsAt: '', endsAt: '', sortOrder: '0',
+}
 
 function BannersSection() {
   const [banners, setBanners] = useState<Banner[]>([])
@@ -575,15 +585,44 @@ function BannersSection() {
   const [saving, setSaving] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
 
-  const [imagePath, setImagePath] = useState('')
-  const [linkUrl, setLinkUrl] = useState('')
-  const [title, setTitle] = useState('')
-  const [theme, setTheme] = useState<Banner['theme']>('default')
-  const [customColor, setCustomColor] = useState('#c0392b')
-  const [startsAt, setStartsAt] = useState('')
-  const [endsAt, setEndsAt] = useState('')
-  const [sortOrder, setSortOrder] = useState('0')
+  const [imagePath, setImagePath] = useState(emptyBannerForm.imagePath)
+  const [imageDims, setImageDims] = useState({ width: 0, height: 0 })
+  const [linkUrl, setLinkUrl] = useState(emptyBannerForm.linkUrl)
+  const [title, setTitle] = useState(emptyBannerForm.title)
+  const [theme, setTheme] = useState<Banner['theme']>(emptyBannerForm.theme)
+  const [customColor, setCustomColor] = useState(emptyBannerForm.customColor)
+  const [startsAt, setStartsAt] = useState(emptyBannerForm.startsAt)
+  const [endsAt, setEndsAt] = useState(emptyBannerForm.endsAt)
+  const [sortOrder, setSortOrder] = useState(emptyBannerForm.sortOrder)
+
+  const resetForm = () => {
+    setEditingId(null)
+    setImagePath(emptyBannerForm.imagePath)
+    setImageDims({ width: 0, height: 0 })
+    setLinkUrl(emptyBannerForm.linkUrl)
+    setTitle(emptyBannerForm.title)
+    setTheme(emptyBannerForm.theme)
+    setCustomColor(emptyBannerForm.customColor)
+    setStartsAt(emptyBannerForm.startsAt)
+    setEndsAt(emptyBannerForm.endsAt)
+    setSortOrder(emptyBannerForm.sortOrder)
+  }
+
+  const startEdit = (b: Banner) => {
+    setEditingId(b.id)
+    setImagePath(b.image_path)
+    setImageDims({ width: b.image_width || 0, height: b.image_height || 0 })
+    setLinkUrl(b.link_url || '')
+    setTitle(b.title || '')
+    setTheme(b.theme)
+    setCustomColor(b.custom_color || emptyBannerForm.customColor)
+    setStartsAt(toLocalDatetimeInputBanner(b.starts_at))
+    setEndsAt(toLocalDatetimeInputBanner(b.ends_at))
+    setSortOrder(String(b.sort_order))
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
 
   const fetchBanners = async () => {
     setLoading(true)
@@ -600,6 +639,16 @@ function BannersSection() {
     setUploading(true)
     setError('')
     try {
+      // Natural pixel dimensions of the uploaded file -- stored alongside the
+      // image so the storefront can render it at its own aspect ratio instead
+      // of force-cropping to a fixed one (see HomeBanners.tsx).
+      const dims = await new Promise<{ width: number; height: number }>((resolve) => {
+        const img = new window.Image()
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
+        img.onerror = () => resolve({ width: 0, height: 0 })
+        img.src = URL.createObjectURL(file)
+      })
+
       const urlRes = await apiFetch('/api/storage/upload-url', {
         method: 'POST',
         body: JSON.stringify({
@@ -614,6 +663,7 @@ function BannersSection() {
       const { uploadUrl, key } = await urlRes.json()
       await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
       setImagePath(key)
+      setImageDims(dims)
     } catch (err: any) {
       setError(err.message || 'Upload failed')
     } finally {
@@ -622,7 +672,7 @@ function BannersSection() {
     }
   }
 
-  const addBanner = async () => {
+  const saveBanner = async () => {
     setError('')
     if (!imagePath) {
       setError('Upload a banner image first.')
@@ -630,26 +680,28 @@ function BannersSection() {
     }
     setSaving(true)
     try {
-      const res = await apiFetch('/api/website-admin/banners', {
-        method: 'POST',
-        body: JSON.stringify({
-          image_path: imagePath,
-          link_url: linkUrl.trim() || null,
-          title: title.trim() || null,
-          theme,
-          custom_color: theme === 'custom' ? customColor : null,
-          starts_at: startsAt ? new Date(startsAt).toISOString() : null,
-          ends_at: endsAt ? new Date(endsAt).toISOString() : null,
-          sort_order: Number(sortOrder) || 0,
-        }),
-      })
+      const payload = {
+        image_path: imagePath,
+        image_width: imageDims.width || null,
+        image_height: imageDims.height || null,
+        link_url: linkUrl.trim() || null,
+        title: title.trim() || null,
+        theme,
+        custom_color: theme === 'custom' ? customColor : null,
+        starts_at: startsAt ? new Date(startsAt).toISOString() : null,
+        ends_at: endsAt ? new Date(endsAt).toISOString() : null,
+        sort_order: Number(sortOrder) || 0,
+      }
+      const res = await apiFetch(
+        editingId ? `/api/website-admin/banners/${editingId}` : '/api/website-admin/banners',
+        { method: editingId ? 'PATCH' : 'POST', body: JSON.stringify(payload) }
+      )
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        setError(err.error || 'Failed to add banner')
+        setError(err.error || `Failed to ${editingId ? 'save' : 'add'} banner`)
         return
       }
-      setImagePath(''); setLinkUrl(''); setTitle(''); setTheme('default')
-      setStartsAt(''); setEndsAt(''); setSortOrder('0')
+      resetForm()
       await fetchBanners()
     } finally {
       setSaving(false)
@@ -676,14 +728,22 @@ function BannersSection() {
       </p>
 
       <div className="border rounded-lg p-4 mb-4 space-y-3">
-        <h3 className="text-sm font-semibold">Add Banner</h3>
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">{editingId ? 'Edit Banner' : 'Add Banner'}</h3>
+          {editingId && (
+            <button onClick={resetForm} className="text-xs text-muted-foreground underline">Cancel edit / add new instead</button>
+          )}
+        </div>
         {error && <div className="text-destructive text-sm">{error}</div>}
 
         <div>
           <label className="block text-xs font-medium mb-1">Image</label>
           <p className="text-xs text-muted-foreground mb-2">{RECOMMENDED_BANNER_HINT}</p>
           {imagePath && (
-            <div className="mb-2 w-full max-w-sm overflow-hidden rounded border" style={{ aspectRatio: '1600 / 500' }}>
+            <div
+              className="mb-2 w-full max-w-sm overflow-hidden rounded border bg-muted"
+              style={{ aspectRatio: imageDims.width && imageDims.height ? `${imageDims.width} / ${imageDims.height}` : '1600 / 500' }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={publicImageUrl(imagePath)} alt="" className="w-full h-full object-cover" />
             </div>
@@ -729,9 +789,14 @@ function BannersSection() {
             <input type="number" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)} className="border p-2 w-full rounded" />
           </div>
         </div>
-        <button onClick={addBanner} disabled={saving || uploading} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
-          {saving ? 'Adding…' : 'Add Banner'}
-        </button>
+        <div className="flex gap-2">
+          <button onClick={saveBanner} disabled={saving || uploading} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
+            {saving ? 'Saving…' : editingId ? 'Save Changes' : 'Add Banner'}
+          </button>
+          {editingId && (
+            <button onClick={resetForm} className="px-4 py-2 rounded border">Cancel</button>
+          )}
+        </div>
       </div>
 
       {loading ? (
@@ -769,7 +834,8 @@ function BannersSection() {
                 <td className="border p-2 text-center">
                   <button onClick={() => toggleActive(b)} className="text-primary underline text-xs">{b.is_active ? 'Deactivate' : 'Activate'}</button>
                 </td>
-                <td className="border p-2">
+                <td className="border p-2 space-x-2 whitespace-nowrap">
+                  <button onClick={() => startEdit(b)} className="text-primary underline text-xs">Edit</button>
                   <button onClick={() => removeBanner(b.id)} className="text-destructive underline text-xs inline-flex items-center gap-1">
                     <Trash2 className="size-3" /> Delete
                   </button>

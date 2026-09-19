@@ -111,6 +111,8 @@ export async function getProductImages(skuId: string): Promise<PublicProductImag
 export interface HomeBanner {
   id: string
   image_path: string
+  image_width: number | null
+  image_height: number | null
   link_url: string | null
   title: string | null
   theme: 'default' | 'diwali' | 'christmas' | 'sale' | 'custom'
@@ -122,7 +124,7 @@ export async function getActiveBanners(): Promise<HomeBanner[]> {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_banners')
-    .select('id, image_path, link_url, title, theme, custom_color, sort_order')
+    .select('id, image_path, image_width, image_height, link_url, title, theme, custom_color, sort_order')
     .order('sort_order', { ascending: true })
   return (data ?? []) as HomeBanner[]
 }

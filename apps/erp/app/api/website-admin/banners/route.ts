@@ -11,7 +11,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('homepage_banners')
-    .select('id, image_path, link_url, title, theme, custom_color, starts_at, ends_at, is_active, sort_order, created_at')
+    .select('id, image_path, image_width, image_height, link_url, title, theme, custom_color, starts_at, ends_at, is_active, sort_order, created_at')
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: false })
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
-  const { image_path, link_url, title, theme, custom_color, starts_at, ends_at, sort_order } = body as Record<string, any>
+  const { image_path, image_width, image_height, link_url, title, theme, custom_color, starts_at, ends_at, sort_order } = body as Record<string, any>
 
   if (!image_path) return NextResponse.json({ error: 'image_path is required' }, { status: 400 })
   if (theme && !THEMES.includes(theme)) return NextResponse.json({ error: `theme must be one of: ${THEMES.join(', ')}` }, { status: 400 })
@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin.from('homepage_banners').insert({
     image_path,
+    image_width: image_width != null ? Number(image_width) : null,
+    image_height: image_height != null ? Number(image_height) : null,
     link_url: link_url || null,
     title: title || null,
     theme: theme || 'default',
