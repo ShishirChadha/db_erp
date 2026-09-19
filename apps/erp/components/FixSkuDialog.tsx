@@ -338,12 +338,15 @@ function ComponentStockFollowUp({
 }
 
 function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentChange; assetId: string; onResolved: () => void }) {
+  const { isOwner } = useRole()
   const [search, setSearch] = useState('')
   const [options, setOptions] = useState<SkuOption[]>([])
   const [selected, setSelected] = useState<SkuOption | null>(null)
   const [qty, setQty] = useState('1')
   const [submitting, setSubmitting] = useState(false)
   const [done, setDone] = useState(false)
+  const [costNote, setCostNote] = useState('')
+  const [previewPrice, setPreviewPrice] = useState<number | null>(null)
   const [skipping, setSkipping] = useState(false)
   const [skipReason, setSkipReason] = useState('')
   const [skipped, setSkipped] = useState(false)
@@ -359,6 +362,16 @@ function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentC
     return () => clearTimeout(timer)
   }, [search])
 
+  // Preview only -- the actual cost recorded on submit is always computed fresh
+  // server-side, this is just so the owner isn't confirming blind.
+  useEffect(() => {
+    setPreviewPrice(null)
+    if (!selected || !isOwner) return
+    apiFetch(`/api/sku-master/last-entry-vendors?ids=${selected.id}`)
+      .then(res => res.json())
+      .then((data) => setPreviewPrice(data?.[selected.id]?.unit_price ?? null))
+  }, [selected, isOwner])
+
   const isDowngrade = change.direction === 'down'
   const label = change.field.toUpperCase()
   const message = isDowngrade
@@ -370,12 +383,20 @@ function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentC
     setSubmitting(true)
     setErr('')
     const n = Number(qty) || 1
-    const res = await apiFetch(`/api/sku-master/${selected.id}/stock-movement`, {
+    // Moves the accessory stock AND -- using that SKU's own last purchase price --
+    // automatically costs the swap against this unit (asset_cost_adjustments), so
+    // COGS/margin reporting reflects every component actually pulled from our stock,
+    // not just an upfront manual guess. Several rows (e.g. RAM and SSD both changing)
+    // each add their own entry and simply sum, no combining step needed.
+    const res = await apiFetch(`/api/asset-ledger/${assetId}/component-stock-adjustment`, {
       method: 'POST',
       body: JSON.stringify({
-        movement_type: isDowngrade ? 'receipt' : 'adjustment',
-        quantity_change: isDowngrade ? n : -n,
-        notes: `${isDowngrade ? 'Removed' : 'Used'} during SKU reassignment (${label} ${change.from} → ${change.to})`,
+        sku_id: selected.id,
+        quantity: n,
+        direction: change.direction,
+        field: change.field,
+        from: change.from,
+        to: change.to,
       }),
     })
     setSubmitting(false)
@@ -383,6 +404,14 @@ function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentC
       const e = await res.json().catch(() => ({}))
       setErr(e.error || 'Failed to update stock.')
       return
+    }
+    const json = await res.json().catch(() => ({}))
+    if (isOwner) {
+      setCostNote(
+        json.cost_recorded && typeof json.amount === 'number'
+          ? `${json.amount >= 0 ? '+' : ''}₹${json.amount.toFixed(2)} added to this unit's cost.`
+          : 'Stock updated -- no purchase price on record for this SKU, so cost wasn\'t added automatically (add it via Cost Adjustments if needed).'
+      )
     }
     setDone(true)
     onResolved()
@@ -407,7 +436,11 @@ function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentC
   }
 
   if (done) {
-    return <div className="border rounded p-2 text-sm text-success">✓ {label}: stock updated.</div>
+    return (
+      <div className="border rounded p-2 text-sm text-success">
+        ✓ {label}: stock updated.{costNote && <div className="text-xs text-muted-foreground mt-0.5">{costNote}</div>}
+      </div>
+    )
   }
   if (skipped) {
     return <div className="border rounded p-2 text-sm text-muted-foreground">{label}: skipped -- {skipReason}</div>
@@ -425,19 +458,28 @@ function ComponentStockRow({ change, assetId, onResolved }: { change: ComponentC
           className="border p-2 w-full rounded text-sm"
         />
       ) : (
-        <div className="flex items-center gap-2">
-          <span className="text-sm flex-1 truncate">{selected.full_sku_code}</span>
-          <input
-            type="number"
-            min={1}
-            value={qty}
-            onChange={(e) => setQty(e.target.value)}
-            className="border p-1 w-16 rounded text-sm text-right"
-          />
-          <button type="button" disabled={submitting} onClick={submit} className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded disabled:opacity-50 shrink-0">
-            {submitting ? '...' : isDowngrade ? 'Receive to Stock' : 'Deduct from Stock'}
-          </button>
-          <button type="button" onClick={() => setSelected(null)} className="text-xs text-muted-foreground underline shrink-0">Change</button>
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm flex-1 truncate">{selected.full_sku_code}</span>
+            <input
+              type="number"
+              min={1}
+              value={qty}
+              onChange={(e) => setQty(e.target.value)}
+              className="border p-1 w-16 rounded text-sm text-right"
+            />
+            <button type="button" disabled={submitting} onClick={submit} className="text-xs bg-primary text-primary-foreground px-2 py-1 rounded disabled:opacity-50 shrink-0">
+              {submitting ? '...' : isDowngrade ? 'Receive to Stock' : 'Deduct from Stock'}
+            </button>
+            <button type="button" onClick={() => setSelected(null)} className="text-xs text-muted-foreground underline shrink-0">Change</button>
+          </div>
+          {isOwner && (
+            <p className="text-xs text-muted-foreground">
+              {previewPrice != null
+                ? `Est. cost: ${(Number(qty) || 1)} × ₹${previewPrice.toFixed(2)} = ₹${((Number(qty) || 1) * previewPrice).toFixed(2)} (from last purchase price)`
+                : 'No purchase price on record for this SKU -- cost won\'t be added automatically.'}
+            </p>
+          )}
         </div>
       )}
       {!selected && options.length > 0 && (

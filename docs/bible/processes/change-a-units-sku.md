@@ -11,6 +11,7 @@ sources:
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/lib/effective-sku.ts
   - apps/erp/app/api/asset-ledger/[id]/component-upgrade-skip/route.ts
+  - apps/erp/app/api/asset-ledger/[id]/component-stock-adjustment/route.ts
 updated: 2026-09-19
 ---
 
@@ -64,13 +65,17 @@ situation, just one worth a conscious decision.
 4. If the unit is already on a finalized invoice, confirm again explicitly.
 5. (Owner only, optional) Enter the additional cost and a reason — this is
    recorded as a cost adjustment on the unit, the same mechanism the Stock
-   page's cost-adjustment history uses.
+   page's cost-adjustment history uses. Use this for costs that *don't* come
+   from our own accessory stock (labor, a part bought fresh for this job) —
+   a component actually pulled from our own stock costs itself automatically
+   at step 6, no need to double-enter it here.
 6. **If RAM or SSD actually changed** (the only two fields this
    automatically diffs), a follow-up step appears — one row per changed
    field:
    - **Upgrade** (e.g. RAM 8GB → 16GB): "if it came from your own accessory
      stock, deduct it now" — optionally search for the RAM/SSD SKU that was
-     used and deduct it from stock.
+     used and deduct it from stock. The owner sees a live cost estimate
+     (quantity × that SKU's last purchase price) before confirming.
    - **Downgrade** (e.g. SSD 512GB → 256GB): "log the removed component back
      into stock?" — optionally search for the SKU and receive it back in.
    - Either row can be skipped if it doesn't apply (e.g. the part was
@@ -79,9 +84,46 @@ situation, just one worth a conscious decision.
      you can't close this step without resolving every changed row, one way
      or the other.
 
+## Component swaps cost themselves automatically (2026-09-19)
+
+Deducting (or receiving back) an accessory in step 6 now **also** records the
+cost of that swap against the unit — priced from that accessory SKU's own
+last-recorded purchase price × quantity, added for an upgrade or subtracted
+for a downgrade. **Multiple changed fields simply add up**: if both RAM and
+SSD changed, each gets costed independently and both amounts land on the
+same unit's cost history — no need to manually total them. This is on top
+of, not instead of, the manual "Additional cost" field from step 5 (that
+one's still for costs outside our own accessory stock). All of it — the
+original purchase price, the manual field, and every auto-costed component
+swap — is what actually feeds the unit's COGS in revenue/margin reporting
+(`v_report_sale_lines`) once it sells.
+
+This happens **no matter who performs the swap** — an employee fixing a
+QC-failed unit still costs it correctly, they just never see the amount
+(cost figures stay owner-only everywhere, including here — the number is
+simply never sent to a non-owner, not just hidden in the UI). If the
+accessory SKU has never been received with a price on record, nothing is
+auto-costed for that row (the owner sees "no purchase price on record" both
+in the estimate and the confirmation) — add it manually via Cost Adjustments
+if you know the real figure.
+
 A reassignment that doesn't change RAM/SSD (a plain data-entry correction, or
 a change to some other field) skips the follow-up step entirely and closes
 immediately.
+
+## "No RAM"/"No SSD" is correctly treated as zero (fixed 2026-09-19)
+
+This business's real data records a bare unit's RAM/SSD as the literal text
+`"No"` (not a number, not a blank) — e.g. a unit bought with no RAM installed
+has `specifications.ram = "No"`. The diff that detects an upgrade/downgrade
+originally only understood numeric-looking values ("8GB" → 8) and silently
+**skipped** anything it couldn't parse as a number — so reassigning a "No
+RAM" unit to a real "8GB RAM" SKU never triggered the follow-up at all, the
+one case this feature most needs to catch. Fixed: any RAM/SSD value with no
+digits in it (`"No"`, `"N/A"`, blank, missing) is now treated as **zero
+capacity**, not skipped — "No" → "8GB" correctly reads as a 0→8 upgrade. Two
+genuinely-zero values on both sides (e.g. "No" → "") still correctly detect
+no change.
 
 ## Why the follow-up can't be skipped silently (2026-09-19)
 
@@ -110,3 +152,10 @@ findable answer to "why doesn't the accessory count match this unit's spec."
 - **"The invoice still shows the old spec."** — expected; a finalized
   invoice is a frozen snapshot and is never retroactively updated by a later
   SKU reassignment.
+- **A unit reassigned from "No RAM"/"No SSD" before 2026-09-19** never got the
+  follow-up prompt (see above) — its accessory stock was never deducted even
+  if a real part was used. There's no automatic way to detect which past
+  reassignments this affected; if you know of one, reopen **Fix SKU** on that
+  unit — since its spec is already correct, the diff won't re-fire — so
+  record the accessory deduction as a plain stock adjustment
+  (`/dashboard/accessories` on the RAM/SSD SKU, "Correct Quantity") instead.

@@ -49,6 +49,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | rentals | employee |
 | repair_jobs | employee |
 | replacement_jobs | employee |
+| rma | employee |
 | sku_master | employee |
 | website | employee |
 

@@ -196,6 +196,31 @@ Audit Log (`logAuditEvent`, `module: 'sku_master'`) — before this, "Skip" was 
 one-click close with no trace, so a unit's spec and its accessory's stock count could
 silently drift apart with nothing to show why.
 
+**The component swap costs itself automatically (2026-09-19).** Actually moving stock
+in `ComponentStockFollowUp` (deduct or receive) now goes through
+`POST /api/asset-ledger/[id]/component-stock-adjustment` instead of the generic
+stock-movement endpoint — it moves the accessory stock **and** inserts a matching
+`asset_cost_adjustments` row priced from that accessory SKU's own last-recorded
+purchase price (`unit_price` on its most recent `receipt` movement), signed by
+direction (an upgrade adds cost, a downgrade/received-back subtracts it). Several
+rows on the same reassignment (e.g. RAM *and* SSD both changing) each insert their own
+entry and simply sum — `v_report_sale_lines`'s COGS calc already does
+`NULLIF(cost_price, 0) + SUM(asset_cost_adjustments.amount WHERE asset_id = ...)`, so a
+bare-laptop's true cost basis (purchase price + every component actually pulled from
+our own stock) flows into margin reporting without a separate combining step. Before
+this, only the upfront manual "Additional cost" field (still available, for costs not
+sourced from our own accessory stock — e.g. labor, an externally-bought part) fed into
+this same total; a component swap done through the follow-up previously cost nothing
+at all unless someone remembered to also type it into that field. This is computed and
+recorded **regardless of which role performs the swap** (cost tracking can't depend on
+who physically did the fix), but the computed amount is only ever returned to an
+owner caller — omitted from the response entirely for anyone else, matching every
+other cost surface in this app. The owner also sees a live estimate (qty × last
+purchase price) before confirming, sourced from the same `last-entry-vendors` figure
+already surfaced elsewhere, so they're not confirming blind — though the amount
+actually recorded is always computed fresh server-side at submit time, not trusted
+from that preview.
+
 ### Accessories (`sku_master` + `stock_movements` — no separate table)
 Accessories (RAM, SSD, CPU, GPU, keyboard, mouse, and anything else via the generic `ACC` category) are `sku_master` rows like a laptop, not a separate catalog — see `docs/decisions.md` (2026-07-23) for why the earlier `accessories`/`accessory_movements` table pair was retired. They're tracked purely via `stock_movements` (trigger-maintained `sku_master.quantity_in_stock`) with **no `asset_ledger` row** — fungible/quantity-only items don't need per-unit serial/QC/warranty tracking. A newly employee-created accessory SKU is immediately live and sellable, same as a new laptop SKU (`/dashboard/accessories`); the owner attaches a real vendor/PO/cost later via a deferred-PO-attach step (one `purchase_order_items` line, `quantity = N`, no per-unit asset number), mirroring `/api/purchase-orders/from-intake`'s "employee stock-in now, owner paperwork later" pattern.
 
