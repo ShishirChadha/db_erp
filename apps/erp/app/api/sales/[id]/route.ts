@@ -153,6 +153,17 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin.from('sales').update(updates).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // Live Stock/Main Stock's Sold tab displays asset_ledger.sold_at, not sales.sale_date
+  // -- they're set together at sale time (lib/sales-cart.ts) but are separate columns,
+  // so a sale_date correction here must also push asset_ledger.sold_at or the Sold tab
+  // silently keeps showing the old date even though the sale record itself is correct.
+  if (updates.sale_date !== undefined && existing.asset_ledger_id) {
+    await supabaseAdmin
+      .from('asset_ledger')
+      .update({ sold_at: new Date(`${updates.sale_date}T12:00:00.000Z`).toISOString() })
+      .eq('id', existing.asset_ledger_id)
+  }
+
   const fieldCorrectionIds = await logFieldCorrections(
     'sales',
     id,
