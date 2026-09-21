@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
-import { Loader2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Loader2, ArrowLeft } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useRole } from "@/lib/auth/useRole";
@@ -12,17 +12,15 @@ import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
 import { AttachInvoiceFileDialog } from "@/components/AttachInvoiceFileDialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { EditSaleDialog } from "@/components/EditSaleDialog";
-import { ResizableHeader } from "@/components/ResizableHeader";
 import { CustomerDetailDialog } from "@/components/CustomerDetailDialog";
 import { CustomerSummaryLine } from "@/components/CustomerSummaryLine";
 import type { CustomerSummary } from "@/lib/customer-summary";
 import { Pagination } from "@/components/Pagination";
+import { StatusBadge } from "@/components/StatusBadge";
+import { PAYMENT_STATUS_TONES, toneFor } from "@/lib/status-styles";
+import { cn } from "@/lib/utils";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
-// Renamed from "sales-ledger-visible-columns" -- that key stored a SHOWN list,
-// which this now-hidden-list format would misread inverted if it reused the same
-// key (old data isn't migrated; it's simply superseded, a one-time reset).
-const COLUMN_PREFS_KEY = "sales-ledger-hidden-columns";
 
 interface Sale {
   id: string;
@@ -61,34 +59,6 @@ interface Sale {
   payment_date?: string | null;
 }
 
-type SortDir = "asc" | "desc";
-
-// Column-definition-driven table: one place per column controls its header
-// label, sort accessor, cell render, and default visibility/width -- keeps the
-// header row, sort logic, and column-selector all in sync instead of hardcoding
-// three separate lists.
-interface ColumnDef {
-  key: string;
-  label: string;
-  className?: string;
-  defaultWidth: number;
-  sortable?: boolean; // sort key sent to the server (see /api/sales's getSortValue)
-  render: (s: Sale, ctx: RowCtx) => React.ReactNode;
-  optional?: boolean; // can be hidden via the column selector
-  defaultVisible?: boolean;
-}
-
-interface RowCtx {
-  index: number;
-  page: number;
-  pageSize: number;
-  isOwner: boolean;
-  canEditSale: boolean;
-  selected: boolean;
-  onToggleSelect: (id: string) => void;
-  onDone: () => void;
-}
-
 // An asset_number only ever exists once a real PO has been attached (see
 // CLAUDE.md) -- a unit can be QC'd/sold entirely by serial_number before
 // that happens, and once it does, the serial number is still the physical
@@ -98,197 +68,6 @@ const item = (s: Sale) =>
   s.asset_number
     ? (s.serial_number ? `${s.asset_number} · SN: ${s.serial_number}` : s.asset_number)
     : (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? "Accessory" : s.repair_job_id ? (s.repair_job_number || "Repair") : "—");
-
-const COLUMNS: ColumnDef[] = [
-  {
-    key: "index",
-    label: "#",
-    className: "border p-2 text-right",
-    defaultWidth: 50,
-    render: (_s, ctx) => <span className="text-muted-foreground tabular-nums">{(ctx.page - 1) * ctx.pageSize + ctx.index + 1}</span>,
-  },
-  {
-    key: "sale_date",
-    label: "Date",
-    className: "border p-2 whitespace-nowrap",
-    defaultWidth: 110,
-    sortable: true,
-    render: (s) => s.sale_date?.slice(0, 10),
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "payment_date",
-    label: "Payment Date",
-    className: "border p-2 whitespace-nowrap",
-    defaultWidth: 130,
-    sortable: true,
-    render: (s, ctx) => <PaymentDateCell sale={s} canEditSale={ctx.canEditSale} onDone={ctx.onDone} />,
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "customer_name",
-    label: "Customer",
-    className: "border p-2",
-    defaultWidth: 150,
-    sortable: true,
-    render: (s, ctx) => <CustomerCell sale={s} onDone={ctx.onDone} canReassign={ctx.canEditSale} />,
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "item",
-    label: "Item",
-    className: "border p-2",
-    defaultWidth: 150,
-    sortable: true,
-    render: (s) => <ItemCell sale={s} />,
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "description",
-    label: "Description",
-    className: "border p-2",
-    defaultWidth: 200,
-    sortable: true,
-    render: (s) => {
-      // CPU/RAM/SSD already have their own columns, but a description that's
-      // copy-pasted or exported on its own (e.g. into an invoice/quotation
-      // line) is otherwise missing the actual configuration -- folding the
-      // spec into the description text itself keeps that one field complete.
-      const cpuPart = s.cpu ? `${s.generation ? `${s.generation} Gen ` : ""}${s.cpu}` : null;
-      const specParts = [cpuPart, s.ram, s.ssd].filter(Boolean);
-      return (
-        <>
-          {s.sku_description || s.full_sku_code || s.repair_description || "—"}
-          {s.sku_description && s.full_sku_code && (
-            <span className="text-muted-foreground"> · {s.full_sku_code}</span>
-          )}
-          {specParts.length > 0 && (
-            <span className="text-muted-foreground"> · {specParts.join(" / ")}</span>
-          )}
-        </>
-      );
-    },
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "ram",
-    label: "RAM",
-    className: "border p-2 whitespace-nowrap",
-    defaultWidth: 90,
-    sortable: true,
-    render: (s) => s.ram || "—",
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "ssd",
-    label: "SSD",
-    className: "border p-2 whitespace-nowrap",
-    defaultWidth: 100,
-    sortable: true,
-    render: (s) => s.ssd || "—",
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "bundle",
-    label: "Bundle",
-    className: "border p-2",
-    defaultWidth: 180,
-    sortable: true,
-    render: (s) =>
-      s.bundled_accessories_display && s.bundled_accessories_display.length > 0
-        ? s.bundled_accessories_display.map((b, i) => (
-            <span key={i} className="block">
-              {b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}
-            </span>
-          ))
-        : "—",
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "sale_total",
-    label: "Total",
-    className: "border p-2 text-right",
-    defaultWidth: 100,
-    sortable: true,
-    render: (s) => <span className="tabular-nums">₹{s.sale_total?.toFixed(2)}</span>,
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "payment_status",
-    label: "Payment",
-    className: "border p-2",
-    defaultWidth: 100,
-    sortable: true,
-    render: (s) => (
-      <>
-        <span className="capitalize">{s.payment_status}</span>
-        {s.is_deleted && <span className="ml-1 text-destructive text-xs font-medium">VOIDED</span>}
-      </>
-    ),
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "amount_paid",
-    label: "Amount Paid",
-    className: "border p-2",
-    defaultWidth: 120,
-    sortable: true,
-    render: (s) => <span className="tabular-nums">₹{s.amount_paid?.toFixed(2)}</span>,
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "payment_account",
-    label: "Received Into",
-    className: "border p-2",
-    defaultWidth: 120,
-    sortable: true,
-    render: (s) => s.payment_account || "—",
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "sold_by",
-    label: "Sold By",
-    className: "border p-2",
-    defaultWidth: 100,
-    sortable: true,
-    render: (s) => s.sold_by || "—",
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "invoice",
-    label: "Invoice",
-    className: "border p-2",
-    defaultWidth: 140,
-    sortable: true,
-    render: (s, ctx) => (
-      <InvoiceCell sale={s} isOwner={ctx.isOwner} onDone={ctx.onDone} />
-    ),
-    optional: true,
-    defaultVisible: true,
-  },
-  {
-    key: "actions",
-    label: "Actions",
-    className: "border p-2",
-    defaultWidth: 90,
-    render: (s, ctx) => (
-      <ActionsCell sale={s} canEditSale={ctx.canEditSale} onDone={ctx.onDone} />
-    ),
-  },
-];
 
 function CustomerCell({ sale, onDone, canReassign }: { sale: Sale; onDone: () => void; canReassign: boolean }) {
   const [showDetail, setShowDetail] = useState(false);
@@ -351,7 +130,7 @@ function ItemCell({ sale }: { sale: Sale }) {
   return <>{label}</>;
 }
 
-function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; onDone: () => void }) {
+function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; onDone: () => void }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false);
   const [showAttachDialog, setShowAttachDialog] = useState(false);
   const isExternal = sale.invoice_mode === "external";
@@ -407,25 +186,11 @@ function InvoiceCell({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; 
   );
 }
 
-function ActionsCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: boolean; onDone: () => void }) {
-  const [showEdit, setShowEdit] = useState(false);
-  return (
-    <>
-      {canEditSale && (
-        <button onClick={() => setShowEdit(true)} className="text-primary underline text-xs">
-          Edit
-        </button>
-      )}
-      {showEdit && <EditSaleDialog saleId={sale.id} onClose={() => setShowEdit(false)} onSaved={onDone} />}
-    </>
-  );
-}
-
 // The most recent sale_payments installment's date (see /api/sales's
 // latestPaymentDatesBySaleId) -- clicking it opens Edit Sale's payment list, which
 // has its own per-payment editable date field (owner-only), rather than duplicating
 // a second date-edit control here.
-function PaymentDateCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: boolean; onDone: () => void }) {
+function PaymentDateField({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: boolean; onDone: () => void }) {
   const [showEdit, setShowEdit] = useState(false);
   if (!sale.payment_date) return <>—</>;
   return (
@@ -442,58 +207,134 @@ function PaymentDateCell({ sale, canEditSale, onDone }: { sale: Sale; canEditSal
   );
 }
 
-function SaleRow({ sale, ctx, visibleColumns }: { sale: Sale; ctx: RowCtx; visibleColumns: ColumnDef[] }) {
+// One field in the detail pane's label/value grid -- keeps every row's spacing
+// and label styling consistent without repeating the wrapper markup.
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <tr className={sale.is_deleted ? "opacity-50" : undefined}>
-      <td className="border p-2 w-8 text-center">
-        {/* Voided sales are a read-only reference view -- never selectable for a
-            combined invoice regardless of their (frozen) finalized flag. */}
-        {!sale.finalized && !sale.is_deleted && ctx.isOwner && (
-          <Checkbox checked={ctx.selected} onCheckedChange={() => ctx.onToggleSelect(sale.id)} />
-        )}
-      </td>
-      {visibleColumns.map((col) => (
-        <td key={col.key} className={col.className}>
-          {col.render(sale, ctx)}
-        </td>
-      ))}
-    </tr>
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
   );
 }
 
-function ColumnSelector({ visible, onChange }: { visible: Set<string>; onChange: (next: Set<string>) => void }) {
-  const [open, setOpen] = useState(false);
-  const optionalColumns = COLUMNS.filter((c) => c.optional);
+// Right-pane detail view -- everything the old wide table's columns showed for
+// one sale, now laid out as a single record instead of a table row, matching an
+// email/Zoho-Invoices-style reading pane.
+function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
+  sale: Sale;
+  isOwner: boolean;
+  canEditSale: boolean;
+  onDone: () => void;
+  onBack: () => void;
+}) {
+  const [showEdit, setShowEdit] = useState(false);
+  const cpuPart = sale.cpu ? `${sale.generation ? `${sale.generation} Gen ` : ""}${sale.cpu}` : null;
+  const specParts = [cpuPart, sale.ram, sale.ssd].filter(Boolean);
 
   return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="border p-2 rounded text-sm inline-flex items-center gap-1"
-      >
-        Columns <ChevronDown className="size-3.5" />
-      </button>
-      {open && (
-        <>
-          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 mt-1 z-20 bg-card border rounded shadow-md p-2 w-48">
-            {optionalColumns.map((col) => (
-              <label key={col.key} className="flex items-center gap-2 text-sm py-1 px-1 cursor-pointer hover:bg-muted rounded">
-                <Checkbox
-                  checked={visible.has(col.key)}
-                  onCheckedChange={(checked) => {
-                    const next = new Set(visible);
-                    if (checked) next.add(col.key); else next.delete(col.key);
-                    onChange(next);
-                  }}
-                />
-                {col.label}
-              </label>
-            ))}
+    <div className={cn("flex flex-col h-full", sale.is_deleted && "opacity-60")}>
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">
+            <CustomerCell sale={sale} onDone={onDone} canReassign={canEditSale} />
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5"><ItemCell sale={sale} /></p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className="text-xl font-semibold tabular-nums text-foreground">₹{sale.sale_total?.toFixed(2)}</span>
+          <div className="flex items-center gap-1.5">
+            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+            <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
+              {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Invoice Pending"}
+            </StatusBadge>
           </div>
-        </>
-      )}
+          {canEditSale && (
+            <button onClick={() => setShowEdit(true)} className="text-primary underline text-xs">
+              Edit Sale
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Sold Date">{sale.sale_date?.slice(0, 10)}</Field>
+        <Field label="Payment Date"><PaymentDateField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
+        <Field label="Description">
+          {sale.sku_description || sale.full_sku_code || sale.repair_description || "—"}
+          {sale.sku_description && sale.full_sku_code && (
+            <span className="text-muted-foreground"> · {sale.full_sku_code}</span>
+          )}
+          {specParts.length > 0 && (
+            <span className="text-muted-foreground"> · {specParts.join(" / ")}</span>
+          )}
+        </Field>
+        {sale.bundled_accessories_display && sale.bundled_accessories_display.length > 0 && (
+          <Field label="Bundle">
+            {sale.bundled_accessories_display.map((b, i) => (
+              <span key={i} className="block">
+                {b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}
+              </span>
+            ))}
+          </Field>
+        )}
+        <Field label="Amount Paid"><span className="tabular-nums">₹{sale.amount_paid?.toFixed(2)}</span></Field>
+        <Field label="Received Into">{sale.payment_account || "—"}</Field>
+        <Field label="Sold By">{sale.sold_by || "—"}</Field>
+        <Field label="Invoice"><InvoiceSection sale={sale} isOwner={isOwner} onDone={onDone} /></Field>
+      </div>
+
+      {showEdit && <EditSaleDialog saleId={sale.id} onClose={() => setShowEdit(false)} onSaved={onDone} />}
     </div>
+  );
+}
+
+// Left-pane list block -- deliberately just the 4 fields the user scans a ledger
+// by (customer, serial/asset, sold date, status), matching an email-client /
+// Zoho-Invoices-style list row. Everything else lives in the detail pane.
+function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen }: {
+  sale: Sale;
+  active: boolean;
+  selectable: boolean;
+  checked: boolean;
+  onToggleCheck: () => void;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors",
+        active ? "bg-primary/10" : "hover:bg-muted",
+        sale.is_deleted && "opacity-50"
+      )}
+    >
+      {selectable && (
+        <span onClick={(e) => e.stopPropagation()} className="pt-0.5">
+          <Checkbox checked={checked} onCheckedChange={onToggleCheck} />
+        </span>
+      )}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{sale.customer_name || "—"}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">₹{sale.sale_total?.toFixed(2)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">{item(sale)}</p>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10)}</span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+          <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
+            {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Invoice Pending"}
+          </StatusBadge>
+        </div>
+      </div>
+    </button>
   );
 }
 
@@ -533,77 +374,8 @@ function SalesLedgerPage() {
   // every matching sale, not just the current page -- SQL exact counts (see
   // /api/sales' counts=true branch), same pattern StockView.tsx uses for its own.
   const [statCounts, setStatCounts] = useState({ totalCount: 0, pendingCount: 0, partialCount: 0, awaitingInvoiceCount: 0 });
-  // Defaults to newest-first by Date -- matches the old fixed `order('created_at',
-  // {ascending: false})` the API used before sorting became a user-driven param.
-  const [sortKey, setSortKey] = useState<string | null>("sale_date");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollBy = (dx: number) => scrollRef.current?.scrollBy({ left: dx, behavior: "smooth" });
-
-  // Sticky toolbar (search/filters + scroll buttons) stays pinned to the top of the
-  // page. The table header below it is sticky within its own scroll box (see the
-  // table wrapper's maxHeight comment), so no cross-element height measurement is
-  // needed to keep them from overlapping.
-  const toolbarRef = useRef<HTMLDivElement>(null);
-
-  const [colWidths, setColWidths] = useState<Record<string, number>>(() =>
-    Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultWidth]))
-  );
-
-  const CHECKBOX_COL_WIDTH = 40;
-  const resetColumnWidths = () => {
-    setColWidths(Object.fromEntries(COLUMNS.map((c) => [c.key, c.defaultWidth])));
-  };
-
-  const [visibleColumnKeys, setVisibleColumnKeys] = useState<Set<string>>(() => {
-    const defaults = new Set(COLUMNS.filter((c) => !c.optional || c.defaultVisible).map((c) => c.key));
-    if (typeof window === "undefined") return defaults;
-    try {
-      const saved = window.localStorage.getItem(COLUMN_PREFS_KEY);
-      if (!saved) return defaults;
-      // Persisted as the set of columns the user explicitly HID (a diff off the
-      // defaults), not the set shown -- a brand-new optional column (e.g. Payment
-      // Date, added after someone already had saved prefs) must default to visible
-      // for everyone, and a positive "shown" list can never express that: any key
-      // simply absent from an old saved list (because it didn't exist yet) would
-      // look identical to "the user hid this," permanently hiding every future
-      // column for existing users.
-      const hiddenKeys: string[] = JSON.parse(saved);
-      const next = new Set(defaults);
-      for (const key of hiddenKeys) next.delete(key);
-      return next;
-    } catch {
-      return defaults;
-    }
-  });
-
-  useEffect(() => {
-    const optionalKeys = COLUMNS.filter((c) => c.optional).map((c) => c.key);
-    const hiddenKeys = optionalKeys.filter((key) => !visibleColumnKeys.has(key));
-    window.localStorage.setItem(COLUMN_PREFS_KEY, JSON.stringify(hiddenKeys));
-  }, [visibleColumnKeys]);
-
-  const visibleColumns = useMemo(
-    () => COLUMNS.filter((c) => visibleColumnKeys.has(c.key)),
-    [visibleColumnKeys]
-  );
-
-  const fitColumnsToScreen = () => {
-    const container = scrollRef.current;
-    if (!container) return;
-    const available = container.clientWidth - CHECKBOX_COL_WIDTH;
-    const currentTotal = visibleColumns.reduce((sum, c) => sum + (colWidths[c.key] ?? c.defaultWidth), 0);
-    if (currentTotal <= 0 || available <= 0) return;
-    const scale = available / currentTotal;
-    const MIN_WIDTH = 50;
-    setColWidths((prev) => {
-      const next = { ...prev };
-      visibleColumns.forEach((c) => {
-        next[c.key] = Math.max(MIN_WIDTH, Math.round((prev[c.key] ?? c.defaultWidth) * scale));
-      });
-      return next;
-    });
-  };
+  // Which sale is open in the right-hand detail pane.
+  const [activeSaleId, setActiveSaleId] = useState<string | null>(null);
 
   const buildFilterParams = useCallback((includeFinalized: boolean) => {
     const params = new URLSearchParams();
@@ -620,24 +392,27 @@ function SalesLedgerPage() {
     if (showVoided) params.set("voided", "true");
     params.set("page", String(page));
     params.set("limit", String(pageSize));
-    // Sorting has to happen server-side, over the full filtered set, before
-    // pagination slices it -- otherwise "sort by X" would only reorder whichever
-    // page happened to already be loaded instead of sorting across all pages.
-    if (sortKey) {
-      params.set("sort", sortKey);
-      params.set("dir", sortDir);
-    }
+    // Newest sold first, matching every other ledger page's date-column default.
+    params.set("sort", "sale_date");
+    params.set("dir", "desc");
     const res = await apiFetch(`/api/sales?${params.toString()}`);
     if (res.ok) {
       const json = await res.json();
-      setSales(json.data || []);
+      const data: Sale[] = json.data || [];
+      setSales(data);
       setTotal(json.total || 0);
+      // Auto-open the first row on desktop (email/Zoho-Invoices convention) --
+      // but only when nothing is selected yet, or the previously active sale
+      // fell off this page/filter, so re-fetching after an edit doesn't yank
+      // focus away from what the user is currently looking at.
+      setActiveSaleId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null));
     } else {
       setSales([]);
       setTotal(0);
+      setActiveSaleId(null);
     }
     setLoading(false);
-  }, [buildFilterParams, showVoided, page, pageSize, sortKey, sortDir]);
+  }, [buildFilterParams, showVoided, page, pageSize]);
 
   // SQL exact counts (see /api/sales' counts=true branch), deliberately excluding
   // the awaitingInvoiceOnly-driven `finalized` filter so Pending/Partial/Awaiting
@@ -657,10 +432,9 @@ function SalesLedgerPage() {
   // refreshed -- they're two separate fetches now that the table is paginated.
   const refresh = useCallback(() => { fetchSales(); fetchStats(); }, [fetchSales, fetchStats]);
 
-  // Any filter or sort change invalidates the current page's meaning -- reset to
-  // page 1 (mirrors StockView.tsx / customers/page.tsx's own reset-on-filter-change
-  // effect; sort is included since it's now a server-side full-dataset sort).
-  useEffect(() => { setPage(1); }, [search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly, showVoided, pageSize, sortKey, sortDir]);
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // (mirrors StockView.tsx / customers/page.tsx's own reset-on-filter-change effect).
+  useEffect(() => { setPage(1); }, [search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly, showVoided, pageSize]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
@@ -670,28 +444,9 @@ function SalesLedgerPage() {
     });
   };
 
-  const toggleSort = (key: string) => {
-    if (sortKey === key) {
-      setSortDir((prev) => (prev === "asc" ? "desc" : "asc"));
-    } else {
-      setSortKey(key);
-      setSortDir("asc");
-    }
-  };
-
-  // Both awaitingInvoiceOnly filtering and sorting now happen server-side (over the
-  // full filtered dataset, before pagination -- see fetchSales), so `sales` already
-  // reflects them; no further client-side transform needed.
-  const displayedSales = sales;
-
-  // Only un-finalized, non-voided sales are ever selectable (SaleRow only renders a
-  // checkbox for those) -- select-all must match that same set, not every visible row.
-  const selectableIds = displayedSales.filter(s => !s.finalized && !s.is_deleted).map(s => s.id);
-  const toggleSelectAll = () => {
-    setSelected(prev => prev.size === selectableIds.length ? new Set() : new Set(selectableIds));
-  };
-  // Sourced from the SQL counts fetch -- counts every matching sale, not just the
-  // current page (see fetchStats above).
+  // Only un-finalized, non-voided sales are ever selectable for a combined
+  // invoice -- select-all must match that same set, not every visible row.
+  const selectableIds = sales.filter(s => !s.finalized && !s.is_deleted).map(s => s.id);
   const { totalCount, pendingCount, partialCount, awaitingInvoiceCount } = statCounts;
 
   // A combined invoice over the selected sales is either a Zoho recording (all
@@ -715,9 +470,11 @@ function SalesLedgerPage() {
     }
   });
 
+  const activeSale = useMemo(() => sales.find(s => s.id === activeSaleId) ?? null, [sales, activeSaleId]);
+
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Sales Ledger</h1>
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+      <h1 className="text-2xl font-bold mb-1">Sales Ledger</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
         Select 2 or more un-invoiced sales for the same customer and account to combine them into one invoice.
@@ -747,90 +504,54 @@ function SalesLedgerPage() {
         ]}
       />
 
-      {/* Sticky toolbar: search/filters + horizontal scroll controls stay pinned
-          to the top of the page while scrolling down through rows. */}
-      <div ref={toolbarRef} className="sticky top-0 z-30 bg-muted pb-3">
-        <div className="flex gap-4 flex-wrap items-center pt-1">
-          <input
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="Search customer, asset, serial, invoice..."
-            className="border p-2 rounded bg-card"
-          />
-          <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded bg-card">
-            <option value="">All Payment Statuses</option>
-            <option value="pending">Payment Pending</option>
-            <option value="partial">Partial</option>
-            <option value="paid">Paid</option>
-          </select>
-          <select value={receivedIntoFilter} onChange={(e) => setReceivedIntoFilter(e.target.value)} className="border p-2 rounded bg-card">
-            <option value="">All Received Into</option>
-            {PAYMENT_ACCOUNTS.map((acc) => (
-              <option key={acc} value={acc}>{acc}</option>
-            ))}
-          </select>
-          <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border p-2 rounded bg-card">
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>{n} / page</option>
-            ))}
-          </select>
-          <ColumnSelector visible={visibleColumnKeys} onChange={setVisibleColumnKeys} />
-          <label className="flex items-center gap-1.5 text-sm border p-2 rounded bg-card cursor-pointer">
-            <Checkbox checked={showVoided} onCheckedChange={(v) => setShowVoided(!!v)} />
-            Show voided sales
-          </label>
-          {isOwner && selected.size >= 2 && (
-            allSelectedExternal ? (
-              <button
-                onClick={() => setShowBatchZoho(true)}
-                className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm"
-              >
-                Record Combined Zoho Invoice # ({selected.size} sales)
-              </button>
-            ) : (
-              <button
-                onClick={() => generateCombinedInvoice()}
-                disabled={batchBusy}
-                className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
-              >
-                {batchBusy && <Loader2 className="size-4 animate-spin" />}
-                {batchBusy ? "Generating…" : `Generate Combined Invoice (${selected.size} sales)`}
-              </button>
-            )
-          )}
-          {batchErr && <span className="text-destructive text-xs">{batchErr}</span>}
-        </div>
-
-        {!loading && (
-          <div className="flex justify-between items-center gap-2 pt-2">
-            <div className="flex gap-2">
-              <button onClick={fitColumnsToScreen} className="border rounded px-2 py-1 text-xs text-muted-foreground bg-card hover:bg-muted">
-                Fit Columns to Screen
-              </button>
-              <button onClick={resetColumnWidths} className="border rounded px-2 py-1 text-xs text-muted-foreground bg-card hover:bg-muted">
-                Reset Widths
-              </button>
-            </div>
-            <div className="flex gap-1">
-              <button
-                onClick={() => scrollBy(-300)}
-                className="border rounded p-1 text-muted-foreground bg-card hover:bg-muted"
-                title="Scroll left"
-                aria-label="Scroll table left"
-              >
-                <ChevronLeft className="size-4" />
-              </button>
-              <button
-                onClick={() => scrollBy(300)}
-                className="border rounded p-1 text-muted-foreground bg-card hover:bg-muted"
-                title="Scroll right"
-                aria-label="Scroll table right"
-              >
-                <ChevronRight className="size-4" />
-              </button>
-            </div>
-          </div>
+      <div className="flex gap-2 flex-wrap items-center mb-2">
+        <input
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          placeholder="Search customer, asset, serial, invoice, amount..."
+          className="border p-2 rounded bg-card text-sm flex-1 min-w-[180px]"
+        />
+        <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
+          <option value="">All Payment Statuses</option>
+          <option value="pending">Payment Pending</option>
+          <option value="partial">Partial</option>
+          <option value="paid">Paid</option>
+        </select>
+        <select value={receivedIntoFilter} onChange={(e) => setReceivedIntoFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
+          <option value="">All Received Into</option>
+          {PAYMENT_ACCOUNTS.map((acc) => (
+            <option key={acc} value={acc}>{acc}</option>
+          ))}
+        </select>
+        <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border p-2 rounded bg-card text-sm">
+          {PAGE_SIZE_OPTIONS.map((n) => (
+            <option key={n} value={n}>{n} / page</option>
+          ))}
+        </select>
+        <label className="flex items-center gap-1.5 text-sm border p-2 rounded bg-card cursor-pointer">
+          <Checkbox checked={showVoided} onCheckedChange={(v) => setShowVoided(!!v)} />
+          Show voided
+        </label>
+        {isOwner && selected.size >= 2 && (
+          allSelectedExternal ? (
+            <button
+              onClick={() => setShowBatchZoho(true)}
+              className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm"
+            >
+              Record Combined Zoho Invoice # ({selected.size})
+            </button>
+          ) : (
+            <button
+              onClick={() => generateCombinedInvoice()}
+              disabled={batchBusy}
+              className="bg-warning text-warning-foreground px-3 py-2 rounded text-sm disabled:opacity-50 inline-flex items-center gap-1.5"
+            >
+              {batchBusy && <Loader2 className="size-4 animate-spin" />}
+              {batchBusy ? "Generating…" : `Generate Combined Invoice (${selected.size})`}
+            </button>
+          )
         )}
+        {batchErr && <span className="text-destructive text-xs">{batchErr}</span>}
       </div>
       {showBatchZoho && (
         <RecordZohoInvoiceDialog
@@ -843,78 +564,45 @@ function SalesLedgerPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="relative">
-          {/* overflow-x-auto alone makes the browser treat this element as a scroll
-              container in BOTH axes per the CSS Overflow spec, which broke the sticky
-              header's "top" offset (it resolved against this ever-growing box instead
-              of the page). Giving it a bounded height + overflow-y-auto makes it a real,
-              self-contained scroll box, so `sticky top-0` inside it works reliably --
-              the table now scrolls within its own frame instead of the whole page. */}
-          <div ref={scrollRef} className="overflow-auto border rounded" style={{ maxHeight: "calc(100vh - 320px)" }}>
-            <table className="border text-sm" style={{ tableLayout: "fixed", width: "max-content" }}>
-              <colgroup>
-                <col style={{ width: 40 }} />
-                {visibleColumns.map((col) => (
-                  <col key={col.key} style={{ width: colWidths[col.key] }} />
-                ))}
-              </colgroup>
-              <thead>
-                <tr>
-                  <th
-                    className="border p-2 text-center sticky top-0 z-20 bg-card"
-                  >
-                    {isOwner && selectableIds.length > 0 && (
-                      <Checkbox
-                        checked={
-                          selected.size === selectableIds.length
-                            ? true
-                            : selected.size > 0
-                            ? "indeterminate"
-                            : false
-                        }
-                        onCheckedChange={toggleSelectAll}
-                      />
-                    )}
-                  </th>
-                  {visibleColumns.map((col) => (
-                    <ResizableHeader
-                      key={col.key}
-                      label={col.label}
-                      width={colWidths[col.key]}
-                      className={col.className}
-                      onSort={col.sortable ? () => toggleSort(col.key) : undefined}
-                      sortIndicator={sortKey === col.key ? (sortDir === "asc" ? " ↑" : " ↓") : ""}
-                      onResize={(w) => setColWidths((prev) => ({ ...prev, [col.key]: w }))}
-                      stickyTop={0}
-                    />
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {displayedSales.map((s, idx) => (
-                  <SaleRow
-                    key={s.id}
-                    sale={s}
-                    visibleColumns={visibleColumns}
-                    ctx={{
-                      index: idx,
-                      page,
-                      pageSize,
-                      isOwner,
-                      canEditSale,
-                      selected: selected.has(s.id),
-                      onToggleSelect: toggleSelect,
-                      onDone: refresh,
-                    }}
-                  />
-                ))}
-                {displayedSales.length === 0 && (
-                  <tr><td colSpan={visibleColumns.length + 1} className="border p-4 text-center text-muted-foreground">No sales found.</td></tr>
-                )}
-              </tbody>
-            </table>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once a sale is open, matching an
+              email client's drill-in navigation; always visible at md+. */}
+          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSale && "hidden md:flex")}>
+            <div className="flex-1 overflow-y-auto">
+              {sales.map((s) => (
+                <SaleListItem
+                  key={s.id}
+                  sale={s}
+                  active={s.id === activeSaleId}
+                  selectable={isOwner && !s.finalized && !s.is_deleted}
+                  checked={selected.has(s.id)}
+                  onToggleCheck={() => toggleSelect(s.id)}
+                  onOpen={() => setActiveSaleId(s.id)}
+                />
+              ))}
+              {sales.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No sales found.</p>
+              )}
+            </div>
+            <div className="border-t border-border p-2">
+              <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+            </div>
           </div>
-          <Pagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} />
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn("flex-1 min-w-0", !activeSale && "hidden md:flex md:items-center md:justify-center")}>
+            {activeSale ? (
+              <SaleDetailPane
+                sale={activeSale}
+                isOwner={isOwner}
+                canEditSale={canEditSale}
+                onDone={refresh}
+                onBack={() => setActiveSaleId(null)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a sale to view details.</p>
+            )}
+          </div>
         </div>
       )}
     </div>

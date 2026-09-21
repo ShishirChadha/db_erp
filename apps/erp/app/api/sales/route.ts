@@ -45,8 +45,14 @@ export async function GET(req: NextRequest) {
           .or(`customer_name.ilike.%${search}%,contact_person.ilike.%${search}%`)
       )).data?.map((c: any) => c.id) || []
     : []
+  // A pure-numeric search term also matches on sale_total -- lets someone find
+  // "the ₹45000 sale" the same way they'd find it by customer/asset/serial/invoice.
+  // ilike can't partial-match a numeric column, so this is an exact match only
+  // (trimmed of stray whitespace); non-numeric search terms skip this clause
+  // entirely rather than risk building a malformed PostgREST filter string.
+  const searchAmount = search && /^\d+(\.\d{1,2})?$/.test(search.trim()) ? search.trim() : null
   const searchFilter = search
-    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}`
+    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}`
     : ''
 
   // Stat-card counts mode: SQL exact counts for the same filters the ledger's stat
