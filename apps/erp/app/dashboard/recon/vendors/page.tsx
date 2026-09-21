@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback } from 'react'
-import { Loader2, Upload, Sparkles, Check, X, Save, RefreshCw, Trash2, Search, Plus } from 'lucide-react'
+import { Loader2, Upload, Sparkles, Check, X, Save, RefreshCw, Trash2, Search, Plus, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import RequireOwner from '@/components/RequireOwner'
@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { StatusBadge } from '@/components/StatusBadge'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
 import type { VendorFormState } from '@/components/VendorFormFields'
+import { cn } from '@/lib/utils'
 
 interface DocRow {
   id: string
@@ -252,15 +253,13 @@ function VendorReconPage() {
   const safeFillCount = pending.filter((p) => p.change_kind === 'fill_missing' && p.confidence === 'high').length
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Vendor Reconciliation</h1>
-        <p className="text-sm text-muted-foreground">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
-      </div>
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+      <h1 className="text-2xl font-bold mb-1">Vendor Reconciliation</h1>
+      <p className="text-sm text-muted-foreground mb-4">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
 
-      {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3">{err}</div>}
+      {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3 mb-4">{err}</div>}
 
-      <div className="border rounded p-4 space-y-3">
+      <div className="border rounded p-4 space-y-3 mb-4">
         <h2 className="font-medium">Upload an invoice</h2>
         <div className="flex items-center gap-3">
           <input type="file" accept="application/pdf" onChange={(e) => setFile(e.target.files?.[0] || null)} className="text-sm" />
@@ -271,32 +270,49 @@ function VendorReconPage() {
         </div>
       </div>
 
-      <div className="grid md:grid-cols-[16rem_1fr] gap-4">
-        <div className="border rounded divide-y max-h-[32rem] overflow-y-auto">
-          {recentDocs.length === 0 && <div className="p-3 text-sm text-muted-foreground">No invoices uploaded yet.</div>}
-          {recentDocs.map((d) => (
-            <div key={d.id} className={`group flex items-start ${activeDoc?.id === d.id ? 'bg-muted' : ''}`}>
-              <button onClick={() => openDoc(d)} className="flex-1 text-left p-3 text-sm hover:bg-muted min-w-0">
-                <div className="truncate font-medium">{d.file_name}</div>
-                <StatusBadge tone={STATUS_TONE[d.extraction_status] || 'neutral'}>{d.extraction_status.replace(/_/g, ' ')}</StatusBadge>
-              </button>
-              <button
-                onClick={() => deleteDoc(d)}
-                disabled={deleting}
-                title="Delete this document"
-                className="p-3 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        {/* List pane -- hidden on mobile once a document is open, matching the
+            Sales Ledger's email-client drill-in navigation; always visible at md+. */}
+        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeDoc && "hidden md:flex")}>
+          <div className="flex-1 overflow-y-auto">
+            {recentDocs.length === 0 && <div className="p-3 text-sm text-muted-foreground">No invoices uploaded yet.</div>}
+            {recentDocs.map((d) => (
+              <div
+                key={d.id}
+                className={cn(
+                  "group w-full flex items-start border-b border-border transition-colors",
+                  activeDoc?.id === d.id ? "bg-primary/10" : "hover:bg-muted"
+                )}
               >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-          ))}
+                <button onClick={() => openDoc(d)} className="flex-1 text-left px-3 py-2.5 min-w-0">
+                  <div className="truncate font-medium text-sm text-foreground">{d.file_name}</div>
+                  <div className="flex items-center justify-between gap-2 mt-0.5">
+                    <span className="text-xs text-muted-foreground">{d.created_at?.slice(0, 10)}</span>
+                    <StatusBadge tone={STATUS_TONE[d.extraction_status] || 'neutral'}>{d.extraction_status.replace(/_/g, ' ')}</StatusBadge>
+                  </div>
+                </button>
+                <button
+                  onClick={() => deleteDoc(d)}
+                  disabled={deleting}
+                  title="Delete this document"
+                  className="p-3 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  <Trash2 className="size-4" />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
 
-        <div className="border rounded p-4 space-y-4 min-h-[20rem]">
+        {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+        <div className={cn("flex-1 min-w-0 overflow-y-auto p-4 space-y-4", !activeDoc && "hidden md:flex md:items-center md:justify-center")}>
           {!activeDoc && <div className="text-sm text-muted-foreground">Select an invoice from the list, or upload a new one.</div>}
 
           {activeDoc && (
             <>
+              <button type="button" onClick={() => { setActiveDoc(null); setProposals([]); setVendorName(null); setNoVendorCandidates(null) }} className="md:hidden mb-1 inline-flex items-center gap-1 text-sm text-muted-foreground">
+                <ArrowLeft className="size-4" /> Back to list
+              </button>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="font-medium">{activeDoc.file_name}</div>

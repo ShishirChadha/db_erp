@@ -69,10 +69,16 @@ interface VendorPayment {
   recorded_by_name: string | null
 }
 
-function PODetailPage() {
+// `poId`/`embedded` let this exact component be reused inline inside the
+// Purchase Orders list page's detail pane (see app/dashboard/purchase-orders/
+// page.tsx) instead of duplicating this ~500 lines of fetch/receive/edit logic
+// a second time -- embedded mode just fetches by the given id instead of a
+// route param, and drops the standalone-page chrome (back link, outer padding/
+// max-width, which the list page's pane already supplies).
+export function PODetailPage({ poId: poIdProp, embedded, onDeleted }: { poId?: string; embedded?: boolean; onDeleted?: () => void } = {}) {
   const params = useParams()
   const router = useRouter()
-  const poId = params.id as string
+  const poId = poIdProp ?? (params.id as string)
 
   const [po, setPo] = useState<PurchaseOrder | null>(null)
   const [loading, setLoading] = useState(true)
@@ -200,7 +206,10 @@ function PODetailPage() {
     const res = await apiFetch(`/api/purchase-orders/${poId}/hard-delete`, { method: 'DELETE' })
     if (res.ok) {
       alert('Purchase Order permanently deleted.')
-      router.push('/dashboard/purchase-orders')
+      // Embedded (list page's detail pane) needs the parent to drop the now-gone
+      // id and refetch its list -- a same-route router.push wouldn't remount us.
+      if (onDeleted) onDeleted()
+      else router.push('/dashboard/purchase-orders')
     } else {
       const err = await res.json().catch(() => ({}))
       alert(err.error || 'Failed to delete PO')
@@ -239,10 +248,12 @@ function PODetailPage() {
   if (!po) return <div className="p-4 text-destructive">Purchase Order not found.</div>
 
   return (
-    <div className="p-4 max-w-4xl mx-auto">
-      <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-muted-foreground hover:text-foreground mb-2">
-        ← Back to Purchase Orders
-      </button>
+    <div className={embedded ? '' : 'p-4 max-w-4xl mx-auto'}>
+      {!embedded && (
+        <button onClick={() => router.push('/dashboard/purchase-orders')} className="text-sm text-muted-foreground hover:text-foreground mb-2">
+          ← Back to Purchase Orders
+        </button>
+      )}
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">{po.po_number}</h1>
         <span className={`px-2 py-1 rounded text-primary-foreground capitalize ${po.po_status === 'draft' ? 'bg-muted-foreground' : 'bg-success'}`}>

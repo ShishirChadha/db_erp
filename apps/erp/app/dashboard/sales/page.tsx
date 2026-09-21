@@ -22,6 +22,11 @@ import { cn } from "@/lib/utils";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
+// Short tag for the list pane -- the account/entity a sale is billed against,
+// abbreviated the way the business already refers to these three internally.
+const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: "DB", Techtenth: "TT", Cash: "CS" };
+const accountAbbrev = (account: string | null) => (account ? ACCOUNT_ABBREV[account] ?? account : null);
+
 interface Sale {
   id: string;
   sale_date: string;
@@ -328,6 +333,11 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
           <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10)}</span>
         </div>
         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          {accountAbbrev(sale.payment_account) && (
+            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground" title={sale.payment_account ?? undefined}>
+              {accountAbbrev(sale.payment_account)}
+            </span>
+          )}
           <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
           <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
             {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Invoice Pending"}

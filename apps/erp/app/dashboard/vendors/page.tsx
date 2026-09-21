@@ -1,26 +1,25 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Card, CardContent } from '@/components/ui/card'
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter
+  Dialog, DialogContent, DialogHeader, DialogTitle
 } from '@/components/ui/dialog'
 import {
-  Plus, Search, Eye, Loader2, Pencil, Trash2, RotateCcw
+  Plus, Search, Loader2, Pencil, Trash2, RotateCcw, ArrowLeft
 } from 'lucide-react'
 import { toast } from 'sonner'
 import DeleteRecordDialog from '@/components/DeleteRecordDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
-import { ResizableHeader } from '@/components/ResizableHeader'
 import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
 import { withRetry } from '@/lib/db-retry'
+import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 25
 
@@ -51,17 +50,145 @@ type Vendor = {
 
 const emptyForm = emptyVendorForm
 
-type VendorSortField = 'company_name' | 'spoc_name' | 'phone' | 'city'
-type SortOrder = 'asc' | 'desc'
+// One field in the detail pane's label/value grid -- keeps every row's spacing
+// and label styling consistent without repeating the wrapper markup (mirrors
+// Sales Ledger's Field helper).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  )
+}
+
+// Left-pane list block -- a contact list, not a transaction ledger, so the
+// scannable identifying fields are company name, phone, and a compact
+// accessories-vendor tag rather than any status/date.
+function VendorListItem({ vendor, active, onOpen }: {
+  vendor: Vendor
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors",
+        active ? "bg-primary/10" : "hover:bg-muted",
+        vendor.is_deleted && "opacity-50"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{vendor.company_name}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">{vendor.phone || '—'}</p>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          {vendor.supplies_accessories && (
+            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+              Accessories
+            </span>
+          )}
+          {vendor.is_deleted && (
+            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+              Deleted
+            </span>
+          )}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view -- everything the old wide table's columns + View
+// dialog showed for one vendor, now laid out as a single record, matching
+// an email/Zoho-Invoices-style reading pane.
+function VendorDetailPane({ vendor, onEdit, onDelete, onRestore, restoring, onBack }: {
+  vendor: Vendor
+  onEdit: () => void
+  onDelete: () => void
+  onRestore: () => void
+  restoring: boolean
+  onBack: () => void
+}) {
+  const address = [
+    vendor.address_line1,
+    vendor.address_line2,
+    vendor.city,
+    vendor.state,
+    vendor.pincode,
+  ].filter(Boolean).join(', ') || vendor.address || '—'
+
+  return (
+    <div className={cn("flex flex-col h-full", vendor.is_deleted && "opacity-60")}>
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{vendor.company_name}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{vendor.spoc_name || '—'}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          {vendor.supplies_accessories && (
+            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+              Accessories
+            </span>
+          )}
+          {!vendor.is_deleted ? (
+            <div className="flex items-center gap-2 mt-1">
+              <button onClick={onEdit} title="Edit" className="text-muted-foreground hover:text-primary inline-flex align-middle p-1">
+                <Pencil className="h-4 w-4" />
+              </button>
+              <button onClick={onDelete} title="Delete" className="text-muted-foreground hover:text-destructive inline-flex align-middle p-1">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={onRestore}
+              disabled={restoring}
+              title="Restore"
+              className="text-muted-foreground hover:text-success inline-flex align-middle p-1 disabled:opacity-50 mt-1"
+            >
+              {restoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Owner Name">{vendor.owner_name || '—'}</Field>
+        <Field label="Phone">{vendor.phone || '—'}</Field>
+        <Field label="Alt Phone">{vendor.alt_phone || '—'}</Field>
+        <Field label="Email">{vendor.email || '—'}</Field>
+        <Field label="Address">{address}</Field>
+        <Field label="GST">
+          {vendor.has_gst ? `${vendor.gst_number}${vendor.gst_company_name ? ` (${vendor.gst_company_name})` : ''}` : 'No'}
+        </Field>
+        <Field label="Remarks">{vendor.remarks || '—'}</Field>
+        <Field label="Supplies Accessories" >
+          <span title="Whether employees can select this vendor when receiving accessory stock">
+            {vendor.supplies_accessories ? 'Yes' : 'No'}
+          </span>
+        </Field>
+        {vendor.is_deleted && (
+          <Field label="Deleted Remarks">{vendor.deleted_remarks || '—'}</Field>
+        )}
+      </div>
+    </div>
+  )
+}
 
 function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [search, setSearch] = useState('')
   const [showDeleted, setShowDeleted] = useState(false)
-  const [sortField, setSortField] = useState<VendorSortField | null>(null)
-  const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [showForm, setShowForm] = useState(false)
-  const [viewItem, setViewItem] = useState<Vendor | null>(null)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [form, setForm] = useState<VendorFormState>(emptyForm)
   const [error, setError] = useState('')
@@ -70,15 +197,13 @@ function VendorsPage() {
   const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  // Which vendor is open in the right-hand detail pane.
+  const [activeVendorId, setActiveVendorId] = useState<string | null>(null)
 
   const supabase = createClient()
 
-  // Initial column widths
-  const [colWidths, setColWidths] = useState([200, 120, 100, 120, 80, 120, 90, 100])
-
-  // Search/sort/showDeleted/pagination all happen server-side now -- this used to
-  // fetch the entire table once on mount and filter/sort the full array in the
-  // browser, which doesn't scale and made pagination meaningless.
+  // Search/showDeleted/pagination all happen server-side -- sorted by company
+  // name (a contact list is browsed alphabetically, not by recency).
   const fetchVendors = async () => {
     let query = supabase.from('vendors').select('*', { count: 'exact' })
     query = showDeleted ? query.eq('is_deleted', true) : query.eq('is_deleted', false)
@@ -86,35 +211,27 @@ function VendorsPage() {
       const s = `%${search}%`
       query = query.or(`company_name.ilike.${s},spoc_name.ilike.${s},owner_name.ilike.${s},phone.ilike.${s},gst_number.ilike.${s},email.ilike.${s}`)
     }
-    query = query.order(sortField || 'company_name', { ascending: sortOrder === 'asc' })
+    query = query.order('company_name', { ascending: true })
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     try {
       const { data, error, count } = await withRetry(() => query)
       if (error) throw error
-      setVendors(data || [])
+      const rows: Vendor[] = data || []
+      setVendors(rows)
       setTotal(count || 0)
+      // Auto-open the first row on load/refetch, but don't yank focus away
+      // from whatever's already open if it's still in the refetched data.
+      setActiveVendorId((prev) => (prev && rows.some((v) => v.id === prev)) ? prev : (rows[0]?.id ?? null))
     } catch (err) {
       console.error(err)
       toast.error('Unable to load vendors -- check your connection and try again.')
     }
   }
 
-  useEffect(() => { fetchVendors() }, [showDeleted, search, sortField, sortOrder, page])
+  useEffect(() => { fetchVendors() }, [showDeleted, search, page])
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   useEffect(() => { setPage(1) }, [showDeleted, search])
-
-  const toggleSort = (field: VendorSortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortField(field)
-      setSortOrder('asc')
-    }
-  }
-
-  const sortIndicatorFor = (field: VendorSortField) =>
-    sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : ''
 
   const handleGstBlur = async () => {
     if (!form.gst_number || form.gst_number.length !== 15) return
@@ -265,20 +382,22 @@ function VendorsPage() {
     }
   }
 
+  const activeVendor = useMemo(() => vendors.find(v => v.id === activeVendorId) ?? null, [vendors, activeVendorId])
+
   return (
-    <div>
-      <div className="flex items-center justify-between mb-6">
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+      <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-semibold text-foreground">Vendors</h1>
-          <p className="text-sm text-muted-foreground mt-1">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
+          <h1 className="text-2xl font-bold">Vendors</h1>
+          <p className="text-sm text-muted-foreground mt-0.5">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
         </div>
         <Button className="bg-primary hover:bg-primary/90" onClick={() => { resetForm(); setShowForm(true) }}>
           <Plus className="h-4 w-4 mr-2" />Add Vendor
         </Button>
       </div>
 
-      <div className="flex gap-4 mb-4">
-        <div className="relative flex-1">
+      <div className="flex gap-4 mb-2 items-center flex-wrap">
+        <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Search by company, SPOC, owner, phone, GST, email..."
@@ -293,102 +412,44 @@ function VendorsPage() {
         </div>
       </div>
 
-      <Card>
-        <CardContent className="p-0">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border bg-muted">
-                  <th className="text-right px-4 py-3 font-medium text-muted-foreground w-10">#</th>
-                  {(['Company', 'SPOC', 'GST', 'Phone', 'City', 'Remarks', 'Accessories', 'Actions'] as const).map((label, i) => {
-                    const sortableField: Partial<Record<typeof label, VendorSortField>> = {
-                      Company: 'company_name',
-                      SPOC: 'spoc_name',
-                      Phone: 'phone',
-                      City: 'city',
-                    }
-                    const field = sortableField[label]
-                    return (
-                      <ResizableHeader
-                        key={label}
-                        label={label}
-                        width={colWidths[i]}
-                        onResize={(newWidth) => {
-                          const newWidths = [...colWidths]
-                          newWidths[i] = Math.max(60, newWidth)
-                          setColWidths(newWidths)
-                        }}
-                        className="text-left px-4 py-3 font-medium text-muted-foreground"
-                        onSort={field ? () => toggleSort(field) : undefined}
-                        sortIndicator={field ? sortIndicatorFor(field) : undefined}
-                      />
-                    )
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {vendors.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="text-center py-12 text-muted-foreground">
-                      No vendors found. Add your first vendor.
-                    </td>
-                  </tr>
-                ) : (
-                  vendors.map((v, idx) => (
-                    <tr key={v.id} className={`border-b hover:bg-muted ${v.is_deleted ? 'opacity-50' : ''}`}>
-  <td className="px-4 py-3 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-  <td className="px-4 py-3 font-medium text-foreground">{v.company_name}</td>
-  <td className="px-4 py-3 text-muted-foreground">{v.spoc_name || '—'}</td>
-  <td className="px-4 py-3 text-muted-foreground">
-    {v.has_gst ? (
-      <span className="block truncate max-w-full" title={v.gst_number}>
-        {v.gst_number}
-      </span>
-    ) : 'No'}
-  </td>
-  <td className="px-4 py-3 text-muted-foreground">{v.phone || '—'}</td>
-  <td className="px-4 py-3 text-muted-foreground">{v.city || '—'}</td>
-  <td className="px-4 py-3 text-muted-foreground max-w-xs truncate">{v.remarks || '—'}</td>
-  <td className="px-4 py-3 text-muted-foreground" title="Whether employees can select this vendor when receiving accessory stock">
-    {v.supplies_accessories ? '✓' : '—'}
-  </td>
-  <td className="px-4 py-3 text-right space-x-1 whitespace-nowrap">
-    <button onClick={() => setViewItem(v)} title="View" className="text-muted-foreground hover:text-foreground inline-flex align-middle p-1">
-      <Eye className="h-4 w-4" />
-    </button>
-    {!v.is_deleted ? (
-      <>
-        <button onClick={() => handleEdit(v)} title="Edit" className="text-muted-foreground hover:text-primary inline-flex align-middle p-1">
-          <Pencil className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => { setVendorToDelete(v); setDeleteDialogOpen(true) }}
-          title="Delete"
-          className="text-muted-foreground hover:text-destructive inline-flex align-middle p-1"
-        >
-          <Trash2 className="h-4 w-4" />
-        </button>
-      </>
-    ) : (
-      <button
-        onClick={() => handleRestore(v)}
-        disabled={restoringId === v.id}
-        title="Restore"
-        className="text-muted-foreground hover:text-success inline-flex align-middle p-1 disabled:opacity-50"
-      >
-        {restoringId === v.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
-      </button>
-    )}
-  </td>
-</tr>
-                  ))
-                )}
-              </tbody>
-            </table>
+      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        {/* List pane -- hidden on mobile once a vendor is open, matching an
+            email client's drill-in navigation; always visible at md+. */}
+        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeVendor && "hidden md:flex")}>
+          <div className="flex-1 overflow-y-auto">
+            {vendors.map((v) => (
+              <VendorListItem
+                key={v.id}
+                vendor={v}
+                active={v.id === activeVendorId}
+                onOpen={() => setActiveVendorId(v.id)}
+              />
+            ))}
+            {vendors.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">No vendors found.</p>
+            )}
           </div>
-        </CardContent>
-      </Card>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+          <div className="border-t border-border p-2">
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+          </div>
+        </div>
+
+        {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+        <div className={cn("flex-1 min-w-0", !activeVendor && "hidden md:flex md:items-center md:justify-center")}>
+          {activeVendor ? (
+            <VendorDetailPane
+              vendor={activeVendor}
+              onEdit={() => handleEdit(activeVendor)}
+              onDelete={() => { setVendorToDelete(activeVendor); setDeleteDialogOpen(true) }}
+              onRestore={() => handleRestore(activeVendor)}
+              restoring={restoringId === activeVendor.id}
+              onBack={() => setActiveVendorId(null)}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a vendor to view details.</p>
+          )}
+        </div>
+      </div>
 
       {/* Add/Edit Vendor Dialog */}
       <Dialog open={showForm} onOpenChange={(open) => !open && resetForm()}>
@@ -419,40 +480,6 @@ function VendorsPage() {
               Cancel
             </Button>
           </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* View Vendor Dialog */}
-      <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{viewItem?.company_name}</DialogTitle>
-          </DialogHeader>
-          {viewItem && (
-            <div className="grid grid-cols-2 gap-x-8 gap-y-3 mt-2 text-sm">
-              {[
-                ['SPOC Name', viewItem.spoc_name],
-                ['Owner Name', viewItem.owner_name],
-                ['Phone', viewItem.phone],
-                ['Alt Phone', viewItem.alt_phone],
-                ['Email', viewItem.email],
-                ['Address', [
-                  viewItem.address_line1,
-                  viewItem.address_line2,
-                  viewItem.city,
-                  viewItem.state,
-                  viewItem.pincode
-                ].filter(Boolean).join(', ') || viewItem.address || '—'],
-                ['GST', viewItem.has_gst ? `${viewItem.gst_number}${viewItem.gst_company_name ? ` (${viewItem.gst_company_name})` : ''}` : 'No'],
-                ['Remarks', viewItem.remarks || '—'],
-              ].map(([label, value]) => (
-                <div key={label} className={label === 'Address' ? 'col-span-2' : ''}>
-                  <p className="text-muted-foreground text-xs">{label}</p>
-                  <p className="font-medium text-foreground mt-0.5 break-words">{value || '—'}</p>
-                </div>
-              ))}
-            </div>
-          )}
         </DialogContent>
       </Dialog>
 

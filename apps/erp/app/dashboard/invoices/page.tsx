@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -14,28 +14,93 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Eye, Edit, FileText, Trash2, Mail, Loader2 } from "lucide-react";
+import { Plus, Trash2, ArrowLeft } from "lucide-react";
 import { format } from "date-fns";
 import { toast } from "sonner";
 import DeleteInvoiceDialog from "@/components/DeleteInvoiceDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
-import { apiFetch } from "@/lib/api-client";
-import { downloadPdfFromResponse } from "@/lib/download-pdf";
 import { withRetry } from "@/lib/db-retry";
 import { Pagination } from "@/components/Pagination";
 import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
+import { cn } from "@/lib/utils";
+import { ViewInvoicePage } from "./[id]/page";
 
 const PAGE_SIZE = 25
+
+// Left-pane list block -- customer, invoice number, invoice date, and a status
+// badge, matching an email-client / Zoho-Invoices-style list row.
+function InvoiceListItem({ inv, active, onOpen }: { inv: any; active: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors",
+        active ? "bg-primary/10" : "hover:bg-muted",
+        inv.is_deleted && "opacity-50"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{inv.customer_name || "—"}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">₹{inv.grand_total?.toFixed(2)}</span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">
+            {inv.invoice_number}
+            {inv.source === "imported_zoho" && (
+              <Badge variant="outline" className="ml-1.5 text-[10px]">Imported</Badge>
+            )}
+          </p>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {inv.invoice_date ? format(new Date(inv.invoice_date), "dd/MM/yyyy") : "—"}
+          </span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={toneFor(INVOICE_STATUS_TONES, inv.status)}>{inv.status.replace("_", " ")}</StatusBadge>
+          {inv.is_deleted && <StatusBadge tone="danger">Deleted</StatusBadge>}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Right-pane detail view -- the full invoice document (parties, line items,
+// totals, notes/terms/bank, and its own Preview/Download/Email/Print/Edit
+// toolbar) embedded inline via its own `embedded` mode instead of behind a
+// link-out. Delete lives here rather than in that toolbar since it's a list-
+// page-level action (soft-delete dialog owned by this page, not the document
+// view). `key={inv.id}` forces a clean remount per selection.
+function InvoiceDetailPane({ inv, onDelete, onBack }: {
+  inv: any;
+  onDelete: (inv: any) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className={cn("flex flex-col h-full", inv.is_deleted && "opacity-60")}>
+      <div className="flex items-center justify-between gap-2 p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
+        {!inv.is_deleted && (
+          <Button variant="outline" size="sm" className="ml-auto" onClick={() => onDelete(inv)}>
+            <Trash2 className="mr-1.5 h-4 w-4 text-destructive" /> Delete
+          </Button>
+        )}
+        {inv.is_deleted && (
+          <span className="ml-auto text-sm text-muted-foreground">
+            Deleted{inv.deleted_remarks ? ` -- ${inv.deleted_remarks}` : ""}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <ViewInvoicePage key={inv.id} invoiceId={inv.id} embedded />
+      </div>
+    </div>
+  );
+}
 
 function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -49,6 +114,8 @@ function InvoicesPage() {
   const supabase = createClient();
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // Which invoice is open in the right-hand detail pane.
+  const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -75,7 +142,15 @@ function InvoicesPage() {
 
     const { data, error, count } = await withRetry(() => query);
     if (error) { console.error(error); toast.error("Unable to load invoices -- check your connection and try again."); }
-    else { setInvoices(data || []); setTotal(count || 0); }
+    else {
+      const rows = data || [];
+      setInvoices(rows);
+      setTotal(count || 0);
+      // Auto-open the first row on load/refetch -- but only when nothing is
+      // selected yet, or the previously active invoice fell off this page/filter,
+      // so re-fetching after an edit doesn't yank focus away from what's open.
+      setActiveInvoiceId((prev) => (prev && rows.some((r) => r.id === prev)) ? prev : (rows[0]?.id ?? null));
+    }
     setLoading(false);
   }, [searchTerm, statusFilter, showDeleted, page, supabase]);
 
@@ -106,48 +181,11 @@ function InvoicesPage() {
     setInvoiceToDelete(null);
   };
 
-  const [pendingKey, setPendingKey] = useState<string | null>(null);
-
-  const handleDownloadPDF = async (invoiceId: string, invoiceNumber: string) => {
-    const key = `${invoiceId}:pdf`;
-    if (pendingKey) return;
-    setPendingKey(key);
-    try {
-      const res = await apiFetch(`/api/invoices/${invoiceId}/pdf`);
-      if (!res.ok) {
-        toast.error("Failed to generate PDF");
-        return;
-      }
-      await downloadPdfFromResponse(res, `Invoice_${invoiceNumber}.pdf`);
-    } finally {
-      setPendingKey(null);
-    }
-  };
-
-  const handleEmail = async (invoiceId: string, customerEmail: string | null) => {
-    if (pendingKey) return;
-    const to = window.prompt("Send invoice to which email address?", customerEmail || "");
-    if (!to) return;
-    setPendingKey(`${invoiceId}:email`);
-    try {
-      const res = await apiFetch(`/api/invoices/${invoiceId}/email`, {
-        method: "POST",
-        body: JSON.stringify({ to }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data.error || "Failed to send email.");
-      } else {
-        toast.success(`Sent to ${data.sent_to}.`);
-      }
-    } finally {
-      setPendingKey(null);
-    }
-  };
+  const activeInvoice = useMemo(() => invoices.find(i => i.id === activeInvoiceId) ?? null, [invoices, activeInvoiceId]);
 
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Invoices</h1>
         <div className="space-x-2">
           <Button variant="outline" onClick={() => router.push("/dashboard/invoices/import")}>
@@ -160,7 +198,7 @@ function InvoicesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 items-end">
+      <div className="flex flex-wrap gap-4 items-end mb-4">
         <div className="flex-1">
           <Input
             placeholder="Search by invoice number or customer..."
@@ -188,98 +226,45 @@ function InvoicesPage() {
         </div>
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10 text-right">#</TableHead>
-              <TableHead>Date</TableHead>
-              <TableHead>Invoice #</TableHead>
-              <TableHead>Customer</TableHead>
-              <TableHead className="text-right">Amount</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Deleted Remarks</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow><TableCell colSpan={8} className="text-center">Loading...</TableCell></TableRow>
-            ) : invoices.length === 0 ? (
-              <TableRow><TableCell colSpan={8} className="text-center">No invoices found.</TableCell></TableRow>
+      {loading ? (
+        <div>Loading...</div>
+      ) : (
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once an invoice is open, matching an
+              email client's drill-in navigation; always visible at md+. */}
+          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeInvoice && "hidden md:flex")}>
+            <div className="flex-1 overflow-y-auto">
+              {invoices.map((inv) => (
+                <InvoiceListItem
+                  key={inv.id}
+                  inv={inv}
+                  active={inv.id === activeInvoiceId}
+                  onOpen={() => setActiveInvoiceId(inv.id)}
+                />
+              ))}
+              {invoices.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No invoices found.</p>
+              )}
+            </div>
+            <div className="border-t border-border p-2">
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+            </div>
+          </div>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn("flex-1 min-w-0", !activeInvoice && "hidden md:flex md:items-center md:justify-center")}>
+            {activeInvoice ? (
+              <InvoiceDetailPane
+                inv={activeInvoice}
+                onDelete={(inv) => { setInvoiceToDelete(inv); setDeleteDialogOpen(true); }}
+                onBack={() => setActiveInvoiceId(null)}
+              />
             ) : (
-              invoices.map((inv, idx) => (
-                <TableRow key={inv.id} className={inv.is_deleted ? "opacity-50" : ""}>
-                  <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
-                  <TableCell>{format(new Date(inv.invoice_date), "dd/MM/yyyy")}</TableCell>
-                  <TableCell className="font-medium">
-                    {inv.invoice_number}
-                    {inv.source === "imported_zoho" && (
-                      <Badge variant="outline" className="ml-2 text-xs">Imported</Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>{inv.customer_name}</TableCell>
-                  <TableCell className="text-right tabular-nums">₹{inv.grand_total?.toFixed(2)}</TableCell>
-                  <TableCell><StatusBadge tone={toneFor(INVOICE_STATUS_TONES, inv.status)}>{inv.status.replace("_", " ")}</StatusBadge></TableCell>
-                  <TableCell>{inv.deleted_remarks || "-"}</TableCell>
-                  <TableCell className="text-right space-x-2">
-                    {!inv.is_deleted ? (
-                      <>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => router.push(`/dashboard/invoices/${inv.id}`)}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        {inv.status === "draft" && (
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => router.push(`/dashboard/invoices/${inv.id}/edit`)}
-                          >
-                            <Edit className="h-4 w-4" />
-                          </Button>
-                        )}
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleDownloadPDF(inv.id, inv.invoice_number)}
-                          disabled={pendingKey === `${inv.id}:pdf`}
-                        >
-                          {pendingKey === `${inv.id}:pdf` ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => handleEmail(inv.id, inv.customer_email)}
-                          disabled={pendingKey === `${inv.id}:email`}
-                        >
-                          {pendingKey === `${inv.id}:email` ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => {
-                            setInvoiceToDelete(inv);
-                            setDeleteDialogOpen(true);
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">Deleted</span>
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))
+              <p className="text-sm text-muted-foreground">Select an invoice to view details.</p>
             )}
-          </TableBody>
-        </Table>
-      </div>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+          </div>
+        </div>
+      )}
 
       <DeleteInvoiceDialog
         invoice={invoiceToDelete}

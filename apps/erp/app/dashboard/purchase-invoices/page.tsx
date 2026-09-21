@@ -2,8 +2,13 @@
 
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
+import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
+import { StatusBadge } from '@/components/StatusBadge'
+import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { cn } from '@/lib/utils'
 
 interface Invoice {
   id: string
@@ -16,8 +21,90 @@ interface Invoice {
   last_payment_date: string | null
 }
 
-type SortField = 'invoice_number' | 'invoice_date' | 'vendor_name' | 'grand_total' | 'payment_status'
-type SortOrder = 'asc' | 'desc'
+// One field in the detail pane's label/value grid -- mirrors Sales Ledger's Field
+// helper so both master-detail pages read the same way.
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  )
+}
+
+// Right-pane detail view -- a focused summary rather than a re-implementation of
+// the full line-item invoice view, which already exists at its own detail route.
+function InvoiceDetailPane({ invoice, onBack }: { invoice: Invoice; onBack: () => void }) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">
+            {invoice.purchase_orders?.vendor_name || '—'}
+          </h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{invoice.invoice_number}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className="text-xl font-semibold tabular-nums text-foreground">
+            {invoice.grand_total != null ? `₹${invoice.grand_total.toFixed(2)}` : '—'}
+          </span>
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, invoice.payment_status)}>{invoice.payment_status}</StatusBadge>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Invoice Date">{invoice.invoice_date}</Field>
+        <Field label="PO Number">{invoice.purchase_orders?.po_number || '—'}</Field>
+        <Field label="Grand Total">
+          <span className="tabular-nums">{invoice.grand_total != null ? `₹${invoice.grand_total.toFixed(2)}` : '—'}</span>
+        </Field>
+        <Field label="Payment Status"><span className="capitalize">{invoice.payment_status}</span></Field>
+        <Field label="Payment Date">
+          {invoice.last_payment_date ? new Date(invoice.last_payment_date).toLocaleDateString() : '—'}
+        </Field>
+        <div className="pt-4">
+          <Link href={`/dashboard/purchase-invoices/${invoice.id}`} className="text-primary underline text-sm">
+            Open full invoice →
+          </Link>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Left-pane list block -- vendor (primary), invoice number, date, amount, and a
+// payment-status badge, matching Sales Ledger's SaleListItem shape.
+function InvoiceListItem({ invoice, active, onOpen }: { invoice: Invoice; active: boolean; onOpen: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{invoice.purchase_orders?.vendor_name || '—'}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+            {invoice.grand_total != null ? `₹${invoice.grand_total.toFixed(2)}` : '—'}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">{invoice.invoice_number}</p>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{invoice.invoice_date}</span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, invoice.payment_status)}>{invoice.payment_status}</StatusBadge>
+        </div>
+      </div>
+    </button>
+  )
+}
 
 function PurchaseInvoicesPage() {
   const router = useRouter()
@@ -28,8 +115,8 @@ function PurchaseInvoicesPage() {
   const [search, setSearch] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
-  const [sortField, setSortField] = useState<SortField>('invoice_date')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
+  // Which invoice is open in the right-hand detail pane.
+  const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null)
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
@@ -47,11 +134,16 @@ function PurchaseInvoicesPage() {
         throw new Error(errText || `Request failed with status ${res.status}`)
       }
       const data = await res.json()
-      setInvoices(Array.isArray(data) ? data : [])
+      const list: Invoice[] = Array.isArray(data) ? data : []
+      setInvoices(list)
+      // Auto-open the first row on load/refetch, but don't yank focus away from
+      // whatever's already open if it's still present after the refetch.
+      setActiveInvoiceId((prev) => (prev && list.some((i) => i.id === prev)) ? prev : (list[0]?.id ?? null))
     } catch (err: any) {
       console.error('Failed to fetch invoices:', err)
       setError(err.message)
       setInvoices([])
+      setActiveInvoiceId(null)
     } finally {
       setLoading(false)
     }
@@ -61,31 +153,11 @@ function PurchaseInvoicesPage() {
     fetchInvoices()
   }, [fetchInvoices])
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortField(field)
-      setSortOrder('asc')
-    }
-  }
+  // API already returns invoice_date desc (newest first) -- no client-side sort
+  // needed now that column-header sorting is dropped along with the table.
+  const sortedInvoices = invoices
 
-  const sortedInvoices = useMemo(() => {
-    const value = (inv: Invoice) =>
-      sortField === 'vendor_name' ? inv.purchase_orders?.vendor_name : (inv as any)[sortField]
-    const sorted = [...invoices].sort((a, b) => {
-      const av = value(a)
-      const bv = value(b)
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      if (typeof av === 'number' && typeof bv === 'number') return av - bv
-      return String(av).localeCompare(String(bv))
-    })
-    return sortOrder === 'asc' ? sorted : sorted.reverse()
-  }, [invoices, sortField, sortOrder])
-
-  const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
+  const activeInvoice = useMemo(() => sortedInvoices.find(i => i.id === activeInvoiceId) ?? null, [sortedInvoices, activeInvoiceId])
 
   if (loading) {
     return <div className="p-4">Loading invoices…</div>
@@ -106,7 +178,7 @@ function PurchaseInvoicesPage() {
   }
 
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Purchase Invoices</h1>
         <button
@@ -159,54 +231,34 @@ function PurchaseInvoicesPage() {
         )}
       </div>
 
-      {invoices.length === 0 ? (
-        <div className="text-muted-foreground">No purchase invoices found.</div>
-      ) : (
-        <table className="min-w-full border">
-          <thead>
-            <tr>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_date')}>
-                Date{sortIndicator('invoice_date')}
-              </th>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('invoice_number')}>
-                Invoice #{sortIndicator('invoice_number')}
-              </th>
-              <th className="border p-2">PO Number</th>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
-                Vendor{sortIndicator('vendor_name')}
-              </th>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('grand_total')}>
-                Amount{sortIndicator('grand_total')}
-              </th>
-              <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('payment_status')}>
-                Status{sortIndicator('payment_status')}
-              </th>
-              <th className="border p-2">Payment Date</th>
-            </tr>
-          </thead>
-          <tbody>
+      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        {/* List pane -- hidden on mobile once an invoice is open, matching Sales
+            Ledger's drill-in navigation; always visible at md+. */}
+        <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeInvoice && 'hidden md:flex')}>
+          <div className="flex-1 overflow-y-auto">
             {sortedInvoices.map((inv) => (
-              <tr
+              <InvoiceListItem
                 key={inv.id}
-                className="cursor-pointer hover:bg-muted"
-                onClick={() => router.push(`/dashboard/purchase-invoices/${inv.id}`)}
-              >
-                <td className="border p-2">{inv.invoice_date}</td>
-                <td className="border p-2">{inv.invoice_number}</td>
-                <td className="border p-2">{inv.purchase_orders?.po_number || '—'}</td>
-                <td className="border p-2">{inv.purchase_orders?.vendor_name || '—'}</td>
-                <td className="border p-2">
-                  {inv.grand_total != null ? `₹${inv.grand_total.toFixed(2)}` : '—'}
-                </td>
-                <td className="border p-2 capitalize">{inv.payment_status}</td>
-                <td className="border p-2 text-muted-foreground">
-                  {inv.last_payment_date ? new Date(inv.last_payment_date).toLocaleDateString() : '—'}
-                </td>
-              </tr>
+                invoice={inv}
+                active={inv.id === activeInvoiceId}
+                onOpen={() => setActiveInvoiceId(inv.id)}
+              />
             ))}
-          </tbody>
-        </table>
-      )}
+            {sortedInvoices.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">No purchase invoices found.</p>
+            )}
+          </div>
+        </div>
+
+        {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+        <div className={cn('flex-1 min-w-0', !activeInvoice && 'hidden md:flex md:items-center md:justify-center')}>
+          {activeInvoice ? (
+            <InvoiceDetailPane invoice={activeInvoice} onBack={() => setActiveInvoiceId(null)} />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select an invoice to view details.</p>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

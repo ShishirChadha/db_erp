@@ -1,8 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -10,6 +10,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { REPAIR_JOB_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 25
 
@@ -59,7 +60,65 @@ function skuLabel(s: { full_sku_code: string; sku_description: string | null } |
   return s.sku_description || s.full_sku_code
 }
 
-function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: ReplacementJob; isOwner: boolean; onDone: () => void; index: number; variant?: 'row' | 'card' }) {
+// One field in the detail pane's label/value grid -- keeps every row's spacing
+// and label styling consistent without repeating the wrapper markup (matches
+// the Sales Ledger reference implementation).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  )
+}
+
+function MarkDoneButton({ status, isOwner, onMarkDone, pending }: { status: string; isOwner: boolean; onMarkDone: () => void; pending: boolean }) {
+  if (!isOwner || status === 'done') return null
+  return (
+    <button onClick={onMarkDone} disabled={pending} className="text-success underline text-xs inline-flex items-center gap-1">
+      {pending && <Loader2 className="size-3 animate-spin" />}Mark Done
+    </button>
+  )
+}
+
+// Left-pane list block -- customer, the old→new swap, date and status, matching the
+// Sales Ledger reference (email/Zoho-Invoices-style list row); everything else lives
+// in the detail pane.
+function JobListItem({ job, swapLabel, active, onOpen }: {
+  job: ReplacementJob | AccessoryReplacementJob
+  swapLabel: string
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex flex-col gap-0.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="font-medium text-sm text-foreground truncate">{job.customers?.customer_name || '—'}</span>
+        <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
+      </div>
+      <p className="text-xs text-muted-foreground truncate">{swapLabel}</p>
+      <div className="flex items-baseline justify-between gap-2 mt-1">
+        <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
+        <span className="text-xs text-muted-foreground whitespace-nowrap">{job.job_date?.slice(0, 10) || '—'}</span>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view for a unit replacement job.
+function JobDetailPane({ job, isOwner, onDone, onBack }: {
+  job: ReplacementJob
+  isOwner: boolean
+  onDone: () => void
+  onBack: () => void
+}) {
   const { run: markDone, pending: marking } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/replacement-jobs/${job.id}/finalize`, { method: 'POST' })
     if (!res.ok) {
@@ -70,51 +129,41 @@ function JobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: Replace
     }
   })
 
-  const doneButton = isOwner && job.status !== 'done' ? (
-    <button onClick={() => markDone()} disabled={marking} className="text-success underline text-xs flex items-center gap-1">
-      {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
-    </button>
-  ) : null
-
-  if (variant === 'card') {
-    return (
-      <div className="border rounded-lg p-3 space-y-2">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <div className="font-medium">{job.job_number}</div>
-            {job.is_own_stock && <div className="text-xs text-muted-foreground">Our stock</div>}
-          </div>
-          <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
-        </div>
-        <div className="text-sm">{job.customers?.customer_name || '—'}</div>
-        <div className="text-xs text-muted-foreground">Old: {unitLabel(job.old_asset)} → New: {unitLabel(job.new_asset)}</div>
-        <div className="text-sm text-muted-foreground">{job.problem_description || job.customer_device_description || '—'}</div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="tabular-nums">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
-          <span>{job.payment_account || '—'}</span>
-        </div>
-        {doneButton && <div className="pt-1 border-t">{doneButton}</div>}
-      </div>
-    )
-  }
-
   return (
-    <tr>
-      <td className="border p-2 text-right tabular-nums text-muted-foreground">{index + 1}</td>
-      <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
-      <td className="border p-2">{job.customers?.customer_name || '—'}</td>
-      <td className="border p-2">{unitLabel(job.old_asset)}</td>
-      <td className="border p-2">{unitLabel(job.new_asset)}</td>
-      <td className="border p-2 max-w-xs truncate">{job.problem_description || job.customer_device_description || '—'}</td>
-      <td className="border p-2"><StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge></td>
-      <td className="border p-2 text-right tabular-nums">₹{job.amount_charged?.toFixed(2) ?? '—'}</td>
-      <td className="border p-2">{job.payment_account || '—'}</td>
-      {isOwner && <td className="border p-2">{doneButton}</td>}
-    </tr>
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{job.customers?.customer_name || '—'}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className="text-xl font-semibold tabular-nums text-foreground">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
+          <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
+          <MarkDoneButton status={job.status} isOwner={isOwner} onMarkDone={markDone} pending={marking} />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Date">{job.job_date?.slice(0, 10) || '—'}</Field>
+        <Field label="Old Unit">{unitLabel(job.old_asset)}</Field>
+        <Field label="New Unit">{unitLabel(job.new_asset)}</Field>
+        <Field label="Reason / Device">{job.problem_description || job.customer_device_description || '—'}</Field>
+        <Field label="Received Into">{job.payment_account || '—'}</Field>
+      </div>
+    </div>
   )
 }
 
-function AccessoryJobRow({ job, isOwner, onDone, index, variant = 'row' }: { job: AccessoryReplacementJob; isOwner: boolean; onDone: () => void; index: number; variant?: 'row' | 'card' }) {
+// Right-pane detail view for an accessory replacement job.
+function AccessoryJobDetailPane({ job, isOwner, onDone, onBack }: {
+  job: AccessoryReplacementJob
+  isOwner: boolean
+  onDone: () => void
+  onBack: () => void
+}) {
   const { run: markDone, pending: marking } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/accessory-replacement-jobs/${job.id}/finalize`, { method: 'POST' })
     if (!res.ok) {
@@ -125,50 +174,34 @@ function AccessoryJobRow({ job, isOwner, onDone, index, variant = 'row' }: { job
     }
   })
 
-  const doneButton = isOwner && job.status !== 'done' ? (
-    <button onClick={() => markDone()} disabled={marking} className="text-success underline text-xs flex items-center gap-1">
-      {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
-    </button>
-  ) : null
-
   const oldLabel = job.is_own_stock ? `${skuLabel(job.old_sku)} x${job.old_quantity}` : '—'
   const newLabel = `${skuLabel(job.new_sku)} x${job.replacement_quantity}`
 
-  if (variant === 'card') {
-    return (
-      <div className="border rounded-lg p-3 space-y-2">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <div className="font-medium">{job.job_number}</div>
-            {job.is_own_stock && <div className="text-xs text-muted-foreground">Our stock</div>}
-          </div>
-          <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
-        </div>
-        <div className="text-sm">{job.customers?.customer_name || '—'}</div>
-        <div className="text-xs text-muted-foreground">Old: {oldLabel} → New: {newLabel}</div>
-        <div className="text-sm text-muted-foreground">{job.problem_description || job.customer_device_description || '—'}</div>
-        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <span className="tabular-nums">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
-          <span>{job.payment_account || '—'}</span>
-        </div>
-        {doneButton && <div className="pt-1 border-t">{doneButton}</div>}
-      </div>
-    )
-  }
-
   return (
-    <tr>
-      <td className="border p-2 text-right tabular-nums text-muted-foreground">{index + 1}</td>
-      <td className="border p-2">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</td>
-      <td className="border p-2">{job.customers?.customer_name || '—'}</td>
-      <td className="border p-2">{oldLabel}</td>
-      <td className="border p-2">{newLabel}</td>
-      <td className="border p-2 max-w-xs truncate">{job.problem_description || job.customer_device_description || '—'}</td>
-      <td className="border p-2"><StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge></td>
-      <td className="border p-2 text-right tabular-nums">₹{job.amount_charged?.toFixed(2) ?? '—'}</td>
-      <td className="border p-2">{job.payment_account || '—'}</td>
-      {isOwner && <td className="border p-2">{doneButton}</td>}
-    </tr>
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{job.customers?.customer_name || '—'}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{job.job_number}{job.is_own_stock ? ' (our stock)' : ''}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className="text-xl font-semibold tabular-nums text-foreground">₹{job.amount_charged?.toFixed(2) ?? '—'}</span>
+          <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
+          <MarkDoneButton status={job.status} isOwner={isOwner} onMarkDone={markDone} pending={marking} />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Date">{job.job_date?.slice(0, 10) || '—'}</Field>
+        <Field label="Old Accessory">{oldLabel}</Field>
+        <Field label="New Accessory">{newLabel}</Field>
+        <Field label="Reason / Device">{job.problem_description || job.customer_device_description || '—'}</Field>
+        <Field label="Received Into">{job.payment_account || '—'}</Field>
+      </div>
+    </div>
   )
 }
 
@@ -181,6 +214,9 @@ function ReplacementJobsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  // Which job is open in the right-hand detail pane (separate ids per tab so
+  // switching tabs doesn't try to match an id from the other job type).
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
@@ -191,10 +227,13 @@ function ReplacementJobsPage() {
     const res = await apiFetch(`/api/replacement-jobs?${params.toString()}`)
     if (res.ok) {
       const json = await res.json()
-      setJobs(json.data || [])
+      const data: ReplacementJob[] = json.data || []
+      setJobs(data)
       setTotal(json.total || 0)
+      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (data[0]?.id ?? null))
     } else {
       setJobs([])
+      setActiveJobId(null)
     }
     setLoading(false)
   }, [statusFilter, page])
@@ -207,8 +246,14 @@ function ReplacementJobsPage() {
     const params = new URLSearchParams()
     if (statusFilter) params.set('status', statusFilter)
     const res = await apiFetch(`/api/accessory-replacement-jobs?${params.toString()}`)
-    if (res.ok) setAccessoryJobs(await res.json())
-    else setAccessoryJobs([])
+    if (res.ok) {
+      const data: AccessoryReplacementJob[] = await res.json()
+      setAccessoryJobs(data)
+      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (data[0]?.id ?? null))
+    } else {
+      setAccessoryJobs([])
+      setActiveJobId(null)
+    }
     setLoading(false)
   }, [statusFilter])
 
@@ -224,8 +269,20 @@ function ReplacementJobsPage() {
     ? '/dashboard/entry/service?subtype=replacement&return_to=%2Fdashboard%2Freplacement-jobs'
     : '/dashboard/entry/service?subtype=replacement&item_kind=accessory&return_to=%2Fdashboard%2Freplacement-jobs'
 
+  const refresh = itemKind === 'unit' ? fetchJobs : fetchAccessoryJobs
+
+  const activeJob = useMemo(
+    () => (itemKind === 'unit' ? jobs.find(j => j.id === activeJobId) ?? null : null),
+    [itemKind, jobs, activeJobId]
+  )
+  const activeAccessoryJob = useMemo(
+    () => (itemKind === 'accessory' ? accessoryJobs.find(j => j.id === activeJobId) ?? null : null),
+    [itemKind, accessoryJobs, activeJobId]
+  )
+  const hasActive = itemKind === 'unit' ? !!activeJob : !!activeAccessoryJob
+
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Replacement Jobs</h1>
         <Link href={newJobHref} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
@@ -235,20 +292,20 @@ function ReplacementJobsPage() {
 
       <div className="flex gap-2 mb-4 border-b">
         <button
-          onClick={() => setItemKind('unit')}
+          onClick={() => { setItemKind('unit'); setActiveJobId(null) }}
           className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${itemKind === 'unit' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}
         >
           Units
         </button>
         <button
-          onClick={() => setItemKind('accessory')}
+          onClick={() => { setItemKind('accessory'); setActiveJobId(null) }}
           className={`px-3 py-1.5 text-sm border-b-2 -mb-px ${itemKind === 'accessory' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}
         >
           Accessories
         </button>
       </div>
 
-      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded mb-4">
+      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded mb-4 bg-card text-sm w-fit">
         <option value="">All Statuses</option>
         <option value="intake,in_progress">Open</option>
         <option value="done">Done</option>
@@ -257,73 +314,66 @@ function ReplacementJobsPage() {
 
       {loading ? (
         <div>Loading...</div>
-      ) : itemKind === 'unit' ? (
-        <>
-          <div className="hidden md:block overflow-x-auto">
-            <table className="min-w-full border text-sm">
-              <thead>
-                <tr>
-                  <th className="border p-2 w-10 text-right">#</th>
-                  <th className="border p-2">Job #</th>
-                  <th className="border p-2">Customer</th>
-                  <th className="border p-2">Old Unit</th>
-                  <th className="border p-2">New Unit</th>
-                  <th className="border p-2">Reason / Device</th>
-                  <th className="border p-2">Status</th>
-                  <th className="border p-2">Amount</th>
-                  <th className="border p-2">Received Into</th>
-                  {isOwner && <th className="border p-2">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {jobs.map((job, idx) => <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} />)}
-                {jobs.length === 0 && (
-                  <tr><td colSpan={isOwner ? 10 : 9} className="border p-4 text-center text-muted-foreground">No replacement jobs found.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-          <div className="md:hidden space-y-2">
-            {jobs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No replacement jobs found.</p>}
-            {jobs.map((job, idx) => (
-              <JobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchJobs} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
-            ))}
-          </div>
-          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
-        </>
       ) : (
-        <>
-          <div className="hidden md:block overflow-x-auto">
-            <table className="min-w-full border text-sm">
-              <thead>
-                <tr>
-                  <th className="border p-2 w-10 text-right">#</th>
-                  <th className="border p-2">Job #</th>
-                  <th className="border p-2">Customer</th>
-                  <th className="border p-2">Old Accessory</th>
-                  <th className="border p-2">New Accessory</th>
-                  <th className="border p-2">Reason / Device</th>
-                  <th className="border p-2">Status</th>
-                  <th className="border p-2">Amount</th>
-                  <th className="border p-2">Received Into</th>
-                  {isOwner && <th className="border p-2">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {accessoryJobs.map((job, idx) => <AccessoryJobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchAccessoryJobs} index={idx} />)}
-                {accessoryJobs.length === 0 && (
-                  <tr><td colSpan={isOwner ? 10 : 9} className="border p-4 text-center text-muted-foreground">No accessory replacement jobs found.</td></tr>
-                )}
-              </tbody>
-            </table>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once a job is open, matching an
+              email client's drill-in navigation; always visible at md+. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', hasActive && 'hidden md:flex')}>
+            <div className="flex-1 overflow-y-auto">
+              {itemKind === 'unit' ? (
+                <>
+                  {jobs.map((job) => (
+                    <JobListItem
+                      key={job.id}
+                      job={job}
+                      swapLabel={`Old: ${unitLabel(job.old_asset)} → New: ${unitLabel(job.new_asset)}`}
+                      active={job.id === activeJobId}
+                      onOpen={() => setActiveJobId(job.id)}
+                    />
+                  ))}
+                  {jobs.length === 0 && (
+                    <p className="p-4 text-center text-sm text-muted-foreground">No replacement jobs found.</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  {accessoryJobs.map((job) => {
+                    const oldLabel = job.is_own_stock ? `${skuLabel(job.old_sku)} x${job.old_quantity}` : '—'
+                    const newLabel = `${skuLabel(job.new_sku)} x${job.replacement_quantity}`
+                    return (
+                      <JobListItem
+                        key={job.id}
+                        job={job}
+                        swapLabel={`Old: ${oldLabel} → New: ${newLabel}`}
+                        active={job.id === activeJobId}
+                        onOpen={() => setActiveJobId(job.id)}
+                      />
+                    )
+                  })}
+                  {accessoryJobs.length === 0 && (
+                    <p className="p-4 text-center text-sm text-muted-foreground">No accessory replacement jobs found.</p>
+                  )}
+                </>
+              )}
+            </div>
+            {itemKind === 'unit' && (
+              <div className="border-t border-border p-2">
+                <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+              </div>
+            )}
           </div>
-          <div className="md:hidden space-y-2">
-            {accessoryJobs.length === 0 && <p className="text-sm text-muted-foreground text-center py-6">No accessory replacement jobs found.</p>}
-            {accessoryJobs.map((job, idx) => (
-              <AccessoryJobRow key={job.id} job={job} isOwner={isOwner} onDone={fetchAccessoryJobs} index={idx} variant="card" />
-            ))}
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !hasActive && 'hidden md:flex md:items-center md:justify-center')}>
+            {itemKind === 'unit' && activeJob ? (
+              <JobDetailPane job={activeJob} isOwner={isOwner} onDone={refresh} onBack={() => setActiveJobId(null)} />
+            ) : itemKind === 'accessory' && activeAccessoryJob ? (
+              <AccessoryJobDetailPane job={activeAccessoryJob} isOwner={isOwner} onDone={refresh} onBack={() => setActiveJobId(null)} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a replacement job to view details.</p>
+            )}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

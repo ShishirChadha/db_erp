@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,36 +13,157 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { ArrowLeft, Star } from "lucide-react";
 import AddCustomerDialog from "@/components/AddCustomerDialog";
 import BulkAddDialog from "@/components/BulkAddDialog";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
 import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
+import { StatusBadge } from "@/components/StatusBadge";
 import { Pagination } from "@/components/Pagination";
-import { CustomerNameLink } from "@/components/CustomerNameLink";
-import { buildCustomerSummary } from "@/lib/customer-summary";
 import { withRetry } from "@/lib/db-retry";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const PAGE_SIZE = 25
 
+interface Customer {
+  id: string;
+  customer_name: string;
+  type: string;
+  contact_person?: string | null;
+  has_gst: boolean;
+  gst_number: string;
+  address: string;
+  phone: string;
+  email: string;
+  source: string;
+  google_review: boolean;
+  social_following: string;
+  is_deleted?: boolean;
+  deleted_remarks?: string | null;
+}
+
+// One field in the detail pane's label/value grid -- keeps every row's spacing
+// and label styling consistent without repeating the wrapper markup (matches
+// Sales Ledger's Field helper).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  );
+}
+
+// Left-pane list block -- a contact-list row rather than a transaction row (this
+// page has no status field): name, phone, and a couple of small badges (type,
+// GST-registered) are what's scannable at a glance. Email is left out of the
+// compact row (too long) and shown in the detail pane instead.
+function CustomerListItem({ customer, active, onOpen }: {
+  customer: Customer;
+  active: boolean;
+  onOpen: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors",
+        active ? "bg-primary/10" : "hover:bg-muted",
+        customer.is_deleted && "opacity-50"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{customer.customer_name || "—"}</span>
+          {customer.google_review && <Star className="size-3.5 text-warning fill-yellow-500 flex-shrink-0" />}
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{customer.phone || "—"}</p>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={customer.type === "Business" ? "info" : "neutral"}>{customer.type || "—"}</StatusBadge>
+          {customer.has_gst && <StatusBadge tone="success">GST</StatusBadge>}
+          {customer.is_deleted && <StatusBadge tone="danger">Deleted</StatusBadge>}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+// Right-pane detail view -- the same fields the old wide table's columns showed
+// for one customer, laid out as a single record instead of a table row. Every
+// action (Edit/Delete/Restore) is preserved exactly from the table view.
+function CustomerDetailPane({ customer, onEdit, onDelete, onRestore, restoring, onBack }: {
+  customer: Customer;
+  onEdit: () => void;
+  onDelete: () => void;
+  onRestore: () => void;
+  restoring: boolean;
+  onBack: () => void;
+}) {
+  return (
+    <div className={cn("flex flex-col h-full", customer.is_deleted && "opacity-60")}>
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{customer.customer_name || "—"}</h2>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <StatusBadge tone={customer.type === "Business" ? "info" : "neutral"}>{customer.type || "—"}</StatusBadge>
+            {customer.has_gst && <StatusBadge tone="success">GST Registered</StatusBadge>}
+            {customer.is_deleted && <StatusBadge tone="danger">Deleted</StatusBadge>}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          {customer.is_deleted ? (
+            <>
+              <Button variant="outline" size="sm" onClick={onEdit}>Edit</Button>
+              <Button variant="default" size="sm" onClick={onRestore} loading={restoring}>Restore</Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={onEdit}>Edit</Button>
+              <Button variant="destructive" size="sm" onClick={onDelete}>Delete</Button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Type">{customer.type || "—"}</Field>
+        {customer.type === "Business" && (
+          <Field label="Contact Person">{customer.contact_person || "—"}</Field>
+        )}
+        <Field label="Phone">{customer.phone || "—"}</Field>
+        <Field label="Email">{customer.email || "—"}</Field>
+        <Field label="Address">{customer.address || "—"}</Field>
+        <Field label="GST">{customer.has_gst ? (customer.gst_number || "Yes") : "No"}</Field>
+        <Field label="Source">{customer.source || "—"}</Field>
+        <Field label="Social Following">{customer.social_following || "—"}</Field>
+        <Field label="Google Review">
+          {customer.google_review ? (
+            <span className="inline-flex items-center gap-1"><Star className="size-3.5 text-warning fill-yellow-500" /> Yes</span>
+          ) : "No"}
+        </Field>
+        {customer.is_deleted && (
+          <Field label="Deleted Remarks">{customer.deleted_remarks || "—"}</Field>
+        )}
+      </div>
+    </div>
+  );
+}
+
 type SortField = "customer_name" | "type" | "phone" | "email";
 
 function CustomersPage() {
-  const [customers, setCustomers] = useState<any[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [editingCustomer, setEditingCustomer] = useState<any | null>(null);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [customerToDelete, setCustomerToDelete] = useState<any>(null);
+  const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
   const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
   const supabase = createClient();
@@ -53,6 +174,8 @@ function CustomersPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // Which customer is open in the right-hand detail pane.
+  const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -83,8 +206,19 @@ function CustomersPage() {
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
     const { data, error, count } = await withRetry(() => query);
-    if (error) { console.error(error); toast.error("Unable to load customers -- check your connection and try again."); }
-    else { setCustomers(data || []); setTotal(count || 0); }
+    if (error) {
+      console.error(error);
+      toast.error("Unable to load customers -- check your connection and try again.");
+    } else {
+      const rows: Customer[] = data || [];
+      setCustomers(rows);
+      setTotal(count || 0);
+      // Auto-open the first row on load/refetch -- but only when nothing is
+      // selected yet, or the previously active customer fell off this
+      // page/filter, so re-fetching after an edit doesn't yank focus away
+      // from what the user is currently looking at (matches Sales Ledger).
+      setActiveCustomerId((prev) => (prev && rows.some((c) => c.id === prev)) ? prev : (rows[0]?.id ?? null));
+    }
     setLoading(false);
   }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);
 
@@ -93,12 +227,7 @@ function CustomersPage() {
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   useEffect(() => { setPage(1) }, [showDeleted, searchTerm, typeFilter, nameFilter]);
 
-  const handleSort = (field: SortField) => {
-    if (sortField === field) setSortOrder(sortOrder === "asc" ? "desc" : "asc");
-    else { setSortField(field); setSortOrder("asc"); }
-  };
-
-  const handleEditClick = (c: any) => { setEditingCustomer(c); setDialogOpen(true); };
+  const handleEditClick = (c: Customer) => { setEditingCustomer(c); setDialogOpen(true); };
   const handleSoftDelete = async (remarks: string) => {
     if (!customerToDelete) return;
     await supabase.from("customers").update({ is_deleted: true, deleted_remarks: remarks, deleted_at: new Date().toISOString() }).eq("id", customerToDelete.id);
@@ -106,7 +235,7 @@ function CustomersPage() {
     setCustomerToDelete(null);
   };
   const [restoringId, setRestoringId] = useState<string | null>(null);
-  const handleRestore = async (c: any) => {
+  const handleRestore = async (c: Customer) => {
     if (restoringId) return;
     setRestoringId(c.id);
     try {
@@ -117,9 +246,11 @@ function CustomersPage() {
     }
   };
 
+  const activeCustomer = useMemo(() => customers.find(c => c.id === activeCustomerId) ?? null, [customers, activeCustomerId]);
+
   return (
-    <div className="space-y-4">
-      <div className="flex justify-between items-center">
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+      <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Customers</h1>
         <div className="space-x-2">
           <AddCustomerDialog onAdd={fetchCustomers} />
@@ -144,9 +275,8 @@ function CustomersPage() {
         </div>
       </div>
 
-      {/* Filters Bar */}
-      <div className="flex flex-wrap gap-4 items-end">
-        {/* GLOBAL SEARCH BOX */}
+      {/* Filters Bar -- unchanged in behavior */}
+      <div className="flex flex-wrap gap-4 items-end mb-4">
         <div className="w-64">
           <Label>Global Search</Label>
           <Input
@@ -169,6 +299,23 @@ function CustomersPage() {
           <Input placeholder="Search name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
         </div>
 
+        <div className="w-48">
+          <Label>Sort by</Label>
+          <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="customer_name">Name</SelectItem>
+              <SelectItem value="type">Type</SelectItem>
+              <SelectItem value="phone">Phone</SelectItem>
+              <SelectItem value="email">Email</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <Button variant="outline" onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}>
+          {sortOrder === "asc" ? "↑ Asc" : "↓ Desc"}
+        </Button>
+
         <div className="flex items-center space-x-2">
           <Checkbox id="showDeleted" checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
@@ -177,63 +324,48 @@ function CustomersPage() {
         <Button variant="secondary" onClick={() => { setSearchTerm(""); setTypeFilter("all"); setNameFilter(""); }}>Clear Filters</Button>
       </div>
 
-      {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10 text-right">#</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("customer_name")}>Name {sortField === "customer_name" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("type")}>Type {sortField === "type" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead>Contact Person</TableHead>
-              <TableHead>GST</TableHead>
-              <TableHead>Phone</TableHead>
-              <TableHead className="cursor-pointer" onClick={() => handleSort("email")}>Email {sortField === "email" && (sortOrder === "asc" ? "↑" : "↓")}</TableHead>
-              <TableHead>Source</TableHead>
-              <TableHead>Social</TableHead>
-              <TableHead>Deleted Remarks</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? <TableRow><TableCell colSpan={11} className="text-center">Loading…</TableCell></TableRow> : customers.length === 0 ? <TableRow><TableCell colSpan={11} className="text-center">No customers found.</TableCell></TableRow> : customers.map((c, idx) => (
-              <TableRow key={c.id}>
-                <TableCell className="text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</TableCell>
-                <TableCell>
-                  <CustomerNameLink
-                    customerId={c.id}
-                    customerName={c.customer_name}
-                    summary={buildCustomerSummary(c)}
-                    onUpdated={fetchCustomers}
-                  />
-                </TableCell>
-                <TableCell>{c.type}</TableCell>
-                <TableCell>{c.type === "Business" ? (c.contact_person || "—") : ""}</TableCell>
-                <TableCell>{c.has_gst ? (c.gst_number || "Yes") : "No"}</TableCell>
-                <TableCell>{c.phone}</TableCell>
-                <TableCell>{c.email}</TableCell>
-                <TableCell>{c.source}</TableCell>
-                <TableCell>{c.social_following}</TableCell>
-                <TableCell>{c.deleted_remarks}</TableCell>
-                <TableCell className="text-right space-x-2">
-                  {c.is_deleted ? (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => handleEditClick(c)}>Edit</Button>
-                      <Button variant="default" size="sm" onClick={() => handleRestore(c)} loading={restoringId === c.id}>Restore</Button>
-                    </>
-                  ) : (
-                    <>
-                      <Button variant="outline" size="sm" onClick={() => handleEditClick(c)}>Edit</Button>
-                      <Button variant="destructive" size="sm" onClick={() => { setCustomerToDelete(c); setDeleteDialogOpen(true); }}>Delete</Button>
-                    </>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+      {loading ? (
+        <div>Loading...</div>
+      ) : (
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once a customer is open, matching an
+              email client's drill-in navigation; always visible at md+. */}
+          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeCustomer && "hidden md:flex")}>
+            <div className="flex-1 overflow-y-auto">
+              {customers.map((c) => (
+                <CustomerListItem
+                  key={c.id}
+                  customer={c}
+                  active={c.id === activeCustomerId}
+                  onOpen={() => setActiveCustomerId(c.id)}
+                />
+              ))}
+              {customers.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No customers found.</p>
+              )}
+            </div>
+            <div className="border-t border-border p-2">
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+            </div>
+          </div>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn("flex-1 min-w-0", !activeCustomer && "hidden md:flex md:items-center md:justify-center")}>
+            {activeCustomer ? (
+              <CustomerDetailPane
+                customer={activeCustomer}
+                onEdit={() => handleEditClick(activeCustomer)}
+                onDelete={() => { setCustomerToDelete(activeCustomer); setDeleteDialogOpen(true); }}
+                onRestore={() => handleRestore(activeCustomer)}
+                restoring={restoringId === activeCustomer.id}
+                onBack={() => setActiveCustomerId(null)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a customer to view details.</p>
+            )}
+          </div>
+        </div>
+      )}
 
       {editingCustomer && <EditCustomerDialog customer={editingCustomer} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchCustomers} />}
       {customerToDelete && <DeleteRecordDialog title="Delete Customer" identifier={customerToDelete.customer_name} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}

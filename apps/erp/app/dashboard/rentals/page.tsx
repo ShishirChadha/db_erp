@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -10,6 +11,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { RENTAL_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { NewRentalDialog } from '@/components/NewRentalDialog'
+import { cn } from '@/lib/utils'
 
 type SortField = 'start_date' | 'agreement_number' | 'expected_return_date' | 'rent_amount' | 'next_billing_date'
 type SortOrder = 'asc' | 'desc'
@@ -50,67 +52,102 @@ function day(d: string | null | undefined) {
   return dt.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC' })
 }
 
-// One row component, two renders -- the table row and the phone card share all state
-// and derived values rather than being maintained as two separate components.
-function RentalRow({ agreement, index, variant = 'row' }: {
+// Overdue is derived (see CLAUDE.md), not a stored status -- the badge shown here
+// mirrors the detail page's own status + overdue presentation.
+function displayStatus(a: RentalAgreement) {
+  if (a.is_overdue) return 'Overdue'
+  return a.status
+}
+
+// One field in the detail pane's label/value grid -- matches SaleDetailPane's Field
+// helper on the Sales Ledger reference implementation.
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  )
+}
+
+// Left-pane list block -- customer, agreement #, due-back date (the actionable date
+// for day-to-day rental watching, since overdue units are what staff need to catch),
+// and status, matching the Sales Ledger's SaleListItem pattern. Rent amount sits
+// top-right like the sale total there.
+function RentalListItem({ agreement, active, onOpen }: {
   agreement: RentalAgreement
-  index: number
-  variant?: 'row' | 'card'
+  active: boolean
+  onOpen: () => void
 }) {
   const a = agreement
-  const statusBadge = (
-    <StatusBadge tone={toneFor(RENTAL_STATUS_TONES, a.status)}>{a.status}</StatusBadge>
-  )
-  const overdueBadge = a.is_overdue ? (
-    <span className="text-xs font-medium text-destructive">Overdue</span>
-  ) : null
-  const units = `${a.units_on_rent} / ${a.units_total}`
-
-  if (variant === 'card') {
-    return (
-      <div className="border rounded-lg p-3 space-y-2">
-        <div className="flex justify-between items-start gap-2">
-          <div>
-            <div className="text-xs text-gray-500">{day(a.start_date)}</div>
-            <Link href={`/dashboard/rentals/${a.id}`} className="font-medium underline">
-              {a.agreement_number}
-            </Link>
-          </div>
-          <div className="flex flex-col items-end gap-1">{statusBadge}{overdueBadge}</div>
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{a.customer_name || '—'}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">{money(a.rent_amount)}</span>
         </div>
-        <div className="text-sm">{a.customer_name || '—'}</div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-          <span>{units} out</span>
-          <span>{INTERVAL_LABELS[a.billing_interval] || a.billing_interval}</span>
-          <span className="tabular-nums">{money(a.rent_amount)}</span>
-          {a.payment_account && <span>{a.payment_account}</span>}
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">{a.agreement_number}</p>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Due {day(a.expected_return_date)}</span>
         </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
-          <span>Due back: {day(a.expected_return_date)}</span>
-          <span>Next bill: {day(a.next_billing_date)}</span>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={a.is_overdue ? 'danger' : toneFor(RENTAL_STATUS_TONES, a.status)}>{displayStatus(a)}</StatusBadge>
         </div>
       </div>
-    )
-  }
+    </button>
+  )
+}
 
+// Right-pane detail view -- a solid summary of the agreement (the fields that used
+// to live in the table's remaining columns) plus a prominent link into the existing
+// full agreement page at /dashboard/rentals/[id], which already owns line items,
+// billing cycles, and deposit/return/buyout actions -- not re-implemented here.
+function RentalDetailPane({ agreement, onBack }: { agreement: RentalAgreement; onBack: () => void }) {
+  const a = agreement
   return (
-    <tr className="border-t">
-      <td className="p-2 text-right text-gray-500">{index + 1}</td>
-      <td className="p-2 whitespace-nowrap">{day(a.start_date)}</td>
-      <td className="p-2 whitespace-nowrap">
-        <Link href={`/dashboard/rentals/${a.id}`} className="underline font-medium">{a.agreement_number}</Link>
-      </td>
-      <td className="p-2">{a.customer_name || '—'}</td>
-      <td className="p-2 text-right tabular-nums">{units}</td>
-      <td className="p-2">{INTERVAL_LABELS[a.billing_interval] || a.billing_interval}</td>
-      <td className="p-2 text-right tabular-nums">{money(a.rent_amount)}</td>
-      <td className="p-2 text-right tabular-nums">{money(a.security_deposit_amount)}</td>
-      <td className="p-2 whitespace-nowrap">{day(a.expected_return_date)}</td>
-      <td className="p-2 whitespace-nowrap">{day(a.next_billing_date)}</td>
-      <td className="p-2">
-        <div className="flex flex-col gap-1 items-start">{statusBadge}{overdueBadge}</div>
-      </td>
-    </tr>
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{a.customer_name || '—'}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5">{a.agreement_number}</p>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <span className="text-xl font-semibold tabular-nums text-foreground">{money(a.rent_amount)}</span>
+          <StatusBadge tone={a.is_overdue ? 'danger' : toneFor(RENTAL_STATUS_TONES, a.status)}>{displayStatus(a)}</StatusBadge>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Start Date">{day(a.start_date)}</Field>
+        <Field label="Due Back">{day(a.expected_return_date)}</Field>
+        <Field label="Out / Total"><span className="tabular-nums">{a.units_on_rent} / {a.units_total}</span></Field>
+        <Field label="Billing">{INTERVAL_LABELS[a.billing_interval] || a.billing_interval}</Field>
+        <Field label="Next Bill">{day(a.next_billing_date)}</Field>
+        <Field label="Deposit"><span className="tabular-nums">{money(a.security_deposit_amount)}</span></Field>
+        <Field label="Received Into">{a.payment_account || '—'}</Field>
+        {a.customer_phone && <Field label="Phone">{a.customer_phone}</Field>}
+      </div>
+
+      <div className="p-4 border-t border-border">
+        <Link
+          href={`/dashboard/rentals/${a.id}`}
+          className="inline-flex items-center gap-1.5 text-primary underline text-sm font-medium"
+        >
+          Open full agreement <ArrowRight className="size-3.5" />
+        </Link>
+      </div>
+    </div>
   )
 }
 
@@ -124,6 +161,8 @@ function RentalsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [showNew, setShowNew] = useState(false)
+  // Which agreement is open in the right-hand detail pane.
+  const [activeId, setActiveId] = useState<string | null>(null)
 
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -132,13 +171,8 @@ function RentalsPage() {
     return () => clearTimeout(timer)
   }, [searchInput])
 
-  const [sortField, setSortField] = useState<SortField>('start_date')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    else { setSortField(field); setSortOrder('desc') }
-  }
-  const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
+  const sortField: SortField = 'start_date'
+  const sortOrder: SortOrder = 'desc'
 
   const [statCounts, setStatCounts] = useState({ total: 0, active: 0, closed: 0, due_to_bill: 0, overdue: 0 })
   const fetchStats = useCallback(async () => {
@@ -158,13 +192,19 @@ function RentalsPage() {
     const res = await apiFetch(`/api/rentals?${params.toString()}`)
     if (res.ok) {
       const json = await res.json()
-      setAgreements(json.data || [])
+      const data: RentalAgreement[] = json.data || []
+      setAgreements(data)
       setTotal(json.total || 0)
+      // Auto-open the first row on load/refetch, but don't yank focus away from
+      // whatever's already open if it's still in the refetched data.
+      setActiveId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (data[0]?.id ?? null))
     } else {
       setAgreements([])
+      setTotal(0)
+      setActiveId(null)
     }
     setLoading(false)
-  }, [statusFilter, searchTerm, sortField, sortOrder, page])
+  }, [statusFilter, searchTerm, page])
 
   useEffect(() => { fetchAgreements() }, [fetchAgreements])
   useEffect(() => { fetchStats() }, [fetchStats])
@@ -177,8 +217,13 @@ function RentalsPage() {
   // the current page rather than becoming a server-side status value.
   const displayed = overdueOnly ? agreements.filter((a) => a.is_overdue) : agreements
 
+  const activeAgreement = useMemo(
+    () => displayed.find((a) => a.id === activeId) ?? null,
+    [displayed, activeId]
+  )
+
   return (
-    <div>
+    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Rentals</h1>
         {canEdit && (
@@ -201,7 +246,7 @@ function RentalsPage() {
         ]}
       />
 
-      <div className="flex gap-4 mb-4 flex-wrap items-center">
+      <div className="flex gap-4 mb-2 flex-wrap items-center">
         <input
           type="text"
           placeholder="Search agreement #, customer, or notes..."
@@ -222,44 +267,37 @@ function RentalsPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <>
-          <div className="hidden md:block overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50">
-                <tr>
-                  <th className="p-2 text-right w-10">#</th>
-                  <th className="p-2 text-left cursor-pointer" onClick={() => toggleSort('start_date')}>Start{sortIndicator('start_date')}</th>
-                  <th className="p-2 text-left cursor-pointer" onClick={() => toggleSort('agreement_number')}>Agreement #{sortIndicator('agreement_number')}</th>
-                  <th className="p-2 text-left">Customer</th>
-                  <th className="p-2 text-right">Out / Total</th>
-                  <th className="p-2 text-left">Billing</th>
-                  <th className="p-2 text-right cursor-pointer" onClick={() => toggleSort('rent_amount')}>Rent{sortIndicator('rent_amount')}</th>
-                  <th className="p-2 text-right">Deposit</th>
-                  <th className="p-2 text-left cursor-pointer" onClick={() => toggleSort('expected_return_date')}>Due Back{sortIndicator('expected_return_date')}</th>
-                  <th className="p-2 text-left cursor-pointer" onClick={() => toggleSort('next_billing_date')}>Next Bill{sortIndicator('next_billing_date')}</th>
-                  <th className="p-2 text-left">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayed.length === 0 ? (
-                  <tr><td colSpan={11} className="p-4 text-center text-muted-foreground">No rental agreements found.</td></tr>
-                ) : displayed.map((a, idx) => (
-                  <RentalRow key={a.id} agreement={a} index={(page - 1) * PAGE_SIZE + idx} />
-                ))}
-              </tbody>
-            </table>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once an agreement is open, matching an
+              email client's drill-in navigation; always visible at md+. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAgreement && 'hidden md:flex')}>
+            <div className="flex-1 overflow-y-auto">
+              {displayed.map((a) => (
+                <RentalListItem
+                  key={a.id}
+                  agreement={a}
+                  active={a.id === activeId}
+                  onOpen={() => setActiveId(a.id)}
+                />
+              ))}
+              {displayed.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No rental agreements found.</p>
+              )}
+            </div>
+            <div className="border-t border-border p-2">
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+            </div>
           </div>
 
-          <div className="md:hidden space-y-2">
-            {displayed.length === 0 ? (
-              <p className="p-4 text-center text-muted-foreground">No rental agreements found.</p>
-            ) : displayed.map((a, idx) => (
-              <RentalRow key={a.id} agreement={a} index={(page - 1) * PAGE_SIZE + idx} variant="card" />
-            ))}
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !activeAgreement && 'hidden md:flex md:items-center md:justify-center')}>
+            {activeAgreement ? (
+              <RentalDetailPane agreement={activeAgreement} onBack={() => setActiveId(null)} />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a rental agreement to view details.</p>
+            )}
           </div>
-
-          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
-        </>
+        </div>
       )}
 
       {showNew && (

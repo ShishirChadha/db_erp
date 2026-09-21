@@ -1,15 +1,16 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { Pagination } from '@/components/Pagination'
-import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PO_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { cn } from '@/lib/utils'
+import { PODetailPage } from './[id]/page'
 
 const PAGE_SIZE = 25
 
@@ -32,8 +33,66 @@ interface Vendor {
   company_name: string
 }
 
-type SortField = 'po_number' | 'po_date' | 'vendor_name' | 'po_status' | 'total_amount' | 'grand_total'
-type SortOrder = 'asc' | 'desc'
+// Left-pane list block -- vendor, PO number, date, and status, matching the
+// email-client / Zoho-Invoices-style list row used on Sales Ledger.
+function PurchaseOrderListItem({ po, active, onOpen }: {
+  po: PurchaseOrder
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{po.vendor_name}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+            {po.grand_total ? `₹${po.grand_total.toFixed(2)}` : '-'}
+          </span>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+          <p className="text-xs text-muted-foreground truncate">{po.po_number}</p>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{po.po_date}</span>
+        </div>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view -- the full PO detail page (line items, receiving,
+// vendor payments, submit/cancel/delete, linked purchase invoice creation)
+// embedded inline via its own `embedded` mode instead of behind a link-out, so
+// everything's readable/actionable without leaving this page. `key={po.id}`
+// forces a clean remount per selection -- simpler and safer than trying to
+// cancel/guard an in-flight fetch when the user clicks a different row before
+// the previous one finishes loading.
+function PurchaseOrderDetailPane({ poId, onBack, onDeleted }: {
+  poId: string
+  onBack: () => void
+  onDeleted: () => void
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <PODetailPage key={poId} poId={poId} embedded onDeleted={onDeleted} />
+      </div>
+    </div>
+  )
+}
 
 function PurchaseOrdersPage() {
   const router = useRouter()
@@ -45,13 +104,13 @@ function PurchaseOrdersPage() {
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
   const [search, setSearch] = useState('')
-  const [sortField, setSortField] = useState<SortField>('po_date')
-  const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
+  // Which PO is open in the right-hand detail pane.
+  const [activeId, setActiveId] = useState<string | null>(null)
 
-  const fetchOrders = async () => {
+  const fetchOrders = useCallback(async () => {
     setLoading(true)
     setError('')
     const params = new URLSearchParams()
@@ -62,21 +121,29 @@ function PurchaseOrdersPage() {
     if (search) params.append('search', search)
     params.set('page', String(page))
     params.set('limit', String(PAGE_SIZE))
+    // Newest first, matching every other ledger page's date-column default.
+    params.set('sort', 'po_date')
+    params.set('dir', 'desc')
 
     const res = await apiFetch(`/api/purchase-orders?${params.toString()}`)
     if (res.ok) {
       const json = await res.json()
-      setOrders(json.data || [])
+      const data: PurchaseOrder[] = json.data || []
+      setOrders(data)
       setTotal(json.total || 0)
+      // Auto-open the first row on load/refetch, but don't yank focus away from
+      // whatever's already open if it's still in the refetched data.
+      setActiveId((prev) => (prev && data.some((o) => o.id === prev)) ? prev : (data[0]?.id ?? null))
     } else {
       setError('Failed to load purchase orders.')
+      setOrders([])
+      setTotal(0)
+      setActiveId(null)
     }
     setLoading(false)
-  }
-
-  useEffect(() => {
-    fetchOrders()
   }, [statusFilter, vendorFilter, dateFrom, dateTo, search, page])
+
+  useEffect(() => { fetchOrders() }, [fetchOrders])
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   useEffect(() => { setPage(1) }, [statusFilter, vendorFilter, dateFrom, dateTo, search])
@@ -87,55 +154,12 @@ function PurchaseOrdersPage() {
     })
   }, [])
 
-  const toggleSort = (field: SortField) => {
-    if (sortField === field) {
-      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-    } else {
-      setSortField(field)
-      setSortOrder('asc')
-    }
-  }
-
-  const sortedOrders = useMemo(() => {
-    const sorted = [...orders].sort((a, b) => {
-      const av = a[sortField]
-      const bv = b[sortField]
-      if (av == null && bv == null) return 0
-      if (av == null) return 1
-      if (bv == null) return -1
-      if (typeof av === 'number' && typeof bv === 'number') return av - bv
-      return String(av).localeCompare(String(bv))
-    })
-    return sortOrder === 'asc' ? sorted : sorted.reverse()
-  }, [orders, sortField, sortOrder])
-
-  const sortIndicator = (field: SortField) => (sortField === field ? (sortOrder === 'asc' ? ' ↑' : ' ↓') : '')
-
-  const [deletingId, setDeletingId] = useState<string | null>(null)
-
-  const handleDelete = async (po: PurchaseOrder) => {
-    if (deletingId) return
-    if (!confirm(`Permanently delete ${po.po_number}? This cannot be undone.`)) return
-
-    setDeletingId(po.id)
-    try {
-      const res = await apiFetch(`/api/purchase-orders/${po.id}/hard-delete`, { method: 'DELETE' })
-      if (res.ok) {
-        alert(`${po.po_number} deleted.`)
-        fetchOrders()
-      } else {
-        const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Failed to delete PO.')
-      }
-    } finally {
-      setDeletingId(null)
-    }
-  }
+  const activePo = useMemo(() => orders.find((o) => o.id === activeId) ?? null, [orders, activeId])
 
   if (loading) return <div className="p-4">Loading...</div>
 
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <button
@@ -206,71 +230,41 @@ function PurchaseOrdersPage() {
 
       {error && <div className="mb-4"><ErrorBanner message={error} onRetry={fetchOrders} /></div>}
 
-      <div className="overflow-x-auto rounded-md border">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr>
-              <th className="p-2 w-10 text-right">#</th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_date')}>
-                Date{sortIndicator('po_date')}
-              </th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_number')}>
-                PO Number{sortIndicator('po_number')}
-              </th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('vendor_name')}>
-                Vendor{sortIndicator('vendor_name')}
-              </th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('po_status')}>
-                Status{sortIndicator('po_status')}
-              </th>
-              <th className="p-2">Payment Date</th>
-              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('total_amount')}>
-                Total (before GST){sortIndicator('total_amount')}
-              </th>
-              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('grand_total')}>
-                Grand Total (incl. GST){sortIndicator('grand_total')}
-              </th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {sortedOrders.length === 0 && <EmptyTableRow colSpan={9} message="No purchase orders found." />}
-            {sortedOrders.map((po, idx) => (
-              <tr key={po.id} className="hover:bg-muted">
-                <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                <td className="p-2">{po.po_date}</td>
-                <td className="p-2">{po.po_number}</td>
-                <td className="p-2">{po.vendor_name}</td>
-                <td className="p-2"><StatusBadge tone={toneFor(PO_STATUS_TONES, po.po_status)}>{po.po_status.replace(/_/g, ' ')}</StatusBadge></td>
-                <td className="p-2 text-muted-foreground">
-                  {po.last_payment_date
-                    ? new Date(po.last_payment_date).toLocaleDateString()
-                    : po.payment_status === 'paid' ? '—' : 'Unpaid'}
-                </td>
-                <td className="p-2 text-right tabular-nums">{po.total_amount ? `₹${po.total_amount.toFixed(2)}` : '-'}</td>
-                <td className="p-2 text-right tabular-nums">{po.grand_total ? `₹${po.grand_total.toFixed(2)}` : '-'}</td>
-                <td className="p-2 space-x-2">
-                  <button
-                    onClick={() => router.push(`/dashboard/purchase-orders/${po.id}`)}
-                    className="text-primary underline"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => handleDelete(po)}
-                    disabled={deletingId === po.id}
-                    className="text-destructive underline disabled:opacity-50 inline-flex items-center gap-1"
-                  >
-                    {deletingId === po.id && <Loader2 className="size-3 animate-spin" />}
-                    Delete
-                  </button>
-                </td>
-              </tr>
+      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        {/* List pane -- hidden on mobile once a PO is open, matching an email
+            client's drill-in navigation; always visible at md+. */}
+        <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activePo && 'hidden md:flex')}>
+          <div className="flex-1 overflow-y-auto">
+            {orders.map((po) => (
+              <PurchaseOrderListItem
+                key={po.id}
+                po={po}
+                active={po.id === activeId}
+                onOpen={() => setActiveId(po.id)}
+              />
             ))}
-          </tbody>
-        </table>
+            {orders.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">No purchase orders found.</p>
+            )}
+          </div>
+          <div className="border-t border-border p-2">
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+          </div>
+        </div>
+
+        {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+        <div className={cn('flex-1 min-w-0', !activePo && 'hidden md:flex md:items-center md:justify-center')}>
+          {activePo ? (
+            <PurchaseOrderDetailPane
+              poId={activePo.id}
+              onBack={() => setActiveId(null)}
+              onDeleted={() => { setActiveId(null); fetchOrders() }}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a purchase order to view details.</p>
+          )}
+        </div>
       </div>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
     </div>
   )
 }

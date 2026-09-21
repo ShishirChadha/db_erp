@@ -18,8 +18,14 @@ function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`;
 }
 
-function ViewInvoicePage() {
-  const { id } = useParams();
+// `invoiceId`/`embedded` let this exact component be reused inline inside the
+// Invoices list page's detail pane instead of duplicating this rendering logic
+// a second time -- embedded mode fetches by the given id instead of a route
+// param, and drops the standalone-page chrome (Back button, outer max-width),
+// which the list page's pane already supplies.
+export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; embedded?: boolean } = {}) {
+  const params = useParams();
+  const id = invoiceId ?? (params.id as string);
   const [invoice, setInvoice] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -98,12 +104,14 @@ function ViewInvoicePage() {
   const isGst = items.some((i) => i.gst_type);
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className={embedded ? "space-y-6" : "max-w-5xl mx-auto space-y-6"}>
       {/* ---------- Toolbar ---------- */}
       <div className="flex flex-wrap justify-between items-center gap-2">
-        <Button variant="ghost" onClick={() => router.back()}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
-        </Button>
+        {embedded ? <span /> : (
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          </Button>
+        )}
         <div className="flex flex-wrap gap-2">
           {invoice.status === "draft" && (
             <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${id}/edit`)}>
