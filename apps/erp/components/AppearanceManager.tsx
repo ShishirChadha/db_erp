@@ -10,6 +10,7 @@ const THEME_META: Record<ThemeName, { label: string; description: string; swatch
   forest: { label: 'Forest', description: 'Green accent, warm-neutral grays.', swatch: ['oklch(1 0 0)', 'oklch(0.52 0.14 150)', 'oklch(0.96 0.01 145)'] },
   amber: { label: 'Amber', description: 'Warm orange accent, warm-tinted neutrals.', swatch: ['oklch(1 0 0)', 'oklch(0.62 0.17 50)', 'oklch(0.97 0.01 60)'] },
   midnight: { label: 'Midnight', description: 'Dark background, blue accent.', swatch: ['oklch(0.145 0 0)', 'oklch(0.65 0.19 260)', 'oklch(0.269 0 0)'] },
+  navy: { label: 'Navy', description: 'Navy sidebar with a green selection highlight — rest of the app stays light.', swatch: ['oklch(1 0 0)', 'oklch(0.28 0.09 260)', 'oklch(0.6 0.16 145)'] },
 }
 
 export default function AppearanceManager() {

@@ -4,7 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 
-export const THEMES = ['slate', 'ocean', 'forest', 'amber', 'midnight'] as const
+export const THEMES = ['slate', 'ocean', 'forest', 'amber', 'midnight', 'navy'] as const
 export type ThemeName = typeof THEMES[number]
 
 const STORAGE_KEY = 'db-erp-theme'

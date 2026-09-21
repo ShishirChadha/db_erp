@@ -290,7 +290,7 @@ function SidebarContent({
           </div>
           <div>
             <p className="font-semibold text-sidebar-foreground text-sm">DigitalBluez</p>
-            <p className="text-xs text-muted-foreground">ERP System</p>
+            <p className="text-xs text-sidebar-foreground/60">ERP System</p>
           </div>
         </Link>
         <NotificationBell />
@@ -301,7 +301,7 @@ function SidebarContent({
         <button
           type="button"
           onClick={openSearch}
-          className="flex w-full items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar px-3 py-2 text-sm text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all"
+          className="flex w-full items-center gap-2 rounded-xl border border-sidebar-border bg-sidebar px-3 py-2 text-sm text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-all"
         >
           <Search className="h-4 w-4 flex-shrink-0" />
           <span className="flex-1 text-left">Search...</span>
@@ -313,7 +313,7 @@ function SidebarContent({
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {favoriteItems.length > 0 && (
           <div className="pb-2 mb-2 border-b border-sidebar-border space-y-1">
-            <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-muted-foreground">Favorites</p>
+            <p className="px-3 pb-1 text-xs font-medium uppercase tracking-wide text-sidebar-foreground/60">Favorites</p>
             {favoriteItems.map(item => {
               const isActive = pathname === childPath(item.href)
               return (
@@ -324,7 +324,7 @@ function SidebarContent({
                   className={cn(
                     'flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all',
                     isActive
-                      ? 'bg-primary text-primary-foreground font-medium'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground font-medium'
                       : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                   )}
                 >
@@ -348,7 +348,7 @@ function SidebarContent({
                   className={cn(
                     'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all w-full',
                     isActive
-                      ? 'bg-primary text-primary-foreground'
+                      ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                       : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                   )}
                 >
@@ -373,8 +373,8 @@ function SidebarContent({
                             className={cn(
                               'flex-1 flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition-all',
                               childActive
-                                ? 'bg-primary/10 text-primary font-medium'
-                                : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
+                                ? 'bg-sidebar-primary/15 text-sidebar-primary font-medium'
+                                : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                             )}
                           >
                             {child.label}
@@ -388,7 +388,7 @@ function SidebarContent({
                             )}
                             aria-label={pinnedItems.includes(child.key) ? 'Unpin from favorites' : 'Pin to favorites'}
                           >
-                            <Star className={cn('h-3.5 w-3.5', pinnedItems.includes(child.key) ? 'fill-current text-warning' : 'text-muted-foreground')} />
+                            <Star className={cn('h-3.5 w-3.5', pinnedItems.includes(child.key) ? 'fill-current text-warning' : 'text-sidebar-foreground/50')} />
                           </button>
                         </div>
                       )
@@ -409,7 +409,7 @@ function SidebarContent({
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all',
                 isActive
-                  ? 'bg-primary text-primary-foreground'
+                  ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                   : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
               )}
             >
@@ -498,9 +498,9 @@ export default function Sidebar() {
         </Link>
         <button onClick={toggleMobile}>
           {mobileOpen ? (
-            <X className="h-5 w-5 text-muted-foreground" />
+            <X className="h-5 w-5 text-sidebar-foreground/70" />
           ) : (
-            <Menu className="h-5 w-5 text-muted-foreground" />
+            <Menu className="h-5 w-5 text-sidebar-foreground/70" />
           )}
         </button>
       </div>

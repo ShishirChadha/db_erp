@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Lato, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from 'sonner';
 import ThemeProvider from '@/components/ThemeProvider';
@@ -14,9 +14,16 @@ try {
 } catch (e) {}
 `;
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+// Lato -- clean, humanist sans (the Zoho-style look the user asked for), swapped
+// in for Geist Sans. Not a variable font on Google Fonts, so weights are listed
+// explicitly to cover the app's existing font-medium/font-semibold/font-bold usage.
+// tokens.css's `--font-sans` reads this variable.
+const bodyFont = Lato({
+  variable: "--font-body",
   subsets: ["latin"],
+  // Lato only ships 100/300/400/700/900 -- font-medium (500) falls back to the
+  // browser's nearest match (400) rather than a font-weight that doesn't exist.
+  weight: ["400", "700", "900"],
 });
 
 const geistMono = Geist_Mono({
@@ -35,7 +42,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}>
+    <html lang="en" className={`${bodyFont.variable} ${geistMono.variable} h-full antialiased`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
