@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import DropdownOptionsManager from '@/components/DropdownOptionsManager'
 import UserManager from '@/components/UserManager'
+import ActiveSessionsManager from '@/components/ActiveSessionsManager'
 import BusinessProfileManager from '@/components/BusinessProfileManager'
 import TagsManager from '@/components/TagsManager'
 import WebsiteAdminManager from '@/components/WebsiteAdminManager'
@@ -47,6 +48,7 @@ const CATEGORIES = [
   { key: 'dropdown_options', label: 'Dropdown Options', ownerOnly: true },
   { key: 'business_profiles', label: 'Business Profiles', ownerOnly: true },
   { key: 'users', label: 'Users & Access', ownerOnly: true },
+  { key: 'active_sessions', label: 'Active Devices', ownerOnly: true },
   { key: 'activity_tags', label: 'Activity Tags', ownerOnly: true },
   { key: 'website_admin', label: 'Website Admin', ownerOnly: true },
   { key: 'field_redaction', label: 'Field Redaction', ownerOnly: true },
@@ -256,6 +258,7 @@ function SettingsPage() {
           {category === 'dropdown_options' && <DropdownOptionsManager />}
           {category === 'business_profiles' && <BusinessProfileManager />}
           {category === 'users' && <UserManager />}
+          {category === 'active_sessions' && <ActiveSessionsManager />}
           {category === 'activity_tags' && <TagsManager />}
           {category === 'website_admin' && <WebsiteAdminManager />}
           {category === 'field_redaction' && <FieldRedactionManager />}

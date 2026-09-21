@@ -1,7 +1,9 @@
 import { NextRequest } from 'next/server'
+import { cookies } from 'next/headers'
 import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { createClient as createServerClient } from '@/lib/supabase/server'
+import { SESSION_COOKIE_NAME, isSessionRevoked, touchSessionIfStale } from '@/lib/auth/device-sessions'
 
 export type Role = 'owner' | 'manager' | 'employee'
 
@@ -49,6 +51,13 @@ export async function getSessionUser(req: NextRequest): Promise<SessionUser | nu
   const user = await verifyAccessToken(token)
   if (!user) return null
 
+  // Force-logoff from Settings > Active Devices, and the concurrent-device cap,
+  // are both enforced here -- same live-recheck-every-request pattern as
+  // profiles.is_active below (see the comment on `jwks` above).
+  const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value
+  if (await isSessionRevoked(sessionId)) return null
+  if (sessionId) await touchSessionIfStale(sessionId)
+
   const { data: profile } = await supabaseAdmin
     .from('profiles')
     .select('role, is_active, allowed_pages, profile_page_actions(page_key, can_edit)')
@@ -70,6 +79,11 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
   const supabase = await createServerClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
+
+  const cookieStore = await cookies()
+  const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value
+  if (await isSessionRevoked(sessionId)) return null
+  if (sessionId) await touchSessionIfStale(sessionId)
 
   const { data: profile } = await supabase
     .from('profiles')

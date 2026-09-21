@@ -35,7 +35,10 @@ export default function LoginPage() {
       return
     }
 
-    apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
+    // Awaited (not fire-and-forget) -- this call also registers the device session
+    // and sets the session cookie the device-limit/force-logoff feature relies on,
+    // so it needs to land before the dashboard's first request.
+    await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
 
     router.push('/dashboard')
     router.refresh()
