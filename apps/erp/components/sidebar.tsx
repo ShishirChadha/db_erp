@@ -448,6 +448,14 @@ export default function Sidebar() {
     if (pathname) setClientPathname(pathname)
   }, [pathname])
 
+  // Backfills a session that was already open before the device-limit/Active
+  // Devices feature shipped -- the endpoint is idempotent (a no-op if this browser
+  // already has a valid db_session_id cookie), so calling it once per dashboard
+  // load is cheap and never duplicates a session row.
+  useEffect(() => {
+    apiFetch('/api/auth/session-register', { method: 'POST' }).catch(() => {})
+  }, [])
+
   const { run: handleLogout, pending: loggingOut } = useAsyncAction(async () => {
     // Must fire before signOut() -- the token is still valid here, dead after.
     await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'logout' }) }).catch(() => {})

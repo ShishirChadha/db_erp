@@ -29,6 +29,7 @@ export default function ActiveSessionsManager() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busyId, setBusyId] = useState<string | null>(null)
+  const [logOffAllBusy, setLogOffAllBusy] = useState(false)
 
   const [maxDevices, setMaxDevices] = useState<number | ''>('')
   const [limitSaving, setLimitSaving] = useState(false)
@@ -78,6 +79,19 @@ export default function ActiveSessionsManager() {
     setBusyId(null)
   }
 
+  const logOffAll = async () => {
+    if (!window.confirm('Log off every active device for every user (except this one you\'re using right now)? They\'ll all be signed out next time they load a page.')) return
+    setLogOffAllBusy(true)
+    setError('')
+    const res = await apiFetch('/api/user-sessions', { method: 'DELETE' })
+    if (res.ok) {
+      await fetchSessions()
+    } else {
+      setError((await res.json().catch(() => ({}))).error || 'Failed to log off all devices.')
+    }
+    setLogOffAllBusy(false)
+  }
+
   return (
     <div className="space-y-6">
       <div className="rounded-md border p-4 max-w-md space-y-2">
@@ -104,6 +118,18 @@ export default function ActiveSessionsManager() {
       {error && (
         <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg">{error}</div>
       )}
+
+      <div className="flex justify-end">
+        <Button
+          size="sm"
+          variant="destructive"
+          onClick={logOffAll}
+          loading={logOffAllBusy}
+          disabled={sessions.length === 0}
+        >
+          Log off all devices
+        </Button>
+      </div>
 
       <div className="rounded-md border overflow-x-auto">
         <table className="min-w-full text-sm">

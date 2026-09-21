@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { SESSION_COOKIE_NAME } from '@/lib/auth/device-sessions'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- GET: owner-only list of every user's active login sessions ----------
 // Settings > Active Devices reads this to show device/location/last-active per
@@ -36,4 +38,35 @@ export async function GET(req: NextRequest) {
   }))
 
   return NextResponse.json(result)
+}
+
+// ---------- DELETE: owner logs off every active session at once ----------
+// Excludes the caller's own current session (identified by their own
+// db_session_id cookie) so this action can never lock the owner out of the
+// dashboard they're using to trigger it -- if they also want their other
+// devices/tabs signed out, those are separate session rows and get caught here.
+export async function DELETE(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const ownSessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value
+
+  let query = supabaseAdmin
+    .from('user_sessions')
+    .update({ revoked_at: new Date().toISOString(), revoked_reason: 'manual_owner_bulk' })
+    .is('revoked_at', null)
+  if (ownSessionId) query = query.neq('id', ownSessionId)
+
+  const { data, error } = await query.select('id')
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'settings',
+    tableName: 'user_sessions',
+    recordLabel: `Force logout all devices (${data?.length ?? 0})`,
+  })
+
+  return NextResponse.json({ success: true, count: data?.length ?? 0 })
 }
