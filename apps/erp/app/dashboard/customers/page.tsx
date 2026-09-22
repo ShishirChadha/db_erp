@@ -155,7 +155,7 @@ function CustomerDetailPane({ customer, onEdit, onDelete, onRestore, restoring, 
   );
 }
 
-type SortField = "customer_name" | "type" | "phone" | "email";
+type SortField = "customer_name" | "type" | "phone" | "email" | "created_at";
 
 function CustomersPage() {
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -170,8 +170,8 @@ function CustomersPage() {
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [nameFilter, setNameFilter] = useState<string>("");
-  const [sortField, setSortField] = useState<SortField>("customer_name");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("asc");
+  const [sortField, setSortField] = useState<SortField>("created_at");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   // Which customer is open in the right-hand detail pane.
@@ -304,6 +304,7 @@ function CustomersPage() {
           <Select value={sortField} onValueChange={(v) => setSortField(v as SortField)}>
             <SelectTrigger><SelectValue /></SelectTrigger>
             <SelectContent>
+              <SelectItem value="created_at">Date Added</SelectItem>
               <SelectItem value="customer_name">Name</SelectItem>
               <SelectItem value="type">Type</SelectItem>
               <SelectItem value="phone">Phone</SelectItem>

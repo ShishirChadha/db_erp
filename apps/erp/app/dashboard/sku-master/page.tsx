@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { Loader2, AlertTriangle } from 'lucide-react'
+import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { SkuFormModal } from '@/components/SkuFormModal'
@@ -13,10 +13,10 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
 import { buildConfigSummary, buildConfigDiff } from '@/lib/sku-config-summary'
 import { Pagination } from '@/components/Pagination'
-import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { StatCardsRow, StatCard } from '@/components/StatCardsRow'
 import { StatusBadge } from '@/components/StatusBadge'
+import { cn } from '@/lib/utils'
 
 const PAGE_SIZE = 25
 
@@ -69,6 +69,126 @@ interface CategoryTemplate {
 type SortField = 'full_sku_code' | 'sku_description' | 'category' | 'quantity_in_stock' | 'sold_count'
 type SortOrder = 'asc' | 'desc'
 
+// One field in the detail pane's label/value grid -- keeps every row's spacing
+// and label styling consistent without repeating the wrapper markup (matches
+// Customers/Vendors' Field helper).
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
+    </div>
+  )
+}
+
+// Left-pane list row -- the scannable subset of the old table's columns: code,
+// a description snippet, category, and stock qty, plus the website status
+// badge. Sold count and HSN are less useful at a glance and live in the
+// detail pane instead.
+function SkuListItem({ sku, summary, active, onOpen }: {
+  sku: SKU
+  summary: string
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        "w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors",
+        active ? "bg-primary/10" : "hover:bg-muted"
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{sku.full_sku_code}</span>
+          <span className="text-xs text-muted-foreground tabular-nums flex-shrink-0">Qty {sku.quantity_in_stock ?? 0}</span>
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{summary}</p>
+        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+          <StatusBadge tone="neutral">{sku.category}</StatusBadge>
+          <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
+            {sku.is_published ? 'Published' : 'Unpublished'}
+          </StatusBadge>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view -- every column the old wide table showed for one SKU
+// (code, description, HSN, category, stock, sold, website status) plus a few
+// extra fields already present on the fetched record (brand/model/status/
+// pricing) laid out as a single record. Actions (Edit/Pricing/Website/Delete)
+// are the exact same handlers the old table's Actions column called.
+function SkuDetailPane({ sku, summary, isOwner, hasWebsiteAccess, deleting, onEdit, onWebsite, onDelete, onBack }: {
+  sku: SKU
+  summary: string
+  isOwner: boolean
+  hasWebsiteAccess: boolean
+  deleting: boolean
+  onEdit: () => void
+  onWebsite: () => void
+  onDelete: () => void
+  onBack: () => void
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{sku.full_sku_code}</h2>
+          <p className="text-sm text-muted-foreground mt-0.5 truncate">{summary}</p>
+          <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+            <StatusBadge tone="neutral">{sku.category}</StatusBadge>
+            <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
+              {sku.is_published ? 'Published' : 'Unpublished'}
+            </StatusBadge>
+            {sku.status && sku.status !== 'active' && (
+              <StatusBadge tone={sku.status === 'discontinued' ? 'warning' : 'neutral'}>{sku.status}</StatusBadge>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
+          <button onClick={onEdit} disabled={deleting} className="text-primary underline text-sm disabled:opacity-50">Edit</button>
+          {isOwner && (
+            <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple underline text-sm">Pricing</Link>
+          )}
+          {hasWebsiteAccess && (
+            <button onClick={onWebsite} disabled={deleting} className="text-success underline text-sm disabled:opacity-50">Website</button>
+          )}
+          <button onClick={onDelete} disabled={deleting} className="text-destructive underline text-sm disabled:opacity-50 inline-flex items-center gap-1">
+            {deleting && <Loader2 className="size-3 animate-spin" />}
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Description">{summary}</Field>
+        <Field label="HSN Code">{sku.hsn_code || '—'}</Field>
+        <Field label="Category">{sku.category}</Field>
+        <Field label="Brand / Model">{[sku.brand, sku.model_name].filter(Boolean).join(' ') || '—'}</Field>
+        <Field label="Base SKU / Variant">{sku.base_sku_code ? `${sku.base_sku_code}${sku.variant_number ? ` / v${sku.variant_number}` : ''}` : '—'}</Field>
+        <Field label="Stock">{sku.quantity_in_stock ?? 0}</Field>
+        <Field label="Reorder Level">{sku.reorder_level ?? '—'}</Field>
+        <Field label="Sold">{sku.sold_count ?? 0}</Field>
+        {sku.base_cost != null && <Field label="Base Cost">₹{sku.base_cost}</Field>}
+        {sku.selling_price_default != null && <Field label="Default Selling Price">₹{sku.selling_price_default}</Field>}
+        <Field label="Website">
+          <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
+            {sku.is_published ? 'Published' : 'Unpublished'}
+          </StatusBadge>
+        </Field>
+        <Field label="Status">{sku.status || 'active'}</Field>
+      </div>
+    </div>
+  )
+}
+
 function SkuMasterPage() {
   const { isOwner, hasPageAccess } = useRole()
   const [skus, setSkus] = useState<SKU[]>([])
@@ -86,6 +206,8 @@ function SkuMasterPage() {
   const [total, setTotal] = useState(0)
   const [filterTab, setFilterTab] = useState<FilterTab>('all')
   const [counts, setCounts] = useState<SkuCounts | null>(null)
+  // Which SKU is open in the right-hand detail pane.
+  const [activeSkuId, setActiveSkuId] = useState<string | null>(null)
 
   const [duplicateClusters, setDuplicateClusters] = useState<DuplicateCluster[]>([])
   const [showDuplicates, setShowDuplicates] = useState(false)
@@ -143,8 +265,12 @@ function SkuMasterPage() {
       const res = await apiFetch(`/api/sku-master?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch SKUs')
       const json = await res.json()
-      setSkus(json.data || [])
+      const rows: SKU[] = json.data || []
+      setSkus(rows)
       setTotal(json.total || 0)
+      // Auto-open the first row on load/refetch, but don't yank focus away
+      // from whatever's already open if it's still in the refetched data.
+      setActiveSkuId((prev) => (prev && rows.some((s) => s.id === prev)) ? prev : (rows[0]?.id ?? null))
     } catch (err: any) {
       console.error(err)
       setError(err.message)
@@ -258,10 +384,15 @@ function SkuMasterPage() {
     { label: 'Archived', value: counts.archived, onClick: () => setFilterTab('archived'), active: filterTab === 'archived' },
   ] : []
 
+  const activeSku = useMemo(() => displayedSkus.find((s) => s.id === activeSkuId) ?? null, [displayedSkus, activeSkuId])
+  const hasWebsiteAccess = isOwner || hasPageAccess('website')
+
+  const summaryFor = (sku: SKU) => buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description
+
   if (loading) return <div className="p-4">Loading…</div>
 
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">SKU Master</h1>
         <button onClick={handleCreate} className="bg-primary text-primary-foreground px-4 py-2 rounded">
@@ -333,6 +464,25 @@ function SkuMasterPage() {
             className="border p-2 rounded"
           />
         </div>
+        <div>
+          <label className="block text-xs text-muted-foreground mb-1">Sort</label>
+          <div className="flex gap-1">
+            {(['full_sku_code', 'sku_description', 'category', 'quantity_in_stock', 'sold_count'] as SortField[]).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => toggleSort(f)}
+                className={cn(
+                  "px-2 py-2 border rounded text-xs whitespace-nowrap",
+                  sortField === f ? "bg-primary/10 border-primary/30 text-primary" : "text-muted-foreground"
+                )}
+              >
+                {{ full_sku_code: 'Code', sku_description: 'Description', category: 'Category', quantity_in_stock: 'Stock', sold_count: 'Sold' }[f]}
+                {sortIndicator(f)}
+              </button>
+            ))}
+          </div>
+        </div>
         {(categoryFilter || search || filterTab !== 'all') && (
           <button
             onClick={() => { setCategoryFilter(''); setSearch(''); setFilterTab('all') }}
@@ -343,66 +493,48 @@ function SkuMasterPage() {
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-md border">
-        <table className="min-w-full text-sm">
-          <thead>
-            <tr>
-              <th className="p-2 w-10 text-right">#</th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('full_sku_code')}>
-                SKU Code{sortIndicator('full_sku_code')}
-              </th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('sku_description')}>
-                Description{sortIndicator('sku_description')}
-              </th>
-              <th className="p-2">HSN</th>
-              <th className="p-2 cursor-pointer select-none" onClick={() => toggleSort('category')}>
-                Category{sortIndicator('category')}
-              </th>
-              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('quantity_in_stock')}>
-                Stock{sortIndicator('quantity_in_stock')}
-              </th>
-              <th className="p-2 text-right cursor-pointer select-none" onClick={() => toggleSort('sold_count')}>
-                Sold{sortIndicator('sold_count')}
-              </th>
-              <th className="p-2">Website</th>
-              <th className="p-2">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
-            {displayedSkus.length === 0 && <EmptyTableRow colSpan={9} message="No SKUs found." />}
-            {displayedSkus.map((sku, idx) => (
-              <tr key={sku.id}>
-                <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                <td className="p-2">{sku.full_sku_code}</td>
-                <td className="p-2">{buildConfigSummary(sku.category, sku.specifications, templates) || sku.sku_description}</td>
-                <td className="p-2">{sku.hsn_code || '—'}</td>
-                <td className="p-2">{sku.category}</td>
-                <td className="p-2 text-right tabular-nums">{sku.quantity_in_stock ?? '0'}</td>
-                <td className="p-2 text-right tabular-nums">{sku.sold_count ?? 0}</td>
-                <td className="p-2">
-                  <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
-                    {sku.is_published ? 'Published' : 'Unpublished'}
-                  </StatusBadge>
-                </td>
-                <td className="p-2 space-x-2">
-                  <button onClick={() => handleEdit(sku)} disabled={deletingId === sku.id} className="text-primary underline disabled:opacity-50">Edit</button>
-                  {isOwner && (
-                    <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple underline">Pricing</Link>
-                  )}
-                  {(isOwner || hasPageAccess('website')) && (
-                    <button onClick={() => setWebPublishSku(sku)} className="text-success underline">Website</button>
-                  )}
-                  <button onClick={() => handleDelete(sku)} disabled={deletingId === sku.id} className="text-destructive underline disabled:opacity-50 inline-flex items-center gap-1">
-                    {deletingId === sku.id && <Loader2 className="size-3 animate-spin" />}
-                    Delete
-                  </button>
-                </td>
-              </tr>
+      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        {/* List pane -- hidden on mobile once a SKU is open, matching an email
+            client's drill-in navigation; always visible at md+. */}
+        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSku && "hidden md:flex")}>
+          <div className="flex-1 overflow-y-auto">
+            {displayedSkus.map((sku) => (
+              <SkuListItem
+                key={sku.id}
+                sku={sku}
+                summary={summaryFor(sku)}
+                active={sku.id === activeSkuId}
+                onOpen={() => setActiveSkuId(sku.id)}
+              />
             ))}
-          </tbody>
-        </table>
+            {displayedSkus.length === 0 && (
+              <p className="p-4 text-center text-sm text-muted-foreground">No SKUs found.</p>
+            )}
+          </div>
+          <div className="border-t border-border p-2">
+            <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+          </div>
+        </div>
+
+        {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+        <div className={cn("flex-1 min-w-0", !activeSku && "hidden md:flex md:items-center md:justify-center")}>
+          {activeSku ? (
+            <SkuDetailPane
+              sku={activeSku}
+              summary={summaryFor(activeSku)}
+              isOwner={isOwner}
+              hasWebsiteAccess={hasWebsiteAccess}
+              deleting={deletingId === activeSku.id}
+              onEdit={() => handleEdit(activeSku)}
+              onWebsite={() => setWebPublishSku(activeSku)}
+              onDelete={() => handleDelete(activeSku)}
+              onBack={() => setActiveSkuId(null)}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">Select a SKU to view details.</p>
+          )}
+        </div>
       </div>
-      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {modalOpen && (
         <SkuFormModal

@@ -202,8 +202,8 @@ function VendorsPage() {
 
   const supabase = createClient()
 
-  // Search/showDeleted/pagination all happen server-side -- sorted by company
-  // name (a contact list is browsed alphabetically, not by recency).
+  // Search/showDeleted/pagination all happen server-side -- sorted by entry
+  // date, newest first, matching every other list page's default.
   const fetchVendors = async () => {
     let query = supabase.from('vendors').select('*', { count: 'exact' })
     query = showDeleted ? query.eq('is_deleted', true) : query.eq('is_deleted', false)
@@ -211,7 +211,7 @@ function VendorsPage() {
       const s = `%${search}%`
       query = query.or(`company_name.ilike.${s},spoc_name.ilike.${s},owner_name.ilike.${s},phone.ilike.${s},gst_number.ilike.${s},email.ilike.${s}`)
     }
-    query = query.order('company_name', { ascending: true })
+    query = query.order('created_at', { ascending: false })
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1)
     try {
       const { data, error, count } = await withRetry(() => query)

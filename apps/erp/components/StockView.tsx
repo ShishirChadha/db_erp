@@ -3,18 +3,17 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
+import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
-import { ASSET_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { EmptyTableRow } from '@/components/EmptyTableRow'
+import { ASSET_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
-import { ColumnToggle } from '@/components/ColumnToggle'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { CustomerNameLink } from '@/components/CustomerNameLink'
 import type { CustomerSummary } from '@/lib/customer-summary'
@@ -22,7 +21,9 @@ import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
-import { formatPurchasePrice } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { AssetQCPage } from '@/app/dashboard/stock/[id]/page'
+import { AccessoryDetailPage } from '@/app/dashboard/accessories/[id]/page'
 
 interface AssetRow {
   id: string
@@ -265,6 +266,16 @@ export default function StockView({
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = 20
+  // Which unit is open in the right-hand detail pane (current/sold tabs' master-detail
+  // layout only) -- auto-selects the first row on load/refetch, same pattern as
+  // Purchase Orders/Sales/Invoices, but doesn't yank focus away from whatever's
+  // already open if it's still present in the refetched page.
+  const [activeAssetId, setActiveAssetId] = useState<string | null>(null)
+  // Which row is open in the right-hand detail pane for the Accessories/Sold
+  // Accessories tabs' own master-detail layouts -- same auto-select-preserving-
+  // selection pattern as activeAssetId above.
+  const [activeAccessoryId, setActiveAccessoryId] = useState<string | null>(null)
+  const [activeSoldAccessoryId, setActiveSoldAccessoryId] = useState<string | null>(null)
 
   useEffect(() => {
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
@@ -306,8 +317,10 @@ export default function StockView({
       const res = await apiFetch(`/api/stock?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch assets')
       const json = await res.json()
-      setAssets(json.data || [])
+      const data: AssetRow[] = json.data || []
+      setAssets(data)
       setTotal(json.total || 0)
+      setActiveAssetId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (data[0]?.id ?? null))
       // Selection is deliberately NOT cleared here -- it must survive tab/filter/page
       // changes so a cross-tab (current + sold) selection can be built up and submitted
       // as one PO. It's only cleared explicitly: on successful PO creation, or when the
@@ -339,8 +352,10 @@ export default function StockView({
       const res = await apiFetch(`/api/stock/sold-accessories?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch sold accessories')
       const json = await res.json()
-      setSoldAccessories(json.data || [])
+      const data: SoldAccessoryRow[] = json.data || []
+      setSoldAccessories(data)
       setTotal(json.total || 0)
+      setActiveSoldAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -363,8 +378,10 @@ export default function StockView({
       const res = await apiFetch(`/api/stock/accessories?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch accessories')
       const json = await res.json()
-      setAccessoryStock(json.data || [])
+      const data: AccessoryStockRow[] = json.data || []
+      setAccessoryStock(data)
       setTotal(json.total || 0)
+      setActiveAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -654,11 +671,10 @@ export default function StockView({
             </button>
           </>
         )}
-        {tab !== 'sold_accessories' && tab !== 'accessories' && (
-          <div className="hidden md:block ml-auto">
-            <ColumnToggle columns={OPTIONAL_COLUMNS} visible={visibleColumns} onChange={setVisibleColumns} />
-          </div>
-        )}
+        {/* Column toggle no longer gates a wide table -- every tab (current/sold,
+            and now accessories/sold_accessories) is master-detail, so the list row
+            is intentionally minimal and the detail pane isn't cramped like a table,
+            showing every field unconditionally. */}
       </div>
 
       {showPoForm && (
@@ -719,515 +735,515 @@ export default function StockView({
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
-        <div className="hidden md:block overflow-x-auto">
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr>
-                <th className="border p-2 w-10 text-right">#</th>
-                <th className="border p-2">Name</th>
-                <th className="border p-2">Category</th>
-                <th className="border p-2">Brand</th>
-                <th className="border p-2 text-right">In Stock</th>
-                <th className="border p-2 text-right">Selling Price</th>
-                <th className="border p-2" title="Vendor/price optionally logged by whoever received the stock -- visible to everyone.">Last Purchase</th>
-                {isOwner && <th className="border p-2 text-right">Cost</th>}
-                {isOwner && <th className="border p-2">Last Vendor (PO)</th>}
-                {isOwner && <th className="border p-2">Awaiting PO</th>}
-                <th className="border p-2">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {accessoryStock.length === 0 && <EmptyTableRow colSpan={isOwner ? 11 : 8} message="No accessories in stock." />}
-              {accessoryStock.map((sku, idx) => (
-                <tr key={sku.id}>
-                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                  <td className="border p-2">
-                    <Link href={`/dashboard/accessories/${sku.id}`} className="text-primary underline">
-                      {sku.sku_description || sku.model_name || sku.full_sku_code}
-                    </Link>
-                  </td>
-                  <td className="border p-2">{sku.category}</td>
-                  <td className="border p-2">{sku.brand || '—'}</td>
-                  <td className="border p-2 text-right tabular-nums">{sku.quantity_in_stock}</td>
-                  <td className="border p-2 text-right tabular-nums">{sku.selling_price_default ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}</td>
-                  <td className="border p-2 text-xs">
-                    {sku.last_entry_vendor ? (
-                      <>
-                        {sku.last_entry_vendor}
-                        {sku.last_entry_price != null && (
-                          <span className="text-muted-foreground"> @ {formatPurchasePrice(sku.last_entry_price, sku.last_entry_gst_percentage)}</span>
-                        )}
-                        {sku.last_entry_date && <div className="text-muted-foreground">{sku.last_entry_date.slice(0, 10)}</div>}
-                      </>
-                    ) : '—'}
-                  </td>
-                  {isOwner && <td className="border p-2 text-right tabular-nums">{sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}</td>}
-                  {isOwner && <td className="border p-2">{sku.last_vendor || '—'}</td>}
-                  {isOwner && (
-                    <td className="border p-2 text-center">
-                      {sku.needs_po_qty ? <span className="text-warning">{sku.needs_po_qty} received, no PO</span> : <span className="text-success">✓</span>}
-                    </td>
-                  )}
-                  <td className="border p-2">
-                    <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
-                      Sell
-                    </button>
-                  </td>
-                </tr>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+          {/* List pane -- hidden on mobile once a SKU is open, matching the
+              Current/Sold master-detail drill-in navigation. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
+            <div className="flex-1 overflow-y-auto">
+              {accessoryStock.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No accessories in stock.</p>
+              )}
+              {accessoryStock.map((sku) => (
+                <AccessoryStockListItem
+                  key={sku.id}
+                  sku={sku}
+                  active={sku.id === activeAccessoryId}
+                  onOpen={() => setActiveAccessoryId(sku.id)}
+                />
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !activeAccessoryId && 'hidden md:flex md:items-center md:justify-center')}>
+            {activeAccessoryId ? (
+              <AccessoryStockDetailPane
+                sku={accessoryStock.find(s => s.id === activeAccessoryId)!}
+                isOwner={isOwner}
+                onBack={() => setActiveAccessoryId(null)}
+                onSell={() => router.push(`/dashboard/entry/sell?accessory_id=${activeAccessoryId}&return_to=${encodeURIComponent(returnToPath)}`)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select an accessory to view details.</p>
+            )}
+          </div>
         </div>
       ) : tab === 'sold_accessories' ? (
-        <div className="hidden md:block overflow-x-auto">
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr>
-                <th className="border p-2 w-10 text-right">#</th>
-                <th
-                  className="border p-2 cursor-pointer select-none"
-                  onClick={() => setSoldAccOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
-                >
-                  Date{soldAccOrder === 'asc' ? ' ↑' : ' ↓'}
-                </th>
-                <th className="border p-2">Item</th>
-                <th className="border p-2 text-right">Qty</th>
-                <th className="border p-2 text-right">Sale Total</th>
-                <th className="border p-2">Payment</th>
-                <th className="border p-2 text-right">Amount Paid</th>
-                <th className="border p-2">Payment Date</th>
-                <th className="border p-2">Received Into</th>
-                <th className="border p-2">Customer</th>
-                <th className="border p-2">Sold By</th>
-                <th className="border p-2">Invoice</th>
-                {canEdit && <th className="border p-2">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {soldAccessories.length === 0 && <EmptyTableRow colSpan={13} message="No accessory sales found." />}
-              {soldAccessories.map((sale, idx) => (
-                <tr key={sale.id}>
-                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                  <td className="border p-2">{sale.sale_date?.slice(0, 10)}</td>
-                  <td className="border p-2">
-                    {sale.sku_description || sale.full_sku_code}
-                    {sale.sku_description && sale.full_sku_code && (
-                      <span className="text-muted-foreground"> · {sale.full_sku_code}</span>
-                    )}
-                  </td>
-                  <td className="border p-2 text-right tabular-nums">{sale.accessory_quantity}</td>
-                  <td className="border p-2 text-right tabular-nums">₹{sale.sale_total?.toFixed(2)}</td>
-                  <td className="border p-2 capitalize">{sale.payment_status}</td>
-                  <td className="border p-2 text-right tabular-nums">₹{sale.amount_paid?.toFixed(2)}</td>
-                  <td className="border p-2 whitespace-nowrap">{sale.payment_date?.slice(0, 10) || '—'}</td>
-                  <td className="border p-2">{sale.payment_account || '—'}</td>
-                  <td className="border p-2">
-                    <CustomerNameLink customerId={sale.customer_id} customerName={sale.customer_name} summary={sale.customer_summary} onUpdated={fetchSoldAccessories} />
-                  </td>
-                  <td className="border p-2">{sale.sold_by || '—'}</td>
-                  <td className="border p-2">
-                    {sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : '—'}
-                  </td>
-                  {canEdit && (
-                    <td className="border p-2">
-                      <button onClick={() => setEditSaleId(sale.id)} className="text-primary underline text-xs">Edit</button>
-                    </td>
-                  )}
-                </tr>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+          {/* List pane -- hidden on mobile once a sale is open. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
+            <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
+              <button
+                type="button"
+                onClick={() => setSoldAccOrder(prev => (prev === 'desc' ? 'asc' : 'desc'))}
+                className="hover:text-foreground"
+              >
+                Date{soldAccOrder === 'asc' ? ' ↑' : ' ↓'}
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {soldAccessories.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No accessory sales found.</p>
+              )}
+              {soldAccessories.map((sale) => (
+                <SoldAccessoryListItem
+                  key={sale.id}
+                  sale={sale}
+                  active={sale.id === activeSoldAccessoryId}
+                  onOpen={() => setActiveSoldAccessoryId(sale.id)}
+                />
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !activeSoldAccessoryId && 'hidden md:flex md:items-center md:justify-center')}>
+            {activeSoldAccessoryId ? (
+              <SoldAccessoryDetailPane
+                sale={soldAccessories.find(s => s.id === activeSoldAccessoryId)!}
+                canEdit={canEdit}
+                onBack={() => setActiveSoldAccessoryId(null)}
+                onEdit={() => setEditSaleId(activeSoldAccessoryId)}
+                onCustomerUpdated={fetchSoldAccessories}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a sale to view details.</p>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="hidden md:block overflow-x-auto">
-          <table className="min-w-full border text-sm">
-            <thead>
-              <tr>
-                {isOwner && (tab === 'current' || tab === 'sold') && (
-                  <th className="border p-2 w-8 text-center">
-                    <Checkbox
-                      checked={
-                        selectableIds.length === 0
-                          ? false
-                          : visibleSelectedCount === selectableIds.length
-                          ? true
-                          : visibleSelectedCount > 0
-                          ? 'indeterminate'
-                          : false
-                      }
-                      onCheckedChange={toggleSelectAll}
-                    />
-                  </th>
-                )}
-                <th className="border p-2 w-10 text-right">#</th>
-                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('asset_number')}>
-                  Asset / Serial{sortIndicator('asset_number')}
-                </th>
-                {visibleColumns.entryDate && (
-                  <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('created_at')}>
-                    Entry Date{sortIndicator('created_at')}
-                  </th>
-                )}
-                {visibleColumns.purchaseDate && <th className="border p-2">Purchase Date</th>}
-                {tab === 'sold' && visibleColumns.soldDate && <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('sold_at')}>Sold{sortIndicator('sold_at')}</th>}
-                {visibleColumns.sku && <th className="border p-2">SKU</th>}
-                <th className="border p-2">Description</th>
-                <th className="border p-2 cursor-pointer select-none" onClick={() => toggleSort('status')}>
-                  Status{sortIndicator('status')}
-                </th>
-                {visibleColumns.grade && <th className="border p-2">Grade</th>}
-                {isOwner && tab === 'current' && visibleColumns.po && <th className="border p-2">PO</th>}
-                {isOwner && tab === 'current' && visibleColumns.vendorCost && <th className="border p-2">Vendor / Cost</th>}
-                {tab === 'sold' && visibleColumns.customer && <th className="border p-2">Customer</th>}
-                {tab === 'sold' && visibleColumns.saleTotal && <th className="border p-2">Sale Total</th>}
-                {tab === 'sold' && visibleColumns.paymentDate && <th className="border p-2">Payment Date</th>}
-                {tab === 'sold' && visibleColumns.bundle && <th className="border p-2">Bundle</th>}
-                {tab === 'sold' && <th className="border p-2">Payment</th>}
-                {isOwner && tab === 'sold' && visibleColumns.invoice && <th className="border p-2">Invoice</th>}
-                {canEdit && <th className="border p-2">Fix SKU</th>}
-                {(tab === 'current' || tab === 'sold') && <th className="border p-2">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {displayedAssets.length === 0 && <EmptyTableRow colSpan={20} message="No assets found." />}
-              {displayedAssets.map((asset, idx) => (
-                <tr key={asset.id}>
-                  {isOwner && (tab === 'current' || tab === 'sold') && (
-                    <td className="border p-2 w-8 text-center">
-                      {!asset.po_id && (
-                        <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset)} />
-                      )}
-                    </td>
-                  )}
-                  <td className="border p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                  <td className="border p-2">
-                    <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline">
-                      {identifier(asset)}
-                    </Link>
-                    {asset.asset_number && asset.serial_number && (
-                      <div className="text-xs text-muted-foreground">SN: {asset.serial_number}</div>
-                    )}
-                    {asset.under_repair_job_number && (
-                      <span className="ml-1 px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap" title={`Repair job ${asset.under_repair_job_number}`}>
-                        Under Repair
-                      </span>
-                    )}
-                  </td>
-                  {visibleColumns.entryDate && <td className="border p-2">{asset.created_at?.slice(0, 10) || '—'}</td>}
-                  {visibleColumns.purchaseDate && <td className="border p-2">{asset.po_date?.slice(0, 10) || '—'}</td>}
-                  {tab === 'sold' && visibleColumns.soldDate && <td className="border p-2">{asset.sold_at?.slice(0, 10)}</td>}
-                  {visibleColumns.sku && <td className="border p-2">{asset.sku_code}</td>}
-                  <td className="border p-2">
-                    {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
-                    {asset.purchased_sku_code && (
-                      <div className="text-xs text-muted-foreground" title="This unit's spec was changed after purchase (Change SKU)">
-                        Purchased as: {asset.purchased_description || asset.purchased_sku_code}
-                      </div>
-                    )}
-                  </td>
-                  <td className="border p-2"><StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge></td>
-                  {visibleColumns.grade && <td className="border p-2">{asset.qc_grade || '—'}</td>}
-                  {isOwner && tab === 'current' && visibleColumns.po && (
-                    <td className="border p-2 text-center">
-                      {asset.po_id ? <span className="text-success">✓ {asset.po_number}</span> : <span className="text-warning">✗ missing</span>}
-                    </td>
-                  )}
-                  {isOwner && tab === 'current' && visibleColumns.vendorCost && (
-                    <td className="border p-2 text-right tabular-nums">
-                      {asset.vendor_name ? `${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}` : '—'}
-                    </td>
-                  )}
-                  {tab === 'sold' && visibleColumns.customer && (
-                    <td className="border p-2">
-                      <CustomerNameLink customerId={asset.customer_id} customerName={asset.customer_name} summary={asset.customer_summary} onUpdated={fetchAssets} />
-                    </td>
-                  )}
-                  {tab === 'sold' && visibleColumns.saleTotal && <td className="border p-2 text-right tabular-nums">₹{asset.sale_total?.toFixed(2)}</td>}
-                  {tab === 'sold' && visibleColumns.paymentDate && <td className="border p-2 whitespace-nowrap">{asset.payment_date?.slice(0, 10) || '—'}</td>}
-                  {tab === 'sold' && visibleColumns.bundle && (
-                    <td className="border p-2">
-                      {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0
-                        ? asset.bundled_accessories_display.map((b, i) => (
-                            <span key={i} className="block">{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ''}</span>
-                          ))
-                        : '—'}
-                    </td>
-                  )}
-                  {tab === 'sold' && (
-                    <td className="border p-2">
-                      <div className="capitalize">{asset.payment_status || '—'}</div>
-                      {typeof asset.amount_paid === 'number' && (
-                        <div className="text-xs text-muted-foreground tabular-nums">₹{asset.amount_paid.toFixed(2)} of ₹{(asset.sale_total || 0).toFixed(2)}</div>
-                      )}
-                    </td>
-                  )}
-                  {isOwner && tab === 'sold' && visibleColumns.invoice && (
-                    <td className="border p-2 text-center">
-                      {asset.invoice_finalized ? (
-                        <span className="text-success">✓ {asset.invoice_number}</span>
-                      ) : asset.invoice_mode === 'external' ? (
-                        <button onClick={() => setZohoSaleId(asset.sale_id!)} disabled={!asset.sale_id} className="text-warning underline text-xs disabled:opacity-50" title="This entity is issuing invoices in Zoho during the transition">
-                          Record Zoho Invoice #
-                        </button>
-                      ) : (
-                        <button onClick={() => generateInvoice(asset.id)} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
-                          {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
-                          Generate Invoice
-                        </button>
-                      )}
-                    </td>
-                  )}
-                  {canEdit && (
-                    <td className="border p-2 space-x-2">
-                      <button onClick={() => setFixSkuAssetId(asset.id)} className="text-primary underline text-xs">
-                        Fix SKU
-                      </button>
-                      {isOwner && tab === 'current' && !asset.po_id && (
-                        <button
-                          onClick={() => deleteAsset(asset, identifier(asset))}
-                          disabled={!!pendingRowKey}
-                          className="text-destructive underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
-                        >
-                          {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
-                          Delete
-                        </button>
-                      )}
-                      {isOwner && tab === 'sold' && (
-                        <button
-                          onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }}
-                          className="text-destructive underline text-xs"
-                        >
-                          Delete
-                        </button>
-                      )}
-                    </td>
-                  )}
-                  {tab === 'current' && (
-                    <td className="border p-2 space-x-2">
-                      {['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                        <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
-                          Sell
-                        </button>
-                      )}
-                      {asset.status === 'ready_for_sale' && (
-                        <button
-                          onClick={() => sendBackToQc(asset, identifier(asset))}
-                          disabled={!!pendingRowKey}
-                          className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
-                        >
-                          {pendingRowKey === `${asset.id}:send-back-to-qc` && <Loader2 className="size-3 animate-spin" />}
-                          Send to QC
-                        </button>
-                      )}
-                      {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-primary underline text-xs">
-                          Repair
-                        </button>
-                      )}
-                    </td>
-                  )}
-                  {tab === 'sold' && (
-                    <td className="border p-2 space-x-2">
-                      {asset.sale_id && asset.payment_status !== 'paid' && (
-                        <button
-                          onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
-                          className="text-success underline text-xs"
-                        >
-                          Add Payment
-                        </button>
-                      )}
-                      {showServiceActions && (
-                        <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-warning underline text-xs">
-                          Return
-                        </button>
-                      )}
-                    </td>
-                  )}
-                </tr>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+          {/* List pane -- hidden on mobile once a unit is open, matching the
+              Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>
+            {isOwner && (tab === 'current' || tab === 'sold') && (
+              <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+                <Checkbox
+                  checked={
+                    selectableIds.length === 0
+                      ? false
+                      : visibleSelectedCount === selectableIds.length
+                      ? true
+                      : visibleSelectedCount > 0
+                      ? 'indeterminate'
+                      : false
+                  }
+                  onCheckedChange={toggleSelectAll}
+                />
+                <span className="text-xs text-muted-foreground">Select all on page</span>
+              </div>
+            )}
+            <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
+              <button type="button" onClick={() => toggleSort('asset_number')} className="hover:text-foreground">
+                Asset/Serial{sortIndicator('asset_number')}
+              </button>
+              <button type="button" onClick={() => toggleSort(tab === 'sold' ? 'sold_at' : 'created_at')} className="hover:text-foreground">
+                {tab === 'sold' ? 'Sold' : 'Entry'} Date{sortIndicator(tab === 'sold' ? 'sold_at' : 'created_at')}
+              </button>
+              <button type="button" onClick={() => toggleSort('status')} className="hover:text-foreground">
+                Status{sortIndicator('status')}
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto">
+              {displayedAssets.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No assets found.</p>
+              )}
+              {displayedAssets.map((asset) => (
+                <AssetListItem
+                  key={asset.id}
+                  asset={asset}
+                  tab={tab as 'current' | 'sold'}
+                  active={asset.id === activeAssetId}
+                  templates={templates}
+                  showCheckbox={isOwner && (tab === 'current' || tab === 'sold')}
+                  checked={selected.has(asset.id)}
+                  onToggleChecked={() => toggleSelectOne(asset)}
+                  onOpen={() => setActiveAssetId(asset.id)}
+                />
               ))}
-            </tbody>
-          </table>
+            </div>
+          </div>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !activeAssetId && 'hidden md:flex md:items-center md:justify-center')}>
+            {activeAssetId ? (
+              <AssetDetailPane
+                key={activeAssetId}
+                asset={displayedAssets.find(a => a.id === activeAssetId) ?? null}
+                tab={tab as 'current' | 'sold'}
+                idx={displayedAssets.findIndex(a => a.id === activeAssetId)}
+                page={page}
+                pageSize={PAGE_SIZE}
+                canEdit={canEdit}
+                isOwner={isOwner}
+                showServiceActions={showServiceActions}
+                pendingRowKey={pendingRowKey}
+                returnToPath={returnToPath}
+                onBack={() => setActiveAssetId(null)}
+                onSell={() => router.push(`/dashboard/entry/sell?asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
+                onRepair={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
+                onReturn={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
+                onSendBackToQc={(asset) => sendBackToQc(asset, identifier(asset))}
+                onFixSku={() => setFixSkuAssetId(activeAssetId)}
+                onDelete={(asset) => deleteAsset(asset, identifier(asset))}
+                onForceDelete={(asset) => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }}
+                onAddPayment={(asset) => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
+                onGenerateInvoice={(asset) => generateInvoice(asset.id)}
+                onRecordZohoInvoice={(asset) => setZohoSaleId(asset.sale_id!)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select a unit to view details.</p>
+            )}
+          </div>
         </div>
       )}
 
-      {/* Mobile card list -- this page is checked from a phone often enough (Live
-          Stock especially) that a 14-column table's horizontal scroll isn't a good
-          enough answer below md; same data as the table, one card per unit. */}
-      {!loading && tab === 'sold_accessories' && (
-        <div className="md:hidden space-y-2">
-          {soldAccessories.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-6">No accessory sales found.</p>
-          )}
-          {soldAccessories.map((sale) => (
-            <div key={sale.id} className="border rounded-lg p-3 space-y-2">
-              <div className="min-w-0">
-                <div className="font-medium break-words">{sale.sku_description || sale.full_sku_code}</div>
-                <div className="text-xs text-muted-foreground">{sale.full_sku_code} · Qty {sale.accessory_quantity}</div>
-              </div>
-              <div className="text-xs text-muted-foreground space-y-0.5">
-                <div>Sold {sale.sale_date?.slice(0, 10)} to <CustomerNameLink customerId={sale.customer_id} customerName={sale.customer_name} summary={sale.customer_summary} onUpdated={fetchSoldAccessories} className="text-primary underline" /></div>
-                <div className="tabular-nums">₹{sale.sale_total?.toFixed(2)} · {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} paid</div>
-                {sale.payment_date && <div>Payment date: {sale.payment_date.slice(0, 10)}</div>}
-                {sale.sold_by && <div>Sold by {sale.sold_by}</div>}
-                <div>{sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : 'Invoice pending'}</div>
-              </div>
-              {canEdit && (
-                <div className="pt-1 border-t">
-                  <button onClick={() => setEditSaleId(sale.id)} className="text-primary underline text-xs">Edit</button>
-                </div>
-              )}
-            </div>
-          ))}
+      {/* Pagination -- every tab is now a master-detail list/pane, so mobile is
+          handled by the list pane itself (list-only until a row is tapped,
+          matching the Sales/PO/Invoices pattern) rather than a separate card block. */}
+      {!loading && (
+        <div className="mt-2">
+          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
         </div>
       )}
-      {!loading && tab === 'accessories' && (
-        <div className="md:hidden space-y-2">
-          {accessoryStock.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-6">No accessories in stock.</p>
-          )}
-          {accessoryStock.map((sku) => (
-            <div key={sku.id} className="border rounded-lg p-3 space-y-2">
-              <div className="min-w-0">
-                <Link href={`/dashboard/accessories/${sku.id}`} className="text-primary underline font-medium break-words">
-                  {sku.sku_description || sku.model_name || sku.full_sku_code}
-                </Link>
-                <div className="text-xs text-muted-foreground">{sku.category}{sku.brand ? ` · ${sku.brand}` : ''}</div>
-              </div>
-              <div className="text-sm tabular-nums">
-                In stock: {sku.quantity_in_stock}
-                {sku.selling_price_default != null && ` · ₹${sku.selling_price_default.toFixed(2)}`}
-              </div>
-              {sku.last_entry_vendor && (
-                <div className="text-xs text-muted-foreground">
-                  Last purchase: {sku.last_entry_vendor}{sku.last_entry_price != null && ` @ ${formatPurchasePrice(sku.last_entry_price, sku.last_entry_gst_percentage)}`}
-                  {sku.last_entry_date && ` (${sku.last_entry_date.slice(0, 10)})`}
-                </div>
-              )}
-              {isOwner && (
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>Cost: {sku.base_cost != null ? `₹${sku.base_cost.toFixed(2)}` : '—'}{sku.last_vendor ? ` · ${sku.last_vendor}` : ''}</div>
-                  {!!sku.needs_po_qty && <div className="text-warning">{sku.needs_po_qty} received, no PO yet</div>}
-                </div>
-              )}
-              <div className="pt-1 border-t">
-                <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${sku.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">
-                  Sell
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {!loading && tab !== 'sold_accessories' && tab !== 'accessories' && (
-        <div className="md:hidden space-y-2">
-          {displayedAssets.length === 0 && (
-            <p className="text-sm text-muted-foreground text-center py-6">No assets found.</p>
-          )}
-          {displayedAssets.map((asset) => (
-            <div key={asset.id} className="border rounded-lg p-3 space-y-2">
-              <div className="flex justify-between items-start gap-2">
-                <div className="min-w-0">
-                  <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-primary underline font-medium break-all">
-                    {identifier(asset)}
-                  </Link>
-                  {asset.asset_number && asset.serial_number && (
-                    <div className="text-xs text-muted-foreground">SN: {asset.serial_number}</div>
-                  )}
-                  <div className="text-xs text-muted-foreground">{asset.sku_code}</div>
-                </div>
-                {isOwner && (tab === 'current' || tab === 'sold') && !asset.po_id && (
-                  <Checkbox checked={selected.has(asset.id)} onCheckedChange={() => toggleSelectOne(asset)} />
-                )}
-              </div>
-              <div className="text-sm">
-                {buildConfigSummary(asset.category, asset.specifications, templates) || asset.description}
-                {asset.purchased_sku_code && (
-                  <div className="text-xs text-muted-foreground">
-                    Purchased as: {asset.purchased_description || asset.purchased_sku_code}
-                  </div>
-                )}
-              </div>
-              {asset.created_at || asset.po_date ? (
-                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                  {asset.created_at && <span>Added {asset.created_at.slice(0, 10)}</span>}
-                  {asset.po_date && <span>Purchased {asset.po_date.slice(0, 10)}</span>}
-                </div>
-              ) : null}
-              <div className="flex flex-wrap items-center gap-2">
-                <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
-                {asset.qc_grade && <span className="text-xs text-muted-foreground">Grade {asset.qc_grade}</span>}
-                {asset.under_repair_job_number && (
-                  <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs">Under Repair</span>
-                )}
-              </div>
-              {tab === 'sold' && (
-                <div className="text-xs text-muted-foreground space-y-0.5">
-                  <div>Sold {asset.sold_at?.slice(0, 10)} to <CustomerNameLink customerId={asset.customer_id} customerName={asset.customer_name} summary={asset.customer_summary} onUpdated={fetchAssets} className="text-primary underline" /></div>
-                  <div className="tabular-nums">₹{asset.sale_total?.toFixed(2)}</div>
-                  <div className="capitalize">
-                    {asset.payment_status || '—'}
-                    {typeof asset.amount_paid === 'number' && ` · ₹${asset.amount_paid.toFixed(2)} of ₹${(asset.sale_total || 0).toFixed(2)}`}
-                  </div>
-                  {asset.payment_date && <div>Payment date: {asset.payment_date.slice(0, 10)}</div>}
-                  {asset.bundled_accessories_display && asset.bundled_accessories_display.length > 0 && (
-                    <div>
-                      Bundled: {asset.bundled_accessories_display.map((b) => `${b.name}${b.quantity > 1 ? ` ×${b.quantity}` : ''}`).join(', ')}
-                    </div>
-                  )}
-                  {isOwner && (
-                    <div>
-                      {asset.invoice_finalized ? (
-                        <span className="text-success">✓ {asset.invoice_number}</span>
-                      ) : asset.invoice_mode === 'external' ? (
-                        <button onClick={() => setZohoSaleId(asset.sale_id!)} disabled={!asset.sale_id} className="text-warning underline disabled:opacity-50">Record Zoho Invoice #</button>
-                      ) : 'Invoice pending'}
-                    </div>
-                  )}
-                </div>
-              )}
-              {isOwner && tab === 'current' && (
-                <div className="text-xs text-muted-foreground">
-                  {asset.po_id ? <span className="text-success">✓ PO {asset.po_number}</span> : <span className="text-warning">✗ missing PO</span>}
-                  {asset.vendor_name && ` · ${asset.vendor_name} · ₹${asset.unit_price?.toFixed(2)}`}
-                </div>
-              )}
-              <div className="flex flex-wrap gap-3 pt-1 border-t">
-                {canEdit && (
-                  <button onClick={() => setFixSkuAssetId(asset.id)} className="text-primary underline text-xs">Fix SKU</button>
-                )}
-                {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-                  <button onClick={() => router.push(`/dashboard/entry/sell?asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-success underline text-xs">Sell</button>
-                )}
-                {tab === 'current' && asset.status === 'ready_for_sale' && (
-                  <button onClick={() => sendBackToQc(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50">Send to QC</button>
-                )}
-                {tab === 'current' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-primary underline text-xs">Repair</button>
-                )}
-                {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
-                  <button
-                    onClick={() => setAddPaymentAsset({ saleId: asset.sale_id!, balanceDue: (asset.sale_total || 0) - (asset.amount_paid || 0) })}
-                    className="text-success underline text-xs"
-                  >
-                    Add Payment
-                  </button>
-                )}
-                {tab === 'sold' && showServiceActions && (
-                  <button onClick={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${asset.id}&return_to=${encodeURIComponent(returnToPath)}`)} className="text-warning underline text-xs">Return</button>
-                )}
-                {isOwner && tab === 'current' && !asset.po_id && (
-                  <button onClick={() => deleteAsset(asset, identifier(asset))} disabled={!!pendingRowKey} className="text-destructive underline text-xs disabled:opacity-50">Delete</button>
-                )}
-                {isOwner && tab === 'sold' && (
-                  <button onClick={() => { setForceDeleteErr(''); setForceDeleteAsset({ id: asset.id, label: identifier(asset) }) }} className="text-destructive underline text-xs">Delete</button>
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+    </div>
+  )
+}
 
-      {!loading && <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />}
+// Compact left-pane list row for the Current/Sold master-detail layout -- identifier,
+// short description, status badge, tab-appropriate date, and (sold tab) sale total,
+// mirroring the visual density of PurchaseOrderListItem/Sales/Invoices list rows
+// rather than the old wide table row. Selection checkbox stays inline since bulk
+// multi-select-for-PO is load-bearing, not a convenience (see CLAUDE.md/spec).
+function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, onToggleChecked, onOpen }: {
+  asset: AssetRow
+  tab: 'current' | 'sold'
+  active: boolean
+  templates: ConfigSummaryTemplate[]
+  showCheckbox: boolean
+  checked: boolean
+  onToggleChecked: () => void
+  onOpen: () => void
+}) {
+  const dateStr = tab === 'sold' ? asset.sold_at?.slice(0, 10) : asset.created_at?.slice(0, 10)
+  const desc = buildConfigSummary(asset.category, asset.specifications, templates) || asset.description
+  return (
+    <div className={cn('w-full flex items-start gap-2 border-b border-border transition-colors', active ? 'bg-primary/10' : 'hover:bg-muted')}>
+      {showCheckbox && (
+        <div className="pl-3 pt-3" onClick={(e) => e.stopPropagation()}>
+          {!asset.po_id && <Checkbox checked={checked} onCheckedChange={onToggleChecked} />}
+        </div>
+      )}
+      <button type="button" onClick={onOpen} className={cn('flex-1 min-w-0 text-left px-3 py-2.5', !showCheckbox && 'pl-3')}>
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{identifier(asset)}</span>
+          {tab === 'sold' && (
+            <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+              {asset.sale_total != null ? `₹${asset.sale_total.toFixed(2)}` : '—'}
+            </span>
+          )}
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{desc}</p>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
+            {asset.under_repair_job_number && (
+              <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap">Under Repair</span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{dateStr || '—'}</span>
+        </div>
+      </button>
+    </div>
+  )
+}
+
+// Right-pane detail view for the Current/Sold master-detail layout -- embeds the
+// existing per-unit AssetQCPage (QC checklist, cost adjustments, sale summary/edit,
+// unit-detail edit) and adds a toolbar above it for every action that page doesn't
+// already expose: Fix SKU, Delete/Force-delete, Send back to QC, Sell/Repair/Return,
+// Add Payment, Generate/Record Zoho Invoice. These call the exact same handlers
+// already defined in StockView (passed down as props), just invoked from here
+// instead of a table row.
+function AssetDetailPane({
+  asset, tab, idx, page, pageSize, canEdit, isOwner, showServiceActions, pendingRowKey, returnToPath,
+  onBack, onSell, onRepair, onReturn, onSendBackToQc, onFixSku, onDelete, onForceDelete,
+  onAddPayment, onGenerateInvoice, onRecordZohoInvoice,
+}: {
+  asset: AssetRow | null
+  tab: 'current' | 'sold'
+  idx: number
+  page: number
+  pageSize: number
+  canEdit: boolean
+  isOwner: boolean
+  showServiceActions: boolean
+  pendingRowKey: string | null
+  returnToPath: string
+  onBack: () => void
+  onSell: () => void
+  onRepair: () => void
+  onReturn: () => void
+  onSendBackToQc: (asset: AssetRow) => void
+  onFixSku: () => void
+  onDelete: (asset: AssetRow) => void
+  onForceDelete: (asset: AssetRow) => void
+  onAddPayment: (asset: AssetRow) => void
+  onGenerateInvoice: (asset: AssetRow) => void
+  onRecordZohoInvoice: (asset: AssetRow) => void
+}) {
+  if (!asset) return null
+  const rowNumber = idx >= 0 ? (page - 1) * pageSize + idx + 1 : null
+  return (
+    <div className="flex flex-col h-full w-full">
+      <div className="p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
+          {rowNumber != null && <span className="text-xs text-muted-foreground">#{rowNumber}</span>}
+          {canEdit && (
+            <button onClick={onFixSku} className="text-primary underline text-xs">Fix SKU</button>
+          )}
+          {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
+            <button onClick={onSell} className="text-success underline text-xs">Sell</button>
+          )}
+          {tab === 'current' && asset.status === 'ready_for_sale' && (
+            <button
+              onClick={() => onSendBackToQc(asset)}
+              disabled={!!pendingRowKey}
+              className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              {pendingRowKey === `${asset.id}:send-back-to-qc` && <Loader2 className="size-3 animate-spin" />}
+              Send to QC
+            </button>
+          )}
+          {tab === 'current' && showServiceActions && (
+            <button onClick={onRepair} className="text-primary underline text-xs">Repair</button>
+          )}
+          {tab === 'current' && isOwner && !asset.po_id && (
+            <button
+              onClick={() => onDelete(asset)}
+              disabled={!!pendingRowKey}
+              className="text-destructive underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+            >
+              {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
+              Delete
+            </button>
+          )}
+          {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
+            <button onClick={() => onAddPayment(asset)} className="text-success underline text-xs">Add Payment</button>
+          )}
+          {tab === 'sold' && showServiceActions && (
+            <button onClick={onReturn} className="text-warning underline text-xs">Return</button>
+          )}
+          {tab === 'sold' && isOwner && (
+            asset.invoice_finalized ? (
+              <span className="text-success text-xs">✓ {asset.invoice_number}</span>
+            ) : asset.invoice_mode === 'external' ? (
+              <button onClick={() => onRecordZohoInvoice(asset)} disabled={!asset.sale_id} className="text-warning underline text-xs disabled:opacity-50" title="This entity is issuing invoices in Zoho during the transition">
+                Record Zoho Invoice #
+              </button>
+            ) : (
+              <button onClick={() => onGenerateInvoice(asset)} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
+                {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
+                Generate Invoice
+              </button>
+            )
+          )}
+          {tab === 'sold' && isOwner && (
+            <button
+              onClick={() => onForceDelete(asset)}
+              className="text-destructive underline text-xs"
+            >
+              Delete
+            </button>
+          )}
+          <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-xs text-muted-foreground underline ml-auto">
+            Open full page
+          </Link>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <AssetQCPage assetId={asset.id} embedded />
+      </div>
+    </div>
+  )
+}
+
+// Left-pane list row for the Accessories tab's master-detail layout -- name,
+// category/brand, in-stock qty and selling price are the most-scannable columns
+// from the old wide table; owner-only cost/last-vendor/awaiting-PO and the
+// employee-visible last-purchase line move into the detail pane (the embedded
+// AccessoryDetailPage already surfaces cost/last-vendor and the movement ledger's
+// most recent receipt row already surfaces last-purchase vendor/price/date, so
+// nothing here is lost -- see the accompanying audit).
+function AccessoryStockListItem({ sku, active, onOpen }: {
+  sku: AccessoryStockRow
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{sku.sku_description || sku.model_name || sku.full_sku_code}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+            {sku.selling_price_default != null ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">
+          {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
+        </p>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">In stock: {sku.quantity_in_stock}</span>
+          {!!sku.needs_po_qty && <StatusBadge tone="warning">{sku.needs_po_qty} awaiting PO</StatusBadge>}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view for the Accessories tab -- embeds the same per-SKU
+// history page used by the standalone Accessories list (Receive/Adjust/Attach-
+// PO/Archive controls live there; "Manage Accessories" link below reaches them),
+// plus a Sell toolbar button, which isn't part of that page itself.
+function AccessoryStockDetailPane({ sku, isOwner, onBack, onSell }: {
+  sku: AccessoryStockRow
+  isOwner: boolean
+  onBack: () => void
+  onSell: () => void
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
+          <button onClick={onSell} className="text-success underline text-xs whitespace-nowrap">Sell</button>
+          {isOwner && !!sku.needs_po_qty && (
+            <span className="text-warning text-xs whitespace-nowrap" title="Units received but not yet on a purchase order -- use Manage Accessories to attach.">
+              {sku.needs_po_qty} received, awaiting PO
+            </span>
+          )}
+          <Link href={`/dashboard/accessories/${sku.id}`} className="text-xs text-muted-foreground underline ml-auto">
+            Manage Accessories
+          </Link>
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <AccessoryDetailPage key={sku.id} skuId={sku.id} embedded />
+      </div>
+    </div>
+  )
+}
+
+// Left-pane list row for the Sold Accessories tab -- item, date, sale total and
+// payment status are what's scannable at a glance, mirroring AssetListItem's sold
+// variant.
+function SoldAccessoryListItem({ sale, active, onOpen }: {
+  sale: SoldAccessoryRow
+  active: boolean
+  onOpen: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{sale.sku_description || sale.full_sku_code}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+            {sale.sale_total != null ? `₹${sale.sale_total.toFixed(2)}` : '—'}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">{sale.customer_name || 'Walk-in'} · Qty {sale.accessory_quantity}</p>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10) || '—'}</span>
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view for the Sold Accessories tab -- there's no dedicated
+// per-sale detail page for an accessory sale (unlike Current/Sold's AssetQCPage),
+// so this is a Field-based pane showing every column the old wide table had,
+// same helper pattern as Customers/Sales Ledger. Edit is preserved via the same
+// EditSaleDialog the old table's Edit link opened.
+function SoldAccessoryDetailPane({ sale, canEdit, onBack, onEdit, onCustomerUpdated }: {
+  sale: SoldAccessoryRow
+  canEdit: boolean
+  onBack: () => void
+  onEdit: () => void
+  onCustomerUpdated: () => void
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
+        <div className="min-w-0">
+          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+            <ArrowLeft className="size-4" /> Back to list
+          </button>
+          <h2 className="text-lg font-semibold text-foreground truncate">{sale.sku_description || sale.full_sku_code}</h2>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+            {sale.finalized && <StatusBadge tone="success">Invoiced</StatusBadge>}
+          </div>
+        </div>
+        {canEdit && (
+          <Button variant="outline" size="sm" onClick={onEdit}>Edit</Button>
+        )}
+      </div>
+      <div className="flex-1 overflow-y-auto p-4">
+        <Field label="Sale Date">{sale.sale_date?.slice(0, 10) || '—'}</Field>
+        <Field label="Item">
+          {sale.sku_description || sale.full_sku_code}
+          {sale.sku_description && sale.full_sku_code && (
+            <span className="text-muted-foreground"> · {sale.full_sku_code}</span>
+          )}
+        </Field>
+        <Field label="Quantity">{sale.accessory_quantity}</Field>
+        <Field label="Sale Total">₹{sale.sale_total?.toFixed(2)}</Field>
+        <Field label="Payment Status">
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+        </Field>
+        <Field label="Amount Paid">₹{sale.amount_paid?.toFixed(2)}</Field>
+        <Field label="Payment Date">{sale.payment_date?.slice(0, 10) || '—'}</Field>
+        <Field label="Received Into">{sale.payment_account || '—'}</Field>
+        <Field label="Customer">
+          <CustomerNameLink customerId={sale.customer_id} customerName={sale.customer_name} summary={sale.customer_summary} onUpdated={onCustomerUpdated} />
+        </Field>
+        <Field label="Sold By">{sale.sold_by || '—'}</Field>
+        <Field label="Invoice">
+          {sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : '—'}
+        </Field>
+      </div>
+    </div>
+  )
+}
+
+// One field in the detail pane's label/value grid -- matches the same helper used
+// by Sales Ledger/Customers/Purchase Orders' Field-based detail panes.
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="col-span-2">{children}</span>
     </div>
   )
 }

@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEffectiveSkuId } from '@/lib/effective-sku'
+import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -27,9 +28,11 @@ export async function GET(
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
       battery_health_percent, estimated_backup_hours,
       screen_condition, keyboard_condition, body_condition, included_accessories,
-      po_id, po_item_id, sku_id, current_sku_id,
+      po_id, po_item_id, sku_id, current_sku_id, vendor_id, cost_price,
       purchase_order_items (
-        sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications )
+        unit_price,
+        sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications ),
+        purchase_orders ( po_number, vendor_name )
       )
     `)
     .eq('id', id)
@@ -37,6 +40,26 @@ export async function GET(
 
   if (assetErr || !asset) {
     return NextResponse.json({ error: 'Asset not found' }, { status: 404 })
+  }
+
+  // PO number / vendor / unit cost -- owner-only, same redaction rule as everywhere
+  // else in the app (CLAUDE.md: cost/vendor/margin never shown to employees). Legacy-
+  // door rows (no purchase_order_items link) fall back to asset_ledger's own
+  // vendor_id/cost_price, same fallback /api/stock already uses.
+  let purchaseInfo: { po_number: string | null; vendor_name: string | null; unit_price: number | null } | null = null
+  if (isOwner(sessionUser)) {
+    const poItem = (asset as any).purchase_order_items
+    const po = poItem?.purchase_orders
+    let vendorName: string | null = po?.vendor_name || null
+    if (!vendorName && asset.vendor_id) {
+      const { data: vendor } = await supabaseAdmin.from('vendors').select('company_name').eq('id', asset.vendor_id).maybeSingle()
+      vendorName = vendor?.company_name || null
+    }
+    purchaseInfo = {
+      po_number: po?.po_number || null,
+      vendor_name: vendorName,
+      unit_price: poItem?.unit_price ?? asset.cost_price ?? null,
+    }
   }
 
   // Legacy-door rows have no purchase_order_items link -- fall back to the SKU
@@ -84,6 +107,7 @@ export async function GET(
     sale_total: number | null
     payment_status: string | null
     amount_paid: number | null
+    payment_date: string | null
     bundled_accessories_display: { name: string; quantity: number }[]
   } | null = null
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
@@ -95,6 +119,9 @@ export async function GET(
       .maybeSingle()
     saleId = saleRow?.id ?? null
     if (saleRow) {
+      // "Payment date" here is the same "latest installment" definition Sales
+      // Ledger/Stock/Sold Accessories already use, not sales.created_at.
+      const paymentDateBySaleId = await latestPaymentDatesBySaleId([saleRow.id])
       // Bundled accessories are stored inline on the sale row (sales.bundled_accessories
       // JSONB: [{accessory_id, quantity}]) -- resolve each to a display name, same
       // pattern as /api/sales and /api/stock.
@@ -109,6 +136,7 @@ export async function GET(
         sale_total: saleRow.sale_total,
         payment_status: saleRow.payment_status,
         amount_paid: saleRow.amount_paid,
+        payment_date: paymentDateBySaleId.get(saleRow.id) || null,
         bundled_accessories_display: bundled.map((b: any) => {
           const bsku = bundledSkuById.get(b.accessory_id)
           return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
@@ -117,7 +145,17 @@ export async function GET(
     }
   }
 
-  return NextResponse.json({ ...asset, checks: checks || [], sale_id: saleId, sale_summary: saleSummary })
+  // vendor_id/cost_price, and purchase_order_items.unit_price/purchase_orders, were
+  // only selected to compute purchase_info above -- strip them from the raw asset
+  // spread so a non-owner response never carries cost/vendor data regardless of this
+  // route's own gating bugs (purchase_info itself is already null for non-owners).
+  const { vendor_id: _vendorId, cost_price: _costPrice, ...assetWithoutCostFields } = asset as any
+  if (assetWithoutCostFields.purchase_order_items) {
+    const { unit_price: _unitPrice, purchase_orders: _po, ...restPoItem } = assetWithoutCostFields.purchase_order_items
+    assetWithoutCostFields.purchase_order_items = restPoItem
+  }
+
+  return NextResponse.json({ ...assetWithoutCostFields, checks: checks || [], sale_id: saleId, sale_summary: saleSummary, purchase_info: purchaseInfo })
 }
 
 // ---------- PUT: submit QC checklist + grade, transition status ----------

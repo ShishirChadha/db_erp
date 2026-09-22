@@ -249,10 +249,17 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
   )
 }
 
-function AccessoryDetailPage() {
+// `skuId`/`embedded` let this exact component be reused inline inside the
+// Accessories list page's detail pane and inside StockView's Accessories tab
+// (see app/dashboard/accessories/page.tsx and components/StockView.tsx)
+// instead of duplicating this fetch/history/edit-receipt logic a second time --
+// embedded mode just fetches by the given id instead of a route param, and
+// drops the standalone-page chrome (back link, outer padding/max-width, which
+// the embedding page's own pane already supplies).
+export function AccessoryDetailPage({ skuId: skuIdProp, embedded }: { skuId?: string; embedded?: boolean } = {}) {
   const params = useParams()
   const router = useRouter()
-  const skuId = params.id as string
+  const skuId = skuIdProp ?? (params.id as string)
   const { isOwner } = useRole()
 
   const [data, setData] = useState<HistoryResponse | null>(null)
@@ -275,7 +282,7 @@ function AccessoryDetailPage() {
 
   useEffect(() => { fetchHistory() }, [fetchHistory])
 
-  if (loading) return <div className="p-4">Loading…</div>
+  if (loading) return <div className={embedded ? 'p-4' : 'p-4'}>Loading…</div>
   if (error) return <div className="p-4 text-destructive">Error: {error}</div>
   if (!data) return null
 
@@ -283,12 +290,18 @@ function AccessoryDetailPage() {
   const displayName = sku.sku_description || sku.model_name || sku.full_sku_code
 
   return (
-    <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.back()} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
+    <div className={embedded ? '' : 'p-4 max-w-3xl mx-auto'}>
+      {!embedded && (
+        <button onClick={() => router.back()} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
+      )}
       <h1 className="text-2xl font-bold mb-1">{displayName}</h1>
-      <p className="text-muted-foreground mb-4">
+      <p className="text-muted-foreground mb-1">
         {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
         {sku.status !== 'active' && <span className="ml-2 text-xs text-muted-foreground capitalize">({sku.status})</span>}
+      </p>
+      {/* Selling price is never redacted (see CLAUDE.md) -- visible to every role. */}
+      <p className="text-sm text-muted-foreground mb-4">
+        Selling price: {sku.selling_price_default != null ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}
       </p>
 
       {/* Reconciliation summary -- the "why does in-stock show this number" answer,

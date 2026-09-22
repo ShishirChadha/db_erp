@@ -69,8 +69,14 @@ interface AssetDetail {
     sale_total: number | null
     payment_status: string | null
     amount_paid: number | null
+    payment_date: string | null
     bundled_accessories_display: { name: string; quantity: number }[]
   } | null
+  // Owner-only (redacted server-side to null for non-owners, same rule as cost/vendor
+  // everywhere else -- see CLAUDE.md). PO number / vendor / unit cost this unit was
+  // purchased under; unit_price falls back to asset_ledger.cost_price for legacy-door
+  // rows with no PO link.
+  purchase_info: { po_number: string | null; vendor_name: string | null; unit_price: number | null } | null
   purchase_order_items: {
     sku_master: {
       full_sku_code: string
@@ -93,18 +99,24 @@ interface AssetDetail {
   checks: { check_item: string; result: string; notes: string | null }[]
 }
 
-function AssetQCPage() {
+// `assetId`/`embedded` let this exact component be reused inline inside StockView's
+// master-detail right pane (see components/StockView.tsx) instead of duplicating its
+// fetch/QC/cost-adjustment logic a second time -- same technique as PODetailPage's
+// `poId`/`embedded` props. Embedded mode fetches by the given id instead of a route
+// param, and drops the standalone-page chrome (back link, outer padding/max-width,
+// which the host pane already supplies).
+export function AssetQCPage({ assetId: assetIdProp, embedded }: { assetId?: string; embedded?: boolean } = {}) {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const assetId = params.id as string
+  const assetId = assetIdProp ?? (params.id as string)
   const { isOwner, canEditPage } = useRole()
   // Reachable from both Live Stock and the main-ERP Stock page (same route), so either
   // page's edit grant unlocks correcting an asset's serial/asset number here.
   const canEditLiveStock = isOwner || canEditPage('live_stock') || canEditPage('stock')
   // Preserves which tab (current/sold/accessories/sold_accessories) the user came from --
   // plain browser-history back() would land on the bare list URL and lose that, same
-  // pattern already used by app/dashboard/entry/sell/page.tsx.
+  // pattern already used by app/dashboard/entry/sell/page.tsx. Not used in embedded mode.
   const returnTo = searchParams.get('return_to')
   const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/live-stock'
 
@@ -331,8 +343,10 @@ function AssetQCPage() {
   const canEditQC = ['qc_pending', 'qc_passed', 'faulty'].includes(asset.status)
 
   return (
-    <div className="p-4 max-w-3xl mx-auto">
-      <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
+    <div className={embedded ? '' : 'p-4 max-w-3xl mx-auto'}>
+      {!embedded && (
+        <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
+      )}
       <h1 className="text-2xl font-bold mb-1">{asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}</h1>
       <p className="text-muted-foreground mb-1">
         {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
@@ -467,6 +481,13 @@ function AssetQCPage() {
               </p>
             </div>
           )}
+          {isOwner && asset.purchase_info && (
+            <p className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+              {asset.purchase_info.po_number ? `PO ${asset.purchase_info.po_number}` : 'No PO attached'}
+              {asset.purchase_info.vendor_name && ` · ${asset.purchase_info.vendor_name}`}
+              {asset.purchase_info.unit_price != null && ` · ₹${asset.purchase_info.unit_price.toFixed(2)}`}
+            </p>
+          )}
         </div>
       )}
 
@@ -485,6 +506,7 @@ function AssetQCPage() {
                     {typeof asset.sale_summary.amount_paid === 'number' && ` (₹${asset.sale_summary.amount_paid.toFixed(2)} paid)`}
                   </span>
                 )}
+                {asset.sale_summary.payment_date && ` · Payment date: ${asset.sale_summary.payment_date.slice(0, 10)}`}
               </p>
               <p>
                 Bundled:{' '}
@@ -705,6 +727,8 @@ function AssetQCPage() {
 }
 
 export default function AssetQCPageGuarded() {
+  // Standalone route -- reads assetId from the URL param (see AssetQCPage's default
+  // `assetIdProp ?? params.id` above).
   return (
     <RequirePageAccess pageKey={['live_stock', 'stock']}>
       <AssetQCPage />

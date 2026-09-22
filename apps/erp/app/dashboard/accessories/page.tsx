@@ -1,9 +1,8 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import Link from 'next/link'
-import { Loader2 } from 'lucide-react'
+import { ArrowLeft, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -12,7 +11,8 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { SkuFormModal } from '@/components/SkuFormModal'
 import { Pagination } from '@/components/Pagination'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
-import { formatPurchasePrice } from '@/lib/format'
+import { cn } from '@/lib/utils'
+import { AccessoryDetailPage } from './[id]/page'
 
 const PAGE_SIZE = 25
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
@@ -430,6 +430,90 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
   )
 }
 
+// Left-pane list row -- name, category/brand, in-stock qty and selling price are
+// the most-scannable columns from the old wide table; cost/last-vendor (owner-only)
+// and the action controls (Receive/Sell/Adjust/Attach PO/Archive) live in the detail
+// pane's toolbar instead, matching how PurchaseOrderListItem/CustomerListItem keep
+// the compact row minimal and put everything actionable in the detail pane.
+function AccessoryListItem({ sku, active, onOpen }: {
+  sku: AccessorySku
+  active: boolean
+  onOpen: () => void
+}) {
+  const displayName = sku.sku_description || sku.model_name || sku.full_sku_code
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      className={cn(
+        'w-full text-left px-3 py-2.5 border-b border-border flex items-start gap-2.5 transition-colors',
+        active ? 'bg-primary/10' : 'hover:bg-muted',
+        sku.status !== 'active' && 'opacity-50'
+      )}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="font-medium text-sm text-foreground truncate">{displayName}</span>
+          <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
+            {sku.selling_price_default ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground truncate mt-0.5">
+          {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
+        </p>
+        <div className="flex items-center justify-between gap-2 mt-1.5">
+          <span className="text-xs text-muted-foreground whitespace-nowrap">In stock: {sku.quantity_in_stock}</span>
+          {sku.status !== 'active' && <span className="text-xs text-muted-foreground capitalize">({sku.status})</span>}
+        </div>
+      </div>
+    </button>
+  )
+}
+
+// Right-pane detail view -- embeds the existing per-SKU history page (reconciliation
+// summary, purchase history, movement ledger, edit-receipt) and adds a toolbar above
+// it for every action the old table row exposed that isn't part of that page itself:
+// Receive Stock, Sell, Correct Quantity, Attach PO, Archive/Reactivate -- calling the
+// exact same handlers already defined in AccessoriesPage, just from here instead of a
+// table row (same placement pattern as PurchaseOrderDetailPane/InvoiceDetailPane).
+function AccessoryDetailPane({
+  sku, isOwner, backlogQty, defaultVendorId, onBack, onDone, onSell,
+}: {
+  sku: AccessorySku
+  isOwner: boolean
+  backlogQty: number | undefined
+  defaultVendorId: string | undefined
+  onBack: () => void
+  onDone: () => void
+  onSell: () => void
+}) {
+  return (
+    <div className="flex flex-col h-full">
+      <div className="p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
+          {sku.status === 'active' && <ReceiveStockControl skuId={sku.id} onDone={onDone} />}
+          {sku.status === 'active' && sku.quantity_in_stock > 0 && (
+            <button onClick={onSell} className="text-success underline text-xs whitespace-nowrap">
+              Sell
+            </button>
+          )}
+          {isOwner && sku.status === 'active' && <AdjustQuantityControl skuId={sku.id} onDone={onDone} />}
+          {isOwner && backlogQty != null && backlogQty > 0 && (
+            <AttachPoControl skuId={sku.id} backlogQty={backlogQty} defaultVendorId={defaultVendorId} onDone={onDone} />
+          )}
+          {isOwner && <ArchiveControl sku={sku} onDone={onDone} />}
+        </div>
+      </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <AccessoryDetailPage key={sku.id} skuId={sku.id} embedded />
+      </div>
+    </div>
+  )
+}
+
 function AccessoriesPage() {
   const router = useRouter()
   const { isOwner } = useRole()
@@ -441,7 +525,10 @@ function AccessoriesPage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
-  const [lastVendors, setLastVendors] = useState<Map<string, string>>(new Map())
+  // Only used to prefill AttachPoControl's default vendor -- the per-SKU "last
+  // vendor (PO)" display itself now lives in the embedded detail page's own
+  // "Cost & Last Vendor" section (fetched fresh per SKU), so the old bulk
+  // last-vendors fetch that fed the removed table column is no longer needed.
   const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null; gst_percentage: number | null; purchase_date: string | null }>>(new Map())
   const [showArchived, setShowArchived] = useState(false)
   const [page, setPage] = useState(1)
@@ -473,12 +560,6 @@ function AccessoriesPage() {
       const backlog: PoBacklog[] = await backlogRes.json()
       setPoBacklog(new Map(backlog.map((b) => [b.sku_id, b.quantity])))
     }
-    if (isOwner && loadedSkus.length > 0) {
-      const vendorRes = await apiFetch(`/api/sku-master/last-vendors?ids=${loadedSkus.map((s) => s.id).join(',')}`)
-      if (vendorRes.ok) setLastVendors(new Map(Object.entries(await vendorRes.json())))
-    } else {
-      setLastVendors(new Map())
-    }
     if (loadedSkus.length > 0) {
       const entryRes = await apiFetch(`/api/sku-master/last-entry-vendors?ids=${loadedSkus.map((s) => s.id).join(',')}`)
       if (entryRes.ok) setLastEntries(new Map(Object.entries(await entryRes.json())))
@@ -499,10 +580,21 @@ function AccessoriesPage() {
     })
   }, [])
 
-  const displayName = (s: AccessorySku) => s.sku_description || s.model_name || s.full_sku_code
+  // Which accessory SKU is open in the right-hand detail pane.
+  const [activeSkuId, setActiveSkuId] = useState<string | null>(null)
+
+  useEffect(() => {
+    // Auto-open the first row on load/refetch -- but only when nothing is selected
+    // yet, or the previously active SKU fell off this page/filter, so re-fetching
+    // after an action doesn't yank focus away from what the user is looking at
+    // (matches Customers/Purchase Orders).
+    setActiveSkuId((prev) => (prev && skus.some((s) => s.id === prev)) ? prev : (skus[0]?.id ?? null))
+  }, [skus])
+
+  const activeSku = useMemo(() => skus.find((s) => s.id === activeSkuId) ?? null, [skus, activeSkuId])
 
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Accessories</h1>
         <button onClick={() => setModalOpen(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">
@@ -546,77 +638,45 @@ function AccessoriesPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <>
-          <div className="overflow-x-auto rounded-md border">
-            <table className="min-w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="p-2 w-10 text-right">#</th>
-                  <th className="p-2">Name</th>
-                  <th className="p-2">Category</th>
-                  <th className="p-2">Brand</th>
-                  <th className="p-2 text-right">In Stock</th>
-                  <th className="p-2 text-right">Selling Price</th>
-                  <th className="p-2" title="Vendor/price optionally logged by whoever received the stock -- visible to everyone.">Last Purchase</th>
-                  {isOwner && <th className="p-2 text-right">Cost</th>}
-                  {isOwner && <th className="p-2">Last Vendor (PO)</th>}
-                  <th className="p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {skus.length === 0 && (
-                  <tr><td colSpan={isOwner ? 10 : 8} className="p-4 text-center text-sm text-muted-foreground">No accessories found.</td></tr>
-                )}
-                {skus.map((s, idx) => (
-                  <tr key={s.id} className={s.status !== 'active' ? 'opacity-50' : ''}>
-                    <td className="p-2 text-right tabular-nums text-muted-foreground">{(page - 1) * PAGE_SIZE + idx + 1}</td>
-                    <td className="p-2">
-                      <Link href={`/dashboard/accessories/${s.id}`} className="text-primary underline">
-                        {displayName(s)}
-                      </Link>
-                      {s.status !== 'active' && <span className="ml-2 text-xs text-muted-foreground capitalize">({s.status})</span>}
-                    </td>
-                    <td className="p-2">{s.category}</td>
-                    <td className="p-2">{s.brand || '—'}</td>
-                    <td className="p-2 text-right tabular-nums">{s.quantity_in_stock}</td>
-                    <td className="p-2 text-right tabular-nums">{s.selling_price_default ? `₹${s.selling_price_default.toFixed(2)}` : '—'}</td>
-                    <td className="p-2 text-xs">
-                      {lastEntries.has(s.id) ? (
-                        <>
-                          {lastEntries.get(s.id)!.vendor_name}
-                          {lastEntries.get(s.id)!.unit_price != null && (
-                            <span className="text-muted-foreground"> @ {formatPurchasePrice(lastEntries.get(s.id)!.unit_price, lastEntries.get(s.id)!.gst_percentage)}</span>
-                          )}
-                          {lastEntries.get(s.id)!.purchase_date && (
-                            <div className="text-muted-foreground">{lastEntries.get(s.id)!.purchase_date!.slice(0, 10)}</div>
-                          )}
-                        </>
-                      ) : '—'}
-                    </td>
-                    {isOwner && <td className="p-2 text-right tabular-nums">{s.base_cost != null ? `₹${s.base_cost.toFixed(2)}` : '—'}</td>}
-                    {isOwner && <td className="p-2">{lastVendors.get(s.id) || '—'}</td>}
-                    <td className="p-2">
-                      <div className="flex flex-col gap-1 items-start">
-                        {s.status === 'active' && <ReceiveStockControl skuId={s.id} onDone={fetchAll} />}
-                        {s.status === 'active' && s.quantity_in_stock > 0 && (
-                          <button onClick={() => router.push(`/dashboard/entry/sell?accessory_id=${s.id}&return_to=%2Fdashboard%2Faccessories`)} className="text-success underline text-xs">
-                            Sell
-                          </button>
-                        )}
-                        {isOwner && s.status === 'active' && <AdjustQuantityControl skuId={s.id} onDone={fetchAll} />}
-                        {isOwner && poBacklog.has(s.id) && (
-                          <AttachPoControl skuId={s.id} backlogQty={poBacklog.get(s.id)!} defaultVendorId={lastEntries.get(s.id)?.vendor_id} onDone={fetchAll} />
-                        )}
-                        {isOwner && <ArchiveControl sku={s} onDone={fetchAll} />}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+          {/* List pane -- hidden on mobile once a SKU is open, matching an email
+              client's drill-in navigation; always visible at md+. */}
+          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSku && 'hidden md:flex')}>
+            <div className="flex-1 overflow-y-auto">
+              {skus.map((s) => (
+                <AccessoryListItem
+                  key={s.id}
+                  sku={s}
+                  active={s.id === activeSkuId}
+                  onOpen={() => setActiveSkuId(s.id)}
+                />
+              ))}
+              {skus.length === 0 && (
+                <p className="p-4 text-center text-sm text-muted-foreground">No accessories found.</p>
+              )}
+            </div>
+            <div className="border-t border-border p-2">
+              <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
+            </div>
           </div>
-          <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
-        </>
+
+          {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
+          <div className={cn('flex-1 min-w-0', !activeSku && 'hidden md:flex md:items-center md:justify-center')}>
+            {activeSku ? (
+              <AccessoryDetailPane
+                sku={activeSku}
+                isOwner={isOwner}
+                backlogQty={poBacklog.get(activeSku.id)}
+                defaultVendorId={lastEntries.get(activeSku.id)?.vendor_id}
+                onBack={() => setActiveSkuId(null)}
+                onDone={fetchAll}
+                onSell={() => router.push(`/dashboard/entry/sell?accessory_id=${activeSku.id}&return_to=%2Fdashboard%2Faccessories`)}
+              />
+            ) : (
+              <p className="text-sm text-muted-foreground">Select an accessory to view details.</p>
+            )}
+          </div>
+        </div>
       )}
 
       {modalOpen && (
