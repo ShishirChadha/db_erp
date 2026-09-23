@@ -31,3 +31,12 @@ export function categoryToSlug(category: string): string {
 export function slugToCategory(slug: string): string | null {
   return SLUG_TO_CATEGORY[slug] || null
 }
+
+// Top-level category nav links shared by SiteHeader's desktop nav and
+// MobileNav's drawer -- kept in one place so the two can never drift apart.
+export const NAV_CATEGORIES = [
+  { code: 'LAP', label: 'Laptops' },
+  { code: 'DES', label: 'Desktops' },
+  { code: 'MON', label: 'Monitors' },
+  { code: 'TAB', label: 'Tablets' },
+]

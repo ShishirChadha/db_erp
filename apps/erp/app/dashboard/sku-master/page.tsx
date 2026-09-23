@@ -3,12 +3,11 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { apiFetch } from '@/lib/api-client'
-import { SkuFormModal } from '@/components/SkuFormModal'
-import { MergeSkuDialog } from '@/components/MergeSkuDialog'
-import { SkuWebPublishDialog } from '@/components/SkuWebPublishDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
 import { buildConfigSummary, buildConfigDiff } from '@/lib/sku-config-summary'
@@ -16,7 +15,14 @@ import { Pagination } from '@/components/Pagination'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { StatCardsRow, StatCard } from '@/components/StatCardsRow'
 import { StatusBadge } from '@/components/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const SkuFormModal = dynamic(() => import('@/components/SkuFormModal').then(m => m.SkuFormModal), { ssr: false })
+const MergeSkuDialog = dynamic(() => import('@/components/MergeSkuDialog').then(m => m.MergeSkuDialog), { ssr: false })
+const SkuWebPublishDialog = dynamic(() => import('@/components/SkuWebPublishDialog').then(m => m.SkuWebPublishDialog), { ssr: false })
 
 const PAGE_SIZE = 25
 
@@ -153,17 +159,17 @@ function SkuDetailPane({ sku, summary, isOwner, hasWebsiteAccess, deleting, onEd
           </div>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <button onClick={onEdit} disabled={deleting} className="text-primary underline text-sm disabled:opacity-50">Edit</button>
+          <Button variant="link" size="sm" onClick={onEdit} disabled={deleting} className="text-primary text-sm disabled:opacity-50">Edit</Button>
           {isOwner && (
             <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple underline text-sm">Pricing</Link>
           )}
           {hasWebsiteAccess && (
-            <button onClick={onWebsite} disabled={deleting} className="text-success underline text-sm disabled:opacity-50">Website</button>
+            <Button variant="link" size="sm" onClick={onWebsite} disabled={deleting} className="text-success text-sm disabled:opacity-50">Website</Button>
           )}
-          <button onClick={onDelete} disabled={deleting} className="text-destructive underline text-sm disabled:opacity-50 inline-flex items-center gap-1">
+          <Button variant="link" size="sm" onClick={onDelete} disabled={deleting} className="text-destructive text-sm disabled:opacity-50 inline-flex items-center gap-1">
             {deleting && <Loader2 className="size-3 animate-spin" />}
             Delete
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -198,7 +204,15 @@ function SkuMasterPage() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editingSku, setEditingSku] = useState<SKU | null>(null)
   const searchParams = useSearchParams()
+  // searchInput updates on every keystroke; search catches up 300ms after typing
+  // stops and is what actually drives the fetch -- same debounce pattern as
+  // StockView/Sales Ledger/Repair Jobs.
+  const [searchInput, setSearchInput] = useState(searchParams.get('search') || '')
   const [search, setSearch] = useState(searchParams.get('search') || '')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [categoryFilter, setCategoryFilter] = useState('')
   const [sortField, setSortField] = useState<SortField>('full_sku_code')
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
@@ -208,6 +222,7 @@ function SkuMasterPage() {
   const [counts, setCounts] = useState<SkuCounts | null>(null)
   // Which SKU is open in the right-hand detail pane.
   const [activeSkuId, setActiveSkuId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const [duplicateClusters, setDuplicateClusters] = useState<DuplicateCluster[]>([])
   const [showDuplicates, setShowDuplicates] = useState(false)
@@ -270,7 +285,7 @@ function SkuMasterPage() {
       setTotal(json.total || 0)
       // Auto-open the first row on load/refetch, but don't yank focus away
       // from whatever's already open if it's still in the refetched data.
-      setActiveSkuId((prev) => (prev && rows.some((s) => s.id === prev)) ? prev : (rows[0]?.id ?? null))
+      setActiveSkuId((prev) => (prev && rows.some((s) => s.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null))
     } catch (err: any) {
       console.error(err)
       setError(err.message)
@@ -392,7 +407,7 @@ function SkuMasterPage() {
   if (loading) return <div className="p-4">Loading…</div>
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">SKU Master</h1>
         <button onClick={handleCreate} className="bg-primary text-primary-foreground px-4 py-2 rounded">
@@ -459,8 +474,8 @@ function SkuMasterPage() {
           <input
             type="text"
             placeholder="Search code or description..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="border p-2 rounded"
           />
         </div>
@@ -496,7 +511,7 @@ function SkuMasterPage() {
       <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once a SKU is open, matching an email
             client's drill-in navigation; always visible at md+. */}
-        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSku && "hidden md:flex")}>
+        <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSku && "hidden md:flex")}>
           <div className="flex-1 overflow-y-auto">
             {displayedSkus.map((sku) => (
               <SkuListItem

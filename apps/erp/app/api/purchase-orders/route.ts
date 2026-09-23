@@ -133,15 +133,19 @@ export async function POST(req: NextRequest) {
 
   if (poErr) return NextResponse.json({ error: poErr.message }, { status: 500 })
 
-  // Insert line items
+  // Insert line items -- resolve all SKUs in a single batched lookup instead of
+  // one sequential round trip per item.
+  const { data: skuRows } = await supabaseAdmin
+    .from('sku_master')
+    .select('id, base_sku_code, variant_number, base_cost')
+    .in('id', items.map((item: { sku_id: string }) => item.sku_id))
+
+  const skuById = new Map((skuRows || []).map(row => [row.id, row]))
+
   const lineItems = []
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
-    const { data: sku } = await supabaseAdmin
-      .from('sku_master')
-      .select('base_sku_code, variant_number, base_cost')
-      .eq('id', item.sku_id)
-      .single()
+    const sku = skuById.get(item.sku_id)
     if (!sku) return NextResponse.json({ error: `SKU not found: ${item.sku_id}` }, { status: 400 })
 
     const basePrice = item.base_price ?? sku.base_cost

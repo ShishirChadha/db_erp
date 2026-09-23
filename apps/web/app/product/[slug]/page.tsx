@@ -122,15 +122,19 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   // graded unit -- a SKU can carry quantity 1-2, and showing a single serial
   // number when 2 units are both available would be misleading.
   const singleUnit = units.length === 1 && units[0].serial_number ? units[0] : null;
-  const testReport = singleUnit ? await getAssetTestReport(product.id, singleUnit.serial_number!) : [];
-  const upgradeOptions = isSerializedCategory(product.category)
-    ? await getUpgradeOptions({
-        category: product.category,
-        currentRam: (product.specifications as any)?.ram ?? null,
-        currentSsd: (product.specifications as any)?.ssd ?? null,
-        currentWarrantyMonths: singleUnit?.warranty_duration_months ?? null,
-      })
-    : [];
+  // Neither of these depends on the other -- fetch concurrently instead of
+  // as two sequential round trips.
+  const [testReport, upgradeOptions] = await Promise.all([
+    singleUnit ? getAssetTestReport(product.id, singleUnit.serial_number!) : Promise.resolve([]),
+    isSerializedCategory(product.category)
+      ? getUpgradeOptions({
+          category: product.category,
+          currentRam: (product.specifications as any)?.ram ?? null,
+          currentSsd: (product.specifications as any)?.ssd ?? null,
+          currentWarrantyMonths: singleUnit?.warranty_duration_months ?? null,
+        })
+      : Promise.resolve([]),
+  ]);
 
   const relatedSameBrand = related.filter((p) => p.brand === product.brand);
   const relatedOthers = related.filter((p) => p.brand !== product.brand);

@@ -86,17 +86,31 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  // Sorting has to happen after enrichment below, not in this query -- several
-  // sortable columns (description/RAM/SSD/bundle) are resolved from sku_master
-  // post-fetch, not real columns on `sales`. So this always fetches every row
-  // matching the filters (no .range() here); pagination is applied in JS after
-  // sort, over the full filtered+enriched set, so sorting is correct across pages
-  // rather than just within whichever page happened to be fetched.
+  // Several sortable columns (description/RAM/SSD/bundle/customer display name/
+  // payment date) are resolved from joins/enrichment below, not real columns on
+  // `sales` -- sorting by one of those still requires the full filtered set in
+  // memory so pagination stays correct across pages. But most page loads (the
+  // default view, or a sort on a plain native column) don't need that: for those,
+  // paginate in SQL so the enrichment batches below only ever run over the current
+  // page's rows instead of the whole ledger, which is what let this endpoint's
+  // cost grow forever with total sales history rather than with page size.
+  const NATIVE_SORT_COLUMNS: Record<string, string> = {
+    sale_date: 'sale_date',
+    sale_total: 'sale_total',
+    payment_status: 'payment_status',
+    amount_paid: 'amount_paid',
+    payment_account: 'payment_account',
+    sold_by: 'sold_by',
+    invoice: 'invoice_number',
+  }
+  const nativeSortColumn = sortKey ? NATIVE_SORT_COLUMNS[sortKey] : undefined
+  const paginateInSql = !!pagination && (!sortKey || !!nativeSortColumn)
+
   let query = supabaseAdmin
     .from('sales')
-    .select('*')
+    .select('*', paginateInSql ? { count: 'exact' } : undefined)
     .eq('is_deleted', voided)
-    .order('created_at', { ascending: false })
+    .order(nativeSortColumn || 'created_at', { ascending: nativeSortColumn ? sortDir === 1 : false })
 
   if (paymentStatus) query = query.eq('payment_status', paymentStatus)
   if (receivedInto) query = query.eq('payment_account', receivedInto)
@@ -105,8 +119,11 @@ export async function GET(req: NextRequest) {
   if (search) {
     query = query.or(searchFilter)
   }
+  if (paginateInSql && pagination) {
+    query = query.range(pagination.from, pagination.to)
+  }
 
-  const { data, error } = await query
+  const { data, error, count } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // customer_name is a snapshot frozen at sale creation. For sales not yet finalized
@@ -241,7 +258,9 @@ export async function GET(req: NextRequest) {
   })
 
   // sold_by is already a plain name (see custom_options 'staff_names') -- no join needed.
-  if (sortKey) {
+  // Only re-sort in JS when the DB couldn't already do it above (a derived/enriched
+  // column) -- a native-column sort was already applied and paginated in SQL.
+  if (sortKey && !nativeSortColumn) {
     const value = getSortValue(sortKey)
     result.sort((a: any, b: any) => {
       const av = value(a)
@@ -253,6 +272,9 @@ export async function GET(req: NextRequest) {
   }
 
   if (pagination) {
+    if (paginateInSql) {
+      return NextResponse.json({ data: result, total: count ?? result.length })
+    }
     const page = result.slice(pagination.from, pagination.to + 1)
     return NextResponse.json({ data: page, total: result.length })
   }

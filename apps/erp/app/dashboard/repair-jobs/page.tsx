@@ -2,18 +2,25 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { StatCardsRow } from '@/components/StatCardsRow'
-import { EditRepairJobDialog, RepairJobDetail } from '@/components/EditRepairJobDialog'
-import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
+import { Button } from '@/components/ui/button'
+import type { RepairJobDetail } from '@/components/EditRepairJobDialog'
 import { REPAIR_JOB_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const EditRepairJobDialog = dynamic(() => import('@/components/EditRepairJobDialog').then(m => m.EditRepairJobDialog), { ssr: false })
+const RecordZohoInvoiceDialog = dynamic(() => import('@/components/RecordZohoInvoiceDialog').then(m => m.RecordZohoInvoiceDialog), { ssr: false })
 
 const PAGE_SIZE = 25
 
@@ -60,14 +67,14 @@ function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: 
   return (
     <>
       {isExternal ? (
-        <button onClick={() => setShowZohoDialog(true)} className="text-warning underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
+        <Button variant="link" size="sm" onClick={() => setShowZohoDialog(true)} className="text-warning text-xs" title="This entity is issuing invoices in Zoho during the transition">
           Record Zoho Invoice #
-        </button>
+        </Button>
       ) : (
-        <button onClick={() => generateInvoice()} disabled={generating} className="text-warning underline text-xs inline-flex items-center gap-1">
+        <Button variant="link" size="sm" onClick={() => generateInvoice()} disabled={generating} className="text-warning text-xs inline-flex items-center gap-1">
           {generating && <Loader2 className="size-3 animate-spin" />}
           Generate Invoice
-        </button>
+        </Button>
       )}
       {showZohoDialog && (
         <RecordZohoInvoiceDialog saleIds={unfinalized.map((s) => s.id)} onClose={() => setShowZohoDialog(false)} onRecorded={onDone} />
@@ -167,11 +174,11 @@ function JobDetailPane({ job, canEdit, isOwner, onDone, onBack }: {
           </div>
           {canEdit && (
             <div className="flex items-center gap-3">
-              <button onClick={() => setShowEdit(true)} className="text-primary underline text-xs">Edit</button>
+              <Button variant="link" size="sm" onClick={() => setShowEdit(true)} className="text-primary text-xs">Edit</Button>
               {job.status !== 'done' && (
-                <button onClick={() => markDone()} disabled={marking} className="text-success underline text-xs flex items-center gap-1">
+                <Button variant="link" size="sm" onClick={() => markDone()} disabled={marking} className="text-success text-xs flex items-center gap-1">
                   {marking && <Loader2 className="size-3 animate-spin" />}Mark Done
-                </button>
+                </Button>
               )}
             </div>
           )}
@@ -202,6 +209,7 @@ function RepairJobsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   // searchInput updates on every keystroke; searchTerm catches up 300ms after typing
   // stops and is what actually drives the fetch -- same debounce pattern as StockView.
@@ -250,7 +258,7 @@ function RepairJobsPage() {
       // Auto-open the first row on load/refetch, but don't yank focus away from
       // whatever's already open if it's still in the refetched data (matches
       // Sales Ledger's own activeSaleId logic).
-      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setJobs([])
       setTotal(0)
@@ -270,7 +278,7 @@ function RepairJobsPage() {
   const activeJob = useMemo(() => jobs.find(j => j.id === activeJobId) ?? null, [jobs, activeJobId])
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Repair Jobs</h1>
         <Link href="/dashboard/entry/service?return_to=%2Fdashboard%2Frepair-jobs" className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
@@ -308,7 +316,7 @@ function RepairJobsPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a job is open, matching an email
               client's drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeJob && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeJob && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {jobs.map((job) => (
                 <JobListItem

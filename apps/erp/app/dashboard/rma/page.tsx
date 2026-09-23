@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { StatusBadge } from '@/components/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { toneFor } from '@/lib/status-styles'
 import type { Tone } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
@@ -207,15 +209,17 @@ function RmaDetailPane({
               {nextOptions.map((next) => {
                 const key = `${m.id}:${next}`
                 return (
-                  <button
+                  <Button
                     key={next}
+                    variant="link"
+                    size="sm"
                     onClick={() => (m.kind === 'unit' ? onAdvanceUnit(m.unit, next) : onAdvanceAccessory(m.accessory, next))}
                     disabled={!!advancingKey}
-                    className="text-primary underline text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
+                    className="text-primary text-xs capitalize inline-flex items-center gap-1 disabled:opacity-50"
                   >
                     {advancingKey === key && <Loader2 className="size-3 animate-spin" />}
                     {next.replace(/_/g, ' ')}
-                  </button>
+                  </Button>
                 )
               })}
             </div>
@@ -239,6 +243,7 @@ function RmaPage() {
   const [statusFilter, setStatusFilter] = useState('')
   const [modalOpen, setModalOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   // create-form state (serialized unit)
   const [direction, setDirection] = useState<'to_vendor' | 'from_customer'>('to_vendor')
@@ -462,13 +467,13 @@ function RmaPage() {
   // whatever's already open if it's still in the refetched merged list.
   useEffect(() => {
     if (loading) return
-    setActiveId((prev) => (prev && merged.some((m) => m.id === prev)) ? prev : (merged[0]?.id ?? null))
+    setActiveId((prev) => (prev && merged.some((m) => m.id === prev)) ? prev : (isDesktop ? (merged[0]?.id ?? null) : null))
   }, [merged, loading])
 
   const active = useMemo(() => merged.find((m) => m.id === activeId) ?? null, [merged, activeId])
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">RMA / Returns</h1>
         <button onClick={openModal} className="bg-primary text-primary-foreground px-4 py-2 rounded">
@@ -500,7 +505,7 @@ function RmaPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once an RMA is open, matching Sales
               Ledger's drill-in navigation; always visible at md+. */}
-          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", active && "hidden md:flex")}>
+          <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", active && "hidden md:flex")}>
             <div className="flex-1 overflow-y-auto">
               {merged.map((m) => (
                 <RmaListItem key={m.id} m={m} active={m.id === activeId} onOpen={() => setActiveId(m.id)} />
@@ -571,7 +576,7 @@ function RmaPage() {
                   {selectedAsset ? (
                     <div className="flex items-center justify-between border p-2 rounded bg-muted">
                       <span>{selectedAsset.asset_number} — {selectedAsset.sku_code}</span>
-                      <button onClick={() => setSelectedAsset(null)} className="text-destructive text-xs underline">Change</button>
+                      <Button variant="link" size="sm" onClick={() => setSelectedAsset(null)} className="text-destructive text-xs">Change</Button>
                     </div>
                   ) : (
                     <>
@@ -651,7 +656,7 @@ function RmaPage() {
                   {selectedSku ? (
                     <div className="flex items-center justify-between border p-2 rounded bg-muted">
                       <span>{selectedSku.full_sku_code} {selectedSku.sku_description ? `— ${selectedSku.sku_description}` : ''} ({selectedSku.quantity_in_stock} in stock)</span>
-                      <button onClick={() => setSelectedSku(null)} className="text-destructive text-xs underline">Change</button>
+                      <Button variant="link" size="sm" onClick={() => setSelectedSku(null)} className="text-destructive text-xs">Change</Button>
                     </div>
                   ) : (
                     <>

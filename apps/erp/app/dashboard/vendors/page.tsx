@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -14,12 +16,15 @@ import {
   Plus, Search, Loader2, Pencil, Trash2, RotateCcw, ArrowLeft
 } from 'lucide-react'
 import { toast } from 'sonner'
-import DeleteRecordDialog from '@/components/DeleteRecordDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
 import { withRetry } from '@/lib/db-retry'
 import { cn } from '@/lib/utils'
+
+// Only renders behind a click (gated by a state flag) -- code-split out of the
+// initial bundle rather than shipped unconditionally.
+const DeleteRecordDialog = dynamic(() => import('@/components/DeleteRecordDialog'), { ssr: false })
 
 const PAGE_SIZE = 25
 
@@ -186,7 +191,15 @@ function VendorDetailPane({ vendor, onEdit, onDelete, onRestore, restoring, onBa
 
 function VendorsPage() {
   const [vendors, setVendors] = useState<Vendor[]>([])
+  // searchInput updates on every keystroke; searchTerm catches up 300ms after
+  // typing stops and is what actually drives the fetch -- same debounce pattern
+  // as StockView/Sales Ledger/Repair Jobs.
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [showDeleted, setShowDeleted] = useState(false)
   const [showForm, setShowForm] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
@@ -199,6 +212,7 @@ function VendorsPage() {
   const [total, setTotal] = useState(0)
   // Which vendor is open in the right-hand detail pane.
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const supabase = createClient()
 
@@ -221,7 +235,7 @@ function VendorsPage() {
       setTotal(count || 0)
       // Auto-open the first row on load/refetch, but don't yank focus away
       // from whatever's already open if it's still in the refetched data.
-      setActiveVendorId((prev) => (prev && rows.some((v) => v.id === prev)) ? prev : (rows[0]?.id ?? null))
+      setActiveVendorId((prev) => (prev && rows.some((v) => v.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null))
     } catch (err) {
       console.error(err)
       toast.error('Unable to load vendors -- check your connection and try again.')
@@ -385,7 +399,7 @@ function VendorsPage() {
   const activeVendor = useMemo(() => vendors.find(v => v.id === activeVendorId) ?? null, [vendors, activeVendorId])
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold">Vendors</h1>
@@ -402,8 +416,8 @@ function VendorsPage() {
           <Input
             placeholder="Search by company, SPOC, owner, phone, GST, email..."
             className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
         <div className="flex items-center space-x-2">
@@ -415,7 +429,7 @@ function VendorsPage() {
       <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once a vendor is open, matching an
             email client's drill-in navigation; always visible at md+. */}
-        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeVendor && "hidden md:flex")}>
+        <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeVendor && "hidden md:flex")}>
           <div className="flex-1 overflow-y-auto">
             {vendors.map((v) => (
               <VendorListItem

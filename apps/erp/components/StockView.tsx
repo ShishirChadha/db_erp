@@ -3,26 +3,31 @@
 import { useEffect, useMemo, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useRole } from '@/lib/auth/useRole'
-import { FixSkuDialog } from '@/components/FixSkuDialog'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ASSET_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { ReasonConfirmDialog } from '@/components/ReasonConfirmDialog'
-import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { CustomerNameLink } from '@/components/CustomerNameLink'
 import type { CustomerSummary } from '@/lib/customer-summary'
-import { EditSaleDialog } from '@/components/EditSaleDialog'
-import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { computeFromUnitPrice, computeFromLineTotal } from '@/lib/po-gst-calc'
 import { cn } from '@/lib/utils'
 import { AssetQCPage } from '@/app/dashboard/stock/[id]/page'
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const FixSkuDialog = dynamic(() => import('@/components/FixSkuDialog').then(m => m.FixSkuDialog), { ssr: false })
+const ReasonConfirmDialog = dynamic(() => import('@/components/ReasonConfirmDialog').then(m => m.ReasonConfirmDialog), { ssr: false })
+const AddPaymentDialog = dynamic(() => import('@/components/AddPaymentDialog').then(m => m.AddPaymentDialog), { ssr: false })
+const EditSaleDialog = dynamic(() => import('@/components/EditSaleDialog').then(m => m.EditSaleDialog), { ssr: false })
+const RecordZohoInvoiceDialog = dynamic(() => import('@/components/RecordZohoInvoiceDialog').then(m => m.RecordZohoInvoiceDialog), { ssr: false })
 import { AccessoryDetailPage } from '@/app/dashboard/accessories/[id]/page'
 
 interface AssetRow {
@@ -196,6 +201,7 @@ export default function StockView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
   const [tab, setTab] = useState<Tab>(initialTab)
+  const isDesktop = useIsDesktopViewport()
   const returnToPath = `${pathname}?tab=${tab}`
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [soldAccessories, setSoldAccessories] = useState<SoldAccessoryRow[]>([])
@@ -320,7 +326,7 @@ export default function StockView({
       const data: AssetRow[] = json.data || []
       setAssets(data)
       setTotal(json.total || 0)
-      setActiveAssetId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveAssetId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
       // Selection is deliberately NOT cleared here -- it must survive tab/filter/page
       // changes so a cross-tab (current + sold) selection can be built up and submitted
       // as one PO. It's only cleared explicitly: on successful PO creation, or when the
@@ -355,7 +361,7 @@ export default function StockView({
       const data: SoldAccessoryRow[] = json.data || []
       setSoldAccessories(data)
       setTotal(json.total || 0)
-      setActiveSoldAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveSoldAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -381,7 +387,7 @@ export default function StockView({
       const data: AccessoryStockRow[] = json.data || []
       setAccessoryStock(data)
       setTotal(json.total || 0)
-      setActiveAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -549,7 +555,7 @@ export default function StockView({
   if (error) return <div className="p-4 text-destructive">Error: {error}</div>
 
   return (
-    <div className="p-4">
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-start gap-4 mb-1">
         <h1 className="text-2xl font-bold">{title}</h1>
         {tab === 'accessories' ? (
@@ -735,10 +741,10 @@ export default function StockView({
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a SKU is open, matching the
               Current/Sold master-detail drill-in navigation. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {accessoryStock.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No accessories in stock.</p>
@@ -769,9 +775,9 @@ export default function StockView({
           </div>
         </div>
       ) : tab === 'sold_accessories' ? (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
             <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
               <button
                 type="button"
@@ -812,10 +818,10 @@ export default function StockView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex" style={{ minHeight: '60vh' }}>
+        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a unit is open, matching the
               Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>
             {isOwner && (tab === 'current' || tab === 'sold') && (
               <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
                 <Checkbox
@@ -879,6 +885,7 @@ export default function StockView({
                 showServiceActions={showServiceActions}
                 pendingRowKey={pendingRowKey}
                 returnToPath={returnToPath}
+                templates={templates}
                 onBack={() => setActiveAssetId(null)}
                 onSell={() => router.push(`/dashboard/entry/sell?asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
                 onRepair={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
@@ -966,7 +973,7 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
 // already defined in StockView (passed down as props), just invoked from here
 // instead of a table row.
 function AssetDetailPane({
-  asset, tab, idx, page, pageSize, canEdit, isOwner, showServiceActions, pendingRowKey, returnToPath,
+  asset, tab, idx, page, pageSize, canEdit, isOwner, showServiceActions, pendingRowKey, returnToPath, templates,
   onBack, onSell, onRepair, onReturn, onSendBackToQc, onFixSku, onDelete, onForceDelete,
   onAddPayment, onGenerateInvoice, onRecordZohoInvoice,
 }: {
@@ -977,6 +984,7 @@ function AssetDetailPane({
   pageSize: number
   canEdit: boolean
   isOwner: boolean
+  templates: ConfigSummaryTemplate[]
   showServiceActions: boolean
   pendingRowKey: string | null
   returnToPath: string
@@ -1003,61 +1011,67 @@ function AssetDetailPane({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
           {rowNumber != null && <span className="text-xs text-muted-foreground">#{rowNumber}</span>}
           {canEdit && (
-            <button onClick={onFixSku} className="text-primary underline text-xs">Fix SKU</button>
+            <Button variant="link" size="sm" onClick={onFixSku} className="text-primary text-xs">Fix SKU</Button>
           )}
           {tab === 'current' && ['ready_for_sale', 'qc_passed'].includes(asset.status) && (
-            <button onClick={onSell} className="text-success underline text-xs">Sell</button>
+            <Button variant="link" size="sm" onClick={onSell} className="text-success text-xs">Sell</Button>
           )}
           {tab === 'current' && asset.status === 'ready_for_sale' && (
-            <button
+            <Button
+              variant="link"
+              size="sm"
               onClick={() => onSendBackToQc(asset)}
               disabled={!!pendingRowKey}
-              className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+              className="text-warning text-xs disabled:opacity-50 inline-flex items-center gap-1"
             >
               {pendingRowKey === `${asset.id}:send-back-to-qc` && <Loader2 className="size-3 animate-spin" />}
               Send to QC
-            </button>
+            </Button>
           )}
           {tab === 'current' && showServiceActions && (
-            <button onClick={onRepair} className="text-primary underline text-xs">Repair</button>
+            <Button variant="link" size="sm" onClick={onRepair} className="text-primary text-xs">Repair</Button>
           )}
           {tab === 'current' && isOwner && !asset.po_id && (
-            <button
+            <Button
+              variant="link"
+              size="sm"
               onClick={() => onDelete(asset)}
               disabled={!!pendingRowKey}
-              className="text-destructive underline text-xs disabled:opacity-50 inline-flex items-center gap-1"
+              className="text-destructive text-xs disabled:opacity-50 inline-flex items-center gap-1"
             >
               {pendingRowKey === `${asset.id}:delete` && <Loader2 className="size-3 animate-spin" />}
               Delete
-            </button>
+            </Button>
           )}
           {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
-            <button onClick={() => onAddPayment(asset)} className="text-success underline text-xs">Add Payment</button>
+            <Button variant="link" size="sm" onClick={() => onAddPayment(asset)} className="text-success text-xs">Add Payment</Button>
           )}
           {tab === 'sold' && showServiceActions && (
-            <button onClick={onReturn} className="text-warning underline text-xs">Return</button>
+            <Button variant="link" size="sm" onClick={onReturn} className="text-warning text-xs">Return</Button>
           )}
           {tab === 'sold' && isOwner && (
             asset.invoice_finalized ? (
               <span className="text-success text-xs">✓ {asset.invoice_number}</span>
             ) : asset.invoice_mode === 'external' ? (
-              <button onClick={() => onRecordZohoInvoice(asset)} disabled={!asset.sale_id} className="text-warning underline text-xs disabled:opacity-50" title="This entity is issuing invoices in Zoho during the transition">
+              <Button variant="link" size="sm" onClick={() => onRecordZohoInvoice(asset)} disabled={!asset.sale_id} className="text-warning text-xs disabled:opacity-50" title="This entity is issuing invoices in Zoho during the transition">
                 Record Zoho Invoice #
-              </button>
+              </Button>
             ) : (
-              <button onClick={() => onGenerateInvoice(asset)} disabled={!!pendingRowKey} className="text-warning underline text-xs disabled:opacity-50 inline-flex items-center gap-1">
+              <Button variant="link" size="sm" onClick={() => onGenerateInvoice(asset)} disabled={!!pendingRowKey} className="text-warning text-xs disabled:opacity-50 inline-flex items-center gap-1">
                 {pendingRowKey === `${asset.id}:invoice` && <Loader2 className="size-3 animate-spin" />}
                 Generate Invoice
-              </button>
+              </Button>
             )
           )}
           {tab === 'sold' && isOwner && (
-            <button
+            <Button
+              variant="link"
+              size="sm"
               onClick={() => onForceDelete(asset)}
-              className="text-destructive underline text-xs"
+              className="text-destructive text-xs"
             >
               Delete
-            </button>
+            </Button>
           )}
           <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-xs text-muted-foreground underline ml-auto">
             Open full page
@@ -1065,7 +1079,7 @@ function AssetDetailPane({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 pt-2">
-        <AssetQCPage assetId={asset.id} embedded />
+        <AssetQCPage assetId={asset.id} embedded templates={templates} />
       </div>
     </div>
   )
@@ -1128,7 +1142,7 @@ function AccessoryStockDetailPane({ sku, isOwner, onBack, onSell }: {
           <ArrowLeft className="size-4" /> Back to list
         </button>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
-          <button onClick={onSell} className="text-success underline text-xs whitespace-nowrap">Sell</button>
+          <Button variant="link" size="sm" onClick={onSell} className="text-success text-xs whitespace-nowrap">Sell</Button>
           {isOwner && !!sku.needs_po_qty && (
             <span className="text-warning text-xs whitespace-nowrap" title="Units received but not yet on a purchase order -- use Manage Accessories to attach.">
               {sku.needs_po_qty} received, awaiting PO

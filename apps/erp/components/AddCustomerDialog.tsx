@@ -152,7 +152,7 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
           <Plus className="mr-2 h-4 w-4" /> Add Customer
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Add New Customer</DialogTitle></DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">

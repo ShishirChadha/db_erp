@@ -61,7 +61,7 @@ export function CartItemRow({
           type="button"
           disabled={pending}
           onClick={() => updateQuantity(quantity - 1)}
-          className="size-7 rounded-md border border-border text-sm disabled:opacity-50"
+          className="size-11 rounded-md border border-border text-sm disabled:opacity-50"
         >
           −
         </button>
@@ -70,7 +70,7 @@ export function CartItemRow({
           type="button"
           disabled={pending}
           onClick={() => updateQuantity(quantity + 1)}
-          className="size-7 rounded-md border border-border text-sm disabled:opacity-50"
+          className="size-11 rounded-md border border-border text-sm disabled:opacity-50"
         >
           +
         </button>

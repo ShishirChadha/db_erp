@@ -1,81 +1,37 @@
 'use client'
 
-import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserSupabaseClient } from '@db/db/browser'
+import { useWishlist } from './WishlistProvider'
 
 export function WishlistButton({ skuId, className }: { skuId: string; className?: string }) {
   const router = useRouter()
-  const [saved, setSaved] = useState(false)
-  const [pending, setPending] = useState(false)
-  const [ready, setReady] = useState(false)
+  const { ready, isSaved, isPending, toggle } = useWishlist()
+  const saved = isSaved(skuId)
+  const pending = isPending(skuId)
 
-  useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      const supabase = createBrowserSupabaseClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user || cancelled) {
-        setReady(true)
-        return
-      }
-      const { data } = await supabase
-        .from('wishlist_items')
-        .select('id')
-        .eq('customer_id', user.id)
-        .eq('sku_id', skuId)
-        .maybeSingle()
-      if (!cancelled) {
-        setSaved(!!data)
-        setReady(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [skuId])
-
-  const toggle = async (e: React.MouseEvent) => {
+  const handleClick = async (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    setPending(true)
-    try {
-      const supabase = createBrowserSupabaseClient()
-      const {
-        data: { user },
-      } = await supabase.auth.getUser()
-      if (!user) {
-        router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`)
-        return
-      }
-
-      if (saved) {
-        await supabase.from('wishlist_items').delete().eq('customer_id', user.id).eq('sku_id', skuId)
-        setSaved(false)
-      } else {
-        await supabase.from('wishlist_items').insert({ customer_id: user.id, sku_id: skuId })
-        setSaved(true)
-      }
-      router.refresh()
-    } finally {
-      setPending(false)
+    const result = await toggle(skuId)
+    if (result === 'login-required') {
+      router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+      return
     }
+    router.refresh()
   }
 
   return (
     <button
       type="button"
-      onClick={toggle}
+      onClick={handleClick}
       disabled={pending || !ready}
       aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
       aria-pressed={saved}
-      className={`inline-flex items-center justify-center rounded-full border border-border bg-card/90 p-2 backdrop-blur transition-colors hover:border-brand-orange/40 disabled:opacity-50 ${className || ''}`}
+      className={`inline-flex items-center justify-center rounded-full border border-border bg-card/90 p-2.5 backdrop-blur transition-colors hover:border-brand-orange/40 disabled:opacity-50 ${className || ''}`}
     >
       <svg
         viewBox="0 0 24 24"
-        className={`h-4 w-4 transition-colors ${saved ? 'fill-brand-orange text-brand-orange' : 'fill-none text-muted-foreground'}`}
+        className={`h-4.5 w-4.5 transition-colors ${saved ? 'fill-brand-orange text-brand-orange' : 'fill-none text-muted-foreground'}`}
         stroke="currentColor"
         strokeWidth="1.8"
       >

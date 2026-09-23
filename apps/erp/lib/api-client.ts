@@ -27,10 +27,13 @@ export async function apiFetch(url: string, options: RequestInit = {}) {
   // and reported by real users on flaky mobile/wifi connections (2026-09-18: "Unable
   // to Fetch" recurring across Sales/Live Stock/most list pages). GET requests are
   // safe to retry (nothing was mutated); a mutating request is not, so it's left to
-  // surface the failure immediately rather than risk a double-submit. Bumped from a
-  // single retry to two, with a longer backoff, after one retry proved insufficient
-  // for blips longer than ~400ms.
-  const maxAttempts = method === 'GET' ? 3 : 1
+  // surface the failure immediately rather than risk a double-submit. Tuned down to
+  // two attempts with a flat, shorter backoff (2026-09-23) -- three attempts at
+  // 500ms*attempt could stack up to 1.5s of pure sleep on top of each attempt's own
+  // network time, turning a brief blip into a multi-second stall on a flaky mobile
+  // connection; this keeps a retry for real transient failures while shrinking the
+  // worst case.
+  const maxAttempts = method === 'GET' ? 2 : 1
   let lastErr: unknown
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
@@ -38,7 +41,7 @@ export async function apiFetch(url: string, options: RequestInit = {}) {
     } catch (err) {
       lastErr = err
       if (attempt === maxAttempts) throw err
-      await sleep(500 * attempt)
+      await sleep(400)
     }
   }
   throw lastErr

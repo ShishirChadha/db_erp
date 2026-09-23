@@ -2,23 +2,29 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { Loader2, ArrowLeft } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
+import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useRole } from "@/lib/auth/useRole";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { StatCardsRow } from "@/components/StatCardsRow";
-import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
-import { AttachInvoiceFileDialog } from "@/components/AttachInvoiceFileDialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { EditSaleDialog } from "@/components/EditSaleDialog";
-import { CustomerDetailDialog } from "@/components/CustomerDetailDialog";
+import { Button } from "@/components/ui/button";
 import { CustomerSummaryLine } from "@/components/CustomerSummaryLine";
 import type { CustomerSummary } from "@/lib/customer-summary";
 import { Pagination } from "@/components/Pagination";
 import { StatusBadge } from "@/components/StatusBadge";
 import { PAYMENT_STATUS_TONES, toneFor } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const RecordZohoInvoiceDialog = dynamic(() => import("@/components/RecordZohoInvoiceDialog").then(m => m.RecordZohoInvoiceDialog), { ssr: false });
+const AttachInvoiceFileDialog = dynamic(() => import("@/components/AttachInvoiceFileDialog").then(m => m.AttachInvoiceFileDialog), { ssr: false });
+const EditSaleDialog = dynamic(() => import("@/components/EditSaleDialog").then(m => m.EditSaleDialog), { ssr: false });
+const CustomerDetailDialog = dynamic(() => import("@/components/CustomerDetailDialog").then(m => m.CustomerDetailDialog), { ssr: false });
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
@@ -157,9 +163,9 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
           {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
               one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
           {isExternal && isOwner && sale.invoice_id && (
-            <button onClick={() => setShowAttachDialog(true)} className="text-primary underline text-xs">
+            <Button variant="link" size="sm" onClick={() => setShowAttachDialog(true)} className="text-primary text-xs">
               File
-            </button>
+            </Button>
           )}
         </span>
       ) : sale.is_deleted ? (
@@ -167,14 +173,14 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
       ) : !isOwner ? (
         <span className="text-muted-foreground text-xs">Awaiting invoice</span>
       ) : isExternal ? (
-        <button onClick={() => setShowZohoDialog(true)} className="text-warning underline text-xs" title="This entity is issuing invoices in Zoho during the transition">
+        <Button variant="link" size="sm" onClick={() => setShowZohoDialog(true)} className="text-warning text-xs" title="This entity is issuing invoices in Zoho during the transition">
           Record Zoho Invoice #
-        </button>
+        </Button>
       ) : (
-        <button onClick={() => generateInvoice()} disabled={generating} className="text-warning underline text-xs inline-flex items-center gap-1">
+        <Button variant="link" size="sm" onClick={() => generateInvoice()} disabled={generating} className="text-warning text-xs inline-flex items-center gap-1">
           {generating && <Loader2 className="size-3 animate-spin" />}
           Generate Invoice
-        </button>
+        </Button>
       )}
       {showZohoDialog && (
         <RecordZohoInvoiceDialog saleIds={[sale.id]} onClose={() => setShowZohoDialog(false)} onRecorded={onDone} />
@@ -258,9 +264,9 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
             </StatusBadge>
           </div>
           {canEditSale && (
-            <button onClick={() => setShowEdit(true)} className="text-primary underline text-xs">
+            <Button variant="link" size="sm" onClick={() => setShowEdit(true)} className="text-primary text-xs">
               Edit Sale
-            </button>
+            </Button>
           )}
         </div>
       </div>
@@ -386,6 +392,7 @@ function SalesLedgerPage() {
   const [statCounts, setStatCounts] = useState({ totalCount: 0, pendingCount: 0, partialCount: 0, awaitingInvoiceCount: 0 });
   // Which sale is open in the right-hand detail pane.
   const [activeSaleId, setActiveSaleId] = useState<string | null>(null);
+  const isDesktop = useIsDesktopViewport();
 
   const buildFilterParams = useCallback((includeFinalized: boolean) => {
     const params = new URLSearchParams();
@@ -415,7 +422,7 @@ function SalesLedgerPage() {
       // but only when nothing is selected yet, or the previously active sale
       // fell off this page/filter, so re-fetching after an edit doesn't yank
       // focus away from what the user is currently looking at.
-      setActiveSaleId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (data[0]?.id ?? null));
+      setActiveSaleId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null));
     } else {
       setSales([]);
       setTotal(0);
@@ -483,7 +490,7 @@ function SalesLedgerPage() {
   const activeSale = useMemo(() => sales.find(s => s.id === activeSaleId) ?? null, [sales, activeSaleId]);
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <h1 className="text-2xl font-bold mb-1">Sales Ledger</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
@@ -577,7 +584,7 @@ function SalesLedgerPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSale && "hidden md:flex")}>
+          <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSale && "hidden md:flex")}>
             <div className="flex-1 overflow-y-auto">
               {sales.map((s) => (
                 <SaleListItem

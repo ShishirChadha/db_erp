@@ -3,6 +3,7 @@ import { Lato, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Toaster } from 'sonner';
 import ThemeProvider from '@/components/ThemeProvider';
+import { RoleProvider } from '@/lib/auth/useRole';
 
 // Runs before hydration so the theme is correct on first paint -- ThemeProvider's
 // own React state sync (localStorage -> data-theme attribute) would otherwise
@@ -47,10 +48,12 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
-        <ThemeProvider>
-          {children}
-          <Toaster position="top-right" />
-        </ThemeProvider>
+        <RoleProvider>
+          <ThemeProvider>
+            {children}
+            <Toaster position="top-right" />
+          </ThemeProvider>
+        </RoleProvider>
       </body>
     </html>
   );

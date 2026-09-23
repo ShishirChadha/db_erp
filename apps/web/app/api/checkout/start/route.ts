@@ -195,6 +195,26 @@ export async function POST(req: NextRequest) {
     await supabaseAdmin.from('order_items').delete().in('id', failedGiftIds)
   }
 
+  // Read back the authoritative expiry reserve_order_items actually wrote to
+  // web_reservations.expires_at (identical for every row of this order, set
+  // once at the top of that RPC) rather than recomputing p_ttl_minutes
+  // client-side here -- avoids any drift between what the UI displays and
+  // what the DB will actually enforce when the release cron sweeps it.
+  const successfulOrderItemIds = (reservationResults ?? [])
+    .filter((r: any) => r.reserved)
+    .map((r: any) => r.order_item_id)
+  let reservedUntil: string | null = null
+  if (successfulOrderItemIds.length > 0) {
+    const { data: reservationRow } = await supabaseAdmin
+      .from('web_reservations')
+      .select('expires_at')
+      .in('order_item_id', successfulOrderItemIds)
+      .is('released_at', null)
+      .limit(1)
+      .maybeSingle()
+    reservedUntil = reservationRow?.expires_at ?? null
+  }
+
   const totalAmount = orderItemRows.reduce((sum, r) => sum + r.unit_price * r.quantity, 0)
 
   let razorpayOrder
@@ -221,5 +241,6 @@ export async function POST(req: NextRequest) {
     razorpayOrderId: razorpayOrder.id,
     amount: razorpayOrder.amount,
     keyId: process.env.RAZORPAY_KEY_ID,
+    reservedUntil,
   })
 }

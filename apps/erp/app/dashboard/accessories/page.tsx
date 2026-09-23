@@ -2,17 +2,24 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
 import { useAsyncAction } from '@/lib/useAsyncAction'
-import { SkuFormModal } from '@/components/SkuFormModal'
 import { Pagination } from '@/components/Pagination'
-import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
+import type { Vendor } from '@/components/AddVendorDialog'
 import { cn } from '@/lib/utils'
 import { AccessoryDetailPage } from './[id]/page'
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const SkuFormModal = dynamic(() => import('@/components/SkuFormModal').then(m => m.SkuFormModal), { ssr: false })
+const AddVendorDialog = dynamic(() => import('@/components/AddVendorDialog').then(m => m.AddVendorDialog), { ssr: false })
 
 const PAGE_SIZE = 25
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
@@ -100,9 +107,9 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-primary underline text-xs whitespace-nowrap">
+      <Button variant="link" size="sm" onClick={() => setOpen(true)} className="text-primary text-xs whitespace-nowrap">
         Receive Stock
-      </button>
+      </Button>
     )
   }
 
@@ -130,9 +137,9 @@ function ReceiveStockControl({ skuId, onDone }: { skuId: string; onDone: () => v
         <option value="">Vendor (optional)...</option>
         {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
       </select>
-      <button onClick={() => setAddVendorOpen(true)} className="text-primary underline text-xs">
+      <Button variant="link" size="sm" onClick={() => setAddVendorOpen(true)} className="text-primary text-xs">
         + Add new vendor
-      </button>
+      </Button>
       <input
         type="number"
         min={0}
@@ -204,9 +211,9 @@ function AdjustQuantityControl({ skuId, onDone }: { skuId: string; onDone: () =>
 
   if (!open) {
     return (
-      <button onClick={() => setOpen(true)} className="text-muted-foreground underline text-xs whitespace-nowrap">
+      <Button variant="link" size="sm" onClick={() => setOpen(true)} className="text-muted-foreground text-xs whitespace-nowrap">
         Correct Quantity
-      </button>
+      </Button>
     )
   }
 
@@ -253,10 +260,10 @@ function ArchiveControl({ sku, onDone }: { sku: AccessorySku; onDone: () => void
   })
 
   return (
-    <button onClick={() => toggle()} disabled={busy} className="text-muted-foreground underline text-xs whitespace-nowrap inline-flex items-center gap-1">
+    <Button variant="link" size="sm" onClick={() => toggle()} disabled={busy} className="text-muted-foreground text-xs whitespace-nowrap inline-flex items-center gap-1">
       {busy && <Loader2 className="size-3 animate-spin" />}
       {sku.status === 'active' ? 'Archive' : 'Reactivate'}
-    </button>
+    </Button>
   )
 }
 
@@ -344,13 +351,15 @@ function AttachPoControl({ skuId, backlogQty, defaultVendorId, onDone }: { skuId
 
   if (!open) {
     return (
-      <button
+      <Button
+        variant="link"
+        size="sm"
         onClick={() => setOpen(true)}
-        className="text-warning underline text-xs whitespace-nowrap"
+        className="text-warning text-xs whitespace-nowrap"
         title="Units received but not yet on a purchase order -- independent of how many have since sold. This count only ever grows when stock is received, never shrinks when stock sells."
       >
         {backlogQty} received, awaiting PO -- Attach
-      </button>
+      </Button>
     )
   }
 
@@ -496,9 +505,9 @@ function AccessoryDetailPane({
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 pb-3 border-b border-border">
           {sku.status === 'active' && <ReceiveStockControl skuId={sku.id} onDone={onDone} />}
           {sku.status === 'active' && sku.quantity_in_stock > 0 && (
-            <button onClick={onSell} className="text-success underline text-xs whitespace-nowrap">
+            <Button variant="link" size="sm" onClick={onSell} className="text-success text-xs whitespace-nowrap">
               Sell
-            </button>
+            </Button>
           )}
           {isOwner && sku.status === 'active' && <AdjustQuantityControl skuId={sku.id} onDone={onDone} />}
           {isOwner && backlogQty != null && backlogQty > 0 && (
@@ -519,7 +528,15 @@ function AccessoriesPage() {
   const { isOwner } = useRole()
   const [skus, setSkus] = useState<AccessorySku[]>([])
   const [templates, setTemplates] = useState<CategoryTemplate[]>([])
+  // searchInput updates on every keystroke; search catches up 300ms after typing
+  // stops and is what actually drives fetchAll -- same debounce pattern as
+  // StockView/Sales Ledger/Repair Jobs.
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [purchasedFrom, setPurchasedFrom] = useState('')
   const [purchasedTo, setPurchasedTo] = useState('')
   const [loading, setLoading] = useState(true)
@@ -582,19 +599,20 @@ function AccessoriesPage() {
 
   // Which accessory SKU is open in the right-hand detail pane.
   const [activeSkuId, setActiveSkuId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   useEffect(() => {
     // Auto-open the first row on load/refetch -- but only when nothing is selected
     // yet, or the previously active SKU fell off this page/filter, so re-fetching
     // after an action doesn't yank focus away from what the user is looking at
     // (matches Customers/Purchase Orders).
-    setActiveSkuId((prev) => (prev && skus.some((s) => s.id === prev)) ? prev : (skus[0]?.id ?? null))
+    setActiveSkuId((prev) => (prev && skus.some((s) => s.id === prev)) ? prev : (isDesktop ? (skus[0]?.id ?? null) : null))
   }, [skus])
 
   const activeSku = useMemo(() => skus.find((s) => s.id === activeSkuId) ?? null, [skus, activeSkuId])
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Accessories</h1>
         <button onClick={() => setModalOpen(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">
@@ -602,10 +620,10 @@ function AccessoriesPage() {
         </button>
       </div>
 
-      <div className="flex items-center gap-4 mb-4">
+      <div className="flex flex-wrap items-center gap-4 mb-4">
         <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search accessories..."
           className="border p-2 rounded"
         />
@@ -641,7 +659,7 @@ function AccessoriesPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a SKU is open, matching an email
               client's drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSku && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSku && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {skus.map((s) => (
                 <AccessoryListItem

@@ -75,7 +75,7 @@ export default function BulkAddDialog({
           <Upload className="mr-2 h-4 w-4" /> Bulk Add
         </Button>
       </DialogTrigger>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Bulk Add {tableName}</DialogTitle>
         </DialogHeader>

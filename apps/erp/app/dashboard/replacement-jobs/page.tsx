@@ -4,11 +4,13 @@ import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
+import { Button } from '@/components/ui/button'
 import { REPAIR_JOB_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
 
@@ -75,9 +77,9 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 function MarkDoneButton({ status, isOwner, onMarkDone, pending }: { status: string; isOwner: boolean; onMarkDone: () => void; pending: boolean }) {
   if (!isOwner || status === 'done') return null
   return (
-    <button onClick={onMarkDone} disabled={pending} className="text-success underline text-xs inline-flex items-center gap-1">
+    <Button variant="link" size="sm" onClick={onMarkDone} disabled={pending} className="text-success text-xs inline-flex items-center gap-1">
       {pending && <Loader2 className="size-3 animate-spin" />}Mark Done
-    </button>
+    </Button>
   )
 }
 
@@ -217,6 +219,7 @@ function ReplacementJobsPage() {
   // Which job is open in the right-hand detail pane (separate ids per tab so
   // switching tabs doesn't try to match an id from the other job type).
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const fetchJobs = useCallback(async () => {
     setLoading(true)
@@ -230,7 +233,7 @@ function ReplacementJobsPage() {
       const data: ReplacementJob[] = json.data || []
       setJobs(data)
       setTotal(json.total || 0)
-      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setJobs([])
       setActiveJobId(null)
@@ -249,7 +252,7 @@ function ReplacementJobsPage() {
     if (res.ok) {
       const data: AccessoryReplacementJob[] = await res.json()
       setAccessoryJobs(data)
-      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveJobId((prev) => (prev && data.some((j) => j.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setAccessoryJobs([])
       setActiveJobId(null)
@@ -282,7 +285,7 @@ function ReplacementJobsPage() {
   const hasActive = itemKind === 'unit' ? !!activeJob : !!activeAccessoryJob
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Replacement Jobs</h1>
         <Link href={newJobHref} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
@@ -318,7 +321,7 @@ function ReplacementJobsPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a job is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', hasActive && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', hasActive && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {itemKind === 'unit' ? (
                 <>

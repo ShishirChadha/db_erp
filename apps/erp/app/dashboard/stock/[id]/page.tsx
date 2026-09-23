@@ -105,7 +105,7 @@ interface AssetDetail {
 // `poId`/`embedded` props. Embedded mode fetches by the given id instead of a route
 // param, and drops the standalone-page chrome (back link, outer padding/max-width,
 // which the host pane already supplies).
-export function AssetQCPage({ assetId: assetIdProp, embedded }: { assetId?: string; embedded?: boolean } = {}) {
+export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templatesProp }: { assetId?: string; embedded?: boolean; templates?: ConfigSummaryTemplate[] } = {}) {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -121,7 +121,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded }: { assetId?: stri
   const backHref = returnTo && returnTo.startsWith('/dashboard') ? returnTo : '/dashboard/live-stock'
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
-  const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
+  const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>(templatesProp ?? [])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -280,10 +280,17 @@ export function AssetQCPage({ assetId: assetIdProp, embedded }: { assetId?: stri
   }, [fetchAsset])
 
   useEffect(() => {
+    // When rendered embedded from StockView, the parent already fetched this
+    // and passes it down via `templates` -- avoid a duplicate network request.
+    // Standalone route (no prop) keeps its own fetch-on-mount as before.
+    if (templatesProp) {
+      setTemplates(templatesProp)
+      return
+    }
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((data) => {
       setTemplates(Array.isArray(data) ? data : [])
     })
-  }, [])
+  }, [templatesProp])
 
   const updateCheck = (idx: number, field: keyof CheckResult, value: string) => {
     setCheckResults((prev) =>

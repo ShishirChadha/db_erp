@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo } from "react";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
+import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,16 +16,19 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ArrowLeft, Star } from "lucide-react";
-import AddCustomerDialog from "@/components/AddCustomerDialog";
-import BulkAddDialog from "@/components/BulkAddDialog";
-import EditCustomerDialog from "@/components/EditCustomerDialog";
-import DeleteRecordDialog from "@/components/DeleteRecordDialog";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Pagination } from "@/components/Pagination";
 import { withRetry } from "@/lib/db-retry";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+
+// Modal dialogs only render behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const AddCustomerDialog = dynamic(() => import("@/components/AddCustomerDialog"), { ssr: false });
+const BulkAddDialog = dynamic(() => import("@/components/BulkAddDialog"), { ssr: false });
+const EditCustomerDialog = dynamic(() => import("@/components/EditCustomerDialog"), { ssr: false });
+const DeleteRecordDialog = dynamic(() => import("@/components/DeleteRecordDialog"), { ssr: false });
 
 const PAGE_SIZE = 25
 
@@ -165,17 +170,32 @@ function CustomersPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
+  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH (debounced)
   const supabase = createClient();
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [nameFilter, setNameFilter] = useState<string>("");
+  const [nameFilter, setNameFilter] = useState<string>(""); // debounced
+
+  // Both search boxes update their *Input state on every keystroke; the actual
+  // fetch-driving state catches up 300ms after typing stops -- same debounce
+  // pattern as StockView/Sales Ledger/Repair Jobs/Vendors.
+  const [searchInput, setSearchInput] = useState("");
+  const [nameFilterInput, setNameFilterInput] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+  useEffect(() => {
+    const timer = setTimeout(() => setNameFilter(nameFilterInput), 300);
+    return () => clearTimeout(timer);
+  }, [nameFilterInput]);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   // Which customer is open in the right-hand detail pane.
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
+  const isDesktop = useIsDesktopViewport();
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
@@ -217,7 +237,7 @@ function CustomersPage() {
       // selected yet, or the previously active customer fell off this
       // page/filter, so re-fetching after an edit doesn't yank focus away
       // from what the user is currently looking at (matches Sales Ledger).
-      setActiveCustomerId((prev) => (prev && rows.some((c) => c.id === prev)) ? prev : (rows[0]?.id ?? null));
+      setActiveCustomerId((prev) => (prev && rows.some((c) => c.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
   }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);
@@ -249,7 +269,7 @@ function CustomersPage() {
   const activeCustomer = useMemo(() => customers.find(c => c.id === activeCustomerId) ?? null, [customers, activeCustomerId]);
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Customers</h1>
         <div className="space-x-2">
@@ -281,8 +301,8 @@ function CustomersPage() {
           <Label>Global Search</Label>
           <Input
             placeholder="Name, GST, phone, email..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
 
@@ -296,7 +316,7 @@ function CustomersPage() {
 
         <div className="w-64">
           <Label>Name contains</Label>
-          <Input placeholder="Search name" value={nameFilter} onChange={(e) => setNameFilter(e.target.value)} />
+          <Input placeholder="Search name" value={nameFilterInput} onChange={(e) => setNameFilterInput(e.target.value)} />
         </div>
 
         <div className="w-48">
@@ -331,7 +351,7 @@ function CustomersPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a customer is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeCustomer && "hidden md:flex")}>
+          <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeCustomer && "hidden md:flex")}>
             <div className="flex-1 overflow-y-auto">
               {customers.map((c) => (
                 <CustomerListItem

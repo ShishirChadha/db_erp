@@ -10,7 +10,7 @@ import { categoryToSlug } from '@/lib/categories'
 // change: gives ADP ("Adapters/Chargers", 27 SKUs, previously linked from
 // nowhere) and the other accessory-family categories a visible home under one
 // "Accessories" nav item instead of each needing its own top-level slot.
-const ACCESSORY_LINKS = [
+export const ACCESSORY_LINKS = [
   { code: 'ACC', label: 'All Accessories' },
   { code: 'ADP', label: 'Adapters / Chargers' },
   { code: 'RAM', label: 'RAM' },

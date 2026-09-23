@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -116,6 +117,7 @@ function InvoicesPage() {
   const [total, setTotal] = useState(0);
   // Which invoice is open in the right-hand detail pane.
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
+  const isDesktop = useIsDesktopViewport();
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -149,7 +151,7 @@ function InvoicesPage() {
       // Auto-open the first row on load/refetch -- but only when nothing is
       // selected yet, or the previously active invoice fell off this page/filter,
       // so re-fetching after an edit doesn't yank focus away from what's open.
-      setActiveInvoiceId((prev) => (prev && rows.some((r) => r.id === prev)) ? prev : (rows[0]?.id ?? null));
+      setActiveInvoiceId((prev) => (prev && rows.some((r) => r.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
   }, [searchTerm, statusFilter, showDeleted, page, supabase]);
@@ -184,7 +186,7 @@ function InvoicesPage() {
   const activeInvoice = useMemo(() => invoices.find(i => i.id === activeInvoiceId) ?? null, [invoices, activeInvoiceId]);
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Invoices</h1>
         <div className="space-x-2">
@@ -232,7 +234,7 @@ function InvoicesPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once an invoice is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeInvoice && "hidden md:flex")}>
+          <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeInvoice && "hidden md:flex")}>
             <div className="flex-1 overflow-y-auto">
               {invoices.map((inv) => (
                 <InvoiceListItem

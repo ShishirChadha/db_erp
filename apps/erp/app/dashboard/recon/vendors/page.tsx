@@ -253,7 +253,7 @@ function VendorReconPage() {
   const safeFillCount = pending.filter((p) => p.change_kind === 'fill_missing' && p.confidence === 'high').length
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: "calc(100vh - 2rem)" }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <h1 className="text-2xl font-bold mb-1">Vendor Reconciliation</h1>
       <p className="text-sm text-muted-foreground mb-4">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
 
@@ -273,7 +273,7 @@ function VendorReconPage() {
       <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once a document is open, matching the
             Sales Ledger's email-client drill-in navigation; always visible at md+. */}
-        <div className={cn("w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeDoc && "hidden md:flex")}>
+        <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeDoc && "hidden md:flex")}>
           <div className="flex-1 overflow-y-auto">
             {recentDocs.length === 0 && <div className="p-3 text-sm text-muted-foreground">No invoices uploaded yet.</div>}
             {recentDocs.map((d) => (

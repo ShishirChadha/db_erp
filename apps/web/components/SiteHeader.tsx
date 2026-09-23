@@ -1,16 +1,10 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { categoryToSlug } from '@/lib/categories'
+import { categoryToSlug, NAV_CATEGORIES } from '@/lib/categories'
 import { HeaderAccountState } from './HeaderAccountState'
 import { HeaderSearch } from './HeaderSearch'
 import { AccessoriesNavGroup } from './AccessoriesNavGroup'
-
-const NAV_CATEGORIES = [
-  { code: 'LAP', label: 'Laptops' },
-  { code: 'DES', label: 'Desktops' },
-  { code: 'MON', label: 'Monitors' },
-  { code: 'TAB', label: 'Tablets' },
-]
+import { MobileNav } from './MobileNav'
 
 // No cookie/session reads here -- account state and cart count are fetched
 // client-side by HeaderAccountState after hydration, so this component (and
@@ -27,6 +21,7 @@ export function SiteHeader() {
         </div>
       </div>
       <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3 sm:px-6 lg:px-8">
+        <MobileNav />
         <Link href="/" className="flex shrink-0 items-center gap-2">
           <Image src="/dbz-mark.png" alt="" width={30} height={30} className="h-[30px] w-[30px]" priority />
           <span className="font-heading text-lg font-bold tracking-tight text-foreground">

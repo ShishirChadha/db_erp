@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { getPublishedProducts, getCategories } from "@/lib/queries";
+import { getPublishedProducts, getPublishedProductsPage, getCategories, LISTING_PAGE_SIZE } from "@/lib/queries";
 import { CATEGORY_SLUGS, slugToCategory } from "@/lib/categories";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductFilters } from "@/components/ProductFilters";
+import { Pagination } from "@/components/Pagination";
 import { getFilterFacets, filterProducts, parseFiltersFromSearchParams } from "@/lib/product-filters";
 
 export const revalidate = 60;
@@ -60,12 +61,41 @@ export default async function CategoryPage({
   const category = await resolveCategory(categorySlug);
   if (!category) notFound();
 
-  const allProducts = await getPublishedProducts({ category: category.code });
+  const resolvedSearchParams = await searchParams;
+  const rawPage = Array.isArray(resolvedSearchParams.page) ? resolvedSearchParams.page[0] : resolvedSearchParams.page;
+  const currentPage = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
 
   const isFilterable = FILTERABLE_SLUGS.has(categorySlug);
+
+  // Filterable categories (Laptops/Desktops) need the full category set in
+  // memory regardless -- getFilterFacets()/filterProducts() compute facet
+  // counts and apply filters client-side over the whole set (see
+  // lib/product-filters.ts), so pagination there slices the already-filtered
+  // in-memory array rather than paginating at the DB query level. Every other
+  // category page has no facets to compute, so it fetches only its page of
+  // rows straight from the DB via getPublishedProductsPage().
+  let allProducts: Awaited<ReturnType<typeof getPublishedProducts>> = [];
+  let products: Awaited<ReturnType<typeof getPublishedProducts>>;
+  let totalCount: number;
+
+  if (isFilterable) {
+    allProducts = await getPublishedProducts({ category: category.code });
+    const activeFilters = parseFiltersFromSearchParams(resolvedSearchParams);
+    const filtered = activeFilters ? filterProducts(allProducts, activeFilters) : allProducts;
+    totalCount = filtered.length;
+    const start = (currentPage - 1) * LISTING_PAGE_SIZE;
+    products = filtered.slice(start, start + LISTING_PAGE_SIZE);
+  } else {
+    const { products: pageProducts, total } = await getPublishedProductsPage({
+      category: category.code,
+      page: currentPage,
+    });
+    products = pageProducts;
+    totalCount = total;
+  }
+
   const facets = isFilterable ? getFilterFacets(allProducts) : null;
-  const activeFilters = isFilterable ? parseFiltersFromSearchParams(await searchParams) : null;
-  const products = activeFilters ? filterProducts(allProducts, activeFilters) : allProducts;
+  const totalPages = Math.max(1, Math.ceil(totalCount / LISTING_PAGE_SIZE));
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
@@ -110,7 +140,7 @@ export default async function CategoryPage({
         <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           Refurbished {category.displayName}s
         </h1>
-        <p className="text-sm text-muted-foreground">{products.length} product{products.length !== 1 ? "s" : ""}</p>
+        <p className="text-sm text-muted-foreground">{totalCount} product{totalCount !== 1 ? "s" : ""}</p>
       </div>
 
       <div className="mt-6 flex flex-col gap-6 lg:flex-row">
@@ -119,16 +149,33 @@ export default async function CategoryPage({
         <div className="flex-1">
           {products.length === 0 ? (
             <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
-              {allProducts.length === 0
-                ? `No ${category.displayName.toLowerCase()}s published yet — check back soon.`
-                : "No products match your selected filters — try clearing one or two."}
+              {isFilterable && allProducts.length > 0
+                ? "No products match your selected filters — try clearing one or two."
+                : `No ${category.displayName.toLowerCase()}s published yet — check back soon.`}
             </p>
           ) : (
-            <div className="stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-              {products.map((product) => (
-                <ProductCard key={product.id} product={product} templates={category.templates} />
-              ))}
-            </div>
+            <>
+              <div className="stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
+                {products.map((product) => (
+                  <ProductCard key={product.id} product={product} templates={category.templates} />
+                ))}
+              </div>
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                buildHref={(page) => {
+                  const params = new URLSearchParams(
+                    Object.entries(resolvedSearchParams).flatMap(([key, value]) => {
+                      if (value === undefined) return [];
+                      return Array.isArray(value) ? value.map((v) => [key, v] as [string, string]) : [[key, value] as [string, string]];
+                    })
+                  );
+                  if (page <= 1) params.delete("page"); else params.set("page", String(page));
+                  const qs = params.toString();
+                  return `/${categorySlug}${qs ? `?${qs}` : ""}`;
+                }}
+              />
+            </>
           )}
         </div>
       </div>

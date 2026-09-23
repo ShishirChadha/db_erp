@@ -1,9 +1,11 @@
 import { redirect, notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@db/db/server'
+import { supabaseAdmin } from '@db/db/admin'
 import { getCustomerSession } from '@/lib/customer-session'
 import { formatCurrency } from '@db/shared'
 import { OrderStatusPoller } from '@/components/OrderStatusPoller'
+import { ReservationCountdown } from '@/components/ReservationCountdown'
 
 export const dynamic = 'force-dynamic'
 
@@ -28,6 +30,27 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     .select('id, title_snapshot, quantity, unit_price')
     .eq('order_id', id)
 
+  // Same authoritative expiry source as checkout/start's response
+  // (web_reservations.expires_at, written once by reserve_order_items) --
+  // read directly here rather than re-deriving a TTL client-side, so the
+  // countdown shown on this page never drifts from what the DB enforces.
+  // web_reservations has no authenticated-role RLS policy (only service_role
+  // is granted -- same reason reserve_order_items itself is only callable via
+  // the service-role client per CLAUDE.md), so this read goes through
+  // supabaseAdmin, scoped tightly to this order's own item ids only.
+  let reservedUntil: string | null = null
+  if (order.status === 'pending_payment' && items && items.length > 0) {
+    const { data: reservationRow } = await supabaseAdmin
+      .from('web_reservations')
+      .select('expires_at')
+      .in('order_item_id', items.map((i) => i.id))
+      .is('released_at', null)
+      .order('expires_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    reservedUntil = reservationRow?.expires_at ?? null
+  }
+
   return (
     <main className="mx-auto max-w-lg px-4 py-14 sm:px-6">
       {order.status === 'pending_payment' && <OrderStatusPoller />}
@@ -36,9 +59,12 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
       <p className="mt-1 text-sm text-muted-foreground">Order #{order.id.slice(0, 8)}</p>
 
       {order.status === 'pending_payment' && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          This usually takes a few seconds. This page will update automatically.
-        </p>
+        <div className="mt-4 space-y-1.5">
+          <p className="text-sm text-muted-foreground">
+            This usually takes a few seconds. This page will update automatically.
+          </p>
+          {reservedUntil && <ReservationCountdown expiresAt={reservedUntil} />}
+        </div>
       )}
 
       {(order.status === 'cancelled' || order.status === 'expired') && (

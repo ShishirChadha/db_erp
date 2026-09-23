@@ -2,15 +2,19 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
+import dynamic from 'next/dynamic'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
-import { EditPoItemDialog } from '@/components/EditPoItemDialog'
-import { EditPoVendorDialog } from '@/components/EditPoVendorDialog'
-import { AttachUnitsDialog } from '@/components/AttachUnitsDialog'
-import { MoveUnitDialog } from '@/components/MoveUnitDialog'
-import { AddVendorPaymentDialog } from '@/components/AddVendorPaymentDialog'
+
+// Each of these only renders behind a click (gated by a state flag) -- code-split
+// out of the initial bundle rather than shipped unconditionally.
+const EditPoItemDialog = dynamic(() => import('@/components/EditPoItemDialog').then(m => m.EditPoItemDialog), { ssr: false })
+const EditPoVendorDialog = dynamic(() => import('@/components/EditPoVendorDialog').then(m => m.EditPoVendorDialog), { ssr: false })
+const AttachUnitsDialog = dynamic(() => import('@/components/AttachUnitsDialog').then(m => m.AttachUnitsDialog), { ssr: false })
+const MoveUnitDialog = dynamic(() => import('@/components/MoveUnitDialog').then(m => m.MoveUnitDialog), { ssr: false })
+const AddVendorPaymentDialog = dynamic(() => import('@/components/AddVendorPaymentDialog').then(m => m.AddVendorPaymentDialog), { ssr: false })
 
 interface POItem {
   id: string

@@ -4,6 +4,11 @@ import { categoryToSlug } from "@/lib/categories";
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
 
+// Was frozen at build time (no revalidate = never regenerated between deploys),
+// so newly-published/sold-out products silently drifted from what's actually
+// live. Matches the 60s ISR window the product/category pages themselves use.
+export const revalidate = 3600;
+
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const [products, categories, posts] = await Promise.all([
     getPublishedProducts(),

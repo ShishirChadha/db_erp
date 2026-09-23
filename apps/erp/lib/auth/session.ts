@@ -55,14 +55,23 @@ export async function getSessionUser(req: NextRequest): Promise<SessionUser | nu
   // are both enforced here -- same live-recheck-every-request pattern as
   // profiles.is_active below (see the comment on `jwks` above).
   const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value
-  if (await isSessionRevoked(sessionId)) return null
-  if (sessionId) await touchSessionIfStale(sessionId)
 
-  const { data: profile } = await supabaseAdmin
-    .from('profiles')
-    .select('role, is_active, allowed_pages, profile_page_actions(page_key, can_edit)')
-    .eq('id', user.id)
-    .single()
+  // isSessionRevoked(sessionId) and the profiles select are independent of each
+  // other (one needs only sessionId, the other only user.id from the already-
+  // verified JWT) so they run concurrently instead of as sequential round trips.
+  // touchSessionIfStale is a fire-and-forget freshness heartbeat (throttled,
+  // never gates access) -- kicked off here too, but never awaited.
+  if (sessionId) touchSessionIfStale(sessionId).catch(() => {})
+
+  const [revoked, { data: profile }] = await Promise.all([
+    isSessionRevoked(sessionId),
+    supabaseAdmin
+      .from('profiles')
+      .select('role, is_active, allowed_pages, profile_page_actions(page_key, can_edit)')
+      .eq('id', user.id)
+      .single(),
+  ])
+  if (revoked) return null
 
   if (!profile || !profile.is_active) return null
 
@@ -82,14 +91,21 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
 
   const cookieStore = await cookies()
   const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value
-  if (await isSessionRevoked(sessionId)) return null
-  if (sessionId) await touchSessionIfStale(sessionId)
 
-  const { data: profile } = await supabase
-    .from('profiles')
-    .select('role, is_active, allowed_pages')
-    .eq('id', user.id)
-    .single()
+  // Same concurrency restructure as getSessionUser() above: isSessionRevoked
+  // and the profiles select are independent, so run them in parallel; the
+  // heartbeat touch is fire-and-forget and never blocks the response.
+  if (sessionId) touchSessionIfStale(sessionId).catch(() => {})
+
+  const [revoked, { data: profile }] = await Promise.all([
+    isSessionRevoked(sessionId),
+    supabase
+      .from('profiles')
+      .select('role, is_active, allowed_pages')
+      .eq('id', user.id)
+      .single(),
+  ])
+  if (revoked) return null
 
   if (!profile || !profile.is_active) return null
 

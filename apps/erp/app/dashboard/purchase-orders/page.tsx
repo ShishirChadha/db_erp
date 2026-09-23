@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { Pagination } from '@/components/Pagination'
@@ -103,12 +104,21 @@ function PurchaseOrdersPage() {
   const [vendorFilter, setVendorFilter] = useState('')
   const [dateFrom, setDateFrom] = useState('')
   const [dateTo, setDateTo] = useState('')
+  // searchInput updates on every keystroke; search catches up 300ms after typing
+  // stops and is what actually drives fetchOrders -- same debounce pattern as
+  // StockView/Sales Ledger/Repair Jobs.
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [error, setError] = useState('')
   // Which PO is open in the right-hand detail pane.
   const [activeId, setActiveId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const fetchOrders = useCallback(async () => {
     setLoading(true)
@@ -133,7 +143,7 @@ function PurchaseOrdersPage() {
       setTotal(json.total || 0)
       // Auto-open the first row on load/refetch, but don't yank focus away from
       // whatever's already open if it's still in the refetched data.
-      setActiveId((prev) => (prev && data.some((o) => o.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveId((prev) => (prev && data.some((o) => o.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setError('Failed to load purchase orders.')
       setOrders([])
@@ -159,7 +169,7 @@ function PurchaseOrdersPage() {
   if (loading) return <div className="p-4">Loading...</div>
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <button
@@ -213,8 +223,8 @@ function PurchaseOrdersPage() {
           <input
             type="text"
             placeholder="Search PO number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
             className="border p-2 rounded"
           />
         </div>
@@ -233,7 +243,7 @@ function PurchaseOrdersPage() {
       <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once a PO is open, matching an email
             client's drill-in navigation; always visible at md+. */}
-        <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activePo && 'hidden md:flex')}>
+        <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activePo && 'hidden md:flex')}>
           <div className="flex-1 overflow-y-auto">
             {orders.map((po) => (
               <PurchaseOrderListItem

@@ -52,7 +52,7 @@ export default function AddActivityDialog({ onAdd }: { onAdd: () => void }) {
       <DialogTrigger asChild>
         <Button><Plus className="mr-2 h-4 w-4" /> New Activity</Button>
       </DialogTrigger>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Add New Activity</DialogTitle></DialogHeader>
         <div className="space-y-4">
           <div><Label>Title *</Label><Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>

@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
+import { useCustomerSession } from './CustomerSessionProvider'
 
 interface HeaderState {
   loggedIn: boolean
@@ -14,10 +15,25 @@ const INITIAL: HeaderState = { loggedIn: false, firstName: null, cartCount: 0 }
 // Fetched client-side after hydration so SiteHeader itself never reads
 // cookies -- that's what keeps the root layout, and every storefront page
 // under it, statically cacheable. See app/api/account/header-state/route.ts.
+//
+// The customer session itself is now resolved once, up in
+// <CustomerSessionProvider> (shared with WishlistProvider). When that
+// resolves to "not logged in" this skips the /api/account/header-state round
+// trip entirely -- an anonymous visitor's session there can only come back as
+// the same INITIAL shape. When logged in, the route call still runs: it
+// needs data (display name from customer_profiles, a live cart_items count)
+// that only a server-side, RLS-scoped query can provide, so that lookup
+// stays separate rather than forcing an awkward merge.
 export function HeaderAccountState() {
+  const { ready: sessionReady, loggedIn: sessionLoggedIn } = useCustomerSession()
   const [state, setState] = useState<HeaderState>(INITIAL)
 
   useEffect(() => {
+    if (!sessionReady) return
+    if (!sessionLoggedIn) {
+      setState(INITIAL)
+      return
+    }
     let cancelled = false
     fetch('/api/account/header-state')
       .then((res) => (res.ok ? res.json() : INITIAL))
@@ -28,7 +44,7 @@ export function HeaderAccountState() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [sessionReady, sessionLoggedIn])
 
   return (
     <>

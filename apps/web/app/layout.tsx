@@ -10,6 +10,8 @@ import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BUSINESS_PHONE_TEL, GOOGLE_RATING, GOOGLE_REVIEW_COUNT, SOCIAL_LINKS } from "@/lib/business-info";
 import { getActiveBanners } from "@/lib/queries";
 import { resolveSiteAccent } from "@/lib/banner-themes";
+import { WishlistProvider } from "@/components/WishlistProvider";
+import { CustomerSessionProvider } from "@/components/CustomerSessionProvider";
 
 // Archivo carries the storefront's retail energy in headlines/prices/badges;
 // IBM Plex Sans handles body copy and UI text and has solid tabular numerals
@@ -118,8 +120,12 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
         <SiteThemeAccent accentColor={siteAccent} />
-        <SiteHeader />
-        <div className="flex-1">{children}</div>
+        <CustomerSessionProvider>
+          <SiteHeader />
+          <div className="flex-1">
+            <WishlistProvider>{children}</WishlistProvider>
+          </div>
+        </CustomerSessionProvider>
         <SiteFooter />
         <WhatsAppButton />
         <Analytics />

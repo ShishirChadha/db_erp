@@ -2,16 +2,21 @@
 
 import { useEffect, useState, useCallback, useMemo } from 'react'
 import Link from 'next/link'
+import dynamic from 'next/dynamic'
 import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { RENTAL_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { NewRentalDialog } from '@/components/NewRentalDialog'
 import { cn } from '@/lib/utils'
+
+// Only renders behind a click (gated by a state flag) -- code-split out of the
+// initial bundle rather than shipped unconditionally.
+const NewRentalDialog = dynamic(() => import('@/components/NewRentalDialog').then(m => m.NewRentalDialog), { ssr: false })
 
 type SortField = 'start_date' | 'agreement_number' | 'expected_return_date' | 'rent_amount' | 'next_billing_date'
 type SortOrder = 'asc' | 'desc'
@@ -163,6 +168,7 @@ function RentalsPage() {
   const [showNew, setShowNew] = useState(false)
   // Which agreement is open in the right-hand detail pane.
   const [activeId, setActiveId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
@@ -197,7 +203,7 @@ function RentalsPage() {
       setTotal(json.total || 0)
       // Auto-open the first row on load/refetch, but don't yank focus away from
       // whatever's already open if it's still in the refetched data.
-      setActiveId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveId((prev) => (prev && data.some((a) => a.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setAgreements([])
       setTotal(0)
@@ -223,7 +229,7 @@ function RentalsPage() {
   )
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Rentals</h1>
         {canEdit && (
@@ -270,7 +276,7 @@ function RentalsPage() {
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once an agreement is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAgreement && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAgreement && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {displayed.map((a) => (
                 <RentalListItem

@@ -61,7 +61,7 @@ export function UpgradeSelector({
             <button
               type="button"
               onClick={() => pick(field, null)}
-              className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              className={`flex min-h-11 items-center rounded-full border px-3.5 py-2.5 text-xs font-medium transition-colors ${
                 !picked[field] ? 'border-brand-orange bg-brand-orange/10 text-brand-orange' : 'border-border text-muted-foreground hover:border-brand-orange/40'
               }`}
             >
@@ -72,7 +72,7 @@ export function UpgradeSelector({
                 key={optionKey(o)}
                 type="button"
                 onClick={() => pick(field, o)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`flex min-h-11 items-center rounded-full border px-3.5 py-2.5 text-xs font-medium transition-colors ${
                   picked[field] && optionKey(picked[field]!) === optionKey(o)
                     ? 'border-brand-orange bg-brand-orange/10 text-brand-orange'
                     : 'border-border text-muted-foreground hover:border-brand-orange/40'

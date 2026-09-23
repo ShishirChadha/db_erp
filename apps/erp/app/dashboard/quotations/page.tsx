@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -182,6 +183,7 @@ function QuotationsPage() {
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const fetchDocs = useCallback(async () => {
     setLoading(true)
@@ -193,7 +195,7 @@ function QuotationsPage() {
       setTotal(json.total || 0)
       // Auto-select the first row, but don't yank focus away from whatever's
       // already open if it's still present in the refetched page.
-      setActiveDocId((prev) => (prev && data.some((d) => d.id === prev)) ? prev : (data[0]?.id ?? null))
+      setActiveDocId((prev) => (prev && data.some((d) => d.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } else {
       setDocs([])
       setActiveDocId(null)
@@ -209,7 +211,7 @@ function QuotationsPage() {
   const activeDoc = useMemo(() => docs.find((d) => d.id === activeDocId) ?? null, [docs, activeDocId])
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <h1 className="text-2xl font-bold mb-1">Quotations & Proforma Invoices</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Non-committal price offers and pre-sale documents. Converting a line hands off to the normal Sell flow — a real sale and (later) a real GST invoice are always created there, never here.
@@ -228,7 +230,7 @@ function QuotationsPage() {
       ) : (
         <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a document is open, matching Sales Ledger. */}
-          <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeDoc && 'hidden md:flex')}>
+          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeDoc && 'hidden md:flex')}>
             <div className="flex-1 overflow-y-auto">
               {docs.map((d) => (
                 <DocListItem

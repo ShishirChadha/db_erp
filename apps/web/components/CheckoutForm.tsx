@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { formatCurrency } from '@db/shared'
+import { ReservationCountdown } from './ReservationCountdown'
 
 declare global {
   interface Window {
@@ -30,6 +31,7 @@ export function CheckoutForm({
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [scriptReady, setScriptReady] = useState(false)
+  const [reservedUntil, setReservedUntil] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -43,6 +45,7 @@ export function CheckoutForm({
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'Checkout failed')
+      if (json.reservedUntil) setReservedUntil(json.reservedUntil)
 
       if (!scriptReady || !window.Razorpay) {
         throw new Error('Payment is still loading — please try again in a moment.')
@@ -75,6 +78,7 @@ export function CheckoutForm({
       <Script src="https://checkout.razorpay.com/v1/checkout.js" onReady={() => setScriptReady(true)} />
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p>}
+        {reservedUntil && <ReservationCountdown expiresAt={reservedUntil} />}
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">Full name</label>
           <input required value={name} onChange={(e) => setName(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/25" />
@@ -87,8 +91,8 @@ export function CheckoutForm({
           <label className="mb-1 block text-xs text-muted-foreground">Address</label>
           <input required value={line1} onChange={(e) => setLine1(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/25" />
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="col-span-2">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="sm:col-span-2">
             <label className="mb-1 block text-xs text-muted-foreground">City</label>
             <input required value={city} onChange={(e) => setCity(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/25" />
           </div>

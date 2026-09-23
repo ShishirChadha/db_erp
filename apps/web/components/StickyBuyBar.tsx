@@ -40,10 +40,12 @@ export function StickyBuyBar({
   return (
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 p-3 pr-16 backdrop-blur sm:hidden">
       <div className="flex items-center justify-between gap-2">
-        <PriceTag price={price} marketPrice={marketPrice} />
+        <div className="min-w-0 flex-1">
+          <PriceTag price={price} marketPrice={marketPrice} />
+        </div>
         <div className="flex shrink-0 items-center gap-2">
           <WhatsAppOrderButton href={whatsappHref} compact />
-          <div className="w-32">
+          <div className="w-24">
             <AddToCartButton skuId={skuId} disabled={disabled} />
           </div>
         </div>

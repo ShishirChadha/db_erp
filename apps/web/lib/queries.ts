@@ -1,3 +1,4 @@
+import { cache } from 'react'
 import { createPublicSupabaseClient } from '@db/db/public'
 
 export interface PublicProduct {
@@ -39,12 +40,17 @@ export interface CategoryTemplate {
 const PRODUCT_COLUMNS =
   'id, web_slug, full_sku_code, category, item_type, brand, model_name, specifications, web_title, web_description, web_highlights, web_condition_grade, web_price, market_price, hsn_code, published_at, availability_bucket, primary_image_path, warranty_label'
 
-export async function getPublishedProducts(opts: {
+// Every export below is wrapped in React's cache() -- these are plain data
+// reads with no side effects, so deduping identical calls within a single
+// render pass (e.g. generateMetadata and the page body both calling
+// getProductBySlug for the same slug) is free and always correct; it only
+// ever avoids a redundant Supabase round trip, never changes behavior.
+export const getPublishedProducts = cache(async (opts: {
   category?: string | string[]
   search?: string
   limit?: number
   excludeId?: string
-} = {}): Promise<PublicProduct[]> {
+} = {}): Promise<PublicProduct[]> => {
   const supabase = createPublicSupabaseClient()
   let query = supabase
     .from('public_products')
@@ -67,14 +73,60 @@ export async function getPublishedProducts(opts: {
 
   const { data } = await query
   return (data ?? []) as unknown as PublicProduct[]
-}
+})
 
-export async function getSiblingConfigurations(opts: {
+// Default page size for the two paginated listing surfaces (category pages
+// for non-filterable categories, and search). Laptops/Desktops keep using
+// getPublishedProducts() above unpaginated -- their facet UI needs the full
+// category set in memory to compute filter counts (see lib/product-filters.ts),
+// so DB-level LIMIT/OFFSET would silently break facet counts there; those two
+// pages paginate the already-filtered in-memory array instead. Everywhere else,
+// this does the pagination at the query level via .range()/{count:'exact'} --
+// same spirit as apps/erp's parsePagination() convention (see CLAUDE.md),
+// just without a shared helper since apps/web reads Postgres through the
+// public views rather than the ERP's own pagination lib.
+export const LISTING_PAGE_SIZE = 24
+
+export const getPublishedProductsPage = cache(async (opts: {
+  category?: string | string[]
+  search?: string
+  page?: number
+  limit?: number
+}): Promise<{ products: PublicProduct[]; total: number }> => {
+  const supabase = createPublicSupabaseClient()
+  const limit = opts.limit ?? LISTING_PAGE_SIZE
+  const page = Math.max(1, opts.page ?? 1)
+  const from = (page - 1) * limit
+  const to = from + limit - 1
+
+  let query = supabase
+    .from('public_products')
+    .select(PRODUCT_COLUMNS, { count: 'exact' })
+    .order('published_at', { ascending: false })
+    .range(from, to)
+
+  if (Array.isArray(opts.category)) {
+    if (opts.category.length > 0) query = query.in('category', opts.category)
+  } else if (opts.category) {
+    query = query.eq('category', opts.category)
+  }
+  if (opts.search) {
+    const term = opts.search.replace(/[%_]/g, '')
+    query = query.or(
+      `web_title.ilike.%${term}%,brand.ilike.%${term}%,model_name.ilike.%${term}%,full_sku_code.ilike.%${term}%`
+    )
+  }
+
+  const { data, count } = await query
+  return { products: (data ?? []) as unknown as PublicProduct[], total: count ?? 0 }
+})
+
+export const getSiblingConfigurations = cache(async (opts: {
   category: string
   brand: string
   modelName: string
   excludeId: string
-}): Promise<PublicProduct[]> {
+}): Promise<PublicProduct[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_products')
@@ -85,9 +137,9 @@ export async function getSiblingConfigurations(opts: {
     .neq('id', opts.excludeId)
     .order('web_price', { ascending: true })
   return (data ?? []) as unknown as PublicProduct[]
-}
+})
 
-export async function getProductBySlug(slug: string): Promise<PublicProduct | null> {
+export const getProductBySlug = cache(async (slug: string): Promise<PublicProduct | null> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_products')
@@ -95,9 +147,9 @@ export async function getProductBySlug(slug: string): Promise<PublicProduct | nu
     .eq('web_slug', slug)
     .maybeSingle()
   return (data as unknown as PublicProduct) ?? null
-}
+})
 
-export async function getProductImages(skuId: string): Promise<PublicProductImage[]> {
+export const getProductImages = cache(async (skuId: string): Promise<PublicProductImage[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_product_images')
@@ -106,7 +158,7 @@ export async function getProductImages(skuId: string): Promise<PublicProductImag
     .order('is_primary', { ascending: false })
     .order('sort_order', { ascending: true })
   return (data ?? []) as PublicProductImage[]
-}
+})
 
 export interface HomeBanner {
   id: string
@@ -120,20 +172,20 @@ export interface HomeBanner {
   sort_order: number
 }
 
-export async function getActiveBanners(): Promise<HomeBanner[]> {
+export const getActiveBanners = cache(async (): Promise<HomeBanner[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_banners')
     .select('id, image_path, image_width, image_height, link_url, title, theme, custom_color, sort_order')
     .order('sort_order', { ascending: true })
   return (data ?? []) as HomeBanner[]
-}
+})
 
-export async function getCategories(): Promise<CategoryTemplate[]> {
+export const getCategories = cache(async (): Promise<CategoryTemplate[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase.from('public_categories').select('category, display_name, field_schema')
   return (data ?? []) as CategoryTemplate[]
-}
+})
 
 export interface BlogPost {
   id: string
@@ -144,7 +196,7 @@ export interface BlogPost {
   published_at: string | null
 }
 
-export async function getPublishedBlogPosts(): Promise<BlogPost[]> {
+export const getPublishedBlogPosts = cache(async (): Promise<BlogPost[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
@@ -152,9 +204,9 @@ export async function getPublishedBlogPosts(): Promise<BlogPost[]> {
     .eq('status', 'published')
     .order('published_at', { ascending: false })
   return (data ?? []) as BlogPost[]
-}
+})
 
-export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
+export const getBlogPostBySlug = cache(async (slug: string): Promise<BlogPost | null> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
@@ -163,7 +215,7 @@ export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> 
     .eq('status', 'published')
     .maybeSingle()
   return (data as BlogPost) ?? null
-}
+})
 
 export interface ProductUnit {
   sku_id: string
@@ -180,7 +232,7 @@ export interface ProductUnit {
   warranty_duration_months: number | null
 }
 
-export async function getProductUnits(skuId: string): Promise<ProductUnit[]> {
+export const getProductUnits = cache(async (skuId: string): Promise<ProductUnit[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_product_units')
@@ -189,14 +241,14 @@ export async function getProductUnits(skuId: string): Promise<ProductUnit[]> {
     )
     .eq('sku_id', skuId)
   return (data ?? []) as ProductUnit[]
-}
+})
 
 export interface TestReportItem {
   check_item: string
   result: 'pass' | 'fail' | 'na'
 }
 
-export async function getAssetTestReport(skuId: string, serialNumber: string): Promise<TestReportItem[]> {
+export const getAssetTestReport = cache(async (skuId: string, serialNumber: string): Promise<TestReportItem[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_asset_test_report')
@@ -204,7 +256,7 @@ export async function getAssetTestReport(skuId: string, serialNumber: string): P
     .eq('sku_id', skuId)
     .eq('serial_number', serialNumber)
   return (data ?? []) as TestReportItem[]
-}
+})
 
 export interface UpgradeOption {
   category: string
@@ -218,12 +270,12 @@ export interface UpgradeOption {
 // (or, for warranty, the single unit's actual current warranty_duration_months)
 // -- a unit whose spec has no configured path simply gets no upgrade option
 // for that field, by design (explicit pairwise paths only, no chaining).
-export async function getUpgradeOptions(opts: {
+export const getUpgradeOptions = cache(async (opts: {
   category: string
   currentRam?: string | null
   currentSsd?: string | null
   currentWarrantyMonths?: number | null
-}): Promise<UpgradeOption[]> {
+}): Promise<UpgradeOption[]> => {
   const supabase = createPublicSupabaseClient()
   const fromValues: string[] = []
   if (opts.currentRam) fromValues.push(opts.currentRam)
@@ -243,13 +295,13 @@ export async function getUpgradeOptions(opts: {
     if (o.field_name === 'warranty_months') return o.from_value === String(opts.currentWarrantyMonths)
     return false
   })
-}
+})
 
 // Owner-configured category->category mapping for "Complete your setup" --
 // replaces a hardcoded category='ACC' pull. Not a "customers also bought"
 // behavioral claim (this system doesn't have the sales volume for that to be
 // honest yet), just an explicit merchandising rule the owner sets.
-export async function getCrossSellCategories(sourceCategory: string): Promise<string[]> {
+export const getCrossSellCategories = cache(async (sourceCategory: string): Promise<string[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_cross_sell_rules')
@@ -257,4 +309,4 @@ export async function getCrossSellCategories(sourceCategory: string): Promise<st
     .eq('source_category', sourceCategory)
     .order('sort_order')
   return (data ?? []).map((r) => r.suggested_category)
-}
+})

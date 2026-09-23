@@ -469,9 +469,9 @@ function CompetitorPanel({ skuId, configSummary, observations, benchmark, onChan
                     {o.source_url ? <a href={o.source_url} target="_blank" rel="noreferrer" className="text-primary underline text-xs">view</a> : '—'}
                   </td>
                   <td className="p-2">
-                    <button onClick={() => handleDelete(o.id)} disabled={deletingId === o.id} className="text-destructive disabled:opacity-50">
+                    <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(o.id)} disabled={deletingId === o.id} className="text-destructive">
                       {deletingId === o.id ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 className="size-3.5" />}
-                    </button>
+                    </Button>
                   </td>
                 </tr>
               ))}

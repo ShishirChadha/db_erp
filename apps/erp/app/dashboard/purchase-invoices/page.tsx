@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequireOwner from '@/components/RequireOwner'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
@@ -117,6 +118,7 @@ function PurchaseInvoicesPage() {
   const [dateTo, setDateTo] = useState('')
   // Which invoice is open in the right-hand detail pane.
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null)
+  const isDesktop = useIsDesktopViewport()
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true)
@@ -138,7 +140,7 @@ function PurchaseInvoicesPage() {
       setInvoices(list)
       // Auto-open the first row on load/refetch, but don't yank focus away from
       // whatever's already open if it's still present after the refetch.
-      setActiveInvoiceId((prev) => (prev && list.some((i) => i.id === prev)) ? prev : (list[0]?.id ?? null))
+      setActiveInvoiceId((prev) => (prev && list.some((i) => i.id === prev)) ? prev : (isDesktop ? (list[0]?.id ?? null) : null))
     } catch (err: any) {
       console.error('Failed to fetch invoices:', err)
       setError(err.message)
@@ -178,7 +180,7 @@ function PurchaseInvoicesPage() {
   }
 
   return (
-    <div className="p-4 flex flex-col" style={{ height: 'calc(100vh - 2rem)' }}>
+    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Purchase Invoices</h1>
         <button
@@ -234,7 +236,7 @@ function PurchaseInvoicesPage() {
       <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once an invoice is open, matching Sales
             Ledger's drill-in navigation; always visible at md+. */}
-        <div className={cn('w-full md:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeInvoice && 'hidden md:flex')}>
+        <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeInvoice && 'hidden md:flex')}>
           <div className="flex-1 overflow-y-auto">
             {sortedInvoices.map((inv) => (
               <InvoiceListItem
