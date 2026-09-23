@@ -555,7 +555,7 @@ export default function StockView({
   if (error) return <div className="p-4 text-destructive">Error: {error}</div>
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex justify-between items-start gap-4 mb-1">
         <h1 className="text-2xl font-bold">{title}</h1>
         {tab === 'accessories' ? (

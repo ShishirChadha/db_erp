@@ -399,7 +399,7 @@ function VendorsPage() {
   const activeVendor = useMemo(() => vendors.find(v => v.id === activeVendorId) ?? null, [vendors, activeVendorId])
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold">Vendors</h1>

@@ -285,7 +285,7 @@ function ReplacementJobsPage() {
   const hasActive = itemKind === 'unit' ? !!activeJob : !!activeAccessoryJob
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Replacement Jobs</h1>
         <Link href={newJobHref} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">

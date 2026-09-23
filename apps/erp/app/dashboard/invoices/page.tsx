@@ -186,7 +186,7 @@ function InvoicesPage() {
   const activeInvoice = useMemo(() => invoices.find(i => i.id === activeInvoiceId) ?? null, [invoices, activeInvoiceId]);
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Invoices</h1>
         <div className="space-x-2">

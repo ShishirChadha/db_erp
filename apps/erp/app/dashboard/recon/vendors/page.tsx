@@ -253,7 +253,7 @@ function VendorReconPage() {
   const safeFillCount = pending.filter((p) => p.change_kind === 'fill_missing' && p.confidence === 'high').length
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <h1 className="text-2xl font-bold mb-1">Vendor Reconciliation</h1>
       <p className="text-sm text-muted-foreground mb-4">Upload a vendor invoice — the vendor's GSTIN, address and contact details are compared against your Vendors master, and only genuine fills or conflicts are proposed.</p>
 

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { categoryToSlug, NAV_CATEGORIES } from '@/lib/categories'
 import { ACCESSORY_LINKS } from './AccessoriesNavGroup'
@@ -14,6 +15,17 @@ import { ACCESSORY_LINKS } from './AccessoriesNavGroup'
 // of sync with the desktop nav.
 export function MobileNav() {
   const [open, setOpen] = useState(false)
+  // The drawer is portaled to document.body (see the createPortal call below)
+  // rather than rendered in place, because SiteHeader's `backdrop-blur`
+  // establishes a CSS containing block for `position: fixed` descendants --
+  // without the portal, "fixed inset-0" resolves relative to the ~70px-tall
+  // header box instead of the viewport, so the drawer renders clipped to a
+  // sliver at the top of the screen instead of covering the screen. `mounted`
+  // guards the portal to client-only, since document.body isn't available
+  // during SSR (harmless here since `open` can only become true from a
+  // browser click, but this keeps the component correct regardless).
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => setMounted(true), [])
 
   // Lock background scroll while the panel is open, and let Escape close it
   // -- standard drawer/overlay behavior, matching the outside-click-to-close
@@ -46,7 +58,7 @@ export function MobileNav() {
         </svg>
       </button>
 
-      {open && (
+      {open && mounted && createPortal(
         <div className="fixed inset-0 z-50">
           <button
             type="button"
@@ -98,7 +110,8 @@ export function MobileNav() {
               ))}
             </nav>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   )

@@ -612,7 +612,7 @@ function AccessoriesPage() {
   const activeSku = useMemo(() => skus.find((s) => s.id === activeSkuId) ?? null, [skus, activeSkuId])
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Accessories</h1>
         <button onClick={() => setModalOpen(true)} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm">

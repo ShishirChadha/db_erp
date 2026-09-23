@@ -211,7 +211,7 @@ function QuotationsPage() {
   const activeDoc = useMemo(() => docs.find((d) => d.id === activeDocId) ?? null, [docs, activeDocId])
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <h1 className="text-2xl font-bold mb-1">Quotations & Proforma Invoices</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Non-committal price offers and pre-sale documents. Converting a line hands off to the normal Sell flow — a real sale and (later) a real GST invoice are always created there, never here.

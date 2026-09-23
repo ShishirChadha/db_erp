@@ -169,7 +169,7 @@ function PurchaseOrdersPage() {
   if (loading) return <div className="p-4">Loading...</div>
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">Purchase Orders</h1>
         <button

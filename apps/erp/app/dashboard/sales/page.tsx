@@ -490,7 +490,7 @@ function SalesLedgerPage() {
   const activeSale = useMemo(() => sales.find(s => s.id === activeSaleId) ?? null, [sales, activeSaleId]);
 
   return (
-    <div className="p-4 flex flex-col h-[calc(100vh-5.5rem)] md:h-[calc(100vh-3rem)]">
+    <div className="p-4 flex flex-col h-full">
       <h1 className="text-2xl font-bold mb-1">Sales Ledger</h1>
       <p className="text-sm text-muted-foreground mb-4">
         Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
