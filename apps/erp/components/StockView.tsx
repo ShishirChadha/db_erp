@@ -741,7 +741,7 @@ export default function StockView({
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a SKU is open, matching the
               Current/Sold master-detail drill-in navigation. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
@@ -775,7 +775,7 @@ export default function StockView({
           </div>
         </div>
       ) : tab === 'sold_accessories' ? (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
             <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
@@ -818,7 +818,7 @@ export default function StockView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
           {/* List pane -- hidden on mobile once a unit is open, matching the
               Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>

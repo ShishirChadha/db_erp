@@ -233,7 +233,7 @@ function PurchaseInvoicesPage() {
         )}
       </div>
 
-      <div className="flex-1 min-h-0 border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
         {/* List pane -- hidden on mobile once an invoice is open, matching Sales
             Ledger's drill-in navigation; always visible at md+. */}
         <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeInvoice && 'hidden md:flex')}>

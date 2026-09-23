@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import DropdownOptionsManager from '@/components/DropdownOptionsManager'
+import SkuCategoryTemplatesManager from '@/components/SkuCategoryTemplatesManager'
 import UserManager from '@/components/UserManager'
 import ActiveSessionsManager from '@/components/ActiveSessionsManager'
 import BusinessProfileManager from '@/components/BusinessProfileManager'
@@ -46,6 +47,7 @@ const CATEGORIES = [
   { key: 'audit_log', label: 'Audit Log', ownerOnly: false },
   { key: 'asset_numbering', label: 'Asset Numbering', ownerOnly: true },
   { key: 'dropdown_options', label: 'Dropdown Options', ownerOnly: true },
+  { key: 'sku_categories', label: 'SKU Categories', ownerOnly: true },
   { key: 'business_profiles', label: 'Business Profiles', ownerOnly: true },
   { key: 'users', label: 'Users & Access', ownerOnly: true },
   { key: 'active_sessions', label: 'Active Devices', ownerOnly: true },
@@ -256,6 +258,7 @@ function SettingsPage() {
           {category === 'audit_log' && <AuditLogPage />}
           {category === 'asset_numbering' && <AssetNumberingSection />}
           {category === 'dropdown_options' && <DropdownOptionsManager />}
+          {category === 'sku_categories' && <SkuCategoryTemplatesManager />}
           {category === 'business_profiles' && <BusinessProfileManager />}
           {category === 'users' && <UserManager />}
           {category === 'active_sessions' && <ActiveSessionsManager />}
