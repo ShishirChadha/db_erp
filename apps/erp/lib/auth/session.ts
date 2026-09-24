@@ -43,7 +43,15 @@ async function verifyAccessToken(token: string): Promise<{ id: string; email: st
 
 // Bearer-token pattern -- for API routes called via lib/api-client.ts's apiFetch(),
 // which attaches the browser session's access_token as Authorization: Bearer <token>.
-export async function getSessionUser(req: NextRequest): Promise<SessionUser | null> {
+//
+// skipSessionCheck: for the two routes that ESTABLISH a device session (log-event's
+// 'login' branch, session-register) -- a browser's db_session_id cookie is never
+// cleared client-side, so after that exact session is later revoked (logout, device
+// cap, force-logoff), the same stale cookie rides along on the NEXT login attempt
+// too. Checking it there would reject the very call meant to replace it with a
+// fresh one, permanently locking that browser out. Identity (the JWT) is still
+// fully verified either way; only the old cookie's validity is skipped.
+export async function getSessionUser(req: NextRequest, opts?: { skipSessionCheck?: boolean }): Promise<SessionUser | null> {
   const authHeader = req.headers.get('authorization')
   if (!authHeader?.startsWith('Bearer ')) return null
   const token = authHeader.slice(7)
@@ -54,7 +62,7 @@ export async function getSessionUser(req: NextRequest): Promise<SessionUser | nu
   // Force-logoff from Settings > Active Devices, and the concurrent-device cap,
   // are both enforced here -- same live-recheck-every-request pattern as
   // profiles.is_active below (see the comment on `jwks` above).
-  const sessionId = req.cookies.get(SESSION_COOKIE_NAME)?.value
+  const sessionId = opts?.skipSessionCheck ? undefined : req.cookies.get(SESSION_COOKIE_NAME)?.value
 
   // isSessionRevoked(sessionId) and the profiles select are independent of each
   // other (one needs only sessionId, the other only user.id from the already-

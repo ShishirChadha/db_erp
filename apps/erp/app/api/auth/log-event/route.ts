@@ -17,7 +17,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'event must be "login" or "logout"' }, { status: 400 })
   }
 
-  const sessionUser = await getSessionUser(req)
+  // skipSessionCheck: see lib/auth/session.ts -- this route is where a session's
+  // own cookie gets (re)established, so it must not be gated by whatever stale
+  // cookie the browser happens to already be holding.
+  const sessionUser = await getSessionUser(req, { skipSessionCheck: true })
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   await logAuditEvent({

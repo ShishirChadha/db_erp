@@ -8,7 +8,7 @@ import { SESSION_COOKIE_NAME, registerSession, isSessionRevoked } from '@/lib/au
 // /api/auth/log-event's 'login' event so this doesn't add a fake login row to the
 // audit log for a session that was already open.
 export async function POST(req: NextRequest) {
-  const sessionUser = await getSessionUser(req)
+  const sessionUser = await getSessionUser(req, { skipSessionCheck: true })
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const existing = req.cookies.get(SESSION_COOKIE_NAME)?.value
