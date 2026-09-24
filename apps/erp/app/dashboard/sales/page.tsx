@@ -12,6 +12,8 @@ import { useAsyncAction } from "@/lib/useAsyncAction";
 import { StatCardsRow } from "@/components/StatCardsRow";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CustomerSummaryLine } from "@/components/CustomerSummaryLine";
 import type { CustomerSummary } from "@/lib/customer-summary";
 import { Pagination } from "@/components/Pagination";
@@ -334,20 +336,20 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
           <span className="font-medium text-sm text-foreground truncate">{sale.customer_name || "—"}</span>
           <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">₹{sale.sale_total?.toFixed(2)}</span>
         </div>
-        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+        <div className="flex items-baseline justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">{item(sale)}</p>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10)}</span>
-        </div>
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          {accountAbbrev(sale.payment_account) && (
-            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground" title={sale.payment_account ?? undefined}>
-              {accountAbbrev(sale.payment_account)}
-            </span>
-          )}
-          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
-          <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
-            {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Invoice Pending"}
-          </StatusBadge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {accountAbbrev(sale.payment_account) && (
+              <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground" title={sale.payment_account ?? undefined}>
+                {accountAbbrev(sale.payment_account)}
+              </span>
+            )}
+            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+            <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
+              {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Pending"}
+            </StatusBadge>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10)}</span>
+          </div>
         </div>
       </div>
     </button>
@@ -491,11 +493,20 @@ function SalesLedgerPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <h1 className="text-2xl font-bold mb-1">Sales Ledger</h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Every sale (units + accessories), payment tracking, and incentive attribution. New sales are recorded from <a href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales" className="underline">New Entry → Sell</a>.
-        Select 2 or more un-invoiced sales for the same customer and account to combine them into one invoice.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h1
+          className="text-xl font-bold shrink-0"
+          title="Every sale (units + accessories), payment tracking, and incentive attribution. Select 2+ un-invoiced sales for the same customer and account to combine them into one invoice."
+        >
+          Sales Ledger
+        </h1>
+        <a
+          href="/dashboard/entry/sell?return_to=%2Fdashboard%2Fsales"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0"
+        >
+          + New Sale
+        </a>
+      </div>
 
       <StatCardsRow
         cards={[
@@ -522,29 +533,38 @@ function SalesLedgerPage() {
       />
 
       <div className="flex gap-2 flex-wrap items-center mb-2">
-        <input
+        <Input
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search customer, asset, serial, invoice, amount..."
-          className="border p-2 rounded bg-card text-sm flex-1 min-w-[180px]"
+          className="flex-1 min-w-[180px]"
         />
-        <select value={paymentFilter} onChange={(e) => setPaymentFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
-          <option value="">All Payment Statuses</option>
-          <option value="pending">Payment Pending</option>
-          <option value="partial">Partial</option>
-          <option value="paid">Paid</option>
-        </select>
-        <select value={receivedIntoFilter} onChange={(e) => setReceivedIntoFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
-          <option value="">All Received Into</option>
-          {PAYMENT_ACCOUNTS.map((acc) => (
-            <option key={acc} value={acc}>{acc}</option>
-          ))}
-        </select>
-        <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))} className="border p-2 rounded bg-card text-sm">
-          {PAGE_SIZE_OPTIONS.map((n) => (
-            <option key={n} value={n}>{n} / page</option>
-          ))}
-        </select>
+        <Select value={paymentFilter || "all"} onValueChange={(v) => setPaymentFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Payment Statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Payment Statuses</SelectItem>
+            <SelectItem value="pending">Payment Pending</SelectItem>
+            <SelectItem value="partial">Partial</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={receivedIntoFilter || "all"} onValueChange={(v) => setReceivedIntoFilter(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Received Into" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Received Into</SelectItem>
+            {PAYMENT_ACCOUNTS.map((acc) => (
+              <SelectItem key={acc} value={acc}>{acc}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
+          <SelectTrigger className="w-auto"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {PAGE_SIZE_OPTIONS.map((n) => (
+              <SelectItem key={n} value={String(n)}>{n} / page</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <label className="flex items-center gap-1.5 text-sm border p-2 rounded bg-card cursor-pointer">
           <Checkbox checked={showVoided} onCheckedChange={(v) => setShowVoided(!!v)} />
           Show voided
@@ -581,11 +601,11 @@ function SalesLedgerPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open, matching an
               email client's drill-in navigation; always visible at md+. */}
           <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSale && "hidden md:flex")}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {sales.map((s) => (
                 <SaleListItem
                   key={s.id}

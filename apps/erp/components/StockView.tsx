@@ -11,6 +11,8 @@ import { useRole } from '@/lib/auth/useRole'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ASSET_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
@@ -556,8 +558,24 @@ export default function StockView({
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-start gap-4 mb-1">
-        <h1 className="text-2xl font-bold">{title}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <h1 className="text-xl font-bold shrink-0" title={subtitle}>{title}</h1>
+          <div className="flex border rounded overflow-hidden shrink-0 w-fit">
+            <button onClick={() => changeTab('current')} className={`px-3 py-1.5 text-xs font-medium ${tab === 'current' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
+              Current Stock
+            </button>
+            <button onClick={() => changeTab('sold')} className={`px-3 py-1.5 text-xs font-medium ${tab === 'sold' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
+              Sold Stock
+            </button>
+            <button onClick={() => changeTab('accessories')} className={`px-3 py-1.5 text-xs font-medium ${tab === 'accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
+              Accessories
+            </button>
+            <button onClick={() => changeTab('sold_accessories')} className={`px-3 py-1.5 text-xs font-medium ${tab === 'sold_accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
+              Sold Accessories
+            </button>
+          </div>
+        </div>
         {tab === 'accessories' ? (
           <Link
             href="/dashboard/accessories"
@@ -573,22 +591,6 @@ export default function StockView({
             + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
           </Link>
         )}
-      </div>
-      <p className="text-sm text-muted-foreground mb-4">{subtitle}</p>
-
-      <div className="flex mb-4 border rounded overflow-hidden w-fit">
-        <button onClick={() => changeTab('current')} className={`px-4 py-2 text-sm font-medium ${tab === 'current' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
-          Current Stock
-        </button>
-        <button onClick={() => changeTab('sold')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
-          Sold Stock
-        </button>
-        <button onClick={() => changeTab('accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
-          Accessories
-        </button>
-        <button onClick={() => changeTab('sold_accessories')} className={`px-4 py-2 text-sm font-medium ${tab === 'sold_accessories' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>
-          Sold Accessories
-        </button>
       </div>
 
       <StatCardsRow
@@ -624,18 +626,21 @@ export default function StockView({
         ]}
       />
 
-      <div className="flex gap-4 mb-4 flex-wrap">
+      <div className="flex gap-2 mb-2 flex-wrap items-center">
         {tab === 'current' && (
-          <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded">
-            <option value="">All Current Statuses</option>
-            <option value="qc_pending">QC Pending</option>
-            <option value="qc_passed">QC Passed</option>
-            <option value="ready_for_sale">Ready for Sale</option>
-            <option value="faulty">Faulty</option>
-            <option value="on_rent">On Rent</option>
-          </select>
+          <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-auto"><SelectValue placeholder="All Current Statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Current Statuses</SelectItem>
+              <SelectItem value="qc_pending">QC Pending</SelectItem>
+              <SelectItem value="qc_passed">QC Passed</SelectItem>
+              <SelectItem value="ready_for_sale">Ready for Sale</SelectItem>
+              <SelectItem value="faulty">Faulty</SelectItem>
+              <SelectItem value="on_rent">On Rent</SelectItem>
+            </SelectContent>
+          </Select>
         )}
-        <input
+        <Input
           type="text"
           placeholder={
             tab === 'sold_accessories' ? 'Search item, customer, or invoice...' :
@@ -645,18 +650,24 @@ export default function StockView({
           }
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
-          className="border p-2 rounded"
+          className="w-64"
         />
         {(tab === 'current' || tab === 'sold' || tab === 'sold_accessories') && (
           <>
-            <select value={monthFilter} onChange={(e) => setMonthFilter(e.target.value)} className="border p-2 rounded">
-              <option value="">All Months</option>
-              {MONTH_OPTIONS.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-            </select>
-            <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="border p-2 rounded">
-              <option value="">All Years</option>
-              {yearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
+            <Select value={monthFilter || 'all'} onValueChange={(v) => setMonthFilter(v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-auto"><SelectValue placeholder="All Months" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Months</SelectItem>
+                {MONTH_OPTIONS.map(m => <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={yearFilter || 'all'} onValueChange={(v) => setYearFilter(v === 'all' ? '' : v)}>
+              <SelectTrigger className="w-auto"><SelectValue placeholder="All Years" /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Years</SelectItem>
+                {yearOptions.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+              </SelectContent>
+            </Select>
           </>
         )}
         {(statusFilter || searchInput || monthFilter || yearFilter) && (
@@ -741,11 +752,11 @@ export default function StockView({
       {loading ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a SKU is open, matching the
               Current/Sold master-detail drill-in navigation. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {accessoryStock.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No accessories in stock.</p>
               )}
@@ -775,7 +786,7 @@ export default function StockView({
           </div>
         </div>
       ) : tab === 'sold_accessories' ? (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
             <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
@@ -787,7 +798,7 @@ export default function StockView({
                 Date{soldAccOrder === 'asc' ? ' ↑' : ' ↓'}
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {soldAccessories.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No accessory sales found.</p>
               )}
@@ -818,13 +829,14 @@ export default function StockView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a unit is open, matching the
               Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>
-            {isOwner && (tab === 'current' || tab === 'sold') && (
-              <div className="flex items-center gap-2 px-3 py-2 border-b border-border">
+            <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
+              {isOwner && (tab === 'current' || tab === 'sold') && (
                 <Checkbox
+                  title="Select all on page"
                   checked={
                     selectableIds.length === 0
                       ? false
@@ -836,10 +848,7 @@ export default function StockView({
                   }
                   onCheckedChange={toggleSelectAll}
                 />
-                <span className="text-xs text-muted-foreground">Select all on page</span>
-              </div>
-            )}
-            <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
+              )}
               <button type="button" onClick={() => toggleSort('asset_number')} className="hover:text-foreground">
                 Asset/Serial{sortIndicator('asset_number')}
               </button>
@@ -850,7 +859,7 @@ export default function StockView({
                 Status{sortIndicator('status')}
               </button>
             </div>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {displayedAssets.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No assets found.</p>
               )}
@@ -937,27 +946,27 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
   return (
     <div className={cn('w-full flex items-start gap-2 border-b border-border transition-colors', active ? 'bg-primary/10' : 'hover:bg-muted')}>
       {showCheckbox && (
-        <div className="pl-3 pt-3" onClick={(e) => e.stopPropagation()}>
+        <div className="pl-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
           {!asset.po_id && <Checkbox checked={checked} onCheckedChange={onToggleChecked} />}
         </div>
       )}
-      <button type="button" onClick={onOpen} className={cn('flex-1 min-w-0 text-left px-3 py-2.5', !showCheckbox && 'pl-3')}>
-        <div className="flex items-baseline justify-between gap-2">
+      <button type="button" onClick={onOpen} className={cn('flex-1 min-w-0 text-left px-3 py-2', !showCheckbox && 'pl-3')}>
+        <div className="flex items-center justify-between gap-2">
           <span className="font-medium text-sm text-foreground truncate">{identifier(asset)}</span>
-          {tab === 'sold' && (
-            <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">
-              {asset.sale_total != null ? `₹${asset.sale_total.toFixed(2)}` : '—'}
-            </span>
-          )}
-        </div>
-        <p className="text-xs text-muted-foreground truncate mt-0.5">{desc}</p>
-        <div className="flex items-center justify-between gap-2 mt-1.5">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
+          <div className="flex items-center gap-1.5 shrink-0">
+            {tab === 'sold' && (
+              <span className="text-xs font-medium tabular-nums whitespace-nowrap text-foreground">
+                {asset.sale_total != null ? `₹${asset.sale_total.toFixed(2)}` : '—'}
+              </span>
+            )}
             {asset.under_repair_job_number && (
               <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap">Under Repair</span>
             )}
+            <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
           </div>
+        </div>
+        <div className="flex items-baseline justify-between gap-2 mt-1">
+          <p className="text-xs text-muted-foreground truncate">{desc}</p>
           <span className="text-xs text-muted-foreground whitespace-nowrap">{dateStr || '—'}</span>
         </div>
       </button>
@@ -1113,12 +1122,14 @@ function AccessoryStockListItem({ sku, active, onOpen }: {
             {sku.selling_price_default != null ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}
           </span>
         </div>
-        <p className="text-xs text-muted-foreground truncate mt-0.5">
-          {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
-        </p>
-        <div className="flex items-center justify-between gap-2 mt-1.5">
-          <span className="text-xs text-muted-foreground whitespace-nowrap">In stock: {sku.quantity_in_stock}</span>
-          {!!sku.needs_po_qty && <StatusBadge tone="warning">{sku.needs_po_qty} awaiting PO</StatusBadge>}
+        <div className="flex items-center justify-between gap-2 mt-1">
+          <p className="text-xs text-muted-foreground truncate">
+            {sku.full_sku_code} — {sku.category}{sku.brand ? ` · ${sku.brand}` : ''}
+          </p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">In stock: {sku.quantity_in_stock}</span>
+            {!!sku.needs_po_qty && <StatusBadge tone="warning">{sku.needs_po_qty} awaiting PO</StatusBadge>}
+          </div>
         </div>
       </div>
     </button>
@@ -1184,10 +1195,12 @@ function SoldAccessoryListItem({ sale, active, onOpen }: {
             {sale.sale_total != null ? `₹${sale.sale_total.toFixed(2)}` : '—'}
           </span>
         </div>
-        <p className="text-xs text-muted-foreground truncate mt-0.5">{sale.customer_name || 'Walk-in'} · Qty {sale.accessory_quantity}</p>
-        <div className="flex items-center justify-between gap-2 mt-1.5">
-          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10) || '—'}</span>
+        <div className="flex items-center justify-between gap-2 mt-1">
+          <p className="text-xs text-muted-foreground truncate">{sale.customer_name || 'Walk-in'} · Qty {sale.accessory_quantity}</p>
+          <div className="flex items-center gap-1.5 shrink-0">
+            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10) || '—'}</span>
+          </div>
         </div>
       </div>
     </button>

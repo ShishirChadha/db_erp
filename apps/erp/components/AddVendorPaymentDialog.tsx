@@ -80,7 +80,7 @@ export function AddVendorPaymentDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-sm">
+      <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Add Vendor Payment</DialogTitle>
           <DialogDescription>

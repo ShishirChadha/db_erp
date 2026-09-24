@@ -270,11 +270,11 @@ function VendorReconPage() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
         {/* List pane -- hidden on mobile once a document is open, matching the
             Sales Ledger's email-client drill-in navigation; always visible at md+. */}
         <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeDoc && "hidden md:flex")}>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-visible lg:overflow-y-auto">
             {recentDocs.length === 0 && <div className="p-3 text-sm text-muted-foreground">No invoices uploaded yet.</div>}
             {recentDocs.map((d) => (
               <div

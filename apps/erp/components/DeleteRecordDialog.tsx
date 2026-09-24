@@ -36,7 +36,7 @@ export default function DeleteRecordDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{title}: {identifier}</DialogTitle>
         </DialogHeader>

@@ -270,8 +270,8 @@ function CustomersPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Customers</h1>
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+        <h1 className="text-xl font-bold">Customers</h1>
         <div className="space-x-2">
           <AddCustomerDialog onAdd={fetchCustomers} />
           <BulkAddDialog
@@ -296,7 +296,7 @@ function CustomersPage() {
       </div>
 
       {/* Filters Bar -- unchanged in behavior */}
-      <div className="flex flex-wrap gap-4 items-end mb-4">
+      <div className="flex flex-wrap gap-3 items-end mb-2">
         <div className="w-64">
           <Label>Global Search</Label>
           <Input
@@ -348,11 +348,11 @@ function CustomersPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a customer is open, matching an
               email client's drill-in navigation; always visible at md+. */}
           <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeCustomer && "hidden md:flex")}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {customers.map((c) => (
                 <CustomerListItem
                   key={c.id}

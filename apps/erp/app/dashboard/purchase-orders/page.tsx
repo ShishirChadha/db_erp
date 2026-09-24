@@ -10,6 +10,8 @@ import { ErrorBanner } from '@/components/ErrorBanner'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PO_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { PODetailPage } from './[id]/page'
 
@@ -170,81 +172,64 @@ function PurchaseOrdersPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Purchase Orders</h1>
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+        <h1 className="text-xl font-bold">Purchase Orders</h1>
         <button
           onClick={() => router.push('/dashboard/purchase-orders/new')}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium"
         >
           + New Purchase Order
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-4 mb-4 items-end">
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Status</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="border p-2 rounded"
-          >
-            <option value="">All Statuses</option>
-            <option value="draft">Draft</option>
-            <option value="submitted">Submitted</option>
-            <option value="partially_received">Partially Received</option>
-            <option value="received">Received</option>
-            <option value="invoiced">Invoiced</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Vendor</label>
-          <select
-            value={vendorFilter}
-            onChange={(e) => setVendorFilter(e.target.value)}
-            className="border p-2 rounded"
-          >
-            <option value="">All Vendors</option>
+      <div className="flex flex-wrap gap-2 mb-2 items-center">
+        <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="submitted">Submitted</SelectItem>
+            <SelectItem value="partially_received">Partially Received</SelectItem>
+            <SelectItem value="received">Received</SelectItem>
+            <SelectItem value="invoiced">Invoiced</SelectItem>
+            <SelectItem value="cancelled">Cancelled</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={vendorFilter || 'all'} onValueChange={(v) => setVendorFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Vendors" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Vendors</SelectItem>
             {vendors.map((v) => (
-              <option key={v.id} value={v.id}>{v.company_name}</option>
+              <SelectItem key={v.id} value={v.id}>{v.company_name}</SelectItem>
             ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border p-2 rounded" />
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border p-2 rounded" />
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Search</label>
-          <input
-            type="text"
-            placeholder="Search PO number..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="border p-2 rounded"
-          />
-        </div>
+          </SelectContent>
+        </Select>
+        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-auto" title="From date" />
+        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-auto" title="To date" />
+        <Input
+          type="text"
+          placeholder="Search PO number..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="w-56"
+        />
         {(statusFilter || vendorFilter || dateFrom || dateTo || search) && (
           <button
             onClick={() => { setStatusFilter(''); setVendorFilter(''); setDateFrom(''); setDateTo(''); setSearch('') }}
-            className="text-sm text-muted-foreground underline"
+            className="text-sm text-muted-foreground underline self-center"
           >
             Clear filters
           </button>
         )}
       </div>
 
-      {error && <div className="mb-4"><ErrorBanner message={error} onRetry={fetchOrders} /></div>}
+      {error && <div className="mb-2"><ErrorBanner message={error} onRetry={fetchOrders} /></div>}
 
-      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
         {/* List pane -- hidden on mobile once a PO is open, matching an email
             client's drill-in navigation; always visible at md+. */}
         <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activePo && 'hidden md:flex')}>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-visible lg:overflow-y-auto">
             {orders.map((po) => (
               <PurchaseOrderListItem
                 key={po.id}

@@ -212,15 +212,22 @@ function QuotationsPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <h1 className="text-2xl font-bold mb-1">Quotations & Proforma Invoices</h1>
-      <p className="text-sm text-muted-foreground mb-4">
-        Non-committal price offers and pre-sale documents. Converting a line hands off to the normal Sell flow — a real sale and (later) a real GST invoice are always created there, never here.
-      </p>
-
-      <div className="flex justify-between items-center mb-2">
-        <div className="flex border rounded overflow-hidden w-fit">
-          <button onClick={() => setDocType('quotation')} className={`px-4 py-2 text-sm font-medium ${docType === 'quotation' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Quotations</button>
-          <button onClick={() => setDocType('proforma')} className={`px-4 py-2 text-sm font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
+      {/* Title/tab-switcher/create-button merged onto one compact row (matching
+          Stock's toolbar) -- the explanatory copy that used to sit on its own line
+          moves into the title's tooltip instead, same technique StockView uses for
+          its own subtitle prop. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <div className="flex flex-wrap items-center gap-3 min-w-0">
+          <h1
+            className="text-xl font-bold shrink-0"
+            title="Non-committal price offers and pre-sale documents. Converting a line hands off to the normal Sell flow — a real sale and (later) a real GST invoice are always created there, never here."
+          >
+            Quotations &amp; Proforma Invoices
+          </h1>
+          <div className="flex border rounded overflow-hidden shrink-0 w-fit">
+            <button onClick={() => setDocType('quotation')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'quotation' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Quotations</button>
+            <button onClick={() => setDocType('proforma')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
+          </div>
         </div>
         <CreateDocumentDialog docType={docType} onCreated={fetchDocs} />
       </div>
@@ -228,10 +235,10 @@ function QuotationsPage() {
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a document is open, matching Sales Ledger. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeDoc && 'hidden md:flex')}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {docs.map((d) => (
                 <DocListItem
                   key={d.id}

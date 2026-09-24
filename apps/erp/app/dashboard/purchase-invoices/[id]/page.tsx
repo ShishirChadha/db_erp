@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { AddVendorPaymentDialog } from '@/components/AddVendorPaymentDialog'
+import { Button } from '@/components/ui/button'
 
 interface PO {
   id: string
@@ -142,7 +142,7 @@ function InvoiceDetailPage() {
         </span>
       </div>
 
-      <div className="bg-card p-4 shadow rounded mb-6 grid grid-cols-2 gap-4">
+      <div className="bg-card p-4 shadow rounded mb-4 grid grid-cols-2 gap-4">
         <div>
           <p><strong>Invoice Date:</strong> {invoice.invoice_date}</p>
           <p><strong>Total Amount:</strong> ₹{invoice.total_amount?.toFixed(2)}</p>
@@ -163,10 +163,10 @@ function InvoiceDetailPage() {
       </div>
 
       {invoice.po_items.length > 0 && (
-        <div className="mb-6">
+        <div className="mb-4">
           <h2 className="text-lg font-semibold mb-2">Purchased Items</h2>
-          <div className="overflow-x-auto">
-            <table className="min-w-full border">
+          <div className="overflow-x-auto max-h-80 overflow-y-auto border rounded">
+            <table className="min-w-full text-sm">
               <thead>
                 <tr>
                   <th className="border p-2">Item #</th>
@@ -213,7 +213,7 @@ function InvoiceDetailPage() {
       )}
 
       {invoice.purchase_order && (
-        <div className="border rounded p-3 space-y-2 mb-6">
+        <div className="border rounded p-3 space-y-2 mb-4">
           <div className="flex items-center justify-between">
             <div>
               <p className="font-medium">Vendor Payment</p>
@@ -222,12 +222,9 @@ function InvoiceDetailPage() {
               </div>
             </div>
             {invoice.purchase_order.payment_status !== 'paid' && (
-              <button
-                onClick={() => setShowAddPayment(true)}
-                className="border rounded px-3 py-1.5 text-sm hover:bg-muted"
-              >
+              <Button variant="outline" size="sm" onClick={() => setShowAddPayment(true)}>
                 Add Payment
-              </button>
+              </Button>
             )}
           </div>
           {payments.length > 0 && (
@@ -241,9 +238,9 @@ function InvoiceDetailPage() {
                       {new Date(p.paid_on).toLocaleDateString()}{p.recorded_by_name ? ` · ${p.recorded_by_name}` : ''}
                     </div>
                   </div>
-                  <button type="button" onClick={() => deletePayment(p.id)} className="text-destructive underline shrink-0">
+                  <Button variant="link" size="sm" onClick={() => deletePayment(p.id)} className="text-destructive shrink-0">
                     Remove
-                  </button>
+                  </Button>
                 </li>
               ))}
             </ul>
@@ -260,40 +257,39 @@ function InvoiceDetailPage() {
       {invoice.attachment_urls && invoice.attachment_urls.length > 0 && (
         <div className="mb-4">
           <h3 className="font-semibold mb-1">Attachments</h3>
-          {invoice.attachment_urls.map((key, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={async () => {
-                const res = await apiFetch('/api/storage/download-url', {
-                  method: 'POST',
-                  body: JSON.stringify({ key, expiresIn: 300 }),
-                })
-                if (!res.ok) {
-                  alert('Could not open attachment')
-                  return
-                }
-                const { url } = await res.json()
-                window.open(url, '_blank')
-              }}
-              className="text-primary underline block text-left"
-            >
-              View Attachment {idx + 1}
-            </button>
-          ))}
+          <div className="flex flex-col gap-1">
+            {invoice.attachment_urls.map((key, idx) => (
+              <Button
+                key={idx}
+                type="button"
+                variant="link"
+                size="sm"
+                className="justify-start p-0 h-auto"
+                onClick={async () => {
+                  const res = await apiFetch('/api/storage/download-url', {
+                    method: 'POST',
+                    body: JSON.stringify({ key, expiresIn: 300 }),
+                  })
+                  if (!res.ok) {
+                    alert('Could not open attachment')
+                    return
+                  }
+                  const { url } = await res.json()
+                  window.open(url, '_blank')
+                }}
+              >
+                View Attachment {idx + 1}
+              </Button>
+            ))}
+          </div>
         </div>
       )}
 
-      <div className="mt-4 flex gap-2">
-        <button
-          onClick={() => handleDelete()}
-          disabled={deleting}
-          className="bg-destructive text-destructive-foreground px-4 py-2 rounded disabled:opacity-50 inline-flex items-center gap-1.5"
-        >
-          {deleting && <Loader2 className="size-4 animate-spin" />}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button variant="destructive" onClick={() => handleDelete()} loading={deleting}>
           Delete Invoice
-        </button>
-        <button onClick={() => router.back()} disabled={deleting} className="bg-muted px-4 py-2 rounded disabled:opacity-50">Back</button>
+        </Button>
+        <Button variant="outline" onClick={() => router.back()} disabled={deleting}>Back</Button>
       </div>
 
       {showAddPayment && invoice.po_id && invoice.purchase_order && (

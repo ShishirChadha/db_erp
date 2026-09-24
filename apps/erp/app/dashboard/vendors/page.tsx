@@ -86,23 +86,21 @@ function VendorListItem({ vendor, active, onOpen }: {
       )}
     >
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="font-medium text-sm text-foreground truncate">{vendor.company_name}</span>
-        </div>
-        <div className="flex items-baseline justify-between gap-2 mt-0.5">
+        <span className="font-medium text-sm text-foreground truncate block">{vendor.company_name}</span>
+        <div className="flex items-center justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">{vendor.phone || '—'}</p>
-        </div>
-        <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
-          {vendor.supplies_accessories && (
-            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
-              Accessories
-            </span>
-          )}
-          {vendor.is_deleted && (
-            <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
-              Deleted
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {vendor.supplies_accessories && (
+              <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground">
+                Accessories
+              </span>
+            )}
+            {vendor.is_deleted && (
+              <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+                Deleted
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </button>
@@ -400,17 +398,17 @@ function VendorsPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold">Vendors</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="min-w-0">
+          <h1 className="text-xl font-bold">Vendors</h1>
+          <p className="text-xs text-muted-foreground">{total} vendor{total === 1 ? '' : 's'}{search ? ' matching filters' : showDeleted ? ' (deleted)' : ''}</p>
         </div>
         <Button className="bg-primary hover:bg-primary/90" onClick={() => { resetForm(); setShowForm(true) }}>
           <Plus className="h-4 w-4 mr-2" />Add Vendor
         </Button>
       </div>
 
-      <div className="flex gap-4 mb-2 items-center flex-wrap">
+      <div className="flex gap-3 mb-2 items-center flex-wrap">
         <div className="relative flex-1 min-w-[180px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -426,11 +424,11 @@ function VendorsPage() {
         </div>
       </div>
 
-      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
         {/* List pane -- hidden on mobile once a vendor is open, matching an
             email client's drill-in navigation; always visible at md+. */}
         <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeVendor && "hidden md:flex")}>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-visible lg:overflow-y-auto">
             {vendors.map((v) => (
               <VendorListItem
                 key={v.id}

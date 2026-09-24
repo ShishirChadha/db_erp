@@ -73,7 +73,7 @@ export function RecordZohoInvoiceDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-card p-6 rounded shadow-lg max-w-md w-full space-y-3">
+      <div className="bg-card p-6 rounded shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto space-y-3">
         <h2 className="text-lg font-bold">Record Zoho Invoice #</h2>
         <p className="text-sm text-muted-foreground">
           Enter the invoice number Zoho already issued{saleIds.length > 1 ? ` for these ${saleIds.length} sales` : ''}. The ERP records it as-is and marks the sale

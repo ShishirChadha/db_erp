@@ -11,6 +11,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { REPAIR_JOB_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
 
@@ -286,7 +287,7 @@ function ReplacementJobsPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-start gap-4 mb-4">
+      <div className="flex flex-wrap justify-between items-start gap-4 mb-4">
         <h1 className="text-2xl font-bold">Replacement Jobs</h1>
         <Link href={newJobHref} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0">
           + New Replacement
@@ -308,21 +309,24 @@ function ReplacementJobsPage() {
         </button>
       </div>
 
-      <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded mb-4 bg-card text-sm w-fit">
-        <option value="">All Statuses</option>
-        <option value="intake,in_progress">Open</option>
-        <option value="done">Done</option>
-        <option value="cancelled">Cancelled</option>
-      </select>
+      <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
+        <SelectTrigger className="w-auto mb-4"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Statuses</SelectItem>
+          <SelectItem value="intake,in_progress">Open</SelectItem>
+          <SelectItem value="done">Done</SelectItem>
+          <SelectItem value="cancelled">Cancelled</SelectItem>
+        </SelectContent>
+      </Select>
 
       {loading ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a job is open, matching an
               email client's drill-in navigation; always visible at md+. */}
           <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', hasActive && 'hidden md:flex')}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {itemKind === 'unit' ? (
                 <>
                   {jobs.map((job) => (

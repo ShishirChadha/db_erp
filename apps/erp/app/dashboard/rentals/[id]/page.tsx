@@ -8,6 +8,7 @@ import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ErrorBanner } from '@/components/ErrorBanner'
+import { Button } from '@/components/ui/button'
 import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { RENTAL_STATUS_TONES, RENTAL_ITEM_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
@@ -168,9 +169,9 @@ function RentalDetailPage() {
                     {canEdit && (
                       <td className="p-2">
                         {i.item_status === 'on_rent' && (
-                          <div className="flex gap-2">
-                            <button onClick={() => setReturnItem(i)} className="text-sm underline">Return</button>
-                            <button onClick={() => setBuyoutItem(i)} className="text-sm underline">Buyout</button>
+                          <div className="flex gap-1">
+                            <Button variant="link" size="sm" onClick={() => setReturnItem(i)} className="text-xs">Return</Button>
+                            <Button variant="link" size="sm" onClick={() => setBuyoutItem(i)} className="text-xs">Buyout</Button>
                           </div>
                         )}
                       </td>
@@ -183,10 +184,13 @@ function RentalDetailPage() {
         </div>
       </div>
 
-      {/* Billing history -- these are real sales rows, same as any other sale */}
+      {/* Billing history -- these are real sales rows, same as any other sale. A
+          long-running rental accrues one row per billing cycle, so this is capped
+          with its own scroll rather than growing the page indefinitely (same
+          pattern as the QC page's Cost Adjustments list). */}
       <div>
         <h2 className="text-lg font-semibold mb-2">Billing</h2>
-        <div className="overflow-x-auto rounded-md border">
+        <div className="overflow-auto rounded-md border max-h-96">
           <table className="w-full text-sm">
             <thead className="bg-muted/50">
               <tr>
@@ -223,12 +227,12 @@ function RentalDetailPage() {
                   <td className="p-2 text-xs">{c.invoice_number || (c.finalized ? 'finalized' : '—')}</td>
                   {canEdit && (
                     <td className="p-2">
-                      <div className="flex gap-2">
+                      <div className="flex gap-1">
                         {c.payment_status !== 'paid' && (
-                          <button onClick={() => setPayFor(c)} className="text-sm underline">Payment</button>
+                          <Button variant="link" size="sm" onClick={() => setPayFor(c)} className="text-xs">Payment</Button>
                         )}
                         {!c.finalized && isOwner && (
-                          <button onClick={() => setInvoiceFor([c.id])} className="text-sm underline">Invoice</button>
+                          <Button variant="link" size="sm" onClick={() => setInvoiceFor([c.id])} className="text-xs">Invoice</Button>
                         )}
                       </div>
                     </td>

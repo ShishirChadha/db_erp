@@ -9,6 +9,8 @@ import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequireOwner from '@/components/RequireOwner'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 interface Invoice {
@@ -181,63 +183,50 @@ function PurchaseInvoicesPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">Purchase Invoices</h1>
+      <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
+        <h1 className="text-xl font-bold">Purchase Invoices</h1>
         <button
           onClick={() => router.push('/dashboard/purchase-invoices/new')}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded"
+          className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium"
         >
           + New Invoice
         </button>
       </div>
 
-      <div className="flex flex-wrap gap-4 mb-4 items-end">
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Payment Status</label>
-          <select
-            value={paymentStatusFilter}
-            onChange={(e) => setPaymentStatusFilter(e.target.value)}
-            className="border p-2 rounded"
-          >
-            <option value="">All</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-            <option value="partial">Partial</option>
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="border p-2 rounded" />
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">To</label>
-          <input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="border p-2 rounded" />
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Search Invoice #</label>
-          <input
-            type="text"
-            placeholder="Search invoice number..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="border p-2 rounded"
-          />
-        </div>
+      <div className="flex flex-wrap gap-2 mb-2 items-center">
+        <Select value={paymentStatusFilter || 'all'} onValueChange={(v) => setPaymentStatusFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Payment Statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Payment Statuses</SelectItem>
+            <SelectItem value="pending">Pending</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="partial">Partial</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-auto" title="From date" />
+        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-auto" title="To date" />
+        <Input
+          type="text"
+          placeholder="Search invoice number..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="w-56"
+        />
         {(paymentStatusFilter || search || dateFrom || dateTo) && (
           <button
             onClick={() => { setPaymentStatusFilter(''); setSearch(''); setDateFrom(''); setDateTo('') }}
-            className="text-sm text-muted-foreground underline"
+            className="text-sm text-muted-foreground underline self-center"
           >
             Clear filters
           </button>
         )}
       </div>
 
-      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
         {/* List pane -- hidden on mobile once an invoice is open, matching Sales
             Ledger's drill-in navigation; always visible at md+. */}
         <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeInvoice && 'hidden md:flex')}>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-visible lg:overflow-y-auto">
             {sortedInvoices.map((inv) => (
               <InvoiceListItem
                 key={inv.id}

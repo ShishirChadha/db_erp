@@ -163,7 +163,7 @@ function ViewSalesDocumentPage() {
           </div>
 
           {/* Line items */}
-          <div className="overflow-x-auto rounded-md border">
+          <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-md border">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-muted/50 text-left text-muted-foreground">
@@ -185,7 +185,7 @@ function ViewSalesDocumentPage() {
                       {item.converted ? (
                         <span className="text-success text-xs font-medium">✓ Converted</span>
                       ) : (
-                        <button onClick={() => convertLine(item)} className="text-warning underline text-xs">Convert →</button>
+                        <Button variant="link" size="sm" onClick={() => convertLine(item)} className="text-warning">Convert →</Button>
                       )}
                     </td>
                   </tr>

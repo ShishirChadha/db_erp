@@ -80,7 +80,7 @@ export function AttachInvoiceFileDialog({
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-card p-6 rounded shadow-lg max-w-md w-full space-y-3">
+      <div className="bg-card p-6 rounded shadow-lg max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto space-y-3">
         <h2 className="text-lg font-bold">Invoice File{invoiceNumber ? ` — ${invoiceNumber}` : ''}</h2>
 
         {loading ? (

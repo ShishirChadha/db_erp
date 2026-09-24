@@ -8,6 +8,7 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { AddVendorDialog, type Vendor } from '@/components/AddVendorDialog'
 import { formatPurchasePrice } from '@/lib/format'
 
@@ -163,7 +164,7 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
   return (
     <>
       <Dialog open onOpenChange={(open) => !open && onClose()}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Receipt</DialogTitle>
           </DialogHeader>
@@ -185,9 +186,9 @@ function EditReceiptDialog({ movement, onClose, onSaved }: { movement: Movement;
                 {vendors.map(v => <option key={v.id} value={v.id}>{v.company_name}</option>)}
               </select>
             </label>
-            <button type="button" onClick={() => setAddVendorOpen(true)} className="text-primary underline text-xs">
+            <Button variant="link" size="sm" type="button" onClick={() => setAddVendorOpen(true)} className="text-primary text-xs">
               + Add new vendor
-            </button>
+            </Button>
             <label className="block text-xs text-muted-foreground">
               Total price paid (for all {movement.quantity_change} unit{movement.quantity_change === 1 ? '' : 's'})
               <input
@@ -304,142 +305,158 @@ export function AccessoryDetailPage({ skuId: skuIdProp, embedded }: { skuId?: st
         Selling price: {sku.selling_price_default != null ? `₹${sku.selling_price_default.toFixed(2)}` : '—'}
       </p>
 
-      {/* Reconciliation summary -- the "why does in-stock show this number" answer,
-          derived live from the same stock_movements ledger the trigger uses, so it
-          can never disagree with quantity_in_stock itself. */}
-      <div className="grid grid-cols-4 gap-3 mb-6">
-        <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-muted-foreground">Received</div>
-          <div className="text-lg font-semibold tabular-nums">{summary.received}</div>
-        </div>
-        <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-muted-foreground">Sold</div>
-          <div className="text-lg font-semibold tabular-nums">{summary.sold}</div>
-        </div>
-        <div className="border rounded-lg p-3 text-center">
-          <div className="text-xs text-muted-foreground">Adjusted</div>
-          <div className="text-lg font-semibold tabular-nums">{summary.adjusted >= 0 ? '+' : ''}{summary.adjusted}</div>
-        </div>
-        <div className="border rounded-lg p-3 text-center bg-info/15">
-          <div className="text-xs text-muted-foreground">In Stock</div>
-          <div className="text-lg font-semibold tabular-nums">{summary.in_stock}</div>
-        </div>
-      </div>
-      <p className="text-xs text-muted-foreground mb-6">
-        In stock = received + adjusted − sold. "Received" counts everything ever bought,
-        regardless of how much has since sold — a purchase order for this item should
-        reflect Received, not the current In Stock number.
-      </p>
+      <Tabs defaultValue="overview">
+        <TabsList>
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="history">Movement History</TabsTrigger>
+        </TabsList>
 
-      {isOwner && (
-        <div className="border rounded-lg p-4 mb-6">
-          <h2 className="font-semibold mb-2">Cost &amp; Last Vendor</h2>
-          <p className="text-sm text-muted-foreground">
-            Current cost: {cost_price != null ? `₹${cost_price.toFixed(2)}` : '—'}
-            {last_vendor && <> — Last purchased from <span className="font-medium">{last_vendor}</span></>}
+        {/* ---------- Tab 1: Overview -- reconciliation summary, cost/vendor, purchase history ---------- */}
+        <TabsContent value="overview">
+          {/* Reconciliation summary -- the "why does in-stock show this number" answer,
+              derived live from the same stock_movements ledger the trigger uses, so it
+              can never disagree with quantity_in_stock itself. */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+            <div className="border rounded-lg p-3 text-center">
+              <div className="text-xs text-muted-foreground">Received</div>
+              <div className="text-lg font-semibold tabular-nums">{summary.received}</div>
+            </div>
+            <div className="border rounded-lg p-3 text-center">
+              <div className="text-xs text-muted-foreground">Sold</div>
+              <div className="text-lg font-semibold tabular-nums">{summary.sold}</div>
+            </div>
+            <div className="border rounded-lg p-3 text-center">
+              <div className="text-xs text-muted-foreground">Adjusted</div>
+              <div className="text-lg font-semibold tabular-nums">{summary.adjusted >= 0 ? '+' : ''}{summary.adjusted}</div>
+            </div>
+            <div className="border rounded-lg p-3 text-center bg-info/15">
+              <div className="text-xs text-muted-foreground">In Stock</div>
+              <div className="text-lg font-semibold tabular-nums">{summary.in_stock}</div>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            In stock = received + adjusted − sold. "Received" counts everything ever bought,
+            regardless of how much has since sold — a purchase order for this item should
+            reflect Received, not the current In Stock number.
           </p>
-        </div>
-      )}
 
-      {isOwner && (
-        <div className="border rounded-lg p-4 mb-6">
-          <h2 className="font-semibold mb-3">Purchase History</h2>
-          {!purchases || purchases.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No purchase orders recorded yet for this item.</p>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full text-sm border">
-                <thead>
-                  <tr>
-                    <th className="border p-2">PO #</th>
-                    <th className="border p-2">Date</th>
-                    <th className="border p-2">Vendor</th>
-                    <th className="border p-2 text-right">Qty</th>
-                    <th className="border p-2 text-right">Unit Cost</th>
-                    <th className="border p-2 text-right">GST %</th>
-                    <th className="border p-2 text-right">Line Total</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {purchases.map((p, idx) => (
-                    <tr key={idx}>
-                      <td className="border p-2">{p.po_number || '—'}</td>
-                      <td className="border p-2">{p.po_date?.slice(0, 10) || '—'}</td>
-                      <td className="border p-2">{p.vendor_name || '—'}</td>
-                      <td className="border p-2 text-right tabular-nums">{p.quantity}</td>
-                      <td className="border p-2 text-right tabular-nums">₹{p.unit_price?.toFixed(2)}</td>
-                      <td className="border p-2 text-right tabular-nums">{p.gst_percentage}%</td>
-                      <td className="border p-2 text-right tabular-nums">₹{p.line_total?.toFixed(2)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+          {isOwner && (
+            <div className="border rounded-lg p-4 mb-4">
+              <h2 className="font-semibold mb-2">Cost &amp; Last Vendor</h2>
+              <p className="text-sm text-muted-foreground">
+                Current cost: {cost_price != null ? `₹${cost_price.toFixed(2)}` : '—'}
+                {last_vendor && <> — Last purchased from <span className="font-medium">{last_vendor}</span></>}
+              </p>
             </div>
           )}
-        </div>
-      )}
 
-      <div className="border rounded-lg p-4">
-        <h2 className="font-semibold mb-3">Movement Ledger</h2>
-        {movements.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No stock movements recorded yet.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm border">
-              <thead>
-                <tr>
-                  <th className="border p-2">Date</th>
-                  <th className="border p-2">Type</th>
-                  <th className="border p-2 text-right">Change</th>
-                  <th className="border p-2 text-right">Before → After</th>
-                  <th className="border p-2">PO #</th>
-                  <th className="border p-2" title="Optionally logged by whoever received the stock -- visible to everyone.">Vendor</th>
-                  <th className="border p-2 text-right">Price</th>
-                  <th className="border p-2">Payment</th>
-                  <th className="border p-2" title="Click a note to edit it">Notes</th>
-                  <th className="border p-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {movements.map((m) => (
-                  <tr key={m.id}>
-                    <td className="border p-2">{(m.purchase_date || m.created_at)?.slice(0, 10)}</td>
-                    <td className="border p-2">{MOVEMENT_LABELS[m.movement_type] || m.movement_type}</td>
-                    <td className="border p-2 text-right tabular-nums">{m.quantity_change > 0 ? '+' : ''}{m.quantity_change}</td>
-                    <td className="border p-2 text-right tabular-nums text-muted-foreground">
-                      {m.quantity_before ?? '—'} → {m.quantity_after ?? '—'}
-                    </td>
-                    <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-warning">awaiting PO</span> : '—')}</td>
-                    <td className="border p-2">{m.vendor_name || '—'}</td>
-                    <td className="border p-2 text-right tabular-nums">{formatPurchasePrice(m.unit_price, m.gst_percentage) ?? '—'}</td>
-                    <td className="border p-2">{m.payment_account || '—'}</td>
-                    <td className="border p-2">
-                      <EditableNote
-                        movementId={m.id}
-                        notes={m.notes}
-                        onSaved={(notes) => {
-                          setData((prev) =>
-                            prev
-                              ? { ...prev, movements: prev.movements.map((mv) => (mv.id === m.id ? { ...mv, notes } : mv)) }
-                              : prev
-                          )
-                        }}
-                      />
-                    </td>
-                    <td className="border p-2">
-                      {m.movement_type === 'receipt' && (
-                        <button onClick={() => setEditingMovement(m)} className="text-primary underline text-xs whitespace-nowrap">
-                          Edit
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          {isOwner && (
+            <div className="border rounded-lg p-4">
+              <h2 className="font-semibold mb-3">Purchase History</h2>
+              {!purchases || purchases.length === 0 ? (
+                <p className="text-sm text-muted-foreground">No purchase orders recorded yet for this item.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm border">
+                    <thead>
+                      <tr>
+                        <th className="border p-2">PO #</th>
+                        <th className="border p-2">Date</th>
+                        <th className="border p-2">Vendor</th>
+                        <th className="border p-2 text-right">Qty</th>
+                        <th className="border p-2 text-right">Unit Cost</th>
+                        <th className="border p-2 text-right">GST %</th>
+                        <th className="border p-2 text-right">Line Total</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {purchases.map((p, idx) => (
+                        <tr key={idx}>
+                          <td className="border p-2">{p.po_number || '—'}</td>
+                          <td className="border p-2">{p.po_date?.slice(0, 10) || '—'}</td>
+                          <td className="border p-2">{p.vendor_name || '—'}</td>
+                          <td className="border p-2 text-right tabular-nums">{p.quantity}</td>
+                          <td className="border p-2 text-right tabular-nums">₹{p.unit_price?.toFixed(2)}</td>
+                          <td className="border p-2 text-right tabular-nums">{p.gst_percentage}%</td>
+                          <td className="border p-2 text-right tabular-nums">₹{p.line_total?.toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ---------- Tab 2: Movement History -- append-only ledger, capped height ---------- */}
+        <TabsContent value="history">
+          <div className="border rounded-lg p-4">
+            <h2 className="font-semibold mb-3">Movement Ledger</h2>
+            {movements.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No stock movements recorded yet.</p>
+            ) : (
+              // This is an append-only ledger (see CLAUDE.md) -- it will keep growing for
+              // an active SKU, so it's capped with an internal scroll instead of letting
+              // the page grow unbounded.
+              <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
+                <table className="min-w-full text-sm border">
+                  <thead>
+                    <tr>
+                      <th className="border p-2">Date</th>
+                      <th className="border p-2">Type</th>
+                      <th className="border p-2 text-right">Change</th>
+                      <th className="border p-2 text-right">Before → After</th>
+                      <th className="border p-2">PO #</th>
+                      <th className="border p-2" title="Optionally logged by whoever received the stock -- visible to everyone.">Vendor</th>
+                      <th className="border p-2 text-right">Price</th>
+                      <th className="border p-2">Payment</th>
+                      <th className="border p-2" title="Click a note to edit it">Notes</th>
+                      <th className="border p-2">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {movements.map((m) => (
+                      <tr key={m.id}>
+                        <td className="border p-2">{(m.purchase_date || m.created_at)?.slice(0, 10)}</td>
+                        <td className="border p-2">{MOVEMENT_LABELS[m.movement_type] || m.movement_type}</td>
+                        <td className="border p-2 text-right tabular-nums">{m.quantity_change > 0 ? '+' : ''}{m.quantity_change}</td>
+                        <td className="border p-2 text-right tabular-nums text-muted-foreground">
+                          {m.quantity_before ?? '—'} → {m.quantity_after ?? '—'}
+                        </td>
+                        <td className="border p-2">{m.po_number || (m.movement_type === 'receipt' ? <span className="text-warning">awaiting PO</span> : '—')}</td>
+                        <td className="border p-2">{m.vendor_name || '—'}</td>
+                        <td className="border p-2 text-right tabular-nums">{formatPurchasePrice(m.unit_price, m.gst_percentage) ?? '—'}</td>
+                        <td className="border p-2">{m.payment_account || '—'}</td>
+                        <td className="border p-2">
+                          <EditableNote
+                            movementId={m.id}
+                            notes={m.notes}
+                            onSaved={(notes) => {
+                              setData((prev) =>
+                                prev
+                                  ? { ...prev, movements: prev.movements.map((mv) => (mv.id === m.id ? { ...mv, notes } : mv)) }
+                                  : prev
+                              )
+                            }}
+                          />
+                        </td>
+                        <td className="border p-2">
+                          {m.movement_type === 'receipt' && (
+                            <Button variant="link" size="sm" onClick={() => setEditingMovement(m)} className="text-primary text-xs whitespace-nowrap">
+                              Edit
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </TabsContent>
+      </Tabs>
 
       {editingMovement && (
         <EditReceiptDialog

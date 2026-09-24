@@ -7,25 +7,33 @@ export interface StatCard {
   active?: boolean
 }
 
-// Small clickable summary cards shown at the top of a list page (Stock, Sales).
-// A card without onClick is purely informational; a card with onClick narrows
-// the list below using whatever filter state the page already has -- this
-// component doesn't own any filtering logic itself.
+// Small clickable summary strip shown at the top of a list page (Stock, Sales,
+// Repair Jobs, Rentals, SKU Master) -- a single-row, Zoho-style inline strip of
+// "label: value" pairs (divided by a hairline between each) instead of a grid of
+// bordered/shadowed cards, so it never wraps to a second row even with 6-7 cards
+// (Stock's owner view, SKU Master). Falls back to horizontal scroll rather than
+// wrapping when it doesn't fit at narrow widths. A card without onClick is purely
+// informational; a card with onClick narrows the list below using whatever filter
+// state the page already has -- this component doesn't own any filtering logic
+// itself, and every consumer's existing cards={[{label, value, onClick?, active?}]}
+// shape is unchanged.
 export function StatCardsRow({ cards }: { cards: StatCard[] }) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-4">
-      {cards.map((c) => (
+    <div className="flex items-stretch gap-0.5 mb-2 overflow-x-auto">
+      {cards.map((c, i) => (
         <button
           key={c.label}
           type="button"
           onClick={c.onClick}
           disabled={!c.onClick}
-          className={`text-left border rounded-lg p-3 bg-card shadow-sm transition ${
-            c.onClick ? 'hover:border-primary/40 cursor-pointer' : 'cursor-default'
-          } ${c.active ? 'border-primary ring-1 ring-primary/20' : ''}`}
+          className={`flex items-baseline gap-1.5 px-2.5 py-1.5 whitespace-nowrap shrink-0 transition-colors rounded-md ${
+            i > 0 ? 'border-l border-border' : ''
+          } ${c.onClick ? 'hover:bg-muted cursor-pointer' : 'cursor-default'} ${
+            c.active ? 'bg-primary/10' : ''
+          }`}
         >
-          <div className="text-xs text-muted-foreground">{c.label}</div>
-          <div className="text-xl font-semibold text-foreground">{c.value}</div>
+          <span className={`text-xs ${c.active ? 'text-primary' : 'text-muted-foreground'}`}>{c.label}</span>
+          <span className={`text-sm font-semibold tabular-nums ${c.active ? 'text-primary' : 'text-foreground'}`}>{c.value}</span>
         </button>
       ))}
     </div>

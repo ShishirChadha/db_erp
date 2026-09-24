@@ -38,7 +38,7 @@ export default function DeleteInvoiceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Delete Invoice #{invoice.invoice_number}</DialogTitle>
           <DialogDescription>

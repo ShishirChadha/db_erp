@@ -7,6 +7,7 @@ import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { toneFor } from '@/lib/status-styles'
 import type { Tone } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
@@ -474,39 +475,45 @@ function RmaPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4">
+      <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
         <h1 className="text-2xl font-bold">RMA / Returns</h1>
-        <button onClick={openModal} className="bg-primary text-primary-foreground px-4 py-2 rounded">
+        <button onClick={openModal} className="bg-primary text-primary-foreground px-4 py-2 rounded shrink-0">
           + New RMA
         </button>
       </div>
 
       <div className="flex gap-4 mb-4 flex-wrap">
-        <select value={directionFilter} onChange={(e) => setDirectionFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
-          <option value="">All Directions</option>
-          <option value="to_vendor">To Vendor</option>
-          <option value="from_customer">From Customer</option>
-        </select>
-        <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="border p-2 rounded bg-card text-sm">
-          <option value="">All Statuses</option>
-          <option value="initiated">Initiated</option>
-          <option value="shipped">Shipped</option>
-          <option value="vendor_accepted">Vendor Accepted</option>
-          <option value="vendor_rejected">Vendor Rejected</option>
-          <option value="replacement_received">Replacement Received</option>
-          <option value="refund_received">Refund Received</option>
-          <option value="closed">Closed</option>
-        </select>
+        <Select value={directionFilter || 'all'} onValueChange={(v) => setDirectionFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Directions" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Directions</SelectItem>
+            <SelectItem value="to_vendor">To Vendor</SelectItem>
+            <SelectItem value="from_customer">From Customer</SelectItem>
+          </SelectContent>
+        </Select>
+        <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="initiated">Initiated</SelectItem>
+            <SelectItem value="shipped">Shipped</SelectItem>
+            <SelectItem value="vendor_accepted">Vendor Accepted</SelectItem>
+            <SelectItem value="vendor_rejected">Vendor Rejected</SelectItem>
+            <SelectItem value="replacement_received">Replacement Received</SelectItem>
+            <SelectItem value="refund_received">Refund Received</SelectItem>
+            <SelectItem value="closed">Closed</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {loading ? (
         <div>Loading…</div>
       ) : (
-        <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once an RMA is open, matching Sales
               Ledger's drill-in navigation; always visible at md+. */}
           <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", active && "hidden md:flex")}>
-            <div className="flex-1 overflow-y-auto">
+            <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {merged.map((m) => (
                 <RmaListItem key={m.id} m={m} active={m.id === activeId} onOpen={() => setActiveId(m.id)} />
               ))}

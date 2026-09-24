@@ -16,6 +16,8 @@ import { ErrorBanner } from '@/components/ErrorBanner'
 import { StatCardsRow, StatCard } from '@/components/StatCardsRow'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 
 // Modal dialogs only render behind a click (gated by a state flag) -- code-split
@@ -174,22 +176,27 @@ function SkuDetailPane({ sku, summary, isOwner, hasWebsiteAccess, deleting, onEd
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <Field label="Description">{summary}</Field>
-        <Field label="HSN Code">{sku.hsn_code || '—'}</Field>
-        <Field label="Category">{sku.category}</Field>
-        <Field label="Brand / Model">{[sku.brand, sku.model_name].filter(Boolean).join(' ') || '—'}</Field>
-        <Field label="Base SKU / Variant">{sku.base_sku_code ? `${sku.base_sku_code}${sku.variant_number ? ` / v${sku.variant_number}` : ''}` : '—'}</Field>
-        <Field label="Stock">{sku.quantity_in_stock ?? 0}</Field>
-        <Field label="Reorder Level">{sku.reorder_level ?? '—'}</Field>
-        <Field label="Sold">{sku.sold_count ?? 0}</Field>
-        {sku.base_cost != null && <Field label="Base Cost">₹{sku.base_cost}</Field>}
-        {sku.selling_price_default != null && <Field label="Default Selling Price">₹{sku.selling_price_default}</Field>}
-        <Field label="Website">
-          <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
-            {sku.is_published ? 'Published' : 'Unpublished'}
-          </StatusBadge>
-        </Field>
-        <Field label="Status">{sku.status || 'active'}</Field>
+        {/* 2-column on wide screens -- this record can carry ~12 fields (brand/model,
+            base cost, reorder level, etc. layered on over time), which stacked
+            single-column ran noticeably taller than every other read-only detail pane. */}
+        <div className="lg:grid lg:grid-cols-2 lg:gap-x-6">
+          <Field label="Description">{summary}</Field>
+          <Field label="HSN Code">{sku.hsn_code || '—'}</Field>
+          <Field label="Category">{sku.category}</Field>
+          <Field label="Brand / Model">{[sku.brand, sku.model_name].filter(Boolean).join(' ') || '—'}</Field>
+          <Field label="Base SKU / Variant">{sku.base_sku_code ? `${sku.base_sku_code}${sku.variant_number ? ` / v${sku.variant_number}` : ''}` : '—'}</Field>
+          <Field label="Stock">{sku.quantity_in_stock ?? 0}</Field>
+          <Field label="Reorder Level">{sku.reorder_level ?? '—'}</Field>
+          <Field label="Sold">{sku.sold_count ?? 0}</Field>
+          {sku.base_cost != null && <Field label="Base Cost">₹{sku.base_cost}</Field>}
+          {sku.selling_price_default != null && <Field label="Default Selling Price">₹{sku.selling_price_default}</Field>}
+          <Field label="Website">
+            <StatusBadge tone={sku.is_published ? 'success' : 'neutral'}>
+              {sku.is_published ? 'Published' : 'Unpublished'}
+            </StatusBadge>
+          </Field>
+          <Field label="Status">{sku.status || 'active'}</Field>
+        </div>
       </div>
     </div>
   )
@@ -408,9 +415,9 @@ function SkuMasterPage() {
 
   return (
     <div className="p-4 flex flex-col h-full">
-      <div className="flex justify-between items-center mb-4">
-        <h1 className="text-2xl font-bold">SKU Master</h1>
-        <button onClick={handleCreate} className="bg-primary text-primary-foreground px-4 py-2 rounded">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+        <h1 className="text-xl font-bold">SKU Master</h1>
+        <button onClick={handleCreate} className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium">
           + New SKU
         </button>
       </div>
@@ -459,44 +466,38 @@ function SkuMasterPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap gap-4 mb-4 items-end">
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Category</label>
-          <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className="border p-2 rounded">
-            <option value="">All Categories</option>
+      <div className="flex flex-wrap gap-2 mb-2 items-center">
+        <Select value={categoryFilter || 'all'} onValueChange={(v) => setCategoryFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Categories" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
             {templates.map((t) => (
-              <option key={t.category} value={t.category}>{t.display_name}</option>
+              <SelectItem key={t.category} value={t.category}>{t.display_name}</SelectItem>
             ))}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Search</label>
-          <input
-            type="text"
-            placeholder="Search code or description..."
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            className="border p-2 rounded"
-          />
-        </div>
-        <div>
-          <label className="block text-xs text-muted-foreground mb-1">Sort</label>
-          <div className="flex gap-1">
-            {(['full_sku_code', 'sku_description', 'category', 'quantity_in_stock', 'sold_count'] as SortField[]).map((f) => (
-              <button
-                key={f}
-                type="button"
-                onClick={() => toggleSort(f)}
-                className={cn(
-                  "px-2 py-2 border rounded text-xs whitespace-nowrap",
-                  sortField === f ? "bg-primary/10 border-primary/30 text-primary" : "text-muted-foreground"
-                )}
-              >
-                {{ full_sku_code: 'Code', sku_description: 'Description', category: 'Category', quantity_in_stock: 'Stock', sold_count: 'Sold' }[f]}
-                {sortIndicator(f)}
-              </button>
-            ))}
-          </div>
+          </SelectContent>
+        </Select>
+        <Input
+          type="text"
+          placeholder="Search code or description..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="w-64"
+        />
+        <div className="flex gap-1">
+          {(['full_sku_code', 'sku_description', 'category', 'quantity_in_stock', 'sold_count'] as SortField[]).map((f) => (
+            <button
+              key={f}
+              type="button"
+              onClick={() => toggleSort(f)}
+              className={cn(
+                "px-2 py-1.5 border rounded text-xs whitespace-nowrap",
+                sortField === f ? "bg-primary/10 border-primary/30 text-primary" : "text-muted-foreground"
+              )}
+            >
+              {{ full_sku_code: 'Code', sku_description: 'Description', category: 'Category', quantity_in_stock: 'Stock', sold_count: 'Sold' }[f]}
+              {sortIndicator(f)}
+            </button>
+          ))}
         </div>
         {(categoryFilter || search || filterTab !== 'all') && (
           <button
@@ -508,11 +509,11 @@ function SkuMasterPage() {
         )}
       </div>
 
-      <div className="flex-1 min-h-[320px] border rounded overflow-hidden flex">
+      <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
         {/* List pane -- hidden on mobile once a SKU is open, matching an email
             client's drill-in navigation; always visible at md+. */}
         <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeSku && "hidden md:flex")}>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-visible lg:overflow-y-auto">
             {displayedSkus.map((sku) => (
               <SkuListItem
                 key={sku.id}
