@@ -37,7 +37,19 @@ export async function apiFetch(url: string, options: RequestInit = {}) {
   let lastErr: unknown
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await fetch(url, { ...options, headers })
+      const res = await fetch(url, { ...options, headers })
+      // 401 here always means "no valid session" (every route's convention -- 403 is
+      // "signed in but not allowed," which is left alone). Before this feature, a
+      // session basically never went invalid mid-use; now device-limit kicks and
+      // force-logoff from Settings > Active Devices make that a routine event, and
+      // without this a revoked session just showed every page's own generic fetch-
+      // failed error forever instead of a clean bounce back to sign-in.
+      if (res.status === 401 && typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        supabase.auth.signOut().finally(() => {
+          window.location.href = '/login?reason=signed_out'
+        })
+      }
+      return res
     } catch (err) {
       lastErr = err
       if (attempt === maxAttempts) throw err

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveLoginIdentifier } from '@/lib/auth/username'
 import { apiFetch } from '@/lib/api-client'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -12,12 +12,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import Image from 'next/image'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 
-export default function LoginPage() {
+function LoginForm() {
   const [userId, setUserId] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const router = useRouter()
+  const searchParams = useSearchParams()
   const supabase = createClient()
+  const signedOutNotice = searchParams.get('reason') === 'signed_out'
 
   const { run: handleLogin, pending: loading } = useAsyncAction(async () => {
     setError('')
@@ -100,6 +102,12 @@ export default function LoginPage() {
                 />
               </div>
 
+              {!error && signedOutNotice && (
+                <div className="bg-muted text-muted-foreground text-sm px-4 py-3 rounded-lg">
+                  You were signed out — please sign in again.
+                </div>
+              )}
+
               {error && (
                 <div className="bg-destructive/10 text-destructive text-sm px-4 py-3 rounded-lg">
                   {error}
@@ -122,5 +130,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
   )
 }
