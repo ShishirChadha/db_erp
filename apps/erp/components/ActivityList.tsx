@@ -790,7 +790,67 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
 
       {isOwner && <p className="text-xs text-muted-foreground">Showing every task (owner view). Employees only see tasks they created or are assigned to.</p>}
 
-      <div className="border rounded overflow-x-auto">
+      {/* Card list on phones -- the table below becomes a horizontal-scroll
+          wall of columns on narrow screens, which is unusable for a page
+          staff check throughout the day. Same activities array, same click
+          targets (title opens DetailModal, same edit/duplicate/delete
+          actions), just stacked instead of columnar. */}
+      <div className="md:hidden space-y-2">
+        {activities.map(act => {
+          const overdue = act.due_date && act.status !== 'done' && act.status !== 'cancelled' && new Date(act.due_date) < new Date();
+          const canDelete = isOwner || act.created_by === myId;
+          return (
+            <div
+              key={act.id}
+              className={`border rounded-lg p-3 ${act.status === 'done' ? 'opacity-50' : overdue ? 'bg-destructive/10' : 'bg-card'}`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <button onClick={() => setSelectedActivityId(act.id)} className="text-primary hover:underline text-left font-medium text-sm">
+                  {act.title}
+                </button>
+                <span className={`shrink-0 px-1.5 py-0.5 rounded text-xs ${PRIORITY_STYLES[act.priority]}`}>{act.priority}</span>
+              </div>
+              {!!act.checklist_total && (
+                <span className="text-xs text-muted-foreground">({act.checklist_done}/{act.checklist_total} checklist)</span>
+              )}
+              {act.tags?.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {act.tags.map(tag => (
+                    <span key={tag} style={{ backgroundColor: getTagColor(tag) }} className="px-1.5 py-0.5 rounded text-xs">{tag}</span>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center justify-between gap-2 mt-2 text-xs text-muted-foreground">
+                <span>
+                  {act.due_date ? format(new Date(act.due_date), 'dd/MM/yyyy') : 'No due date'}
+                  {overdue && <span className="ml-1 text-destructive font-medium">overdue</span>}
+                </span>
+                <span className="capitalize">{act.status.replace('_', ' ')}</span>
+              </div>
+              <div className="flex items-center justify-between gap-2 mt-1.5 text-xs text-muted-foreground">
+                <span className="truncate">
+                  {act.assignee_names.length > 0 ? act.assignee_names.join(', ') : '—'}
+                  {isOwner && act.created_by_name ? ` · by ${act.created_by_name}` : ''}
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button onClick={() => setEditingActivity(act)} className="text-muted-foreground hover:text-primary"><Edit className="h-4 w-4 inline" /></button>
+                  <button onClick={() => handleDuplicate(act)} disabled={duplicatingId === act.id} className="text-muted-foreground hover:text-success disabled:opacity-50">
+                    {duplicatingId === act.id ? <Loader2 className="h-4 w-4 inline animate-spin" /> : <Copy className="h-4 w-4 inline" />}
+                  </button>
+                  {canDelete && (
+                    <button onClick={() => setDeleteId(act.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-4 w-4 inline" /></button>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {activities.length === 0 && (
+          <p className="text-center text-sm text-muted-foreground py-6">No tasks found.</p>
+        )}
+      </div>
+
+      <div className="hidden md:block border rounded overflow-x-auto">
         <table className="min-w-full divide-y divide-border">
           <thead className="bg-muted">
             <tr>

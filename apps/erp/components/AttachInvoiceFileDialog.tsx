@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Loader2, Upload, Eye } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
 
 // Fills the gap left when a Zoho invoice number was recorded (RecordZohoInvoiceDialog)
 // without its PDF at the time -- lets an owner come back and attach one (or another)
@@ -20,6 +21,7 @@ export function AttachInvoiceFileDialog({
   onClose: () => void
   onAttached: () => void
 }) {
+  useBodyScrollLock(true)
   const [attachmentUrls, setAttachmentUrls] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [file, setFile] = useState<File | null>(null)

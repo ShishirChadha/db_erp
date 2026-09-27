@@ -4,6 +4,7 @@ import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/
 import { processCustomerReturn } from '@/lib/rma'
 import { logAuditEvent } from '@/lib/audit-log'
 import { withRetry } from '@/lib/db-retry'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list RMA events ----------
 // An 'rma' grant (non-owner) is scoped to from_customer returns only -- to_vendor rows
@@ -17,8 +18,14 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const status = searchParams.get('status')
+  // 'closed' is the only terminal status (see asset_rma_events_status_check);
+  // callers like Pending Tasks that want "still open" don't want to enumerate
+  // the other 6 values, and shouldn't have to fetch the whole table (closed
+  // events are permanent history) to filter them out client-side.
+  const excludeStatus = searchParams.get('exclude_status')
   const ownerCaller = isOwner(sessionUser)
   const direction = ownerCaller ? searchParams.get('direction') : 'from_customer'
+  const pagination = parsePagination(searchParams)
 
   let query = supabaseAdmin
     .from('asset_rma_events')
@@ -28,15 +35,19 @@ export async function GET(req: NextRequest) {
            asset_ledger ( asset_number, serial_number, status ),
            vendors ( company_name )`
         : `id, asset_id, direction, reason, status, opened_at, closed_at, notes,
-           asset_ledger ( asset_number, serial_number, status )`
+           asset_ledger ( asset_number, serial_number, status )`,
+      pagination ? { count: 'exact' } : undefined
     )
     .order('opened_at', { ascending: false })
 
   if (direction) query = query.eq('direction', direction)
   if (status) query = query.eq('status', status)
+  if (excludeStatus) query = query.neq('status', excludeStatus)
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await withRetry(() => query)
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  if (pagination) return NextResponse.json({ data: data || [], total: count || 0 })
 
   return NextResponse.json(data)
 }

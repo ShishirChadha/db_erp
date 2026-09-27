@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { createClient } from '@/lib/supabase/client'
 
 export type Role = 'owner' | 'manager' | 'employee'
@@ -10,6 +10,19 @@ export interface UiPreferences {
   hiddenItems?: string[]
   pinnedItems?: string[]
   groupOrder?: string[]
+}
+
+// Matches lib/auth/session.ts's RoleSnapshot -- dashboard/layout.tsx already
+// resolves this server-side (one local JWT verify + one parallel
+// revoked-check/profile query, no network call to Supabase Auth) and hands it
+// to <RoleSeed>, which calls hydrate() below. Duplicated here rather than
+// imported from session.ts because that file pulls in next/headers and other
+// server-only modules that can't reach a 'use client' file.
+export interface RoleSnapshot {
+  role: Role
+  allowedPages: string[]
+  pageEditKeys: string[]
+  uiPreferences: UiPreferences
 }
 
 interface RoleContextValue {
@@ -22,6 +35,7 @@ interface RoleContextValue {
   uiPreferences: UiPreferences
   hasPageAccess: (key: string | string[]) => boolean
   canEditPage: (key: string) => boolean
+  hydrate: (snapshot: RoleSnapshot) => void
 }
 
 const RoleContext = createContext<RoleContextValue | null>(null)
@@ -32,19 +46,41 @@ const RoleContext = createContext<RoleContextValue | null>(null)
 // independent fetch on every call, and it's called from 25+ files (sidebar,
 // every page's RequirePageAccess wrapper, ThemeProvider, RequireOwner, etc.),
 // so a single page nav could previously fire this fetch 3-4x concurrently.
+//
+// As of the server-seeding change: this client-side fetch is now a FALLBACK,
+// not the primary path. <RoleSeed> (rendered inside app/dashboard/layout.tsx)
+// calls hydrate() with data the server already fetched, from a useEffect that
+// -- because React runs child effects before parent effects on mount --
+// always resolves before this component's own effect body runs, so the
+// hydratedFromServer check below skips the network fetch entirely on every
+// normal dashboard load. Pages outside /dashboard (e.g. /login) never render
+// <RoleSeed>, so they fall through to this fetch exactly as before.
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role | null>(null)
   const [allowedPages, setAllowedPages] = useState<string[]>([])
   const [pageEditKeys, setPageEditKeys] = useState<string[]>([])
   const [uiPreferences, setUiPreferences] = useState<UiPreferences>({})
   const [loading, setLoading] = useState(true)
+  const hydratedFromServer = useRef(false)
+
+  const hydrate = useCallback((snapshot: RoleSnapshot) => {
+    if (hydratedFromServer.current) return
+    hydratedFromServer.current = true
+    setRole(snapshot.role)
+    setAllowedPages(snapshot.allowedPages)
+    setPageEditKeys(snapshot.pageEditKeys)
+    setUiPreferences(snapshot.uiPreferences)
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
+    if (hydratedFromServer.current) return
     let cancelled = false
     const supabase = createClient()
 
     const load = async () => {
       const { data: { user } } = await supabase.auth.getUser()
+      if (hydratedFromServer.current) return
       if (!user) {
         if (!cancelled) { setRole(null); setAllowedPages([]); setPageEditKeys([]); setUiPreferences({}); setLoading(false) }
         return
@@ -66,7 +102,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
           .eq('can_edit', true),
       ])
 
-      if (!cancelled) {
+      if (!cancelled && !hydratedFromServer.current) {
         setRole(profile?.is_active ? (profile.role as Role) : null)
         setAllowedPages(profile?.is_active ? (profile.allowed_pages || []) : [])
         setPageEditKeys(profile?.is_active ? (editRows || []).map(r => r.page_key) : [])
@@ -88,8 +124,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       return keys.some(k => allowedPages.includes(k))
     }
     const canEditPage = (key: string) => isOwner || pageEditKeys.includes(key)
-    return { role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, uiPreferences, hasPageAccess, canEditPage }
-  }, [role, loading, allowedPages, pageEditKeys, uiPreferences])
+    return { role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, uiPreferences, hasPageAccess, canEditPage, hydrate }
+  }, [role, loading, allowedPages, pageEditKeys, uiPreferences, hydrate])
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>
 }

@@ -327,7 +327,7 @@ function StockIntakePage() {
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Serial Number</label>
             <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="border p-2 w-full rounded" />

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Image from 'next/image'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -56,8 +57,11 @@ function ProductThumb({ path, size = 56 }: { path: string | null; size?: number 
       </div>
     )
   }
-  // eslint-disable-next-line @next/next/no-img-element
-  return <img src={productImageUrl(path)} alt="" className="rounded border object-cover shrink-0" style={{ width: size, height: size }} />
+  return (
+    <div className="relative rounded border overflow-hidden shrink-0" style={{ width: size, height: size }}>
+      <Image src={productImageUrl(path)} alt="" fill sizes={`${size}px`} className="object-cover" />
+    </div>
+  )
 }
 
 // Groups Today's Picks' grid by brand, ascending -- Apple, then its items, then Dell,

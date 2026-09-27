@@ -19,6 +19,9 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url)
   const paymentStatus = searchParams.get('payment_status')
+  // 'not paid' (pending or partial) without enumerating both -- used by Pending
+  // Tasks, which previously fetched every sale ever just to filter this client-side.
+  const paymentStatusNe = searchParams.get('payment_status_ne')
   const receivedInto = searchParams.get('received_into')
   const search = searchParams.get('search')
   const finalized = searchParams.get('finalized') // optional 'true'/'false' -- e.g. "Awaiting Invoice" filter
@@ -66,6 +69,7 @@ export async function GET(req: NextRequest) {
       const build = () => {
         let q = supabaseAdmin.from('sales').select('id', { count: 'exact', head: true }).eq('is_deleted', voided)
         if (paymentStatus) q = q.eq('payment_status', paymentStatus)
+        if (paymentStatusNe) q = q.neq('payment_status', paymentStatusNe)
         if (receivedInto) q = q.eq('payment_account', receivedInto)
         if (search) q = q.or(searchFilter)
         return extra(q)
@@ -113,6 +117,7 @@ export async function GET(req: NextRequest) {
     .order(nativeSortColumn || 'created_at', { ascending: nativeSortColumn ? sortDir === 1 : false })
 
   if (paymentStatus) query = query.eq('payment_status', paymentStatus)
+  if (paymentStatusNe) query = query.neq('payment_status', paymentStatusNe)
   if (receivedInto) query = query.eq('payment_account', receivedInto)
   if (finalized === 'true') query = query.eq('finalized', true)
   if (finalized === 'false') query = query.eq('finalized', false)

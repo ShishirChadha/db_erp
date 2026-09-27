@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
 
 // Records a Zoho (external) invoice number against one or more sales during the
 // transition -- the ERP stores the real number verbatim and never mints its own.
@@ -18,6 +19,7 @@ export function RecordZohoInvoiceDialog({
   onClose: () => void
   onRecorded: () => void
 }) {
+  useBodyScrollLock(true)
   const [invoiceNumber, setInvoiceNumber] = useState('')
   const [invoiceDate, setInvoiceDate] = useState(new Date().toISOString().slice(0, 10))
   const [file, setFile] = useState<File | null>(null)

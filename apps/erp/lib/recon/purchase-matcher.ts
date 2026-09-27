@@ -68,10 +68,15 @@ function nameLikeSegments(narration: string): string[] {
 }
 
 async function guessVendorIds(narration: string): Promise<Set<string>> {
-  const segments = nameLikeSegments(narration)
+  const segments = nameLikeSegments(narration).slice(0, 4)
+  // Each segment's RPC call is independent -- these used to run sequentially,
+  // so a narration with 4 name-like segments cost 4 serial round trips per
+  // transaction on top of everything else findPurchaseCandidates does.
+  const results = await Promise.all(
+    segments.map((seg) => supabaseAdmin.rpc('match_vendors_by_name', { p_name: seg, p_limit: 3 }))
+  )
   const ids = new Set<string>()
-  for (const seg of segments.slice(0, 4)) {
-    const { data } = await supabaseAdmin.rpc('match_vendors_by_name', { p_name: seg, p_limit: 3 })
+  for (const { data } of results) {
     for (const v of data || []) if (v.similarity >= 0.35) ids.add(v.id)
   }
   return ids
@@ -81,11 +86,48 @@ function dateScore(deltaDays: number, amountDelta: number, amount: number): numb
   return (1 - Math.min(amountDelta / Math.max(amount, 1), 1)) * 7 + (1 - Math.min(deltaDays / DATE_WINDOW_DAYS, 1)) * 3
 }
 
+// The two "already consumed" lookups below don't depend on any one
+// transaction -- they're the same query for every row in a batch. Exposed so
+// a caller matching many transactions in one request (bank-transactions'
+// with_candidates=true, used against a whole month of transactions with no
+// caller-side pagination) can compute this exactly once and pass it in,
+// instead of findPurchaseCandidates re-running both queries per transaction --
+// that was 2 of this function's ~4-5 queries repeated identically N times.
+export interface PurchaseMatchContext {
+  consumedStockIds: Set<string>
+  posAlreadyFullyMatched: Set<string>
+}
+
+export async function loadPurchaseMatchContext(): Promise<PurchaseMatchContext> {
+  const [{ data: existingStockMatches }, { data: existingVendorPaymentMatches }] = await Promise.all([
+    supabaseAdmin
+      .from('bank_transaction_matches')
+      .select('stock_movement_id, amount_applied')
+      .eq('match_type', 'stock_purchase')
+      .not('stock_movement_id', 'is', null),
+    supabaseAdmin
+      .from('bank_transaction_matches')
+      .select('vendor_payment_id')
+      .eq('match_type', 'vendor_payment')
+      .not('vendor_payment_id', 'is', null),
+  ])
+  const consumedStockIds = new Set((existingStockMatches || []).map((m) => m.stock_movement_id))
+
+  const matchedVendorPaymentIds = (existingVendorPaymentMatches || []).map((m) => m.vendor_payment_id)
+  let posAlreadyFullyMatched = new Set<string>()
+  if (matchedVendorPaymentIds.length > 0) {
+    const { data: vp } = await supabaseAdmin.from('vendor_payments').select('po_id').in('id', matchedVendorPaymentIds)
+    posAlreadyFullyMatched = new Set((vp || []).map((v) => v.po_id))
+  }
+  return { consumedStockIds, posAlreadyFullyMatched }
+}
+
 export async function findPurchaseCandidates(params: {
   narration: string
   amount: number
   txnDate: string
   entityKey: string
+  context?: PurchaseMatchContext
 }): Promise<PurchaseCandidate[]> {
   const { narration, amount, txnDate, entityKey } = params
   const paymentAccount = entityKey.charAt(0).toUpperCase() + entityKey.slice(1)
@@ -93,28 +135,14 @@ export async function findPurchaseCandidates(params: {
   const windowEnd = new Date(new Date(txnDate).getTime() + DATE_WINDOW_DAYS * 86400000).toISOString().slice(0, 10)
   const upperBound = amount * (1 + AMOUNT_TOLERANCE_PCT)
 
-  const guessedVendorIds = await guessVendorIds(narration)
-
-  // Already-consumed candidates (fully or partially applied to some other bank
-  // transaction already) are excluded so the same receipt/PO isn't offered twice.
-  const { data: existingStockMatches } = await supabaseAdmin
-    .from('bank_transaction_matches')
-    .select('stock_movement_id, amount_applied')
-    .eq('match_type', 'stock_purchase')
-    .not('stock_movement_id', 'is', null)
-  const consumedStockIds = new Set((existingStockMatches || []).map((m) => m.stock_movement_id))
-
-  const { data: existingVendorPaymentMatches } = await supabaseAdmin
-    .from('bank_transaction_matches')
-    .select('vendor_payment_id')
-    .eq('match_type', 'vendor_payment')
-    .not('vendor_payment_id', 'is', null)
-  const matchedVendorPaymentIds = (existingVendorPaymentMatches || []).map((m) => m.vendor_payment_id)
-  let posAlreadyFullyMatched = new Set<string>()
-  if (matchedVendorPaymentIds.length > 0) {
-    const { data: vp } = await supabaseAdmin.from('vendor_payments').select('po_id').in('id', matchedVendorPaymentIds)
-    posAlreadyFullyMatched = new Set((vp || []).map((v) => v.po_id))
-  }
+  // guessVendorIds (varies per transaction's narration) and loading the
+  // consumed/matched context (identical for every transaction, only computed
+  // here when the caller didn't already hoist it) are independent -- run
+  // them concurrently instead of one after the other.
+  const [guessedVendorIds, { consumedStockIds, posAlreadyFullyMatched }] = await Promise.all([
+    guessVendorIds(narration),
+    params.context ? Promise.resolve(params.context) : loadPurchaseMatchContext(),
+  ])
 
   const results: PurchaseCandidate[] = []
 

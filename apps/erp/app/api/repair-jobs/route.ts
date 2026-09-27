@@ -7,6 +7,23 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { withRetry } from '@/lib/db-retry'
 
+async function buildRepairJobSearchFilter(search: string): Promise<string> {
+  const term = `%${search}%`
+  const { data: matchingCustomers } = await withRetry(() => supabaseAdmin
+    .from('customers')
+    .select('id')
+    .ilike('customer_name', term))
+  const customerIds = (matchingCustomers || []).map((c: any) => c.id)
+  const orParts = [
+    `job_number.ilike.${term}`,
+    `problem_description.ilike.${term}`,
+    `customer_device_description.ilike.${term}`,
+    `customer_device_serial.ilike.${term}`,
+  ]
+  if (customerIds.length) orParts.push(`customer_id.in.(${customerIds.join(',')})`)
+  return orParts.join(',')
+}
+
 // ---------- GET: list repair jobs ----------
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -40,21 +57,35 @@ export async function GET(req: NextRequest) {
 
   // Repair jobs don't store a customer_name snapshot (unlike sales) -- resolve matching
   // customer ids first so search can span both the job's own text fields and its customer.
-  if (search) {
-    const term = `%${search}%`
-    const { data: matchingCustomers } = await withRetry(() => supabaseAdmin
-      .from('customers')
-      .select('id')
-      .ilike('customer_name', term))
-    const customerIds = (matchingCustomers || []).map((c: any) => c.id)
-    const orParts = [
-      `job_number.ilike.${term}`,
-      `problem_description.ilike.${term}`,
-      `customer_device_description.ilike.${term}`,
-      `customer_device_serial.ilike.${term}`,
-    ]
-    if (customerIds.length) orParts.push(`customer_id.in.(${customerIds.join(',')})`)
-    query = query.or(orParts.join(','))
+  // Shared with the counts=true branch below so both use the identical filter.
+  const searchFilter = search ? await buildRepairJobSearchFilter(search) : null
+  if (searchFilter) query = query.or(searchFilter)
+
+  // Stat-card counts mode: SQL exact counts for the same `search` filter the
+  // page's stat cards use -- replaces an unpaginated select('*') + JS
+  // .filter().length that fetched every repair job just to compute 4 numbers,
+  // same class of fix as /api/sales and /api/stock's own counts=true branches.
+  if (searchParams.get('counts') === 'true') {
+    const countQuery = (extra: (q: any) => any): Promise<{ count: number | null }> => {
+      const build = () => {
+        let q = supabaseAdmin.from('repair_jobs').select('id', { count: 'exact', head: true })
+        if (searchFilter) q = q.or(searchFilter)
+        return extra(q)
+      }
+      return withRetry(build)
+    }
+    const [total, open, done, cancelled] = await Promise.all([
+      countQuery((q: any) => q),
+      countQuery((q: any) => q.in('status', ['intake', 'in_progress'])),
+      countQuery((q: any) => q.eq('status', 'done')),
+      countQuery((q: any) => q.eq('status', 'cancelled')),
+    ])
+    return NextResponse.json({
+      total: total.count || 0,
+      open: open.count || 0,
+      done: done.count || 0,
+      cancelled: cancelled.count || 0,
+    })
   }
 
   if (pagination) query = query.range(pagination.from, pagination.to)

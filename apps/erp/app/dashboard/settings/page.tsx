@@ -1,24 +1,33 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
-import DropdownOptionsManager from '@/components/DropdownOptionsManager'
-import SkuCategoryTemplatesManager from '@/components/SkuCategoryTemplatesManager'
-import SacCodesManager from '@/components/SacCodesManager'
-import UserManager from '@/components/UserManager'
-import ActiveSessionsManager from '@/components/ActiveSessionsManager'
-import BusinessProfileManager from '@/components/BusinessProfileManager'
-import TagsManager from '@/components/TagsManager'
-import WebsiteAdminManager from '@/components/WebsiteAdminManager'
-import FieldRedactionManager from '@/components/FieldRedactionManager'
-import DigestsManager from '@/components/DigestsManager'
-import MarketingSettingsManager from '@/components/MarketingSettingsManager'
-import AppearanceManager from '@/components/AppearanceManager'
-import NavigationManager from '@/components/NavigationManager'
-import AuditLogPage from './audit-log/page'
-import BackupPageGuarded from './backup/page'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+
+// Exactly one of these renders at a time (see the category === 'x' checks
+// below), but all 15 used to ship in every visitor's initial bundle regardless
+// of which tab they open -- 9 of them owner-only, so every employee downloaded
+// admin-only code (WebsiteAdminManager alone is 883 lines) they can never see.
+// next/dynamic code-splits each into its own chunk, fetched only on first
+// click, matching the pattern already used for on-click dialogs elsewhere
+// (e.g. app/dashboard/sales/page.tsx).
+const DropdownOptionsManager = dynamic(() => import('@/components/DropdownOptionsManager'), { ssr: false })
+const SkuCategoryTemplatesManager = dynamic(() => import('@/components/SkuCategoryTemplatesManager'), { ssr: false })
+const SacCodesManager = dynamic(() => import('@/components/SacCodesManager'), { ssr: false })
+const UserManager = dynamic(() => import('@/components/UserManager'), { ssr: false })
+const ActiveSessionsManager = dynamic(() => import('@/components/ActiveSessionsManager'), { ssr: false })
+const BusinessProfileManager = dynamic(() => import('@/components/BusinessProfileManager'), { ssr: false })
+const TagsManager = dynamic(() => import('@/components/TagsManager'), { ssr: false })
+const WebsiteAdminManager = dynamic(() => import('@/components/WebsiteAdminManager'), { ssr: false })
+const FieldRedactionManager = dynamic(() => import('@/components/FieldRedactionManager'), { ssr: false })
+const DigestsManager = dynamic(() => import('@/components/DigestsManager'), { ssr: false })
+const MarketingSettingsManager = dynamic(() => import('@/components/MarketingSettingsManager'), { ssr: false })
+const AppearanceManager = dynamic(() => import('@/components/AppearanceManager'), { ssr: false })
+const NavigationManager = dynamic(() => import('@/components/NavigationManager'), { ssr: false })
+const AuditLogPage = dynamic(() => import('./audit-log/page'), { ssr: false })
+const BackupPageGuarded = dynamic(() => import('./backup/page'), { ssr: false })
 
 interface AssetCounter {
   prefix: string

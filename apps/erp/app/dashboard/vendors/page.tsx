@@ -240,10 +240,20 @@ function VendorsPage() {
     }
   }
 
-  useEffect(() => { fetchVendors() }, [showDeleted, search, page])
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // during render (React's supported "adjust state while rendering" pattern),
+  // not in a separate effect keyed on the same filters -- that shape fired the
+  // fetch effect twice per filter change (once with the new filter but the
+  // stale page, again once the reset effect changed `page`), and on a slow
+  // connection the stale response could land last and overwrite correct rows.
+  const filterKey = JSON.stringify([showDeleted, search])
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
 
-  // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [showDeleted, search])
+  useEffect(() => { fetchVendors() }, [showDeleted, search, page])
 
   const handleGstBlur = async () => {
     if (!form.gst_number || form.gst_number.length !== 15) return

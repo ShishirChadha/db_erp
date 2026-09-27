@@ -714,7 +714,7 @@ function SellPageInner() {
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Sale Type</label>
             <div className="border p-2 w-full rounded bg-muted text-sm">
@@ -748,7 +748,7 @@ function SellPageInner() {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Sale Date</label>
             <input

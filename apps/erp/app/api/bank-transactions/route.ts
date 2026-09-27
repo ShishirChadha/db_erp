@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { findCreditCandidates, guessPayerCustomer } from '@/lib/recon/credit-matcher'
-import { findPurchaseCandidates } from '@/lib/recon/purchase-matcher'
+import { findPurchaseCandidates, loadPurchaseMatchContext } from '@/lib/recon/purchase-matcher'
 import { withRetry } from '@/lib/db-retry'
 
 // ---------- GET: paginated transaction list, with optional credit-candidate suggestions ----------
@@ -35,6 +35,14 @@ export async function GET(req: NextRequest) {
 
   let rows: any[] = data || []
   if (withCandidates) {
+    // Debit rows share two "already consumed" lookups that don't vary per
+    // transaction (see loadPurchaseMatchContext's own comment) -- computed
+    // once here instead of once per row, which is what made this endpoint
+    // cost roughly 8 sequential queries PER TRANSACTION when called (as the
+    // Recon Sessions page does) over a whole month with no pagination.
+    const hasDebitRows = rows.some((t) => t.recon_status === 'open' && t.debit)
+    const purchaseContext = hasDebitRows ? await loadPurchaseMatchContext() : undefined
+
     rows = await Promise.all(rows.map(async (t) => {
       if (t.recon_status !== 'open') return t
       const entityKey = t.bank_accounts?.entity_key || 'digitalbluez'
@@ -46,7 +54,7 @@ export async function GET(req: NextRequest) {
         return { ...t, credit_candidates: candidates, payer_guess: payerGuess }
       }
       if (t.debit) {
-        const candidates = await withRetry(() => findPurchaseCandidates({ narration: t.narration, amount: t.debit, txnDate: t.txn_date, entityKey }))
+        const candidates = await withRetry(() => findPurchaseCandidates({ narration: t.narration, amount: t.debit, txnDate: t.txn_date, entityKey, context: purchaseContext }))
         return { ...t, purchase_candidates: candidates }
       }
       return t

@@ -2,11 +2,17 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import dynamic from 'next/dynamic';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ActivityList from '@/components/ActivityList';
-import ActivityCalendar from '@/components/ActivityCalendar';
 import CalendarFeedLink from '@/components/CalendarFeedLink';
+
+// ActivityCalendar pulls in 4 @fullcalendar/* packages -- real weight (this
+// route was one of the heaviest first-loads in the app) for a view that isn't
+// the default tab ('list' is). Code-split so that JS is only fetched when
+// someone actually clicks over to Calendar.
+const ActivityCalendar = dynamic(() => import('@/components/ActivityCalendar'), { ssr: false });
 import { toast } from 'sonner';
 import { getPendingReminders, markReminderSent } from '@/app/actions/reminders';
 import { CalendarDays } from 'lucide-react';

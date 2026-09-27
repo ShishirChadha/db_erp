@@ -2,7 +2,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck, CalendarClock } from 'lucide-react'
 import RequirePageAccess from '@/components/RequirePageAccess'
-import { getCookieSessionUser, isOwner } from '@/lib/auth/session'
+import { getLayoutSessionUser } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod } from '@/lib/reports'
 import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
@@ -29,8 +29,15 @@ function fmt(n: number | null | undefined): string {
 }
 
 async function DashboardPageContent({ preset }: { preset: string }) {
-  const sessionUser = await getCookieSessionUser()
-  const includeFinancials = isOwner(sessionUser)
+  // getLayoutSessionUser() avoids a network call to Supabase's Auth server
+  // (auth.getUser()) -- see its own comment in lib/auth/session.ts. This
+  // page is nested under app/dashboard/layout.tsx, which already resolved
+  // the same session once; a follow-up would be sharing that one result
+  // instead of resolving it twice, but the two call sites use different
+  // verification paths today, so this only removes THIS page's own network
+  // round trip, not the duplicate work between them.
+  const sessionUser = await getLayoutSessionUser()
+  const includeFinancials = sessionUser?.role === 'owner'
   const presetKey = PRESETS[preset] ? preset : 'mtd'
   const { from, to } = PRESETS[presetKey].range()
   const compare = prevPeriod(from, to)

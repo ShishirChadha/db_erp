@@ -127,6 +127,68 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
   return { id: user.id, email: user.email, role: profile.role as Role, isActive: profile.is_active, allowedPages: profile.allowed_pages || [], pageEditKeys }
 }
 
+export interface RoleSnapshot {
+  role: Role
+  allowedPages: string[]
+  pageEditKeys: string[]
+  uiPreferences: { theme?: string; hiddenItems?: string[]; pinnedItems?: string[]; groupOrder?: string[] }
+}
+
+// Layout-time variant of getCookieSessionUser(), built to remove two things
+// that used to happen on every single dashboard navigation: a network call to
+// Supabase's Auth server (auth.getUser()), and a second round trip's worth of
+// client-side fetching once RoleProvider mounted and repeated almost the same
+// work. getSession() decodes the session straight from the cookie with no
+// network call as long as the access token hasn't expired (the common case --
+// tokens are ~1hr TTL); verifyAccessToken() then confirms the signature
+// locally via the same cached JWKS path getSessionUser() already uses, so an
+// unverified cookie value is never trusted. Deliberately not using
+// supabase.auth.getUser() or triggering the client's own refresh logic here:
+// this runs in a Server Component, where @db/db/server's cookie writes are
+// swallowed (can't persist a rotated token) -- so if the token needs a
+// refresh, this returns null and leaves it to the browser client (which CAN
+// write cookies) rather than risk consuming a refresh token server-side with
+// nowhere to save the result.
+//
+// Returns null on ANY failure (no session, bad signature, revoked, inactive)
+// -- dashboard/layout.tsx redirects to /login on null, same as it always has;
+// this function only changes HOW that check is made, not what counts as
+// "not logged in".
+export async function getLayoutSessionUser(): Promise<RoleSnapshot | null> {
+  const supabase = await createServerClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session?.access_token) return null
+
+  const user = await verifyAccessToken(session.access_token)
+  if (!user) return null
+
+  const cookieStore = await cookies()
+  const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value
+  if (sessionId) touchSessionIfStale(sessionId).catch(() => {})
+
+  const [revoked, { data: profile }] = await Promise.all([
+    isSessionRevoked(sessionId),
+    supabaseAdmin
+      .from('profiles')
+      .select('role, is_active, allowed_pages, ui_preferences, profile_page_actions(page_key, can_edit)')
+      .eq('id', user.id)
+      .single(),
+  ])
+  if (revoked) return null
+  if (!profile || !profile.is_active) return null
+
+  const pageEditKeys = (profile.profile_page_actions || [])
+    .filter((a: { page_key: string; can_edit: boolean }) => a.can_edit)
+    .map((a: { page_key: string; can_edit: boolean }) => a.page_key)
+
+  return {
+    role: profile.role as Role,
+    allowedPages: profile.allowed_pages || [],
+    pageEditKeys,
+    uiPreferences: profile.ui_preferences || {},
+  }
+}
+
 export function isOwner(sessionUser: SessionUser | null): sessionUser is SessionUser & { role: 'owner' } {
   return !!sessionUser && sessionUser.role === 'owner'
 }

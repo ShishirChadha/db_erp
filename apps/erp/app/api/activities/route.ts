@@ -9,6 +9,7 @@ import {
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
 import { withRetry } from '@/lib/db-retry'
+import { parsePagination } from '@/lib/pagination'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -25,7 +26,8 @@ export async function GET(req: NextRequest) {
   const sortBy = searchParams.get('sort_by') || 'created_at'
   const sortOrder = searchParams.get('sort_order') === 'asc'
 
-  let query = supabaseAdmin.from('activities').select('*').eq('is_deleted', false)
+  const pagination = parsePagination(searchParams)
+  let query = supabaseAdmin.from('activities').select('*', pagination ? { count: 'exact' } : undefined).eq('is_deleted', false)
 
   // Owners see every task; employees see what they created or are assigned to.
   if (!isOwner(sessionUser)) {
@@ -48,8 +50,9 @@ export async function GET(req: NextRequest) {
   }
   const dbColumn = columnMap[sortBy] || 'created_at'
   query = query.order(dbColumn, { ascending: sortOrder, nullsFirst: false })
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await withRetry(() => query)
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   const activityIds = (data || []).map((a) => a.id)
@@ -81,6 +84,7 @@ export async function GET(req: NextRequest) {
     }
   })
 
+  if (pagination) return NextResponse.json({ data: enriched, total: count ?? 0 })
   return NextResponse.json(enriched)
 }
 

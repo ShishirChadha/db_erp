@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess, canEditPage, isOwner } from '@/lib/auth/
 import { logAuditEvent } from '@/lib/audit-log'
 import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
 import { withRetry } from '@/lib/db-retry'
+import { parsePagination } from '@/lib/pagination'
 
 // ---------- GET: list expenses ----------
 // The 'expenses' page key -- previously this table had no API route at all (the page
@@ -25,8 +26,9 @@ export async function GET(req: NextRequest) {
     ? (searchParams.get('sort') as string)
     : 'expense_date'
   const sortAscending = searchParams.get('order') === 'asc'
+  const pagination = parsePagination(searchParams)
 
-  let query = supabaseAdmin.from('expenses').select('*, vendors(company_name)').eq('is_deleted', showDeleted)
+  let query = supabaseAdmin.from('expenses').select('*, vendors(company_name)', pagination ? { count: 'exact' } : undefined).eq('is_deleted', showDeleted)
 
   if (search) {
     query = query.or(
@@ -37,8 +39,9 @@ export async function GET(req: NextRequest) {
   if (dateFrom) query = query.gte('expense_date', dateFrom)
   if (dateTo) query = query.lte('expense_date', dateTo)
   query = query.order(sortField, { ascending: sortAscending })
+  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data, error } = await withRetry(() => query)
+  const { data, error, count } = await withRetry(() => query)
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   let rows = data || []
@@ -58,6 +61,7 @@ export async function GET(req: NextRequest) {
   // exception, which doesn't apply here) -- strip the joined vendor name server-side
   // rather than relying on the UI to simply not render it.
   rows = ownerCaller ? rows : rows.map(({ vendors, ...rest }: any) => rest)
+  if (pagination) return NextResponse.json({ data: rows, total: count || 0 })
   return NextResponse.json(rows)
 }
 

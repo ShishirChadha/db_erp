@@ -577,7 +577,7 @@ function ServicePageInner() {
 
           {subType === 'replacement' && replacementItemKind === 'accessory' ? (
             isOwnStock ? (
-              <div className="grid grid-cols-2 gap-4 items-start">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
                 <div>
                   <label className="block font-medium text-sm mb-1">Accessory Being Returned *</label>
                   {oldAccessorySku ? (
@@ -647,7 +647,7 @@ function ServicePageInner() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-medium text-sm mb-1">Device Description *</label>
                 <input value={deviceDescription} onChange={(e) => setDeviceDescription(e.target.value)} placeholder="e.g. Dell Latitude 5420, i5 11th" className="border p-2 w-full rounded" />
@@ -718,7 +718,7 @@ function ServicePageInner() {
           </div>
 
           {subType === 'replacement' && replacementItemKind === 'accessory' && (
-            <div className="grid grid-cols-2 gap-4 items-start">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-start">
               <div>
                 <label className="block font-medium text-sm mb-1">Replacement Accessory (given to customer) *</label>
                 {replacementSku ? (
@@ -826,7 +826,7 @@ function ServicePageInner() {
           )}
 
           {subType === 'repair' ? (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-medium text-sm mb-1">Received Into</label>
                 <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-2 w-full rounded">
@@ -846,7 +846,7 @@ function ServicePageInner() {
               )}
             </div>
           ) : (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-medium text-sm mb-1">
                   {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : 'Amount Charged (₹)'}
@@ -863,7 +863,7 @@ function ServicePageInner() {
           )}
 
           {subType === 'replacement' && (
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block font-medium text-sm mb-1">Sale Type</label>
                 <div className="flex gap-2">

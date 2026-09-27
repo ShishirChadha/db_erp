@@ -146,35 +146,23 @@ const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string)
   const [sortField, setSortField] = useState<SortField>("purchase_date");
 const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
 
+  // searchInput updates on every keystroke; searchTerm catches up 300ms after
+  // typing stops -- this page had no debounce at all, so every keystroke fired
+  // a full round trip straight to Supabase (same class of bug already fixed on
+  // Sales Ledger/Stock/Vendors/Customers).
+  const [searchInput, setSearchInput] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const [visibleColumns, setVisibleColumns] = useState<string[]>(defaultVisibleColumns);
 
-  const fetchPurchases = useCallback(async () => {
-    setLoading(true);
-    let countQuery = supabase.from("purchases").select("*", { count: "exact", head: true });
-    if (showDeleted) countQuery = countQuery.eq("is_deleted", true);
-    else countQuery = countQuery.eq("is_deleted", false);
-    if (searchTerm) {
-      countQuery = countQuery.or(
-        `asset_number.ilike.%${searchTerm}%,` +
-        `vendor_name.ilike.%${searchTerm}%,` +
-        `sku.ilike.%${searchTerm}%,` +
-        `brand.ilike.%${searchTerm}%,` +
-        `model.ilike.%${searchTerm}%,` +
-        `serial_number.ilike.%${searchTerm}%`
-      );
-    }
-    if (statusFilter && statusFilter !== "all") countQuery = countQuery.eq("status_purchase", statusFilter);
-    if (vendorFilter) countQuery = countQuery.ilike("vendor_name", `%${vendorFilter}%`);
-    if (dateFrom) countQuery = countQuery.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
-    if (dateTo) countQuery = countQuery.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
-    const { count, error: countError } = await countQuery;
-    if (countError) console.error(countError);
-    else setTotalCount(count || 0);
-
-    let query = supabase.from("purchases").select("*");
-    if (showDeleted) query = query.eq("is_deleted", true);
-    else query = query.eq("is_deleted", false);
+  // Shared between the count and rows queries so a filter can't drift out of
+  // sync between them (previously duplicated inline in two separate blocks).
+  const applyFilters = useCallback(<T,>(q: T): T => {
+    let query = q as any;
+    query = showDeleted ? query.eq("is_deleted", true) : query.eq("is_deleted", false);
     if (searchTerm) {
       query = query.or(
         `asset_number.ilike.%${searchTerm}%,` +
@@ -189,17 +177,44 @@ const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
     if (vendorFilter) query = query.ilike("vendor_name", `%${vendorFilter}%`);
     if (dateFrom) query = query.gte("purchase_date", format(dateFrom, "yyyy-MM-dd"));
     if (dateTo) query = query.lte("purchase_date", format(dateTo, "yyyy-MM-dd"));
-    query = query.order(sortField, { ascending: sortOrder === "asc" });
-// If sorting by entry_date/purchase_date, add a secondary sort by created_at to break ties
-if (sortField === "entry_date" || sortField === "purchase_date") {
-  query = query.order("created_at", { ascending: false });
-}
-    query = query.range((page - 1) * pageSize, page * pageSize - 1);
-    const { data, error } = await query;
+    return query;
+  }, [showDeleted, searchTerm, statusFilter, vendorFilter, dateFrom, dateTo]);
+
+  const fetchPurchases = useCallback(async () => {
+    setLoading(true);
+    let rowsQuery: any = applyFilters(supabase.from("purchases").select("*"));
+    rowsQuery = rowsQuery.order(sortField, { ascending: sortOrder === "asc" });
+    // If sorting by entry_date/purchase_date, add a secondary sort by created_at to break ties
+    if (sortField === "entry_date" || sortField === "purchase_date") {
+      rowsQuery = rowsQuery.order("created_at", { ascending: false });
+    }
+    rowsQuery = rowsQuery.range((page - 1) * pageSize, page * pageSize - 1);
+
+    // Independent of each other -- fetched in parallel rather than the count
+    // being awaited before the rows query even starts.
+    const [{ count, error: countError }, { data, error }] = await Promise.all([
+      applyFilters(supabase.from("purchases").select("*", { count: "exact", head: true })),
+      rowsQuery,
+    ]);
+    if (countError) console.error(countError);
+    else setTotalCount(count || 0);
     if (error) console.error(error);
     else setPurchases(data || []);
     setLoading(false);
-  }, [showDeleted, searchTerm, statusFilter, vendorFilter, dateFrom, dateTo, sortField, sortOrder, page, pageSize, supabase]);
+  }, [applyFilters, sortField, sortOrder, page, pageSize, supabase]);
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // during render (React's supported "adjust state while rendering" pattern),
+  // not in a separate effect (see the identical fix on customers/vendors/
+  // invoices/sales/expenses) -- this page previously didn't reset page on a
+  // filter change at all, which could land you on an empty page 3 of a newly
+  // narrower result set.
+  const filterKey = JSON.stringify([showDeleted, searchTerm, statusFilter, vendorFilter, dateFrom, dateTo]);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
 
   useEffect(() => {
     fetchPurchases();
@@ -348,7 +363,7 @@ const handleRestore = async (purchase: any) => {
       <div className="flex flex-wrap gap-4 items-end">
         <div className="w-64">
           <Label>Search</Label>
-          <Input placeholder="Asset, vendor, serial, brand..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
+          <Input placeholder="Asset, vendor, serial, brand..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         </div>
         <div className="w-48">
           <Label>Status</Label>
@@ -422,7 +437,43 @@ const handleRestore = async (purchase: any) => {
       </div>
 
       {/* Table (unchanged) */}
-      <div className="rounded-md border overflow-x-auto">
+      {/* Card list on phones -- this table's column count is user-configurable
+          and often wide (8+ columns), unusable as a horizontal-scroll wall on
+          a narrow screen. The card always shows the same core fields
+          regardless of the desktop "Columns" picker, since a fixed compact
+          summary is what's actually useful at a glance on a phone. */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          <p className="text-center text-sm text-muted-foreground py-6">Loading…</p>
+        ) : purchases.length === 0 ? (
+          <p className="text-center text-sm text-muted-foreground py-6">No purchases found.</p>
+        ) : purchases.map((p) => (
+          <div key={p.id} className={`border rounded-lg p-3 bg-card ${p.is_deleted ? "opacity-50" : ""}`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium text-sm truncate">{p.vendor_name || "—"}</p>
+                <p className="text-xs text-muted-foreground">{renderCell(p, "purchase_date")} · {p.asset_number || "no tag"}</p>
+              </div>
+              <span className="shrink-0 font-medium text-sm tabular-nums">{renderCell(p, "total_price")}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">{p.brand} {p.model}</p>
+            <div className="mt-1.5">{renderCell(p, "status_purchase")}</div>
+            <div className="flex justify-end gap-2 mt-2">
+              {!p.is_deleted ? (
+                <>
+                  <Button variant="ghost" size="sm" onClick={() => setViewItem(p)}><Eye className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => handleEditClick(p)}>Edit</Button>
+                  <Button variant="destructive" size="sm" onClick={() => { setPurchaseToDelete(p); setDeleteDialogOpen(true); }}>Delete</Button>
+                </>
+              ) : (
+                <Button variant="default" size="sm" onClick={() => handleRestore(p)} loading={restoringId === p.id}>Restore</Button>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="hidden md:block rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>

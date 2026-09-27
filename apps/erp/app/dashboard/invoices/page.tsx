@@ -156,12 +156,22 @@ function InvoicesPage() {
     setLoading(false);
   }, [searchTerm, statusFilter, showDeleted, page, supabase]);
 
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // during render (React's supported "adjust state while rendering" pattern),
+  // not in a separate effect keyed on the same filters -- that shape fired the
+  // fetch effect twice per filter change (once with the new filter but the
+  // stale page, again once the reset effect changed `page`), and on a slow
+  // connection the stale response could land last and overwrite correct rows.
+  const filterKey = JSON.stringify([searchTerm, statusFilter, showDeleted]);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
   useEffect(() => {
     fetchInvoices();
   }, [fetchInvoices]);
-
-  // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [searchTerm, statusFilter, showDeleted]);
 
   const handleSoftDelete = async (remarks: string) => {
     if (!invoiceToDelete) return;

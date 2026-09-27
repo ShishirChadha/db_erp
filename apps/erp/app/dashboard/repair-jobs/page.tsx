@@ -225,19 +225,16 @@ function RepairJobsPage() {
   // filter/page, but respects the search term so the numbers stay consistent with
   // what's actually reachable through the search box.
   const [statCounts, setStatCounts] = useState({ total: 0, open: 0, done: 0, cancelled: 0 })
+  // SQL exact counts (see /api/repair-jobs' counts=true branch), not a full-
+  // table fetch + JS .filter().length -- the latter fetched every repair job
+  // that ever existed just to show 4 stat-card numbers, and grew slower every
+  // month with zero other bugs.
   const fetchStats = useCallback(async () => {
     const params = new URLSearchParams()
     if (searchTerm) params.set('search', searchTerm)
+    params.set('counts', 'true')
     const res = await apiFetch(`/api/repair-jobs?${params.toString()}`)
-    if (res.ok) {
-      const all: RepairJob[] = await res.json()
-      setStatCounts({
-        total: all.length,
-        open: all.filter(j => j.status === 'intake' || j.status === 'in_progress').length,
-        done: all.filter(j => j.status === 'done').length,
-        cancelled: all.filter(j => j.status === 'cancelled').length,
-      })
-    }
+    if (res.ok) setStatCounts(await res.json())
   }, [searchTerm])
 
   const fetchJobs = useCallback(async () => {

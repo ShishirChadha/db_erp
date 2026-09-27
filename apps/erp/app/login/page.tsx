@@ -48,7 +48,7 @@ function LoginForm() {
 
   return (
     // Outer container – full height, items start from top
-    <div className="min-h-screen flex flex-col justify-start bg-background">
+    <div className="min-h-dvh flex flex-col justify-start bg-background">
       
       {/* Logo at top center – minimal top padding, no bottom margin */}
       <div className="flex justify-center pt-6 pb-0">

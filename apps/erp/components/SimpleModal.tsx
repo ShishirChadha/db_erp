@@ -1,6 +1,7 @@
 'use client'
 
 import { X } from 'lucide-react'
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
 
 // Shared lightweight modal -- mx-4 edge gutter + max-h-[85vh] scroll fits any
 // viewport, including short mobile screens. Prefer this (or shadcn Dialog with the
@@ -15,6 +16,7 @@ export function SimpleModal({
   // the explicit Cancel/X button is still always available.
   closeOnBackdropClick?: boolean;
 }) {
+  useBodyScrollLock(isOpen);
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeOnBackdropClick ? onClose : undefined}>

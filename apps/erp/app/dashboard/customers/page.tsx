@@ -242,10 +242,22 @@ function CustomersPage() {
     setLoading(false);
   }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);
 
-  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
-
   // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [showDeleted, searchTerm, typeFilter, nameFilter]);
+  // Done during render (React's supported "adjust state while rendering"
+  // pattern), not in a separate useEffect keyed on the same filters: doing it
+  // as a second effect meant a filter change fired the fetch effect TWICE --
+  // once immediately with the new filter but the stale page, then again once
+  // the page-reset effect ran and changed `page` -- two requests per filter
+  // change, and on a slow connection the first (stale) response could land
+  // last and overwrite the correct rows.
+  const filterKey = JSON.stringify([showDeleted, searchTerm, typeFilter, nameFilter]);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
+  useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
   const handleEditClick = (c: Customer) => { setEditingCustomer(c); setDialogOpen(true); };
   const handleSoftDelete = async (remarks: string) => {

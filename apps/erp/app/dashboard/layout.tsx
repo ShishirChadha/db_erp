@@ -1,23 +1,30 @@
 import { redirect } from 'next/navigation';
-import { createClient } from '@/lib/supabase/server';
 import Sidebar from '@/components/sidebar';
 import { NavSearchProvider } from '@/components/NavSearch';
+import { RoleSeed } from '@/components/RoleSeed';
+import { getLayoutSessionUser } from '@/lib/auth/session';
 
 export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
+  // Replaces a network call to Supabase's Auth server (auth.getUser()) with a
+  // local JWT verify + one parallel revoked-check/profile query -- see
+  // getLayoutSessionUser()'s own comment for why. The result also seeds
+  // RoleProvider (mounted in app/layout.tsx) via <RoleSeed> below, so the
+  // client no longer has to re-fetch the same role/permissions data itself on
+  // every dashboard load.
+  const sessionUser = await getLayoutSessionUser();
 
-  if (!user) {
+  if (!sessionUser) {
     redirect('/login');
   }
 
   return (
     <NavSearchProvider>
-      <div className="flex h-screen bg-muted overflow-hidden">
+      <RoleSeed snapshot={sessionUser} />
+      <div className="flex h-dvh bg-muted overflow-hidden">
         <Sidebar />
         {/* pt-14 clears the fixed mobile top bar (Sidebar renders it at md:hidden) --
             without this, page content renders underneath it on phones. */}

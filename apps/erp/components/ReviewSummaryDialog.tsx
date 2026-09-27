@@ -1,6 +1,7 @@
 'use client'
 
 import { Loader2 } from 'lucide-react'
+import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
 
 export interface ReviewRow {
   label: string
@@ -27,6 +28,7 @@ export function ReviewSummaryDialog({
   confirming: boolean
   confirmLabel?: string
 }) {
+  useBodyScrollLock(true)
   const visibleRows = rows.filter((r) => r.value !== '' && r.value !== null && r.value !== undefined)
 
   return (

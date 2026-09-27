@@ -40,6 +40,7 @@ import StaffReimbursementsManager from "@/components/StaffReimbursementsManager"
 import { Badge } from "@/components/ui/badge";
 import { useRole } from "@/lib/auth/useRole";
 import { useCustomOptions } from "@/lib/useCustomOptions";
+import { Pagination } from "@/components/Pagination";
 
 type SortField = "expense_date" | "type" | "amount";
 
@@ -53,7 +54,7 @@ function ExpensesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [expenseToDelete, setExpenseToDelete] = useState<any>(null);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH
+  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH (debounced)
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const { values: expenseTypes } = useCustomOptions("expense_types");
@@ -61,6 +62,17 @@ function ExpensesPage() {
   const [dateTo, setDateTo] = useState<Date | undefined>(undefined);
   const [sortField, setSortField] = useState<SortField>("expense_date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 25;
+
+  // searchInput updates on every keystroke; searchTerm catches up 300ms after
+  // typing stops -- same debounce pattern as StockView/Sales Ledger/Vendors.
+  const [searchInput, setSearchInput] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
 
   const fetchExpenses = useCallback(async () => {
     setLoading(true);
@@ -72,12 +84,25 @@ function ExpensesPage() {
     if (dateTo) params.set("date_to", format(dateTo, "yyyy-MM-dd"));
     params.set("sort", sortField);
     params.set("order", sortOrder);
+    params.set("page", String(page));
+    params.set("limit", String(PAGE_SIZE));
 
     const res = await apiFetch(`/api/expenses?${params.toString()}`);
-    if (!res.ok) console.error(await res.json().catch(() => ({})));
-    else setExpenses(await res.json());
+    if (!res.ok) { console.error(await res.json().catch(() => ({}))); setExpenses([]); setTotal(0); }
+    else { const json = await res.json(); setExpenses(json.data || []); setTotal(json.total || 0); }
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder]);
+  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder, page]);
+
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // during render (React's supported "adjust state while rendering" pattern),
+  // not in a separate effect, which would fire fetchExpenses twice per filter
+  // change (see the identical fix on customers/vendors/invoices/sales).
+  const filterKey = JSON.stringify([showDeleted, searchTerm, typeFilter, dateFrom, dateTo]);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
 
   useEffect(() => { fetchExpenses(); }, [fetchExpenses]);
 
@@ -149,8 +174,8 @@ function ExpensesPage() {
           <Label>Global Search</Label>
           <Input
             placeholder="Description, type, location..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
           />
         </div>
 
@@ -193,8 +218,59 @@ function ExpensesPage() {
         <Button variant="secondary" onClick={() => { setSearchTerm(""); setTypeFilter("all"); setDateFrom(undefined); setDateTo(undefined); }}>Clear Filters</Button>
       </div>
 
+      {/* Card list on phones -- the table below has 8-10 columns, unusable as a
+          horizontal-scroll wall on a narrow screen. Same rows, same actions. */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          <p className="text-center text-sm text-muted-foreground py-6">Loading…</p>
+        ) : expenses.length === 0 ? (
+          <p className="text-center text-sm text-muted-foreground py-6">No expenses found.</p>
+        ) : expenses.map((e) => (
+          <div key={e.id} className="border rounded-lg p-3 bg-card">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium text-sm truncate">{e.description || "—"}</p>
+                <p className="text-xs text-muted-foreground">{e.expense_date?.slice(0, 10)} · {e.type}</p>
+              </div>
+              <span className="shrink-0 font-medium text-sm tabular-nums">₹{e.amount?.toFixed(2)}</span>
+            </div>
+            {(e.from_location || e.to_location) && (
+              <p className="text-xs text-muted-foreground mt-1">{e.from_location} → {e.to_location}</p>
+            )}
+            <div className="flex items-center justify-between gap-2 mt-2 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                {isOwner && e.vendors?.company_name ? `${e.vendors.company_name} · ` : ""}
+                {e.paid_by_staff || "—"}
+                {e.reimbursement_status === "pending" && <Badge variant="destructive" className="text-xs">Owed</Badge>}
+                {e.reimbursement_status === "partial" && <Badge variant="secondary" className="text-xs">Partial</Badge>}
+                {e.reimbursement_status === "reimbursed" && <Badge variant="outline" className="text-xs">Settled</Badge>}
+              </span>
+            </div>
+            {e.deleted_remarks && <p className="text-xs text-muted-foreground mt-1">Deleted: {e.deleted_remarks}</p>}
+            {canEdit && (
+              <div className="flex justify-end gap-2 mt-2">
+                {e.is_deleted ? (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => handleEditClick(e)}>Edit</Button>
+                    <Button variant="default" size="sm" onClick={() => handleRestore(e)} disabled={restoringId === e.id}>
+                      {restoringId === e.id && <Loader2 className="inline size-3 animate-spin mr-1" />}
+                      Restore
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <Button variant="outline" size="sm" onClick={() => handleEditClick(e)}>Edit</Button>
+                    <Button variant="destructive" size="sm" onClick={() => { setExpenseToDelete(e); setDeleteDialogOpen(true); }}>Delete</Button>
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
       {/* Table */}
-      <div className="rounded-md border overflow-x-auto">
+      <div className="hidden md:block rounded-md border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
@@ -252,6 +328,8 @@ function ExpensesPage() {
           </TableBody>
         </Table>
       </div>
+
+      <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
 
       {editingExpense && <EditExpenseDialog expense={editingExpense} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchExpenses} />}
       {expenseToDelete && <DeleteRecordDialog title="Delete Expense" identifier={expenseToDelete.description || expenseToDelete.id} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}

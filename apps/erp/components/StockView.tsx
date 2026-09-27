@@ -410,8 +410,20 @@ export default function StockView({
 
   useEffect(() => { fetchAccessoryStock() }, [fetchAccessoryStock])
 
-  // Any filter/tab change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
+  // Any filter/tab change invalidates the current page's meaning -- reset to
+  // page 1 during render (React's supported "adjust state while rendering"
+  // pattern), not in a separate effect keyed on the same filters -- that shape
+  // fired fetchAssets/fetchSoldAccessories/fetchAccessoryStock twice per
+  // filter change (once with the new filter but the stale page, again once
+  // this effect changed `page`), and an in-flight stale response from any of
+  // those three could land last and overwrite correct rows or raise a toast
+  // for a tab the user already left.
+  const filterKey = JSON.stringify([tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey)
+    setPage(1)
+  }
 
   const fetchCounts = useCallback(async () => {
     // SQL exact counts (see /api/stock's counts=true branch), not full-row fetch
@@ -565,10 +577,29 @@ export default function StockView({
     fetchCounts()
   }
 
-  if (error) return <div className="p-4 text-destructive">Error: {error}</div>
+  // A fetch error used to blank the entire page (header, tabs, everything) --
+  // any transient 5xx/network blip on ANY of the 4 tab fetches replaced the
+  // whole view with one line of red text. Now it's a dismissible inline banner
+  // over whatever data is still on screen (the previous successful fetch, if
+  // any), with a Retry that re-runs whichever fetch backs the current tab.
+  const retryFetch = () => {
+    setError(null)
+    if (tab === 'sold_accessories') fetchSoldAccessories()
+    else if (tab === 'accessories') fetchAccessoryStock()
+    else fetchAssets()
+  }
 
   return (
     <div className="p-4 flex flex-col h-full">
+      {error && (
+        <div className="mb-3 flex items-center justify-between gap-3 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <span>Couldn't load data: {error}</span>
+          <div className="flex shrink-0 items-center gap-2">
+            <button onClick={retryFetch} className="font-medium underline">Retry</button>
+            <button onClick={() => setError(null)} aria-label="Dismiss" className="text-destructive/70">×</button>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
         <div className="flex flex-wrap items-center gap-3 min-w-0">
           <h1 className="text-xl font-bold shrink-0" title={subtitle}>{title}</h1>

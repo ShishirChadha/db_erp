@@ -448,6 +448,19 @@ function SalesLedgerPage() {
     if (res.ok) setStatCounts(await res.json());
   }, [buildFilterParams]);
 
+  // Any filter change invalidates the current page's meaning -- reset to page 1
+  // during render (React's supported "adjust state while rendering" pattern),
+  // not in a separate effect keyed on the same filters -- that shape fired
+  // fetchSales twice per filter change (once with the new filter but the
+  // stale page, again once the reset effect changed `page`), and on a slow
+  // connection the stale response could land last and overwrite correct rows.
+  const filterKey = JSON.stringify([search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly, showVoided, pageSize]);
+  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
+  if (filterKey !== prevFilterKey) {
+    setPrevFilterKey(filterKey);
+    setPage(1);
+  }
+
   useEffect(() => { fetchSales(); }, [fetchSales]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
@@ -455,10 +468,6 @@ function SalesLedgerPage() {
   // reassignment) needs both the visible page and the unpaginated stat counts
   // refreshed -- they're two separate fetches now that the table is paginated.
   const refresh = useCallback(() => { fetchSales(); fetchStats(); }, [fetchSales, fetchStats]);
-
-  // Any filter change invalidates the current page's meaning -- reset to page 1
-  // (mirrors StockView.tsx / customers/page.tsx's own reset-on-filter-change effect).
-  useEffect(() => { setPage(1); }, [search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly, showVoided, pageSize]);
 
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
