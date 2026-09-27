@@ -52,12 +52,14 @@ function mapSkuToAccessory(s: any): Accessory {
 
 const RETURN_REASONS = ['Defective on arrival', 'Not as described', 'Changed mind', 'Wrong item', 'Other']
 
-// Parts consumed during a repair (battery, screen, keyboard, etc.) are sku_master
-// rows like every other accessory -- consuming one becomes a real, priced accessory
-// sale (sales.repair_job_id) via POST /api/repair-jobs's parts array (see
+// Items added to a repair job -- physical parts (battery, screen, keyboard, etc.)
+// AND services (Windows install, IC repair labor, diagnostic fee) -- are all real
+// sku_master rows. Consuming one becomes a real, priced accessory sale
+// (sales.repair_job_id) via POST /api/repair-jobs's parts array (see
 // lib/repair-jobs.ts's consumeRepairParts), same mechanism a normal accessory sale
-// uses, just tagged back to this job.
-const PART_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MOUSE', 'ACC', 'ADP']
+// uses, just tagged back to this job. A repair job requires at least one of these --
+// there is no more free-typed "labor charge" (its price can be ₹0 if not yet known).
+const PART_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MOUSE', 'ACC', 'ADP', 'SERVICE']
 
 interface PartOption {
   id: string
@@ -375,6 +377,13 @@ function ServicePageInner() {
       if (isOwnStock && !ownUnit) { setError('Select the unit from our stock.'); return }
       if (!isOwnStock && !deviceDescription.trim()) { setError('Describe the customer\'s device.'); return }
       if (subType === 'replacement' && !replacementUnit) { setError('Select the replacement unit.'); return }
+      // Nothing gets billed with a free-typed amount anymore -- every repair charge
+      // (part or service) must come from a real SKU, so at least one is required
+      // before the job can be created at all (its price can be ₹0 if not yet known).
+      if (subType === 'repair' && partsUsed.length === 0) {
+        setError('Add at least one item or service (its price can be ₹0 if not yet known).')
+        return
+      }
     }
 
     try {
@@ -426,7 +435,6 @@ function ServicePageInner() {
             customer_device_description: deviceDescription,
             customer_device_serial: deviceSerial,
             problem_description: problem,
-            amount_charged: amountCharged === '' ? null : amountCharged,
             payment_account: paymentAccount,
             gst_percentage: paymentAccount === 'Digitalbluez' ? repairGstPercent : null,
             job_date: serviceDate,
@@ -657,11 +665,13 @@ function ServicePageInner() {
           </div>
 
           <div>
-            <label className="block font-medium text-sm mb-1">Parts Used (e.g. battery, screen, keyboard)</label>
+            <label className="block font-medium text-sm mb-1">
+              {subType === 'repair' ? 'Items / Services *' : 'Parts Used (e.g. battery, screen, keyboard)'}
+            </label>
             <input
               value={partsSearch}
               onChange={(e) => setPartsSearch(e.target.value)}
-              placeholder="Search to add..."
+              placeholder={subType === 'repair' ? 'Search a part or service to add...' : 'Search to add...'}
               className="border p-2 w-full rounded"
             />
             {partsOptions.length > 0 && (
@@ -815,36 +825,40 @@ function ServicePageInner() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block font-medium text-sm mb-1">
-                {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : subType === 'repair' && paymentAccount === 'Digitalbluez' ? 'Amount Charged (₹, pre-GST)' : 'Amount Charged (₹)'}
-              </label>
-              <input type="number" value={amountCharged} onChange={(e) => setAmountCharged(e.target.value === '' ? '' : Number(e.target.value))} className="border p-2 w-full rounded" />
-            </div>
-            <div>
-              <label className="block font-medium text-sm mb-1">Received Into</label>
-              <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-2 w-full rounded">
-                {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
-          </div>
-
-          {subType === 'repair' && paymentAccount === 'Digitalbluez' && (
-            <div className="bg-muted/50 border rounded p-3 space-y-2">
+          {subType === 'repair' ? (
+            <div className="grid grid-cols-2 gap-4">
               <div>
-                <label className="block font-medium text-sm mb-1">GST %</label>
-                <input
-                  type="number"
-                  value={repairGstPercent}
-                  onChange={(e) => setRepairGstPercent(Number(e.target.value))}
-                  className="w-24 border rounded p-1 text-center"
-                />
+                <label className="block font-medium text-sm mb-1">Received Into</label>
+                <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-2 w-full rounded">
+                  {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
               </div>
-              <p className="text-sm text-muted-foreground">
-                Before GST: ₹{(amountCharged || 0).toFixed(2)} · GST ({repairGstPercent}%): ₹{(Math.round((Number(amountCharged) || 0) * repairGstPercent) / 100).toFixed(2)}
-                {' · '}<span className="font-medium text-foreground">After GST (Total): ₹{((Number(amountCharged) || 0) + Math.round((Number(amountCharged) || 0) * repairGstPercent) / 100).toFixed(2)}</span>
-              </p>
+              {paymentAccount === 'Digitalbluez' && (
+                <div>
+                  <label className="block font-medium text-sm mb-1">GST % (for items added to this job)</label>
+                  <input
+                    type="number"
+                    value={repairGstPercent}
+                    onChange={(e) => setRepairGstPercent(Number(e.target.value))}
+                    className="border p-2 w-full rounded"
+                  />
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block font-medium text-sm mb-1">
+                  {subType === 'replacement' ? "New Unit's Sale Value (₹, pre-GST)" : 'Amount Charged (₹)'}
+                </label>
+                <input type="number" value={amountCharged} onChange={(e) => setAmountCharged(e.target.value === '' ? '' : Number(e.target.value))} className="border p-2 w-full rounded" />
+              </div>
+              <div>
+                <label className="block font-medium text-sm mb-1">Received Into</label>
+                <select value={paymentAccount} onChange={(e) => setPaymentAccount(e.target.value)} className="border p-2 w-full rounded">
+                  {PAYMENT_ACCOUNTS.map(a => <option key={a} value={a}>{a}</option>)}
+                </select>
+              </div>
             </div>
           )}
 

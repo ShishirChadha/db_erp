@@ -33,6 +33,7 @@ interface ResolveSkuInput {
   reorder_level?: number
   sku_description?: string
   hsn_code?: string | null
+  sac_code_id?: string | null
 }
 
 /**
@@ -115,6 +116,7 @@ export async function resolveOrCreateSku(
         reorder_level: input.reorder_level ?? 5,
         quantity_in_stock: 0,
         hsn_code: input.hsn_code ?? null,
+        sac_code_id: input.sac_code_id ?? null,
       })
       .select()
       .single()

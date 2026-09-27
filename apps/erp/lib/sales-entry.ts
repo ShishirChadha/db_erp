@@ -1,6 +1,6 @@
 import { supabaseAdmin } from './supabase/service'
 import { insertAccessoryMovement } from './accessory-movements'
-import { financialYear } from '@db/shared'
+import { financialYear, NON_STOCK_CATEGORIES } from '@db/shared'
 
 // SELLABLE_STATUSES/financialYear now live in @db/shared so apps/web's order
 // -> sale conversion uses the exact same definitions, not a second copy that
@@ -98,6 +98,12 @@ export async function reverseSaleInventoryEffects(
       })
     }
   } else if (saleRow.accessory_id) {
+    // A service (non-stock category) never had a decrementing movement recorded in
+    // the first place (see lib/sales-cart.ts) -- inserting a reversing 'adjustment'
+    // here would just inflate its quantity_in_stock from nothing, so skip it too.
+    const { data: sku } = await supabaseAdmin.from('sku_master').select('category').eq('id', saleRow.accessory_id).single()
+    if (sku && NON_STOCK_CATEGORIES.includes(sku.category)) return {}
+
     const { error: moveErr } = await insertAccessoryMovement({
       skuId: saleRow.accessory_id,
       movementType: 'adjustment',

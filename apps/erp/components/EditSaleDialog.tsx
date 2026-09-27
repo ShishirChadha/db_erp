@@ -38,6 +38,7 @@ interface BundledAccessory {
   accessory_id: string;
   quantity: number;
   accessory_name?: string;
+  unit_price?: number;
 }
 
 interface SaleDetail {
@@ -49,6 +50,8 @@ interface SaleDetail {
   serial_number: string | null;
   accessory_id: string | null;
   asset_ledger_id: string | null;
+  unit_sku_description: string | null;
+  unit_full_sku_code: string | null;
   bundled_accessories: BundledAccessory[] | null;
   sale_base_price: number;
   sale_gst: number;
@@ -108,7 +111,7 @@ export function EditSaleDialog({
 
   const [bundled, setBundled] = useState<BundledAccessory[]>([]);
   const [bundleSearch, setBundleSearch] = useState("");
-  const [bundleOptions, setBundleOptions] = useState<{ id: string; full_sku_code: string; sku_description: string }[]>([]);
+  const [bundleOptions, setBundleOptions] = useState<{ id: string; full_sku_code: string; sku_description: string; selling_price_default: number | null; quantity_in_stock: number | null }[]>([]);
   const [showChangeSku, setShowChangeSku] = useState(false);
 
   const { values: staffNames } = useCustomOptions("staff_names");
@@ -137,7 +140,15 @@ export function EditSaleDialog({
         setSoldBy(data.sold_by || "");
         setSaleType(data.sale_type || "GST");
         setSaleDate(data.sale_date?.slice(0, 10) || "");
-        setBasePrice(data.sale_base_price);
+        // sale_base_price is the FULL pre-GST subtotal (laptop + any bundled accessory
+        // add-ons), same as how the New Sale cart computes it (lineBaseGstPrice in
+        // app/dashboard/entry/sell/page.tsx). basePrice below tracks the laptop-only
+        // portion so the accessories list can be edited without the two going out of
+        // sync -- subtract whatever accessory total was already baked in at load time.
+        const initialAccessoriesTotal = (data.bundled_accessories || []).reduce(
+          (sum, b) => sum + (b.unit_price || 0) * b.quantity, 0
+        );
+        setBasePrice(data.sale_base_price - initialAccessoriesTotal);
         setGstPercent(data.sale_base_price ? Math.round((data.sale_gst / data.sale_base_price) * 10000) / 100 : 18);
         setPaymentAccount(data.payment_account || "");
         setNotes(data.notes || "");
@@ -164,12 +175,22 @@ export function EditSaleDialog({
     setPriceMode(newMode);
   };
 
+  // Bundled accessories are always treated as already pre-GST and added on top of the
+  // laptop's own price, same convention as the New Sale cart (bundledAddOnsTotal in
+  // app/dashboard/entry/sell/page.tsx) -- so editing an accessory's price/quantity here
+  // flows straight into the total instead of being a disconnected, purely-informational
+  // number the editor has to manually reconcile into Base Price themselves.
+  const accessoriesSubtotal = sale?.asset_ledger_id
+    ? bundled.reduce((sum, b) => sum + (b.unit_price || 0) * b.quantity, 0)
+    : 0;
+
   // Pre-GST subtotal, GST amount, and total recomputed live from the current form
   // fields -- distinct from the stale sale.sale_total snapshot shown in the Payment
   // section, which only reflects what was last saved.
-  const interimSubtotal = saleType === "GST" && priceMode === "post_gst" && basePrice
+  const laptopPreGst = saleType === "GST" && priceMode === "post_gst" && basePrice
     ? Math.round((basePrice / (1 + gstPercent / 100)) * 100) / 100
     : basePrice;
+  const interimSubtotal = laptopPreGst + accessoriesSubtotal;
   const interimGst = saleType === "GST" ? Math.round(interimSubtotal * gstPercent * 100) / 10000 : 0;
   const interimTotal = interimSubtotal + interimGst;
 
@@ -200,33 +221,43 @@ export function EditSaleDialog({
 
   const { run: save, pending: saving } = useAsyncAction(async () => {
     setErr("");
-    const body: Record<string, unknown> = {
-      customer_id: customerId,
-      sold_by: soldBy,
-      sale_type: saleType,
-      sale_date: saleDate,
-      sale_base_price: interimSubtotal,
-      gst_percentage: saleType === "GST" ? gstPercent : 0,
-      payment_account: paymentAccount || null,
-      notes: notes || null,
-      ...(sale?.asset_ledger_id
-        ? { bundled_accessories: bundled.map(({ accessory_id, quantity }) => ({ accessory_id, quantity })) }
-        : {}),
-    };
-    let res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(body) });
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      if (e.error_code === "already_invoiced") {
-        if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
-        res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify({ ...body, confirm_despite_invoice: true }) });
-      }
+    try {
+      const body: Record<string, unknown> = {
+        customer_id: customerId,
+        sold_by: soldBy,
+        sale_type: saleType,
+        sale_date: saleDate,
+        sale_base_price: interimSubtotal,
+        gst_percentage: saleType === "GST" ? gstPercent : 0,
+        payment_account: paymentAccount || null,
+        notes: notes || null,
+        ...(sale?.asset_ledger_id
+          ? { bundled_accessories: bundled.map(({ accessory_id, quantity, unit_price }) => ({ accessory_id, quantity, unit_price: unit_price || 0 })) }
+          : {}),
+      };
+      let res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(body) });
       if (!res.ok) {
-        const e2 = await res.json().catch(() => ({}));
-        throw new Error(e2.error || "Failed to save.");
+        const e = await res.json().catch(() => ({}));
+        if (e.error_code === "already_invoiced") {
+          if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
+          res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify({ ...body, confirm_despite_invoice: true }) });
+        }
+        if (!res.ok) {
+          const e2 = await res.json().catch(() => ({}));
+          setErr(e2.error || "Failed to save.");
+          return;
+        }
       }
+      onSaved();
+      onClose();
+    } catch (e: any) {
+      // A thrown error (network failure, JSON parse issue) would otherwise be
+      // silently swallowed by useAsyncAction's run() -- it has no catch block by
+      // design (only try/finally, so a double-click can't fire a second request
+      // while one is in flight), so this dialog must catch and surface its own
+      // errors rather than relying on that wrapper to do it.
+      setErr(e?.message || "Failed to save.");
     }
-    onSaved();
-    onClose();
   });
 
   const handleVoid = async (reason: string) => {
@@ -300,7 +331,10 @@ export function EditSaleDialog({
                 </Select>
               </div>
               <div>
-                <Label>{saleType === "GST" && priceMode === "post_gst" ? "Price (GST-Incl., ₹)" : "Base Price (₹)"}</Label>
+                <Label>
+                  {sale.asset_ledger_id ? "Laptop Price" : saleType === "GST" && priceMode === "post_gst" ? "Price" : "Base Price"}
+                  {saleType === "GST" && priceMode === "post_gst" ? " (GST-Incl., ₹)" : " (₹)"}
+                </Label>
                 <Input type="number" value={basePrice} onChange={(e) => setBasePrice(Number(e.target.value))} className="text-right" />
               </div>
             </div>
@@ -329,7 +363,12 @@ export function EditSaleDialog({
             )}
 
             <div className="border rounded p-3 text-right text-sm space-y-1 bg-muted">
-              {saleType === "GST" && priceMode === "post_gst" && <p>Pre-GST: ₹{interimSubtotal.toFixed(2)}</p>}
+              {accessoriesSubtotal > 0 && (
+                <>
+                  <p className="text-muted-foreground">Laptop: ₹{laptopPreGst.toFixed(2)} + Accessories: ₹{accessoriesSubtotal.toFixed(2)}</p>
+                </>
+              )}
+              {saleType === "GST" && (priceMode === "post_gst" || accessoriesSubtotal > 0) && <p>Pre-GST: ₹{interimSubtotal.toFixed(2)}</p>}
               {saleType === "GST" && <p>GST: ₹{interimGst.toFixed(2)}</p>}
               <p className="font-bold text-base">Total: ₹{interimTotal.toFixed(2)}</p>
             </div>
@@ -353,8 +392,13 @@ export function EditSaleDialog({
 
             {sale.asset_ledger_id && (
               <div className="border rounded p-3 space-y-2">
-                <div className="flex items-center justify-between">
-                  <Label>Laptop / SKU</Label>
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <Label>Laptop / SKU</Label>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {sale.unit_sku_description || sale.unit_full_sku_code || "—"}
+                    </p>
+                  </div>
                   <Button type="button" size="sm" variant="outline" onClick={() => setShowChangeSku(true)}>Change SKU</Button>
                 </div>
                 <Label>Bundled Accessories</Label>
@@ -366,45 +410,75 @@ export function EditSaleDialog({
                 />
                 {bundleOptions.length > 0 && (
                   <ul className="border rounded divide-y max-h-32 overflow-y-auto text-sm">
-                    {bundleOptions.map((a) => (
-                      <li
-                        key={a.id}
-                        className="p-2 hover:bg-muted cursor-pointer"
-                        onClick={() => {
-                          if (bundled.some((b) => b.accessory_id === a.id)) return;
-                          setBundled((prev) => [...prev, { accessory_id: a.id, quantity: 1, accessory_name: a.sku_description }]);
-                          setBundleSearch("");
-                          setBundleOptions([]);
-                        }}
-                      >
-                        {a.full_sku_code} — {a.sku_description}
-                      </li>
-                    ))}
+                    {bundleOptions.map((a) => {
+                      const outOfStock = (a.quantity_in_stock ?? 0) <= 0;
+                      return (
+                        <li
+                          key={a.id}
+                          className={`p-2 flex items-center justify-between gap-2 ${outOfStock ? "opacity-50 cursor-not-allowed" : "hover:bg-muted cursor-pointer"}`}
+                          onClick={() => {
+                            if (outOfStock) return;
+                            if (bundled.some((b) => b.accessory_id === a.id)) return;
+                            setBundled((prev) => [...prev, { accessory_id: a.id, quantity: 1, accessory_name: a.sku_description, unit_price: a.selling_price_default || 0 }]);
+                            setBundleSearch("");
+                            setBundleOptions([]);
+                          }}
+                        >
+                          <span className="min-w-0 truncate">{a.full_sku_code} — {a.sku_description}</span>
+                          <span className={`shrink-0 text-xs ${outOfStock ? "text-destructive" : "text-muted-foreground"}`}>
+                            {outOfStock ? "Out of stock" : `${a.quantity_in_stock} in stock`}
+                          </span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 )}
                 {bundled.length > 0 && (
                   <ul className="text-sm divide-y border rounded">
                     {bundled.map((b, idx) => (
-                      <li key={b.accessory_id} className="p-2 flex items-center justify-between gap-2">
-                        <span>{b.accessory_name || b.accessory_id}</span>
-                        <div className="flex items-center gap-2">
+                      <li key={b.accessory_id} className="p-2 space-y-1.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="min-w-0 truncate">{b.accessory_name || b.accessory_id}</span>
+                          <Button type="button" size="sm" variant="link" className="text-destructive shrink-0" onClick={() => setBundled((prev) => prev.filter((_, i) => i !== idx))}>
+                            Remove
+                          </Button>
+                        </div>
+                        <div className="flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
+                          <Label className="text-xs text-muted-foreground">Qty</Label>
                           <Input
                             type="number"
                             min={1}
                             value={b.quantity}
-                            className="w-16 text-right"
+                            className="w-14 text-right"
                             onChange={(e) =>
                               setBundled((prev) => prev.map((x, i) => (i === idx ? { ...x, quantity: Number(e.target.value) || 1 } : x)))
                             }
                           />
-                          <button type="button" className="text-destructive underline text-xs" onClick={() => setBundled((prev) => prev.filter((_, i) => i !== idx))}>
-                            Remove
-                          </button>
+                          <Label className="text-xs text-muted-foreground">₹</Label>
+                          <Input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={b.unit_price ?? 0}
+                            className="w-20 text-right"
+                            onChange={(e) =>
+                              setBundled((prev) => prev.map((x, i) => (i === idx ? { ...x, unit_price: Number(e.target.value) || 0 } : x)))
+                            }
+                          />
                         </div>
                       </li>
                     ))}
+                    <li className="p-2 flex items-center justify-between gap-2 font-medium bg-muted/40">
+                      <span>Accessories subtotal</span>
+                      <span className="tabular-nums">
+                        ₹{bundled.reduce((sum, b) => sum + (b.unit_price || 0) * b.quantity, 0).toFixed(2)}
+                      </span>
+                    </li>
                   </ul>
                 )}
+                <p className="text-xs text-muted-foreground">
+                  Accessory prices are added on top of Laptop Price automatically -- see the breakdown below the price fields.
+                </p>
               </div>
             )}
 

@@ -9,6 +9,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction';
 import { useRole } from '@/lib/auth/useRole';
 import { apiFetch } from '@/lib/api-client';
 import { createClient } from '@/lib/supabase/client';
+import { useCustomOptions } from '@/lib/useCustomOptions';
 import ActivityCommentThread from '@/components/ActivityCommentThread';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SimpleModal } from '@/components/SimpleModal';
@@ -118,33 +119,22 @@ interface TaskFormState {
   related_id: string;
   assignee_ids: string[];
   watcher_ids: string[];
-  pendingTag: string;
-}
-
-// Folds any not-yet-committed tag text into `tags` -- used right before submit
-// so typing a tag then clicking Save (without hitting the removed Add button)
-// still saves it, instead of silently dropping it.
-function commitPendingTag(form: TaskFormState): string[] {
-  const pending = form.pendingTag.trim();
-  return pending && !form.tags.includes(pending) ? [...form.tags, pending] : form.tags;
 }
 
 function TaskForm({
-  form, setForm, existingTags, assignableUsers,
+  form, setForm, tagOptions, assignableUsers,
 }: {
   form: TaskFormState;
   setForm: (updater: (prev: TaskFormState) => TaskFormState) => void;
-  existingTags: string[];
+  tagOptions: string[];
   assignableUsers: AssignableUser[];
 }) {
-  const handleAddTag = () => {
-    setForm(prev => {
-      const newTag = prev.pendingTag.trim();
-      if (!newTag || prev.tags.includes(newTag)) return { ...prev, pendingTag: '' };
-      return { ...prev, tags: [...prev.tags, newTag], pendingTag: '' };
-    });
+  const toggleTag = (tag: string) => {
+    setForm(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tag) ? prev.tags.filter(t => t !== tag) : [...prev.tags, tag],
+    }));
   };
-  const removeTag = (tag: string) => setForm(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tag) }));
   const toggleAssignee = (userId: string) => {
     setForm(prev => ({
       ...prev,
@@ -228,27 +218,28 @@ function TaskForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium">Tags</label>
-        <div className="flex gap-2">
-          <input
-            list="tag-suggestions" className="border rounded p-2 flex-1" placeholder="Select or type new tag, then press Enter (or just Save)"
-            value={form.pendingTag}
-            onChange={e => setForm(prev => ({ ...prev, pendingTag: e.target.value }))}
-            onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddTag(); } }}
-            onBlur={handleAddTag}
-          />
-          <datalist id="tag-suggestions">
-            {existingTags.map(tag => <option key={tag} value={tag} />)}
-          </datalist>
-        </div>
-        <div className="flex flex-wrap gap-1 mt-2">
-          {form.tags.map(tag => (
-            <span key={tag} style={{ backgroundColor: getTagColor(tag) }} className="px-2 py-1 rounded flex items-center gap-1">
+        <label className="block text-sm font-medium mb-1">Tags</label>
+        <div className="border rounded p-2 max-h-32 overflow-y-auto space-y-1">
+          {tagOptions.length === 0 && <p className="text-xs text-muted-foreground">No tags available yet — ask the owner to add some in Settings.</p>}
+          {tagOptions.map(tag => (
+            <label key={tag} className="flex items-center gap-2 text-sm">
+              <Checkbox checked={form.tags.includes(tag)} onCheckedChange={() => toggleTag(tag)} />
               {tag}
-              <button onClick={() => removeTag(tag)} className="text-destructive">×</button>
-            </span>
+            </label>
           ))}
         </div>
+        {form.tags.some(tag => !tagOptions.includes(tag)) && (
+          <div className="mt-1">
+            <p className="text-xs text-muted-foreground">From before tags were locked to a list (no longer selectable, only removable):</p>
+            {form.tags.filter(tag => !tagOptions.includes(tag)).map(tag => (
+              <label key={tag} className="flex items-center gap-2 text-sm">
+                <Checkbox checked={true} onCheckedChange={() => toggleTag(tag)} />
+                {tag}
+              </label>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-muted-foreground mt-1">Pick from the list — only the owner can add a new tag (Settings → Activity Tags).</p>
       </div>
 
       <div className="grid grid-cols-2 gap-3">
@@ -294,15 +285,15 @@ function buildEmptyForm(): TaskFormState {
     title: '', description: '', tags: [], status: 'pending', priority: 'normal',
     due_date: format(due, "yyyy-MM-dd'T'HH:mm"),
     reminder_at: format(reminder, "yyyy-MM-dd'T'HH:mm"),
-    related_type: '', related_id: '', assignee_ids: [], watcher_ids: [], pendingTag: '',
+    related_type: '', related_id: '', assignee_ids: [], watcher_ids: [],
   };
 }
 
 // ---------- Add Activity Modal ----------
 function AddActivityModal({
-  isOpen, onClose, onUpdate, existingTags, assignableUsers,
+  isOpen, onClose, onUpdate, tagOptions, assignableUsers,
 }: {
-  isOpen: boolean; onClose: () => void; onUpdate: () => void; existingTags: string[]; assignableUsers: AssignableUser[];
+  isOpen: boolean; onClose: () => void; onUpdate: () => void; tagOptions: string[]; assignableUsers: AssignableUser[];
 }) {
   const [form, setForm] = useState<TaskFormState>(buildEmptyForm);
 
@@ -315,12 +306,10 @@ function AddActivityModal({
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title.trim()) return alert('Title is required');
-    const { pendingTag: _pendingTag, ...formFields } = form;
     const res = await apiFetch('/api/activities', {
       method: 'POST',
       body: JSON.stringify({
-        ...formFields,
-        tags: commitPendingTag(form),
+        ...form,
         due_date: form.due_date || null,
         reminder_at: form.reminder_at || null,
         related_type: form.related_type || null,
@@ -339,7 +328,7 @@ function AddActivityModal({
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="New Task" wide closeOnBackdropClick={false}>
-      <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
+      <TaskForm form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
         <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
@@ -353,10 +342,10 @@ function AddActivityModal({
 
 // ---------- Edit Activity Modal ----------
 function EditActivityModal({
-  activity, isOpen, onClose, onUpdate, existingTags, assignableUsers,
+  activity, isOpen, onClose, onUpdate, tagOptions, assignableUsers,
 }: {
   activity: Activity | null; isOpen: boolean; onClose: () => void; onUpdate: () => void;
-  existingTags: string[]; assignableUsers: AssignableUser[];
+  tagOptions: string[]; assignableUsers: AssignableUser[];
 }) {
   const [form, setForm] = useState<TaskFormState>(buildEmptyForm);
 
@@ -374,19 +363,16 @@ function EditActivityModal({
         related_id: activity.related_id || '',
         assignee_ids: activity.assignee_ids || [],
         watcher_ids: activity.watcher_ids || [],
-        pendingTag: '',
       });
     }
   }, [activity]);
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
     if (!form.title.trim() || !activity) return alert('Title is required');
-    const { pendingTag: _pendingTag, ...formFields } = form;
     const res = await apiFetch(`/api/activities/${activity.id}`, {
       method: 'PUT',
       body: JSON.stringify({
-        ...formFields,
-        tags: commitPendingTag(form),
+        ...form,
         due_date: form.due_date || null,
         reminder_at: form.reminder_at || null,
         related_type: form.related_type || null,
@@ -404,7 +390,7 @@ function EditActivityModal({
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Edit Task" wide closeOnBackdropClick={false}>
-      <TaskForm form={form} setForm={setForm} existingTags={existingTags} assignableUsers={assignableUsers} />
+      <TaskForm form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
         <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
@@ -675,7 +661,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   const [showAddModal, setShowAddModal] = useState(false);
   const [sortBy, setSortBy] = useState('due_date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
-  const [existingTags, setExistingTags] = useState<string[]>([]);
+  const { values: tagOptions } = useCustomOptions('activity_tags');
 
   useEffect(() => {
     createClient().auth.getUser().then(({ data }) => setMyId(data.user?.id ?? null));
@@ -690,7 +676,6 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   }, [searchParams]);
 
   useEffect(() => {
-    apiFetch('/api/tags').then(res => res.ok ? res.json() : []).then(setExistingTags);
     apiFetch('/api/activities/assignable-users').then(res => res.ok ? res.json() : []).then((users: AssignableUser[]) => {
       setAssignableUsers(myId ? users.filter(u => u.id !== myId) : users);
     });
@@ -871,8 +856,8 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
         </table>
       </div>
 
-      <AddActivityModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} onUpdate={triggerReload} existingTags={existingTags} assignableUsers={assignableUsers} />
-      <EditActivityModal activity={editingActivity} isOpen={!!editingActivity} onClose={() => setEditingActivity(null)} onUpdate={triggerReload} existingTags={existingTags} assignableUsers={assignableUsers} />
+      <AddActivityModal isOpen={showAddModal} onClose={() => setShowAddModal(false)} onUpdate={triggerReload} tagOptions={tagOptions} assignableUsers={assignableUsers} />
+      <EditActivityModal activity={editingActivity} isOpen={!!editingActivity} onClose={() => setEditingActivity(null)} onUpdate={triggerReload} tagOptions={tagOptions} assignableUsers={assignableUsers} />
       <DetailModal activityId={selectedActivityId} isOpen={!!selectedActivityId} onClose={() => setSelectedActivityId(null)} isOwner={isOwner} onUpdate={triggerReload} myId={myId} />
       <DeleteConfirmModal isOpen={!!deleteId} onClose={() => setDeleteId(null)} onConfirm={handleDelete} />
     </div>

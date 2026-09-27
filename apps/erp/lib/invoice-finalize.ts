@@ -76,12 +76,67 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
   asset_number?: string | null
   repair_job_id?: string
 }> {
-  // A repair job's sales rows are either its labor charge (repair_job_id only) or a
-  // consumed part (repair_job_id AND accessory_id both set, see
-  // lib/repair-jobs.ts's consumeRepairParts) -- only the former is a generic "repair"
-  // line; a part must still itemize as the real accessory it is (SKU/HSN/quantity),
-  // just like a normal accessory sale, so it shows correctly on the invoice.
-  if (sale.repair_job_id && !sale.accessory_id) {
+  // A repair job's or rental agreement's charge is now itself a real sku_master row
+  // (repair labor/service SKUs, rental-rate SKUs -- see lib/repair-jobs.ts's
+  // consumeRepairParts and lib/rentals.ts's createRentalCharge), so accessory_id is
+  // checked FIRST and the SKU's own category decides what kind of line this is:
+  // a Service-category SKU tagged with repair_job_id/rental_agreement_id keeps the
+  // existing 'repair'/'rental' item_type (preserving those reporting buckets) but
+  // uses the SKU's own description/price/SAC instead of a hardcoded job/agreement
+  // description; any physical category (RAM/SSD/ACC/etc.), whether or not a
+  // repair_job_id is also set (a part consumed during a repair), stays plain
+  // 'accessory' -- unchanged from before.
+  if (sale.accessory_id) {
+    const { data: sku } = await supabaseAdmin
+      .from('sku_master')
+      .select('sku_description, full_sku_code, hsn_code, category, sac_codes(code)')
+      .eq('id', sale.accessory_id)
+      .single()
+    const skuDescription = sku?.sku_description || sku?.full_sku_code || 'Accessory'
+    const sacCode = Array.isArray(sku?.sac_codes) ? sku?.sac_codes[0]?.code : (sku?.sac_codes as any)?.code
+
+    if (sku?.category === 'SERVICE' && sale.repair_job_id) {
+      const { data: job } = await supabaseAdmin
+        .from('repair_jobs')
+        .select('job_number')
+        .eq('id', sale.repair_job_id)
+        .single()
+      return {
+        item_type: 'repair',
+        repair_job_id: sale.repair_job_id,
+        accessory_id: sale.accessory_id,
+        description: `${skuDescription} (Job ${job?.job_number || sale.repair_job_id})`,
+        hsn_code: sacCode || null,
+        quantity: sale.accessory_quantity || 1,
+      }
+    }
+
+    if (sku?.category === 'SERVICE' && sale.rental_agreement_id) {
+      return {
+        item_type: 'rental',
+        accessory_id: sale.accessory_id,
+        description: skuDescription,
+        // Falls back to the hardcoded SAC only if this Service SKU somehow has no
+        // code of its own -- shouldn't happen once creation requires one, but keeps
+        // a rental line from ever going out with no SAC at all.
+        hsn_code: sacCode || RENTAL_SAC_CODE,
+        quantity: sale.accessory_quantity || 1,
+      }
+    }
+
+    return {
+      item_type: 'accessory',
+      accessory_id: sale.accessory_id,
+      description: skuDescription,
+      hsn_code: sku?.hsn_code || null,
+      quantity: sale.accessory_quantity || 1,
+    }
+  }
+
+  // ---------- Historical rows only: a repair labor charge or rental charge created
+  // before this conversion, with no accessory_id/SKU behind it at all. Left exactly
+  // as before -- new charges always carry accessory_id and are handled above. ----------
+  if (sale.repair_job_id) {
     const { data: job } = await supabaseAdmin
       .from('repair_jobs')
       .select('job_number, problem_description')
@@ -96,12 +151,7 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
     }
   }
 
-  // A rental charge has no asset/accessory/repair link at all -- only
-  // rental_agreement_id -- so without this branch it would fall through to the asset
-  // lookup below and throw, making it impossible to invoice a rental. A rent-to-own
-  // BUYOUT deliberately does carry asset_ledger_id and must keep itemizing as the
-  // real unit it is, which is why this checks for the absence of that id.
-  if (sale.rental_agreement_id && !sale.asset_ledger_id && !sale.accessory_id && !sale.repair_job_id) {
+  if (sale.rental_agreement_id && !sale.asset_ledger_id) {
     const { data: agreement } = await supabaseAdmin
       .from('rental_agreements')
       .select('agreement_number')
@@ -118,24 +168,6 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
       // code (997313, leasing of computers), not a goods HSN.
       hsn_code: RENTAL_SAC_CODE,
       quantity: 1,
-    }
-  }
-
-  if (sale.accessory_id) {
-    // Accessories are sku_master rows like everything else (docs/decisions.md,
-    // 2026-07-23) -- sale.accessory_id now points at sku_master(id), not the
-    // retired accessories table.
-    const { data: sku } = await supabaseAdmin
-      .from('sku_master')
-      .select('sku_description, full_sku_code, hsn_code')
-      .eq('id', sale.accessory_id)
-      .single()
-    return {
-      item_type: 'accessory',
-      accessory_id: sale.accessory_id,
-      description: sku?.sku_description || sku?.full_sku_code || 'Accessory',
-      hsn_code: sku?.hsn_code || null,
-      quantity: sale.accessory_quantity || 1,
     }
   }
 
@@ -158,12 +190,34 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
         .single()
     : { data: null }
 
+  let description = sku?.sku_description || sku?.full_sku_code || 'Unit'
+  // Bundled accessories (sale.bundled_accessories JSONB: [{accessory_id, quantity,
+  // unit_price}]) don't get their own invoice_items row -- their charge is already
+  // folded into sale_base_price at sale time (see app/dashboard/entry/sell/page.tsx's
+  // lineBaseGstPrice) -- but without naming them here, the printed invoice shows one
+  // opaque line for the laptop with no indication of what else the customer paid for.
+  const bundled: { accessory_id: string; quantity: number }[] = Array.isArray(sale.bundled_accessories) ? sale.bundled_accessories : []
+  if (bundled.length > 0) {
+    const { data: bundledSkus } = await supabaseAdmin
+      .from('sku_master')
+      .select('id, sku_description, full_sku_code')
+      .in('id', bundled.map((b) => b.accessory_id).filter(Boolean))
+    const nameById = new Map((bundledSkus || []).map((s: any) => [s.id, s.sku_description || s.full_sku_code]))
+    const names = bundled
+      .map((b) => {
+        const name = nameById.get(b.accessory_id) || 'Accessory'
+        return b.quantity > 1 ? `${name} ×${b.quantity}` : name
+      })
+      .filter(Boolean)
+    if (names.length > 0) description += ` (incl. ${names.join(', ')})`
+  }
+
   return {
     item_type: 'asset',
     ledger_asset_id: asset.id,
     sku_id: effectiveSkuId || undefined,
     asset_number: asset.asset_number,
-    description: sku?.sku_description || sku?.full_sku_code || 'Unit',
+    description,
     hsn_code: sku?.hsn_code || null,
     quantity: 1,
   }

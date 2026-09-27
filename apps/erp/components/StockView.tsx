@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
+import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
 import { useRole } from '@/lib/auth/useRole'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -70,6 +71,7 @@ interface AssetRow {
   payment_status?: string
   amount_paid?: number
   payment_date?: string | null
+  payment_account?: string | null
   bundled_accessories_display?: { name: string; quantity: number }[]
 }
 
@@ -120,6 +122,9 @@ interface AccessoryStockRow {
 }
 
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned', 'on_rent']
+
+// Matches the abbreviations used on Sales Ledger's list rows (apps/erp/app/dashboard/sales/page.tsx).
+const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: 'DB', Techtenth: 'TT', Cash: 'CS' }
 
 const MONTH_OPTIONS = [
   { value: '1', label: 'January' }, { value: '2', label: 'February' }, { value: '3', label: 'March' },
@@ -204,6 +209,10 @@ export default function StockView({
   }, [])
   const [tab, setTab] = useState<Tab>(initialTab)
   const isDesktop = useIsDesktopViewport()
+  // Mouse-drag-resizable list pane (desktop/tablet only -- mobile is single-pane,
+  // full width, so a divider wouldn't mean anything there). One shared width across
+  // all 4 tabs since they're all the same "list pane" concept, just different data.
+  const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('stock-list-pane-width')
   const returnToPath = `${pathname}?tab=${tab}`
   const [assets, setAssets] = useState<AssetRow[]>([])
   const [soldAccessories, setSoldAccessories] = useState<SoldAccessoryRow[]>([])
@@ -211,6 +220,7 @@ export default function StockView({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState('')
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('')
   // searchInput updates on every keystroke (so the box itself feels responsive);
   // searchTerm only catches up 300ms after typing stops, and is what actually drives
   // the fetch effects below -- without this, every keystroke fired its own full
@@ -312,6 +322,7 @@ export default function StockView({
         params.append('status', statusFilter || CURRENT_STATUSES.join(','))
       }
       if (searchTerm) params.append('search', searchTerm)
+      if (tab === 'sold' && paymentStatusFilter) params.set('payment_status', paymentStatusFilter)
       if (yearFilter) {
         params.set('year', yearFilter)
         if (monthFilter) params.set('month', monthFilter)
@@ -338,7 +349,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page])
+  }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
 
@@ -400,7 +411,7 @@ export default function StockView({
   useEffect(() => { fetchAccessoryStock() }, [fetchAccessoryStock])
 
   // Any filter/tab change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [tab, statusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
+  useEffect(() => { setPage(1) }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
 
   const fetchCounts = useCallback(async () => {
     // SQL exact counts (see /api/stock's counts=true branch), not full-row fetch
@@ -640,6 +651,17 @@ export default function StockView({
             </SelectContent>
           </Select>
         )}
+        {tab === 'sold' && (
+          <Select value={paymentStatusFilter || 'all'} onValueChange={(v) => setPaymentStatusFilter(v === 'all' ? '' : v)}>
+            <SelectTrigger className="w-auto"><SelectValue placeholder="All Payment Statuses" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Payment Statuses</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="partial">Partial</SelectItem>
+              <SelectItem value="paid">Paid</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
         <Input
           type="text"
           placeholder={
@@ -670,8 +692,8 @@ export default function StockView({
             </Select>
           </>
         )}
-        {(statusFilter || searchInput || monthFilter || yearFilter) && (
-          <button onClick={() => { setStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-muted-foreground underline self-center">
+        {(statusFilter || paymentStatusFilter || searchInput || monthFilter || yearFilter) && (
+          <button onClick={() => { setStatusFilter(''); setPaymentStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-muted-foreground underline self-center">
             Clear filters
           </button>
         )}
@@ -755,7 +777,10 @@ export default function StockView({
         <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a SKU is open, matching the
               Current/Sold master-detail drill-in navigation. */}
-          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}>
+          <div
+            className={cn('w-full md:flex-shrink-0 border-r border-border flex flex-col', activeAccessoryId && 'hidden md:flex')}
+            style={isDesktop ? { width: listPaneWidth } : undefined}
+          >
             <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {accessoryStock.length === 0 && (
                 <p className="p-4 text-center text-sm text-muted-foreground">No accessories in stock.</p>
@@ -770,6 +795,13 @@ export default function StockView({
               ))}
             </div>
           </div>
+          {isDesktop && (
+            <div
+              onMouseDown={handlePaneResize}
+              className="hidden md:block w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+              title="Drag to resize"
+            />
+          )}
 
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeAccessoryId && 'hidden md:flex md:items-center md:justify-center')}>
@@ -788,7 +820,10 @@ export default function StockView({
       ) : tab === 'sold_accessories' ? (
         <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a sale is open. */}
-          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}>
+          <div
+            className={cn('w-full md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}
+            style={isDesktop ? { width: listPaneWidth } : undefined}
+          >
             <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
               <button
                 type="button"
@@ -812,6 +847,13 @@ export default function StockView({
               ))}
             </div>
           </div>
+          {isDesktop && (
+            <div
+              onMouseDown={handlePaneResize}
+              className="hidden md:block w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+              title="Drag to resize"
+            />
+          )}
 
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeSoldAccessoryId && 'hidden md:flex md:items-center md:justify-center')}>
@@ -832,7 +874,10 @@ export default function StockView({
         <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once a unit is open, matching the
               Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
-          <div className={cn('w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}>
+          <div
+            className={cn('w-full md:flex-shrink-0 border-r border-border flex flex-col', activeAssetId && 'hidden md:flex')}
+            style={isDesktop ? { width: listPaneWidth } : undefined}
+          >
             <div className="flex items-center gap-3 px-3 py-1.5 border-b border-border text-xs text-muted-foreground">
               {isOwner && (tab === 'current' || tab === 'sold') && (
                 <Checkbox
@@ -878,6 +923,13 @@ export default function StockView({
               ))}
             </div>
           </div>
+          {isDesktop && (
+            <div
+              onMouseDown={handlePaneResize}
+              className="hidden md:block w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+              title="Drag to resize"
+            />
+          )}
 
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeAssetId && 'hidden md:flex md:items-center md:justify-center')}>
@@ -962,12 +1014,18 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
             {asset.under_repair_job_number && (
               <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap">Under Repair</span>
             )}
+            {tab === 'sold' && asset.payment_status && (
+              <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, asset.payment_status)}>{asset.payment_status}</StatusBadge>
+            )}
             <StatusBadge tone={toneFor(ASSET_STATUS_TONES, asset.status)}>{asset.status.replace(/_/g, ' ')}</StatusBadge>
           </div>
         </div>
         <div className="flex items-baseline justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">{desc}</p>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">{dateStr || '—'}</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            {tab === 'sold' && asset.payment_account && `${ACCOUNT_ABBREV[asset.payment_account] ?? asset.payment_account} · `}
+            {dateStr || '—'}
+          </span>
         </div>
       </button>
     </div>
@@ -1082,9 +1140,6 @@ function AssetDetailPane({
               Delete
             </Button>
           )}
-          <Link href={`/dashboard/stock/${asset.id}?return_to=${encodeURIComponent(returnToPath)}`} className="text-xs text-muted-foreground underline ml-auto">
-            Open full page
-          </Link>
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 pt-2">

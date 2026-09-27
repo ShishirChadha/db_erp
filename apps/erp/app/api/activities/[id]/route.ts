@@ -4,7 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
-  canSeeActivity, getProfileMap, areValidUsers,
+  canSeeActivity, getProfileMap, areValidUsers, areValidTags,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -96,7 +96,17 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   for (const field of trackedFields) {
     if (body[field] !== undefined) updates[field] = body[field]
   }
-  if (body.tags !== undefined) updates.tags = Array.isArray(body.tags) ? body.tags : []
+  if (body.tags !== undefined) {
+    const tagList: string[] = Array.isArray(body.tags) ? [...new Set(body.tags as string[])] : []
+    // Only validate tags newly being added -- a legacy/free-text tag already on this
+    // task from before the pick-list was mandated (or since deactivated) can still be
+    // kept or removed, it just can't be re-typed fresh on a different task.
+    const newlyAdded = tagList.filter((t) => !(existing.tags || []).includes(t))
+    if (!(await areValidTags(newlyAdded))) {
+      return NextResponse.json({ error: 'One or more tags are not in the allowed tag list.' }, { status: 400 })
+    }
+    updates.tags = tagList
+  }
   if (body.reminder_at !== undefined) updates.reminder_at = body.reminder_at
 
   // Completion timestamp follows the status transition, not a client-supplied value.

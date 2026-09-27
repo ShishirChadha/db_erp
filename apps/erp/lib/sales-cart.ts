@@ -1,6 +1,7 @@
 import { supabaseAdmin } from './supabase/service'
 import { insertAccessoryMovement } from './accessory-movements'
 import { SELLABLE_STATUSES } from './sales-entry'
+import { NON_STOCK_CATEGORIES } from './sku-categories'
 
 // One line in a multi-item Sell-form checkout: either a unit (with optional bundled
 // accessories folded into its own price/row, unchanged from the single-item flow) or a
@@ -143,7 +144,7 @@ export async function validateCartItems(
   if (demandBySku.size > 0) {
     const { data: skus } = await supabaseAdmin
       .from('sku_master')
-      .select('id, full_sku_code, quantity_in_stock, status')
+      .select('id, full_sku_code, quantity_in_stock, status, category')
       .in('id', [...demandBySku.keys()])
     const skuById = new Map((skus || []).map((s) => [s.id, s]))
     for (const demand of demandBySku.values()) {
@@ -156,6 +157,9 @@ export async function validateCartItems(
         demand.indexes.forEach((index) => itemErrors.push({ index, error: `${sku.full_sku_code} is archived and cannot be sold.` }))
         continue
       }
+      // Non-stock (SERVICE) SKUs have no inventory to check -- "quantity" here is
+      // just the number of units of the service billed, never an oversell risk.
+      if (NON_STOCK_CATEGORIES.includes(sku.category)) continue
       if (sku.quantity_in_stock < demand.qty) {
         const message = demand.indexes.length > 1
           ? `Only ${sku.quantity_in_stock} of ${sku.full_sku_code} in stock, but this cart requests ${demand.qty} combined across multiple lines.`
@@ -208,7 +212,7 @@ export async function processSingleSaleItem(
     const qty = item.accessory_quantity || 1
     const { data: accessorySku } = await supabaseAdmin
       .from('sku_master')
-      .select('id, quantity_in_stock, status')
+      .select('id, quantity_in_stock, status, category')
       .eq('id', item.accessory_id)
       .single()
 
@@ -216,7 +220,8 @@ export async function processSingleSaleItem(
     if (accessorySku.status !== 'active') {
       return { ok: false, status: 400, message: 'This item is archived and cannot be sold.' }
     }
-    if (accessorySku.quantity_in_stock < qty) {
+    const isStockTracked = !NON_STOCK_CATEGORIES.includes(accessorySku.category)
+    if (isStockTracked && accessorySku.quantity_in_stock < qty) {
       return { ok: false, status: 400, message: `Only ${accessorySku.quantity_in_stock} in stock.` }
     }
 
@@ -227,16 +232,21 @@ export async function processSingleSaleItem(
       .single()
     if (saleErr) return { ok: false, status: 500, message: saleErr.message }
 
-    const { error: moveErr } = await insertAccessoryMovement({
-      skuId: accessorySku.id,
-      movementType: 'sale',
-      quantityChange: -qty,
-      notes: 'Standalone accessory sale',
-      createdBy: sessionUserId,
-    })
-    if (moveErr) {
-      await supabaseAdmin.from('sales').delete().eq('id', sale.id)
-      return { ok: false, status: 400, message: moveErr.message }
+    // A service (non-stock category) has no inventory to move at all -- skip the
+    // stock_movements insert entirely rather than recording a movement against
+    // nothing.
+    if (isStockTracked) {
+      const { error: moveErr } = await insertAccessoryMovement({
+        skuId: accessorySku.id,
+        movementType: 'sale',
+        quantityChange: -qty,
+        notes: 'Standalone accessory sale',
+        createdBy: sessionUserId,
+      })
+      if (moveErr) {
+        await supabaseAdmin.from('sales').delete().eq('id', sale.id)
+        return { ok: false, status: 400, message: moveErr.message }
+      }
     }
 
     return {

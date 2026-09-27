@@ -12,6 +12,11 @@ import { useCustomOptions } from '@/lib/useCustomOptions'
 import { EditSaleDialog } from '@/components/EditSaleDialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { StatusBadge } from '@/components/StatusBadge'
+import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+
+// Matches the abbreviations used on Sales Ledger / StockView's list rows.
+const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: 'DB', Techtenth: 'TT', Cash: 'CS' }
 
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
@@ -72,7 +77,8 @@ interface AssetDetail {
     payment_status: string | null
     amount_paid: number | null
     payment_date: string | null
-    bundled_accessories_display: { name: string; quantity: number }[]
+    payment_account: string | null
+    bundled_accessories_display: { name: string; quantity: number; unit_price: number }[]
   } | null
   // Owner-only (redacted server-side to null for non-owners, same rule as cost/vendor
   // everywhere else -- see CLAUDE.md). PO number / vendor / unit cost this unit was
@@ -405,25 +411,25 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
       {!embedded && (
         <button onClick={() => router.push(backHref)} className="text-sm text-muted-foreground mb-2">&larr; Back</button>
       )}
-      <h1 className="text-2xl font-bold mb-1">{asset.asset_number || (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}</h1>
-      <p className="text-muted-foreground mb-1">
-        {sku?.full_sku_code} — {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`}
+      {/* Header leads with the product itself (what it IS), not its tag -- asset/serial
+          moves to a subtitle line right below. break-words instead of truncating so a
+          long SKU description wraps onto a second line rather than getting cut off.
+          Warranty/purchased-as/accessories live in the Overview tab's Product card
+          below instead, so this strip reads at a glance. */}
+      <h1 className="text-2xl font-bold mb-1 break-words">
+        {sku?.full_sku_code || '—'}
+        {' — '}
+        {buildConfigSummary(sku?.category, sku?.specifications, templates) || sku?.sku_description || `${sku?.brand || ''} ${sku?.model_name || ''}`.trim() || '—'}
+      </h1>
+      {/* The one place serial number shows on this page (besides the Unit Details
+          edit field, which is a form control, not a display) -- combined with asset
+          number here instead of also repeating in the chip row below. */}
+      <p className="text-sm text-muted-foreground mb-2">
+        {asset.asset_number
+          ? `${asset.asset_number}${asset.serial_number ? ` · SN: ${asset.serial_number}` : ''}`
+          : (asset.serial_number ? `SN: ${asset.serial_number}` : '— no tag yet —')}
       </p>
-      {asset.purchased_sku && (
-        <p className="text-xs text-muted-foreground mb-1" title="This unit's spec was changed after purchase (Change SKU)">
-          Purchased as: {asset.purchased_sku.full_sku_code} — {buildConfigSummary(asset.purchased_sku.category, asset.purchased_sku.specifications, templates) || asset.purchased_sku.sku_description}
-        </p>
-      )}
-      <p className="text-sm text-muted-foreground mb-4">
-        {asset.warranty_type || asset.warranty_expiry_date
-          ? `Warranty: ${asset.warranty_type || '—'}${asset.warranty_expiry_date ? ` — expires ${asset.warranty_expiry_date.slice(0, 10)}` : ''}`
-          : 'No warranty on file.'}
-      </p>
-
-      <div className="flex gap-4 mb-4 text-sm">
-        <div>
-          <span className="text-muted-foreground">Serial:</span> {asset.serial_number || '—'}
-        </div>
+      <div className="flex gap-4 mb-4 text-sm flex-wrap">
         <div>
           <span className="text-muted-foreground">Status:</span>{' '}
           <span className="font-medium capitalize">{asset.status.replace(/_/g, ' ')}</span>
@@ -448,6 +454,43 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
 
         {/* ---------- Tab 1: Overview -- Unit Details + Mark-ready banner ---------- */}
         <TabsContent value="overview">
+          <div className="border rounded-lg p-4 mb-4">
+            <h2 className="font-semibold mb-2">Product</h2>
+            <div className="text-sm space-y-1">
+              {asset.purchased_sku && (
+                <p className="text-xs text-muted-foreground" title="This unit's spec was changed after purchase (Change SKU)">
+                  Purchased as: {asset.purchased_sku.full_sku_code} — {buildConfigSummary(asset.purchased_sku.category, asset.purchased_sku.specifications, templates) || asset.purchased_sku.sku_description}
+                </p>
+              )}
+              <p className="text-muted-foreground">
+                {asset.warranty_type || asset.warranty_expiry_date
+                  ? `Warranty: ${asset.warranty_type || '—'}${asset.warranty_expiry_date ? ` — expires ${asset.warranty_expiry_date.slice(0, 10)}` : ''}`
+                  : 'No warranty on file.'}
+              </p>
+              {asset.sale_id && asset.sale_summary && (
+                <>
+                  <p className="text-muted-foreground flex items-center gap-1.5">
+                    Payment:{' '}
+                    {asset.sale_summary.payment_status ? (
+                      <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, asset.sale_summary.payment_status)}>
+                        {asset.sale_summary.payment_status}
+                      </StatusBadge>
+                    ) : '—'}
+                    {asset.sale_summary.payment_account && (
+                      <span>to {ACCOUNT_ABBREV[asset.sale_summary.payment_account] ?? asset.sale_summary.payment_account}</span>
+                    )}
+                  </p>
+                  <p className="text-muted-foreground">
+                    Bundled accessories:{' '}
+                    {asset.sale_summary.bundled_accessories_display.length > 0
+                      ? asset.sale_summary.bundled_accessories_display.map((b) => b.name).join(', ') + ' (see Sale & Payment tab for pricing)'
+                      : 'None'}
+                  </p>
+                </>
+              )}
+            </div>
+          </div>
+
           {canEditLiveStock && (
             <div className="border rounded-lg p-4 mb-4">
               <div className="flex items-center justify-between mb-2">
@@ -773,12 +816,25 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
                     ) : '—'}
                   </Field>
                   <Field label="Payment Date">{asset.sale_summary.payment_date ? asset.sale_summary.payment_date.slice(0, 10) : '—'}</Field>
-                  <Field label="Bundled">
-                    {asset.sale_summary.bundled_accessories_display.length > 0
-                      ? asset.sale_summary.bundled_accessories_display.map((b, i) => (
-                          <span key={i}>{i > 0 && ', '}{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ''}</span>
-                        ))
-                      : 'None'}
+                  <Field label="Bundled Accessories">
+                    {asset.sale_summary.bundled_accessories_display.length > 0 ? (
+                      <div className="space-y-0.5">
+                        {asset.sale_summary.bundled_accessories_display.map((b, i) => (
+                          <div key={i} className="flex items-baseline justify-between gap-2">
+                            <span>{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ''}</span>
+                            <span className="tabular-nums text-muted-foreground whitespace-nowrap">
+                              {b.unit_price > 0 ? `₹${(b.unit_price * b.quantity).toFixed(2)}` : 'Free'}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex items-baseline justify-between gap-2 pt-0.5 border-t font-medium">
+                          <span>Accessories subtotal</span>
+                          <span className="tabular-nums">
+                            ₹{asset.sale_summary.bundled_accessories_display.reduce((sum, b) => sum + b.unit_price * b.quantity, 0).toFixed(2)}
+                          </span>
+                        </div>
+                      </div>
+                    ) : 'None'}
                   </Field>
                 </div>
               ) : (

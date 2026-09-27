@@ -44,6 +44,7 @@ export async function GET(req: NextRequest) {
   const id = searchParams.get('id')                    // optional (fetch a single unit by id)
   const source = searchParams.get('source')            // optional exact match, e.g. 'employee_intake'
   const excludeSource = searchParams.get('exclude_source') // optional not-equal, e.g. 'employee_intake'
+  const paymentStatusFilter = searchParams.get('payment_status') // optional -- 'pending'/'partial'/'paid', sold tab only
   const pagination = parsePagination(searchParams, 20)
 
   // Stat-card counts mode: SQL exact counts instead of fetching+filtering full rows.
@@ -237,6 +238,22 @@ export async function GET(req: NextRequest) {
       orClauses.push(`id.in.(${customerAssetIds.join(',')})`)
     }
     query = query.or(orClauses.join(','))
+  }
+  if (paymentStatusFilter) {
+    // payment_status lives on `sales`, joined in separately after this query runs
+    // (see saleByAssetId below) -- same "resolve matching asset_ledger_ids first,
+    // then .in() them into this query" pattern the search filter above uses for
+    // customer-name/invoice-number matches, since it can't be filtered on directly
+    // via a join at this layer.
+    const { data: matchingPaymentSales } = await withRetry(() =>
+      supabaseAdmin
+        .from('sales')
+        .select('asset_ledger_id')
+        .eq('payment_status', paymentStatusFilter)
+        .not('asset_ledger_id', 'is', null)
+    )
+    const paymentAssetIds = [...new Set((matchingPaymentSales || []).map((s: any) => s.asset_ledger_id))]
+    query = paymentAssetIds.length > 0 ? query.in('id', paymentAssetIds) : query.eq('id', '00000000-0000-0000-0000-000000000000')
   }
   if (sku_id) {
     query = query.eq('sku_id', sku_id)
@@ -439,6 +456,7 @@ export async function GET(req: NextRequest) {
       payment_status: sale?.payment_status,
       amount_paid: sale?.amount_paid,
       payment_date: sale?.payment_date,
+      payment_account: sale?.payment_account,
       bundled_accessories: sale?.bundled_accessories,
       bundled_accessories_display: sale?.bundled_accessories_display,
     }

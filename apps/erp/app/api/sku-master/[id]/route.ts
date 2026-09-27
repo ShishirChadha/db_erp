@@ -71,6 +71,7 @@ export async function PUT(
     'notes',
     'full_sku_code',
     'hsn_code',
+    'sac_code_id',
     'category',
     'status',
     ...WEB_FIELD_KEYS,
@@ -137,6 +138,19 @@ export async function PUT(
 
   if (Object.keys(updatable).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
+  }
+
+  // Same "SAC code required for a Service SKU" rule as creation -- checked against
+  // the EFFECTIVE category/sac_code_id (this edit's value if provided, else the
+  // row's current one), so switching a SKU to SERVICE without also picking a code,
+  // or clearing a Service SKU's code, is rejected either way.
+  if ('category' in updatable || 'sac_code_id' in updatable) {
+    const { data: current } = await supabaseAdmin.from('sku_master').select('category, sac_code_id').eq('id', id).single()
+    const effectiveCategory = updatable.category ?? current?.category
+    const effectiveSacCodeId = 'sac_code_id' in updatable ? updatable.sac_code_id : current?.sac_code_id
+    if (effectiveCategory === 'SERVICE' && !effectiveSacCodeId) {
+      return NextResponse.json({ error: 'Select a SAC code for this service.' }, { status: 400 })
+    }
   }
 
   const { data: before } = await supabaseAdmin

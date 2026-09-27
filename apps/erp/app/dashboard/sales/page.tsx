@@ -68,7 +68,7 @@ interface Sale {
   generation?: string | null;
   ram?: string | null;
   ssd?: string | null;
-  bundled_accessories_display?: { name: string; quantity: number }[];
+  bundled_accessories_display?: { name: string; quantity: number; unit_price: number }[];
   payment_date?: string | null;
 }
 
@@ -286,12 +286,17 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           )}
         </Field>
         {sale.bundled_accessories_display && sale.bundled_accessories_display.length > 0 && (
-          <Field label="Bundle">
-            {sale.bundled_accessories_display.map((b, i) => (
-              <span key={i} className="block">
-                {b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}
-              </span>
-            ))}
+          <Field label="Bundled Accessories">
+            <div className="space-y-0.5">
+              {sale.bundled_accessories_display.map((b, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-2">
+                  <span>{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}</span>
+                  <span className="tabular-nums text-muted-foreground whitespace-nowrap">
+                    {b.unit_price > 0 ? `₹${(b.unit_price * b.quantity).toFixed(2)}` : "Free"}
+                  </span>
+                </div>
+              ))}
+            </div>
           </Field>
         )}
         <Field label="Amount Paid"><span className="tabular-nums">₹{sale.amount_paid?.toFixed(2)}</span></Field>

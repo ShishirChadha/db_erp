@@ -4,7 +4,7 @@ import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
   buildOwnVisibilityFilter, getAssigneesForActivities, getWatchersForActivities,
-  getChecklistCountsForActivities, getProfileMap, areValidUsers,
+  getChecklistCountsForActivities, getProfileMap, areValidUsers, areValidTags,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -103,6 +103,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'related_type and related_id must be set together.' }, { status: 400 })
   }
 
+  const tagList: string[] = Array.isArray(tags) ? [...new Set(tags as string[])] : []
+  if (!(await areValidTags(tagList))) {
+    return NextResponse.json({ error: 'One or more tags are not in the allowed tag list.' }, { status: 400 })
+  }
+
   const assigneeIds: string[] = Array.isArray(assignee_ids) ? [...new Set(assignee_ids)] : []
   if (!(await areValidUsers(assigneeIds))) {
     return NextResponse.json({ error: 'One or more assignees are not valid active users with Activity Hub access.' }, { status: 400 })
@@ -124,7 +129,7 @@ export async function POST(req: NextRequest) {
       created_by: sessionUser.id,
       title: String(title).trim(),
       description: description || null,
-      tags: Array.isArray(tags) ? tags : [],
+      tags: tagList,
       status: status || 'pending',
       priority: priority || 'normal',
       due_date: due_date || null,

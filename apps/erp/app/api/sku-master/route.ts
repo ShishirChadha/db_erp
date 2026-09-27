@@ -241,6 +241,14 @@ export async function POST(req: NextRequest) {
   // rather than trusted from the request body.
   const base_cost = sessionUser.role === 'owner' ? body.base_cost : undefined
 
+  // A Service SKU (labor, OS installs, diagnostics, rental rate) has no physical
+  // HSN -- it must carry a real, owner-managed SAC code instead (Settings -> SAC
+  // Codes) so it can be created at all. Enforced here, not a DB constraint, same
+  // idiom as every other conditional-required field in this app.
+  if (category === 'SERVICE' && !body.sac_code_id) {
+    return NextResponse.json({ error: 'Select a SAC code for this service.' }, { status: 400 })
+  }
+
   let result
   try {
     result = await resolveOrCreateSku({
@@ -254,6 +262,7 @@ export async function POST(req: NextRequest) {
       reorder_level,
       sku_description: body.sku_description,
       hsn_code: body.hsn_code,
+      sac_code_id: category === 'SERVICE' ? body.sac_code_id : null,
     })
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 })

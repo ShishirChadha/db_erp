@@ -12,3 +12,14 @@ export const NON_SERIALIZED_CATEGORIES = ['RAM', 'SSD', 'CPU', 'GPU', 'KBD', 'MO
 export function isSerializedCategory(category: string | null | undefined): boolean {
   return !!category && !NON_SERIALIZED_CATEGORIES.includes(category)
 }
+
+// Non-physical categories -- a service (labor, OS install, diagnostic fee, rental
+// rate) is sellable exactly like an accessory (a real sku_master row, priced,
+// itemized on invoices) but has no inventory at all: no quantity_in_stock to check
+// or decrement, never purchased/received, never oversold. lib/sales-cart.ts skips
+// both the stock-level check and the stock_movements insert for these categories.
+export const NON_STOCK_CATEGORIES = ['SERVICE']
+
+export function isStockTrackedCategory(category: string | null | undefined): boolean {
+  return !!category && !NON_STOCK_CATEGORIES.includes(category)
+}

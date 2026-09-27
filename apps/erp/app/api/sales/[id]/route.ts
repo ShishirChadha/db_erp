@@ -36,7 +36,37 @@ export async function GET(
     bundledAccessories = bundledAccessories.map((b: any) => ({ ...b, accessory_name: nameById.get(b.accessory_id) || null }))
   }
 
-  return NextResponse.json({ ...data, bundled_accessories: bundledAccessories, history: history || [] })
+  // Surface the sold unit's own SKU description so EditSaleDialog can show what laptop
+  // this sale is actually for, not just its bare asset/serial number -- same
+  // current_sku_id-over-sku_id preference /api/stock uses for a unit whose SKU was
+  // reassigned after purchase (Change SKU).
+  let unitSkuDescription: string | null = null
+  let unitFullSkuCode: string | null = null
+  if (data.asset_ledger_id) {
+    const { data: assetRow } = await supabaseAdmin
+      .from('asset_ledger')
+      .select('sku_id, current_sku_id')
+      .eq('id', data.asset_ledger_id)
+      .maybeSingle()
+    const effectiveSkuId = assetRow?.current_sku_id || assetRow?.sku_id
+    if (effectiveSkuId) {
+      const { data: unitSku } = await supabaseAdmin
+        .from('sku_master')
+        .select('full_sku_code, sku_description')
+        .eq('id', effectiveSkuId)
+        .maybeSingle()
+      unitSkuDescription = unitSku?.sku_description || null
+      unitFullSkuCode = unitSku?.full_sku_code || null
+    }
+  }
+
+  return NextResponse.json({
+    ...data,
+    bundled_accessories: bundledAccessories,
+    unit_sku_description: unitSkuDescription,
+    unit_full_sku_code: unitFullSkuCode,
+    history: history || [],
+  })
 }
 
 // ---------- PATCH: owner edits a sale after the fact ----------
@@ -107,8 +137,8 @@ export async function PATCH(
   // don't have a separate bundle.
   if (body.bundled_accessories !== undefined && existing.asset_ledger_id) {
     const oldList: { accessory_id: string; quantity: number }[] = existing.bundled_accessories || []
-    const newList: { accessory_id: string; quantity: number }[] = Array.isArray(body.bundled_accessories)
-      ? body.bundled_accessories.map((b: any) => ({ accessory_id: b.accessory_id, quantity: b.quantity }))
+    const newList: { accessory_id: string; quantity: number; unit_price: number }[] = Array.isArray(body.bundled_accessories)
+      ? body.bundled_accessories.map((b: any) => ({ accessory_id: b.accessory_id, quantity: b.quantity, unit_price: b.unit_price || 0 }))
       : []
     const oldQty = new Map(oldList.map((b) => [b.accessory_id, b.quantity]))
     const newQty = new Map(newList.map((b) => [b.accessory_id, b.quantity]))

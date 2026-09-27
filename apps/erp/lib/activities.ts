@@ -12,6 +12,21 @@ export const ACTIVITY_RELATED_TYPES = [
 // consistent, matches the "don't over-engineer" guidance for this feature.
 export const ALLOWED_REACTIONS = ['👍', '❤️', '🎉', '👀', '🚀', '✅'] as const
 
+// Activity Hub tags are a mandated pick-list, not free text -- backed by the
+// generic custom_options table (category 'activity_tags') like every other
+// owner-curated dropdown in the app, except only the owner can add a new value
+// here (enforced in /api/custom-options's POST) rather than any signed-in user.
+export const ACTIVITY_TAG_CATEGORY = 'activity_tags'
+
+export async function areValidTags(tags: string[]): Promise<boolean> {
+  if (tags.length === 0) return true
+  const { data } = await supabaseAdmin
+    .from('custom_options').select('value')
+    .eq('category', ACTIVITY_TAG_CATEGORY).eq('is_active', true)
+  const allowed = new Set((data || []).map((o) => o.value))
+  return tags.every((t) => allowed.has(t))
+}
+
 // PostgREST `.or()` filter string expressing "created by me OR assigned to me
 // OR watching it". Owners pass no filter at all (see call sites) since they
 // see every task. Watching is a lighter-weight "CC" relationship (see

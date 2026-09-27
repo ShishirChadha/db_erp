@@ -30,11 +30,16 @@ export async function GET(req: NextRequest) {
   return NextResponse.json(data)
 }
 
+// Categories where, unlike every other custom_options list, an employee is not
+// allowed to add a new value on the fly (e.g. Activity Hub tags -- the owner
+// wants to fully control the pick-list, not have it grow ad hoc per task).
+const OWNER_ONLY_ADD_CATEGORIES = ['activity_tags']
+
 // ---------- POST: add a new dropdown value to a category ----------
 // Any signed-in user (owner or employee) can add a new value here -- e.g. an
 // employee typing a model/brand that isn't in the list yet on a data-entry form.
 // Editing/deactivating/deleting existing values stays owner-only (see PATCH/DELETE
-// in [id]/route.ts) -- this endpoint only ever appends.
+// in [id]/route.ts) -- this endpoint only ever appends. Exception: OWNER_ONLY_ADD_CATEGORIES.
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -47,6 +52,10 @@ export async function POST(req: NextRequest) {
 
   const trimmedCategory = category.trim()
   const trimmedValue = value.trim()
+
+  if (OWNER_ONLY_ADD_CATEGORIES.includes(trimmedCategory) && !isOwner(sessionUser)) {
+    return NextResponse.json({ error: 'Only the owner can add new values to this list.' }, { status: 403 })
+  }
 
   // Case/whitespace-insensitive dedup: the DB's own unique constraint is exact-string,
   // which let "ThinkPad T450" and "Thinkpad T450" both get added as separate options.

@@ -24,6 +24,13 @@ interface SKU {
   quantity_in_stock: number
   reorder_level: number
   hsn_code?: string | null
+  sac_code_id?: string | null
+}
+
+interface SacCodeOption {
+  id: string
+  code: string
+  description: string
 }
 
 interface CategoryTemplate {
@@ -56,6 +63,21 @@ export function SkuFormModal({
   const [description, setDescription] = useState(existingSku?.sku_description || '')
   const [descManuallyEdited, setDescManuallyEdited] = useState(false)
   const [hsnCode, setHsnCode] = useState(existingSku?.hsn_code || '')
+  const [sacCodeId, setSacCodeId] = useState(existingSku?.sac_code_id || '')
+  const [sacCodes, setSacCodes] = useState<SacCodeOption[]>([])
+
+  const isService = category === 'SERVICE'
+
+  // Services carry a real GST SAC code (owner-managed list, Settings -> SAC Codes)
+  // instead of a free-typed HSN -- fetched once, filtered to active codes so a
+  // retired code can't be picked on a new SKU (an existing SKU that already
+  // references one keeps working regardless).
+  useEffect(() => {
+    if (!isService) return
+    apiFetch('/api/sac-codes?active=true').then(res => res.json()).then((data) => {
+      setSacCodes(Array.isArray(data) ? data : [])
+    })
+  }, [isService])
 
   const selectedTemplate = templates.find(t => t.category === category)
 
@@ -128,6 +150,10 @@ export function SkuFormModal({
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault()
+    if (isService && !sacCodeId) {
+      alert('Select a SAC code for this service.')
+      return
+    }
     const payload: any = {
       category,
       item_type: selectedTemplate?.display_name || category,
@@ -135,7 +161,7 @@ export function SkuFormModal({
       model_name: specs.model || '',
       sku_description: description,
       specifications: specs,
-      hsn_code: hsnCode,
+      ...(isService ? { sac_code_id: sacCodeId } : { hsn_code: hsnCode }),
     }
     if (!existingSku) {
       payload.manual_sku_code = skuCode || generatedSku
@@ -211,17 +237,37 @@ export function SkuFormModal({
             />
           </div>
 
-          {/* HSN Code */}
-          <div className="mb-3">
-            <label className="block text-sm font-medium">HSN Code</label>
-            <input
-              type="text"
-              value={hsnCode}
-              onChange={(e) => setHsnCode(e.target.value)}
-              className="border p-2 w-full rounded"
-              placeholder="e.g., 84713010"
-            />
-          </div>
+          {/* HSN (goods) or SAC (services) code */}
+          {isService ? (
+            <div className="mb-3">
+              <label className="block text-sm font-medium">SAC Code *</label>
+              <select
+                value={sacCodeId}
+                onChange={(e) => setSacCodeId(e.target.value)}
+                className="border p-2 w-full rounded"
+                required
+              >
+                <option value="">Select a SAC code...</option>
+                {sacCodes.map(c => (
+                  <option key={c.id} value={c.id}>{c.code} — {c.description}</option>
+                ))}
+              </select>
+              <p className="text-xs text-muted-foreground mt-1">
+                Managed in Settings → SAC Codes. A service SKU can't be saved without one.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-3">
+              <label className="block text-sm font-medium">HSN Code</label>
+              <input
+                type="text"
+                value={hsnCode}
+                onChange={(e) => setHsnCode(e.target.value)}
+                className="border p-2 w-full rounded"
+                placeholder="e.g., 84713010"
+              />
+            </div>
+          )}
 
           <div className="flex justify-end space-x-2 mt-4">
             <button type="button" onClick={onClose} disabled={submitting} className="px-4 py-2 border rounded disabled:opacity-50">Cancel</button>

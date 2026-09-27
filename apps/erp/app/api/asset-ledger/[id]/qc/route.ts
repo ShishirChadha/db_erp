@@ -108,12 +108,13 @@ export async function GET(
     payment_status: string | null
     amount_paid: number | null
     payment_date: string | null
-    bundled_accessories_display: { name: string; quantity: number }[]
+    payment_account: string | null
+    bundled_accessories_display: { name: string; quantity: number; unit_price: number }[]
   } | null = null
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
     const { data: saleRow } = await supabaseAdmin
       .from('sales')
-      .select('id, customer_name, sale_total, payment_status, amount_paid, bundled_accessories')
+      .select('id, customer_name, sale_total, payment_status, amount_paid, payment_account, bundled_accessories')
       .eq('asset_ledger_id', id)
       .eq('is_deleted', false)
       .maybeSingle()
@@ -137,9 +138,10 @@ export async function GET(
         payment_status: saleRow.payment_status,
         amount_paid: saleRow.amount_paid,
         payment_date: paymentDateBySaleId.get(saleRow.id) || null,
+        payment_account: saleRow.payment_account,
         bundled_accessories_display: bundled.map((b: any) => {
           const bsku = bundledSkuById.get(b.accessory_id)
-          return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity }
+          return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity, unit_price: b.unit_price || 0 }
         }),
       }
     }
