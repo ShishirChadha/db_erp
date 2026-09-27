@@ -127,7 +127,7 @@ const updateVendorInvoiceTotal = async (vendorId: string, invoiceNumber: string)
     .eq("purchased_invoice_number", invoiceNumber)
     .eq("is_deleted", false);
   if (error) return;
-  const totalSum = data.reduce((sum, row) => sum + (row.total_price || 0), 0);
+  const totalSum = data.reduce((sum: number, row: any) => sum + (row.total_price || 0), 0);
   await supabase
     .from("purchases")
     .update({ vendor_invoice_total: totalSum })

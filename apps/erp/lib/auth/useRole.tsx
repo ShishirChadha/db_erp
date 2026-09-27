@@ -105,7 +105,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       if (!cancelled && !hydratedFromServer.current) {
         setRole(profile?.is_active ? (profile.role as Role) : null)
         setAllowedPages(profile?.is_active ? (profile.allowed_pages || []) : [])
-        setPageEditKeys(profile?.is_active ? (editRows || []).map(r => r.page_key) : [])
+        setPageEditKeys(profile?.is_active ? (editRows || []).map((r: any) => r.page_key) : [])
         setUiPreferences(profile?.is_active ? (profile.ui_preferences || {}) : {})
         setLoading(false)
       }

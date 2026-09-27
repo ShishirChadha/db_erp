@@ -151,7 +151,7 @@ function InvoicesPage() {
       // Auto-open the first row on load/refetch -- but only when nothing is
       // selected yet, or the previously active invoice fell off this page/filter,
       // so re-fetching after an edit doesn't yank focus away from what's open.
-      setActiveInvoiceId((prev) => (prev && rows.some((r) => r.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
+      setActiveInvoiceId((prev) => (prev && rows.some((r: any) => r.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
   }, [searchTerm, statusFilter, showDeleted, page, supabase]);

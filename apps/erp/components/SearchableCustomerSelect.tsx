@@ -60,7 +60,7 @@ export function SearchableCustomerSelect({
         // splitting the free-text `address` string, which broke the moment a
         // customer's address didn't end in a recognizable place name; `state`/`city`
         // are real columns now, so use those directly instead of guessing.
-        const enriched = data.map(c => ({
+        const enriched = data.map((c: any) => ({
           ...c,
           place_of_supply: c.state || c.city || "—"
         }));

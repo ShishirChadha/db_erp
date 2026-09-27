@@ -664,7 +664,7 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   const { values: tagOptions } = useCustomOptions('activity_tags');
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data }) => setMyId(data.user?.id ?? null));
+    createClient().auth.getUser().then(({ data }: any) => setMyId(data.user?.id ?? null));
   }, []);
 
   // A notification's link (?open=<id>) deep-links straight into that task's
