@@ -95,8 +95,12 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
   const timeoutSignal = AbortSignal.timeout(budget)
   const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
 
+  // A FormData body (e.g. the processed-image upload route) must NOT get a
+  // manual Content-Type -- the browser sets its own multipart boundary, and
+  // overriding it here would break the upload.
+  const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData
   const buildHeaders = (token: string | null) => ({
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...(init.headers as Record<string, string>),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   })

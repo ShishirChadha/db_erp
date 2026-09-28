@@ -6,17 +6,20 @@ import { NextRequest, NextResponse } from 'next/server';
 // Path segments here come from client input (assetNumber, folder, fileType) and are
 // embedded directly into a Supabase Storage object key, so they're sanitized to prevent
 // path traversal (e.g. "../other-context/secret").
-function sanitizeSegment(value: string) {
+export function sanitizeSegment(value: string) {
   const cleaned = (value || '').replace(/[^a-zA-Z0-9._-]/g, '_');
   // A cleaned segment of "." or ".." would still enable path traversal when joined
   // back into a path, even though every individual character is "allowed".
   return cleaned === '' || cleaned === '.' || cleaned === '..' ? '_' : cleaned;
 }
-function sanitizePath(path: string) {
+export function sanitizePath(path: string) {
   return path.split('/').map(sanitizeSegment).filter(Boolean).join('/');
 }
 
-const ALLOWED_BUCKETS = ['purchase-files', 'product-images', 'documents', 'expense-receipts'] as const;
+// product-images is deliberately absent here -- it's resized + re-encoded
+// server-side via /api/storage/upload-image instead (see lib/image-process.ts),
+// so this route no longer accepts raw, unprocessed uploads into that bucket.
+const ALLOWED_BUCKETS = ['purchase-files', 'documents', 'expense-receipts'] as const;
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
@@ -26,15 +29,6 @@ export async function POST(req: NextRequest) {
   const { fileName, contentType, assetNumber, folder, fileType, bucket = 'purchase-files' } = await req.json();
   if (!ALLOWED_BUCKETS.includes(bucket)) {
     return NextResponse.json({ error: 'Invalid bucket' }, { status: 400 });
-  }
-
-  // product-images is website-publishing content, gated by the 'website' edit grant
-  // (same as the SKU Website dialog's image-management endpoints).
-  if (bucket === 'product-images') {
-    const sessionUser = await getCookieSessionUser();
-    if (!canEditPage(sessionUser, 'website')) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
-    }
   }
 
   // documents holds recon source material (vendor invoices, bank statements) --
@@ -59,12 +53,12 @@ export async function POST(req: NextRequest) {
   const prefix = folder ? sanitizePath(folder) : `purchases/${sanitizeSegment(assetNumber)}`;
   const key = `${prefix}/${sanitizeSegment(fileType)}-${timestamp}.${ext}`;
 
-  // product-images, documents, and expense-receipts have no storage.objects RLS
-  // policy for writes -- the canEditPage/isOwner check above is the real gate, so
-  // the signed URL itself is minted via the service-role client for those buckets.
-  // purchase-files keeps using the cookie-session client unchanged (it has its own
-  // authenticated-role RLS policy).
-  const storageClient = ['product-images', 'documents', 'expense-receipts'].includes(bucket) ? supabaseAdmin.storage : supabase.storage;
+  // documents and expense-receipts have no storage.objects RLS policy for writes --
+  // the canEditPage/isOwner check above is the real gate, so the signed URL itself
+  // is minted via the service-role client for those buckets. purchase-files keeps
+  // using the cookie-session client unchanged (it has its own authenticated-role
+  // RLS policy).
+  const storageClient = ['documents', 'expense-receipts'].includes(bucket) ? supabaseAdmin.storage : supabase.storage;
   const { data, error } = await storageClient
     .from(bucket)
     .createSignedUploadUrl(key);

@@ -23,9 +23,9 @@ export async function GET(
 }
 
 // ---------- POST (attach an already-uploaded image) ----------
-// The client must first PUT the file to the signed URL from
-// POST /api/storage/upload-url (bucket: 'product-images'), then call this with
-// the returned storage key to record the metadata row.
+// The client must first POST the file to /api/storage/upload-image (which
+// resizes + re-encodes it server-side), then call this with the returned
+// storage key to record the metadata row.
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }

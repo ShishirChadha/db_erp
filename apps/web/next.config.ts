@@ -15,10 +15,17 @@ const nextConfig: NextConfig = {
         pathname: "/storage/v1/object/public/**",
       },
     ],
-    // Narrowed from Next's defaults (8 deviceSizes x 8 imageSizes x 2 formats)
-    // to the breakpoints this app actually renders at -- the default matrix
-    // was driving the account's Vercel Image Optimization Transformations
-    // quota (5,000/mo free) to ~75% usage from a ~165-image catalog.
+    // unoptimized: narrowing deviceSizes/imageSizes (below) only got Vercel's
+    // Image Optimization Transformations quota (5,000/mo free) down to ~75%
+    // usage before it hit 100% again and broke every product image on the
+    // site. productImageUrl() already resolves to a plain, publicly-served
+    // Supabase Storage URL -- it costs nothing to serve as-is, so there's no
+    // reason to route it through Vercel's metered optimizer at all. Actual
+    // image weight is now handled at upload time in the ERP (sharp resize +
+    // webp re-encode, see apps/erp/lib/image-process.ts) instead of at view
+    // time here. Do not remove this without re-solving the quota problem
+    // first -- see docs/decisions.md.
+    unoptimized: true,
     deviceSizes: [640, 828, 1080, 1920],
     imageSizes: [40, 64, 96, 128, 256],
     formats: ["image/webp"],

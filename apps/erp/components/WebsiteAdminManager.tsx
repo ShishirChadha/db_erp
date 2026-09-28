@@ -639,31 +639,20 @@ function BannersSection() {
     setUploading(true)
     setError('')
     try {
-      // Natural pixel dimensions of the uploaded file -- stored alongside the
-      // image so the storefront can render it at its own aspect ratio instead
-      // of force-cropping to a fixed one (see HomeBanners.tsx).
-      const dims = await new Promise<{ width: number; height: number }>((resolve) => {
-        const img = new window.Image()
-        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-        img.onerror = () => resolve({ width: 0, height: 0 })
-        img.src = URL.createObjectURL(file)
-      })
+      // Uploaded through /api/storage/upload-image, which resizes (without cropping
+      // -- fit: 'inside', preserving aspect ratio, since banners render uncropped,
+      // see HomeBanners.tsx) and re-encodes to webp server-side before it lands in
+      // storage. width/height are the PROCESSED image's dimensions.
+      const form = new FormData()
+      form.append('file', file)
+      form.append('folder', 'banners')
+      form.append('fileType', 'banner')
 
-      const urlRes = await apiFetch('/api/storage/upload-url', {
-        method: 'POST',
-        body: JSON.stringify({
-          fileName: file.name,
-          contentType: file.type,
-          bucket: 'product-images',
-          folder: 'banners',
-          fileType: 'banner',
-        }),
-      })
-      if (!urlRes.ok) throw new Error('Could not get upload URL')
-      const { uploadUrl, key } = await urlRes.json()
-      await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+      const uploadRes = await apiFetch('/api/storage/upload-image', { method: 'POST', body: form })
+      if (!uploadRes.ok) throw new Error((await uploadRes.json().catch(() => null))?.error || 'Upload failed')
+      const { key, width, height } = await uploadRes.json()
       setImagePath(key)
-      setImageDims(dims)
+      setImageDims({ width, height })
     } catch (err: any) {
       setError(err.message || 'Upload failed')
     } finally {

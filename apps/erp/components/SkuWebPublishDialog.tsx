@@ -111,31 +111,22 @@ export function SkuWebPublishDialog({
     setUploading(true)
     try {
       for (const file of files) {
-        const dims = await new Promise<{ width: number; height: number }>((resolve) => {
-          const img = new window.Image()
-          img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
-          img.onerror = () => resolve({ width: 0, height: 0 })
-          img.src = URL.createObjectURL(file)
-        })
+        // Uploaded through /api/storage/upload-image, which resizes + re-encodes to
+        // webp server-side (see lib/image-process.ts) before it ever lands in
+        // storage -- width/height below are the PROCESSED image's dimensions, not
+        // the original file's, since resizing changes them.
+        const form = new FormData()
+        form.append('file', file)
+        form.append('folder', `products/${sku.id}`)
+        form.append('fileType', 'photo')
 
-        const urlRes = await apiFetch('/api/storage/upload-url', {
-          method: 'POST',
-          body: JSON.stringify({
-            fileName: file.name,
-            contentType: file.type,
-            bucket: 'product-images',
-            folder: `products/${sku.id}`,
-            fileType: 'photo',
-          }),
-        })
-        if (!urlRes.ok) throw new Error('Could not get upload URL')
-        const { uploadUrl, key } = await urlRes.json()
-
-        await fetch(uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
+        const uploadRes = await apiFetch('/api/storage/upload-image', { method: 'POST', body: form })
+        if (!uploadRes.ok) throw new Error((await uploadRes.json().catch(() => null))?.error || 'Upload failed')
+        const { key, width, height } = await uploadRes.json()
 
         await apiFetch(`/api/sku-master/${sku.id}/images`, {
           method: 'POST',
-          body: JSON.stringify({ storage_path: key, width: dims.width, height: dims.height }),
+          body: JSON.stringify({ storage_path: key, width, height }),
         })
       }
       await refreshImages()
