@@ -3,8 +3,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Loader2, ArrowLeft } from "lucide-react";
+import { Loader2, ArrowLeft, X } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
+import { getCachedListPageSize } from "@/lib/useListPageSize";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
 import RequirePageAccess from "@/components/RequirePageAccess";
@@ -28,6 +29,7 @@ const RecordZohoInvoiceDialog = dynamic(() => import("@/components/RecordZohoInv
 const AttachInvoiceFileDialog = dynamic(() => import("@/components/AttachInvoiceFileDialog").then(m => m.AttachInvoiceFileDialog), { ssr: false });
 const EditSaleDialog = dynamic(() => import("@/components/EditSaleDialog").then(m => m.EditSaleDialog), { ssr: false });
 const CustomerDetailDialog = dynamic(() => import("@/components/CustomerDetailDialog").then(m => m.CustomerDetailDialog), { ssr: false });
+const ReasonConfirmDialog = dynamic(() => import("@/components/ReasonConfirmDialog").then(m => m.ReasonConfirmDialog), { ssr: false });
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 
@@ -147,6 +149,8 @@ function ItemCell({ sale }: { sale: Sale }) {
 function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolean; onDone: () => void }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false);
   const [showAttachDialog, setShowAttachDialog] = useState(false);
+  const [showRemoveDialog, setShowRemoveDialog] = useState(false);
+  const [removeErr, setRemoveErr] = useState("");
   const isExternal = sale.invoice_mode === "external";
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
     const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: "POST", body: "{}" });
@@ -157,6 +161,21 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
       onDone();
     }
   });
+
+  const handleRemoveFromInvoice = async (reason: string) => {
+    setRemoveErr("");
+    const res = await apiFetch(`/api/invoices/${sale.invoice_id}/items/${sale.id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setRemoveErr(e.error || "Failed to remove from invoice.");
+      throw new Error(e.error || "Failed to remove from invoice.");
+    }
+    setShowRemoveDialog(false);
+    onDone();
+  };
 
   return (
     <>
@@ -169,6 +188,16 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
             <Button variant="link" size="sm" onClick={() => setShowAttachDialog(true)} className="text-primary text-xs">
               File
             </Button>
+          )}
+          {isOwner && sale.invoice_id && (
+            <button
+              type="button"
+              title="Remove this item from the invoice (e.g. it was checked into the invoice by mistake)"
+              onClick={() => { setRemoveErr(""); setShowRemoveDialog(true); }}
+              className="text-muted-foreground hover:text-destructive"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
           )}
         </span>
       ) : sale.is_deleted ? (
@@ -194,6 +223,17 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
           invoiceNumber={sale.invoice_number}
           onClose={() => setShowAttachDialog(false)}
           onAttached={onDone}
+        />
+      )}
+      {showRemoveDialog && (
+        <ReasonConfirmDialog
+          open={showRemoveDialog}
+          onOpenChange={(o) => !o && setShowRemoveDialog(false)}
+          title="Remove this item from the invoice?"
+          description={`This un-invoices the sale -- it stays intact and becomes available again to invoice separately later. The invoice's totals are recomputed from its remaining items. Refused if this is the invoice's only item.`}
+          confirmLabel="Remove Item"
+          error={removeErr}
+          onConfirm={handleRemoveFromInvoice}
         />
       )}
     </>
@@ -362,7 +402,10 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
   );
 }
 
-const PAGE_SIZE_OPTIONS = [25, 50];
+// This page has its own page-size dropdown (a self-service override on top of
+// the global default below) -- 25 stays an option for anyone who prefers a
+// shorter list here specifically.
+const PAGE_SIZE_OPTIONS = [25, 50, 100];
 
 function SalesLedgerPage() {
   const { isOwner, canEditPage } = useRole();
@@ -370,7 +413,10 @@ function SalesLedgerPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  // Seeded from the global "rows per page" setting (Settings > List Page Size)
+  // instead of a hardcoded 25 -- the dropdown below still lets this one page be
+  // overridden locally.
+  const [pageSize, setPageSize] = useState(() => getCachedListPageSize());
   // searchInput updates on every keystroke (so the box feels responsive); search only
   // catches up 300ms after typing stops, and is what actually drives fetchSales below --
   // without this, every keystroke fired its own full /api/sales request (each doing

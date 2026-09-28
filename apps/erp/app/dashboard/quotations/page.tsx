@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -15,8 +16,6 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { DocumentFormFields, ENTITY_LABELS, SalesDocType, SalesDocLineItem } from '@/components/SalesDocumentForm'
 import { cn } from '@/lib/utils'
-
-const PAGE_SIZE = 25
 
 interface DocSummary {
   id: string
@@ -183,6 +182,7 @@ function QuotationsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
   const isDesktop = useIsDesktopViewport()
   const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('quotations-list-pane-width')
@@ -203,7 +203,7 @@ function QuotationsPage() {
       setActiveDocId(null)
     }
     setLoading(false)
-  }, [docType, page])
+  }, [docType, page, PAGE_SIZE])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 

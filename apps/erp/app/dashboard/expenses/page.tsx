@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { apiFetch } from "@/lib/api-client";
+import { useListPageSize } from "@/lib/useListPageSize";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -64,7 +65,7 @@ function ExpensesPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const PAGE_SIZE = 25;
+  const PAGE_SIZE = useListPageSize();
 
   // searchInput updates on every keystroke; searchTerm catches up 300ms after
   // typing stops -- same debounce pattern as StockView/Sales Ledger/Vendors.
@@ -91,7 +92,7 @@ function ExpensesPage() {
     if (!res.ok) { console.error(await res.json().catch(() => ({}))); setExpenses([]); setTotal(0); }
     else { const json = await res.json(); setExpenses(json.data || []); setTotal(json.total || 0); }
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder, page]);
+  }, [showDeleted, searchTerm, typeFilter, dateFrom, dateTo, sortField, sortOrder, page, PAGE_SIZE]);
 
   // Any filter change invalidates the current page's meaning -- reset to page 1
   // during render (React's supported "adjust state while rendering" pattern),

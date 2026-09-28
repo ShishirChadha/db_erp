@@ -460,6 +460,7 @@ export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: Entity
 
   return {
     invoice_id: invoiceId,
+    sale_id: sale.id,
     item_type: descriptor.item_type,
     accessory_id: descriptor.accessory_id || null,
     ledger_asset_id: descriptor.ledger_asset_id || null,

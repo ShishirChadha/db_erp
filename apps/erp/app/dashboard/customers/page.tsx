@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
+import { useListPageSize } from "@/lib/useListPageSize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,8 +31,6 @@ const AddCustomerDialog = dynamic(() => import("@/components/AddCustomerDialog")
 const BulkAddDialog = dynamic(() => import("@/components/BulkAddDialog"), { ssr: false });
 const EditCustomerDialog = dynamic(() => import("@/components/EditCustomerDialog"), { ssr: false });
 const DeleteRecordDialog = dynamic(() => import("@/components/DeleteRecordDialog"), { ssr: false });
-
-const PAGE_SIZE = 25
 
 interface Customer {
   id: string;
@@ -194,6 +193,7 @@ function CustomersPage() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const PAGE_SIZE = useListPageSize();
   // Which customer is open in the right-hand detail pane.
   const [activeCustomerId, setActiveCustomerId] = useState<string | null>(null);
   const isDesktop = useIsDesktopViewport();
@@ -242,7 +242,7 @@ function CustomersPage() {
       setActiveCustomerId((prev) => (prev && rows.some((c) => c.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, supabase]);
+  }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, PAGE_SIZE, supabase]);
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   // Done during render (React's supported "adjust state while rendering"

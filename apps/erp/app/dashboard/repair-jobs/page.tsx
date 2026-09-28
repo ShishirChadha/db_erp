@@ -7,6 +7,7 @@ import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -23,8 +24,6 @@ import { cn } from '@/lib/utils'
 // out of the initial bundle rather than shipped unconditionally.
 const EditRepairJobDialog = dynamic(() => import('@/components/EditRepairJobDialog').then(m => m.EditRepairJobDialog), { ssr: false })
 const RecordZohoInvoiceDialog = dynamic(() => import('@/components/RecordZohoInvoiceDialog').then(m => m.RecordZohoInvoiceDialog), { ssr: false })
-
-const PAGE_SIZE = 25
 
 type SaleSummary = { id: string; finalized: boolean; invoice_number: string | null; sale_total: number; amount_paid: number; payment_status: string; payment_account: string; is_deleted?: boolean }
 
@@ -210,6 +209,7 @@ function RepairJobsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const isDesktop = useIsDesktopViewport()
   const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('repair-jobs-list-pane-width')
@@ -265,7 +265,7 @@ function RepairJobsPage() {
       setActiveJobId(null)
     }
     setLoading(false)
-  }, [statusFilter, searchTerm, page])
+  }, [statusFilter, searchTerm, page, PAGE_SIZE])
 
   useEffect(() => { fetchJobs() }, [fetchJobs])
   useEffect(() => { fetchStats() }, [fetchStats])

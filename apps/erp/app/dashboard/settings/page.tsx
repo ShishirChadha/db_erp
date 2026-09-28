@@ -28,6 +28,7 @@ const AppearanceManager = dynamic(() => import('@/components/AppearanceManager')
 const NavigationManager = dynamic(() => import('@/components/NavigationManager'), { ssr: false })
 const AuditLogPage = dynamic(() => import('./audit-log/page'), { ssr: false })
 const BackupPageGuarded = dynamic(() => import('./backup/page'), { ssr: false })
+const ListPageSizeManager = dynamic(() => import('@/components/ListPageSizeManager'), { ssr: false })
 
 interface AssetCounter {
   prefix: string
@@ -68,6 +69,7 @@ const CATEGORIES = [
   { key: 'digests', label: 'Digests', ownerOnly: true },
   { key: 'marketing', label: 'Marketing', ownerOnly: true },
   { key: 'backup', label: 'Backup', ownerOnly: true },
+  { key: 'list_page_size', label: 'List Page Size', ownerOnly: true },
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']
@@ -280,6 +282,7 @@ function SettingsPage() {
           {category === 'digests' && <DigestsManager />}
           {category === 'marketing' && <MarketingSettingsManager />}
           {category === 'backup' && <BackupPageGuarded />}
+          {category === 'list_page_size' && <ListPageSizeManager />}
         </div>
       </div>
     </div>

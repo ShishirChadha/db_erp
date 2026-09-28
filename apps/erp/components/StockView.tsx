@@ -8,6 +8,7 @@ import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import { StatCardsRow } from '@/components/StatCardsRow'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -283,7 +284,7 @@ export default function StockView({
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
-  const PAGE_SIZE = 20
+  const PAGE_SIZE = useListPageSize()
   // Which unit is open in the right-hand detail pane (current/sold tabs' master-detail
   // layout only) -- auto-selects the first row on load/refetch, same pattern as
   // Purchase Orders/Sales/Invoices, but doesn't yank focus away from whatever's
@@ -349,7 +350,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page])
+  }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page, PAGE_SIZE])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
 
@@ -380,7 +381,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, searchTerm, monthFilter, yearFilter, page, soldAccOrder])
+  }, [tab, searchTerm, monthFilter, yearFilter, page, soldAccOrder, PAGE_SIZE])
 
   useEffect(() => { fetchSoldAccessories() }, [fetchSoldAccessories])
 
@@ -406,7 +407,7 @@ export default function StockView({
     } finally {
       setLoading(false)
     }
-  }, [tab, searchTerm, page])
+  }, [tab, searchTerm, page, PAGE_SIZE])
 
   useEffect(() => { fetchAccessoryStock() }, [fetchAccessoryStock])
 

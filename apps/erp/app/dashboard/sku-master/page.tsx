@@ -8,6 +8,7 @@ import { Loader2, AlertTriangle, ArrowLeft } from 'lucide-react'
 import { toast } from 'sonner'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { apiFetch } from '@/lib/api-client'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useRole } from '@/lib/auth/useRole'
@@ -26,8 +27,6 @@ import { cn } from '@/lib/utils'
 const SkuFormModal = dynamic(() => import('@/components/SkuFormModal').then(m => m.SkuFormModal), { ssr: false })
 const MergeSkuDialog = dynamic(() => import('@/components/MergeSkuDialog').then(m => m.MergeSkuDialog), { ssr: false })
 const SkuWebPublishDialog = dynamic(() => import('@/components/SkuWebPublishDialog').then(m => m.SkuWebPublishDialog), { ssr: false })
-
-const PAGE_SIZE = 25
 
 type FilterTab = 'all' | 'published' | 'unpublished' | 'out_of_stock' | 'low_stock' | 'discontinued' | 'archived'
 
@@ -226,6 +225,7 @@ function SkuMasterPage() {
   const [sortOrder, setSortOrder] = useState<SortOrder>('asc')
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   const [filterTab, setFilterTab] = useState<FilterTab>('all')
   const [counts, setCounts] = useState<SkuCounts | null>(null)
   // Which SKU is open in the right-hand detail pane.
@@ -299,7 +299,7 @@ function SkuMasterPage() {
       console.error(err)
       setError(err.message)
     }
-  }, [search, categoryFilter, filterTab, page])
+  }, [search, categoryFilter, filterTab, page, PAGE_SIZE])
 
   const fetchCounts = useCallback(async () => {
     try {

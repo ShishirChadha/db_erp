@@ -7,6 +7,7 @@ import { ArrowLeft, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -22,8 +23,6 @@ import { AccessoryDetailPage } from './[id]/page'
 // out of the initial bundle rather than shipped unconditionally.
 const SkuFormModal = dynamic(() => import('@/components/SkuFormModal').then(m => m.SkuFormModal), { ssr: false })
 const AddVendorDialog = dynamic(() => import('@/components/AddVendorDialog').then(m => m.AddVendorDialog), { ssr: false })
-
-const PAGE_SIZE = 25
 const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash']
 
 // Accessories are sku_master rows like everything else (see docs/decisions.md,
@@ -552,6 +551,7 @@ function AccessoriesPage() {
   const [showArchived, setShowArchived] = useState(false)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
 
   const fetchAll = useCallback(async () => {
     setLoading(true)
@@ -586,7 +586,7 @@ function AccessoriesPage() {
       setLastEntries(new Map())
     }
     setLoading(false)
-  }, [search, purchasedFrom, purchasedTo, isOwner, showArchived, page])
+  }, [search, purchasedFrom, purchasedTo, isOwner, showArchived, page, PAGE_SIZE])
 
   useEffect(() => { fetchAll() }, [fetchAll])
 

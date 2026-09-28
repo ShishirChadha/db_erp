@@ -6,6 +6,7 @@ import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -15,8 +16,6 @@ import { Button } from '@/components/ui/button'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { REPAIR_JOB_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
-
-const PAGE_SIZE = 25
 
 interface ReplacementJob {
   id: string
@@ -218,6 +217,7 @@ function ReplacementJobsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   // Which job is open in the right-hand detail pane (separate ids per tab so
   // switching tabs doesn't try to match an id from the other job type).
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -242,7 +242,7 @@ function ReplacementJobsPage() {
       setActiveJobId(null)
     }
     setLoading(false)
-  }, [statusFilter, page])
+  }, [statusFilter, page, PAGE_SIZE])
 
   // accessory_replacement_jobs isn't paginated server-side (a much smaller list in
   // practice than serialized replacement jobs) -- same non-paginated GET shape as

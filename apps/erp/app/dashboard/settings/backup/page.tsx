@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { useListPageSize } from '@/lib/useListPageSize'
 import RequireOwner from '@/components/RequireOwner'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Pagination } from '@/components/Pagination'
@@ -243,7 +244,7 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const pageSize = 20
+  const pageSize = useListPageSize()
 
   const fetchHistory = async (p: number) => {
     setLoading(true)
@@ -262,7 +263,7 @@ function HistorySection({ reloadKey }: { reloadKey: number }) {
   useEffect(() => {
     fetchHistory(page)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, reloadKey])
+  }, [page, reloadKey, pageSize])
 
   const handleDownload = async (row: BackupRow) => {
     const res = await apiFetch(`/api/backup/${row.id}/download`)

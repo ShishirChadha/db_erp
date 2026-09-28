@@ -5,6 +5,7 @@ import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -26,8 +27,6 @@ import { cn } from '@/lib/utils'
 // Only renders behind a click (gated by a state flag) -- code-split out of the
 // initial bundle rather than shipped unconditionally.
 const DeleteRecordDialog = dynamic(() => import('@/components/DeleteRecordDialog'), { ssr: false })
-
-const PAGE_SIZE = 25
 
 type Vendor = {
   id: string
@@ -209,6 +208,7 @@ function VendorsPage() {
   const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   // Which vendor is open in the right-hand detail pane.
   const [activeVendorId, setActiveVendorId] = useState<string | null>(null)
   const isDesktop = useIsDesktopViewport()
@@ -255,7 +255,7 @@ function VendorsPage() {
     setPage(1)
   }
 
-  useEffect(() => { fetchVendors() }, [showDeleted, search, page])
+  useEffect(() => { fetchVendors() }, [showDeleted, search, page, PAGE_SIZE])
 
   const handleGstBlur = async () => {
     if (!form.gst_number || form.gst_number.length !== 15) return

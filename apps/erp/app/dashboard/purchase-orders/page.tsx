@@ -6,6 +6,7 @@ import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { Pagination } from '@/components/Pagination'
@@ -15,8 +16,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { PODetailPage } from './[id]/page'
-
-const PAGE_SIZE = 25
 
 interface PurchaseOrder {
   id: string
@@ -118,6 +117,7 @@ function PurchaseOrdersPage() {
   }, [searchInput])
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   const [error, setError] = useState('')
   // Which PO is open in the right-hand detail pane.
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -155,7 +155,7 @@ function PurchaseOrdersPage() {
       setActiveId(null)
     }
     setLoading(false)
-  }, [statusFilter, vendorFilter, dateFrom, dateTo, search, page])
+  }, [statusFilter, vendorFilter, dateFrom, dateTo, search, page, PAGE_SIZE])
 
   useEffect(() => { fetchOrders() }, [fetchOrders])
 

@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { Pagination } from '@/components/Pagination'
@@ -22,7 +23,6 @@ const NewRentalDialog = dynamic(() => import('@/components/NewRentalDialog').the
 
 type SortField = 'start_date' | 'agreement_number' | 'expected_return_date' | 'rent_amount' | 'next_billing_date'
 type SortOrder = 'asc' | 'desc'
-const PAGE_SIZE = 25
 
 interface RentalAgreement {
   id: string
@@ -167,6 +167,7 @@ function RentalsPage() {
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
   const [total, setTotal] = useState(0)
+  const PAGE_SIZE = useListPageSize()
   const [showNew, setShowNew] = useState(false)
   // Which agreement is open in the right-hand detail pane.
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -213,7 +214,7 @@ function RentalsPage() {
       setActiveId(null)
     }
     setLoading(false)
-  }, [statusFilter, searchTerm, page])
+  }, [statusFilter, searchTerm, page, PAGE_SIZE])
 
   useEffect(() => { fetchAgreements() }, [fetchAgreements])
   useEffect(() => { fetchStats() }, [fetchStats])

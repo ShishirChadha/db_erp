@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import { Pagination } from '@/components/Pagination'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
@@ -43,8 +44,6 @@ interface AuditLogRow {
   created_at: string
 }
 
-const PAGE_SIZE = 25
-
 const ACTION_LABELS: Record<string, string> = {
   create: 'Created',
   update: 'Updated',
@@ -69,6 +68,7 @@ export default function AuditLogPage() {
   const [rows, setRows] = useState<AuditLogRow[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
+  const PAGE_SIZE = useListPageSize()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -97,7 +97,7 @@ export default function AuditLogPage() {
     setRows(json.data || [])
     setTotal(json.total || 0)
     setLoading(false)
-  }, [page, module, actionType, dateFrom, dateTo])
+  }, [page, module, actionType, dateFrom, dateTo, PAGE_SIZE])
 
   useEffect(() => { load() }, [load])
 

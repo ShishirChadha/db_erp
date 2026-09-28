@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
+import { useListPageSize } from "@/lib/useListPageSize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,8 +29,6 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 import { cn } from "@/lib/utils";
 import { ViewInvoicePage } from "./[id]/page";
-
-const PAGE_SIZE = 25
 
 // Left-pane list block -- customer, invoice number, invoice date, and a status
 // badge, matching an email-client / Zoho-Invoices-style list row.
@@ -116,6 +115,7 @@ function InvoicesPage() {
   const supabase = createClient();
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const PAGE_SIZE = useListPageSize();
   // Which invoice is open in the right-hand detail pane.
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
   const isDesktop = useIsDesktopViewport();
@@ -156,7 +156,7 @@ function InvoicesPage() {
       setActiveInvoiceId((prev) => (prev && rows.some((r: any) => r.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
-  }, [searchTerm, statusFilter, showDeleted, page, supabase]);
+  }, [searchTerm, statusFilter, showDeleted, page, PAGE_SIZE, supabase]);
 
   // Any filter change invalidates the current page's meaning -- reset to page 1
   // during render (React's supported "adjust state while rendering" pattern),

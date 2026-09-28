@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark } from "lucide-react";
+import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark, X } from "lucide-react";
 import { format } from "date-fns";
 import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
@@ -13,6 +13,8 @@ import PdfPreviewDialog from "@/components/PdfPreviewDialog";
 import { downloadPdfFromResponse, previewablePdfUrl } from "@/lib/download-pdf";
 import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
+import { useRole } from "@/lib/auth/useRole";
+import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 
 function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`;
@@ -31,34 +33,53 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
   const [loading, setLoading] = useState(true);
   const router = useRouter();
   const supabase = createClient();
+  const { isOwner } = useRole();
+  const [removingItem, setRemovingItem] = useState<any>(null);
+  const [removeErr, setRemoveErr] = useState("");
+
+  const fetchInvoice = async () => {
+    const { data: invoiceData, error: invoiceError } = await supabase
+      .from("invoices")
+      .select("*")
+      .eq("id", id)
+      .single();
+
+    if (invoiceError) {
+      console.error(invoiceError);
+      router.push("/dashboard/invoices");
+      return;
+    }
+
+    const { data: itemsData, error: itemsError } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", id);
+
+    if (!itemsError) setItems(itemsData || []);
+
+    setInvoice(invoiceData);
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchInvoice = async () => {
-      const { data: invoiceData, error: invoiceError } = await supabase
-        .from("invoices")
-        .select("*")
-        .eq("id", id)
-        .single();
-
-      if (invoiceError) {
-        console.error(invoiceError);
-        router.push("/dashboard/invoices");
-        return;
-      }
-
-      const { data: itemsData, error: itemsError } = await supabase
-        .from("invoice_items")
-        .select("*")
-        .eq("invoice_id", id);
-
-      if (!itemsError) setItems(itemsData || []);
-
-      setInvoice(invoiceData);
-      setLoading(false);
-    };
-
     if (id) fetchInvoice();
-  }, [id, supabase, router]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id]);
+
+  const handleRemoveItem = async (reason: string) => {
+    setRemoveErr("");
+    const res = await apiFetch(`/api/invoices/${id}/items/${removingItem.sale_id}`, {
+      method: "DELETE",
+      body: JSON.stringify({ reason }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setRemoveErr(e.error || "Failed to remove item.");
+      throw new Error(e.error || "Failed to remove item.");
+    }
+    setRemovingItem(null);
+    await fetchInvoice();
+  };
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
@@ -189,6 +210,7 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                   <th className="py-2.5 px-3 font-medium text-right">GST%</th>
                   <th className="py-2.5 px-3 font-medium text-right">Tax</th>
                   <th className="py-2.5 px-3 font-medium text-right">Amount</th>
+                  {isOwner && <th className="py-2.5 px-3 font-medium"></th>}
                 </tr>
               </thead>
               <tbody>
@@ -207,6 +229,20 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                           : '-'}
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums font-medium">{money(item.amount)}</td>
+                    {isOwner && (
+                      <td className="py-2.5 px-3 text-right">
+                        {item.sale_id && items.length > 1 && (
+                          <button
+                            type="button"
+                            title="Remove this item from the invoice"
+                            onClick={() => { setRemoveErr(""); setRemovingItem(item); }}
+                            className="text-muted-foreground hover:text-destructive"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -259,6 +295,18 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
 
       {previewUrl && (
         <PdfPreviewDialog url={previewUrl} title={`Invoice ${invoice.invoice_number}`} onClose={() => { URL.revokeObjectURL(previewUrl); setPreviewUrl(null); }} />
+      )}
+
+      {removingItem && (
+        <ReasonConfirmDialog
+          open={!!removingItem}
+          onOpenChange={(o) => !o && setRemovingItem(null)}
+          title="Remove this item from the invoice?"
+          description={`"${removingItem.description}" (${money(removingItem.amount)}) will be un-invoiced -- the sale itself stays intact and becomes available again to invoice separately later. Invoice totals will be recomputed from the remaining items.`}
+          confirmLabel="Remove Item"
+          error={removeErr}
+          onConfirm={handleRemoveItem}
+        />
       )}
     </div>
   );
