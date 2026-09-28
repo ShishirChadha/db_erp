@@ -8,7 +8,6 @@ import { Edit, Trash2, Copy, ArrowUp, ArrowDown, Loader2 } from 'lucide-react';
 import { useAsyncAction } from '@/lib/useAsyncAction';
 import { useRole } from '@/lib/auth/useRole';
 import { apiFetch } from '@/lib/api-client';
-import { createClient } from '@/lib/supabase/client';
 import { useCustomOptions } from '@/lib/useCustomOptions';
 import ActivityCommentThread from '@/components/ActivityCommentThread';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -645,9 +644,13 @@ function DetailModal({
 
 // ---------- Main ActivityList Component ----------
 export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
-  const { isOwner } = useRole();
+  // Resolved server-side already by RoleProvider (seeded from
+  // dashboard/layout.tsx, no network call) -- this used to be its own
+  // createClient().auth.getUser() call, a redundant network round trip to
+  // Supabase Auth that also contended with every other auth-touching call
+  // this page fires on mount for the same shared client's session lock.
+  const { isOwner, userId: myId } = useRole();
   const searchParams = useSearchParams();
-  const [myId, setMyId] = useState<string | null>(null);
   const [activities, setActivities] = useState<Activity[]>([]);
   const [assignableUsers, setAssignableUsers] = useState<AssignableUser[]>([]);
   const [loading, setLoading] = useState(true);
@@ -662,10 +665,6 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
   const [sortBy, setSortBy] = useState('due_date');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const { values: tagOptions } = useCustomOptions('activity_tags');
-
-  useEffect(() => {
-    createClient().auth.getUser().then(({ data }: any) => setMyId(data.user?.id ?? null));
-  }, []);
 
   // A notification's link (?open=<id>) deep-links straight into that task's
   // detail view -- DetailModal fetches by id independently, so this works

@@ -128,6 +128,7 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
 }
 
 export interface RoleSnapshot {
+  userId: string
   role: Role
   allowedPages: string[]
   pageEditKeys: string[]
@@ -182,6 +183,7 @@ export async function getLayoutSessionUser(): Promise<RoleSnapshot | null> {
     .map((a: { page_key: string; can_edit: boolean }) => a.page_key)
 
   return {
+    userId: user.id,
     role: profile.role as Role,
     allowedPages: profile.allowed_pages || [],
     pageEditKeys,

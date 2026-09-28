@@ -19,6 +19,7 @@ export interface UiPreferences {
 // imported from session.ts because that file pulls in next/headers and other
 // server-only modules that can't reach a 'use client' file.
 export interface RoleSnapshot {
+  userId: string
   role: Role
   allowedPages: string[]
   pageEditKeys: string[]
@@ -26,6 +27,7 @@ export interface RoleSnapshot {
 }
 
 interface RoleContextValue {
+  userId: string | null
   role: Role | null
   loading: boolean
   isOwner: boolean
@@ -56,6 +58,7 @@ const RoleContext = createContext<RoleContextValue | null>(null)
 // normal dashboard load. Pages outside /dashboard (e.g. /login) never render
 // <RoleSeed>, so they fall through to this fetch exactly as before.
 export function RoleProvider({ children }: { children: ReactNode }) {
+  const [userId, setUserId] = useState<string | null>(null)
   const [role, setRole] = useState<Role | null>(null)
   const [allowedPages, setAllowedPages] = useState<string[]>([])
   const [pageEditKeys, setPageEditKeys] = useState<string[]>([])
@@ -66,6 +69,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
   const hydrate = useCallback((snapshot: RoleSnapshot) => {
     if (hydratedFromServer.current) return
     hydratedFromServer.current = true
+    setUserId(snapshot.userId)
     setRole(snapshot.role)
     setAllowedPages(snapshot.allowedPages)
     setPageEditKeys(snapshot.pageEditKeys)
@@ -82,7 +86,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       const { data: { user } } = await supabase.auth.getUser()
       if (hydratedFromServer.current) return
       if (!user) {
-        if (!cancelled) { setRole(null); setAllowedPages([]); setPageEditKeys([]); setUiPreferences({}); setLoading(false) }
+        if (!cancelled) { setUserId(null); setRole(null); setAllowedPages([]); setPageEditKeys([]); setUiPreferences({}); setLoading(false) }
         return
       }
 
@@ -103,6 +107,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       ])
 
       if (!cancelled && !hydratedFromServer.current) {
+        setUserId(profile?.is_active ? user.id : null)
         setRole(profile?.is_active ? (profile.role as Role) : null)
         setAllowedPages(profile?.is_active ? (profile.allowed_pages || []) : [])
         setPageEditKeys(profile?.is_active ? (editRows || []).map((r: any) => r.page_key) : [])
@@ -124,8 +129,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       return keys.some(k => allowedPages.includes(k))
     }
     const canEditPage = (key: string) => isOwner || pageEditKeys.includes(key)
-    return { role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, uiPreferences, hasPageAccess, canEditPage, hydrate }
-  }, [role, loading, allowedPages, pageEditKeys, uiPreferences, hydrate])
+    return { userId, role, loading, isOwner, isManagerOrAbove, allowedPages, pageEditKeys, uiPreferences, hasPageAccess, canEditPage, hydrate }
+  }, [userId, role, loading, allowedPages, pageEditKeys, uiPreferences, hydrate])
 
   return <RoleContext.Provider value={value}>{children}</RoleContext.Provider>
 }
