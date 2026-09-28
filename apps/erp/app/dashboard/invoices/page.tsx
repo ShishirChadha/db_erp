@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
+import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -118,6 +119,7 @@ function InvoicesPage() {
   // Which invoice is open in the right-hand detail pane.
   const [activeInvoiceId, setActiveInvoiceId] = useState<string | null>(null);
   const isDesktop = useIsDesktopViewport();
+  const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth("invoices-list-pane-width");
 
   const fetchInvoices = useCallback(async () => {
     setLoading(true);
@@ -244,7 +246,10 @@ function InvoicesPage() {
         <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
           {/* List pane -- hidden on mobile once an invoice is open, matching an
               email client's drill-in navigation; always visible at md+. */}
-          <div className={cn("w-full md:w-[300px] lg:w-[360px] md:flex-shrink-0 border-r border-border flex flex-col", activeInvoice && "hidden md:flex")}>
+          <div
+            className={cn("w-full md:flex-shrink-0 border-r border-border flex flex-col", activeInvoice && "hidden md:flex")}
+            style={isDesktop ? { width: listPaneWidth } : undefined}
+          >
             <div className="flex-1 overflow-visible lg:overflow-y-auto">
               {invoices.map((inv) => (
                 <InvoiceListItem
@@ -262,6 +267,14 @@ function InvoicesPage() {
               <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
             </div>
           </div>
+
+{isDesktop && (
+  <div
+    onMouseDown={handlePaneResize}
+    className="hidden md:block w-1.5 shrink-0 cursor-col-resize hover:bg-primary/20 active:bg-primary/30"
+    title="Drag to resize"
+  />
+)}
 
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn("flex-1 min-w-0", !activeInvoice && "hidden md:flex md:items-center md:justify-center")}>
