@@ -49,3 +49,9 @@ next-env.d.ts
 
 # local schema/data backups (data dumps can contain auth.users password hashes)
 backups/*_data_backup.sql
+
+# self-host migration captures: data dumps contain auth.users password hashes,
+# 07_extras.txt contains Vault secrets, storage/ holds the raw bucket binaries
+migration/**/*.dump
+migration/**/07_extras.txt
+migration/**/storage/
