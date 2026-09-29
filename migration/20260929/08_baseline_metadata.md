@@ -54,3 +54,23 @@ Also, no `website-health-ping` cron job exists in `cron.job` despite being
 referenced in `docs/bible/modules/finance-gst-reports.md` — but
 `website_health_checks` has 5,381 rows, so it ran historically and was removed or
 renamed. Worth reconciling the docs separately.
+
+## Storage buckets — CORRECTION: there are 5, not 4
+
+Code research found only 4 buckets (the storage routes' `ALLOWED_BUCKETS` plus
+`product-images`). The live database has a **fifth**: `purchase-invoices`,
+created 2026-05-10, holding 5 real files. It predates the `documents` bucket
+(2026-08-31) and is not referenced by any current storage route, so it looks
+like legacy — but the files are real and were nearly missed.
+
+| Bucket | Public | Created | Objects | Synced |
+|---|---|---|---|---|
+| `product-images` | **yes** | 2026-07-28 | 168 | 168 |
+| `purchase-files` | no | 2026-04-16 | 60 | 60 |
+| `documents` | no | 2026-08-31 | 7 | 7 |
+| `purchase-invoices` | no | 2026-05-10 | **5** | 5 |
+| `expense-receipts` | no | 2026-09-01 | 0 | 0 (empty) |
+| **TOTAL** | | | **240** | **240** |
+
+Lesson for Phase 5: enumerate buckets from `storage.buckets` in the live
+database, never from the application's allowlist constants.
