@@ -24,7 +24,12 @@ step "Safety checks before locking anything down"
 command -v tailscale >/dev/null 2>&1 || die "tailscale is not installed. Run phase1-setup.sh first."
 
 # Must be actually connected, not merely installed.
-TS_STATE=$(tailscale status --json 2>/dev/null | grep -o '"BackendState":"[^"]*"' | cut -d'"' -f4 || echo "Unknown")
+# Tolerate whitespace around the colon -- tailscale pretty-prints its JSON as
+# `"BackendState": "Running"`, so a naive '"BackendState":"' match never fires
+# and the check silently reports Unknown.
+TS_STATE=$(tailscale status --json 2>/dev/null \
+  | sed -n 's/.*"BackendState"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$TS_STATE" ] || TS_STATE="Unknown"
 [ "$TS_STATE" = "Running" ] || die "Tailscale backend state is '$TS_STATE', not 'Running'. Run: sudo tailscale up"
 ok "tailscale backend is Running"
 
@@ -64,8 +69,12 @@ ok "deny-by-default inbound; tailscale0 allowed; 41641/udp open for WireGuard"
 step "Hardening SSH"
 # Key-only auth as a backstop. SSH is not internet-facing after this, but
 # defence in depth costs nothing here.
+#
+# The 00- prefix is load-bearing: OpenSSH honours the FIRST occurrence of a
+# setting, and Ubuntu ships /etc/ssh/sshd_config.d/50-cloud-init.conf with
+# "PasswordAuthentication yes". A 99- file is read after it and silently loses.
 install -d /etc/ssh/sshd_config.d
-cat > /etc/ssh/sshd_config.d/99-erp-hardening.conf <<'EOF'
+cat > /etc/ssh/sshd_config.d/00-erp-hardening.conf <<'EOF'
 PasswordAuthentication no
 PermitRootLogin no
 KbdInteractiveAuthentication no
@@ -74,7 +83,7 @@ if sshd -t 2>/dev/null; then
   systemctl reload ssh 2>/dev/null || systemctl reload sshd 2>/dev/null || true
   ok "password auth disabled, root login disabled"
 else
-  rm -f /etc/ssh/sshd_config.d/99-erp-hardening.conf
+  rm -f /etc/ssh/sshd_config.d/00-erp-hardening.conf
   printf '    \033[33m!\033[0m sshd config test failed -- hardening reverted, SSH left as-is\n'
 fi
 
