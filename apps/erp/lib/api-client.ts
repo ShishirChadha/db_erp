@@ -45,7 +45,11 @@ async function getToken(forceRefresh = false): Promise<string | null> {
 // list endpoints fan out into multiple Supabase queries server-side (see
 // /api/sales, /api/stock's enrichment batches) -- a mutation hanging this long
 // is much more likely to be a real backend problem than transient latency.
-const DEFAULT_TIMEOUT_MS = { GET: 15_000, MUTATE: 30_000 }
+// Raised from 15s after a real "Signal timeout" report on Sold Stock traced to
+// Supabase's free-tier connection-pool cold-start behavior (see docs/decisions.md,
+// 2026-09-28 stock-perf entry) occasionally taking 10-13s on its own -- 15s left
+// almost no room for a cold-started request to actually finish.
+const DEFAULT_TIMEOUT_MS = { GET: 20_000, MUTATE: 30_000 }
 // Statuses worth retrying once for a GET -- all are transient by definition
 // (rate-limited, timed-out gateway, or a backend temporarily unavailable),
 // never a 4xx that reflects a real client-side problem.
@@ -65,10 +69,24 @@ export interface ApiFetchOptions extends RequestInit {
 // (RETRYABLE_STATUSES) -- previously only a thrown exception was retried, so a
 // 504 timeout (this app's most common real failure under load) was never
 // retried at all.
-async function doFetch(url: string, init: RequestInit, method: string, signal: AbortSignal): Promise<Response> {
+//
+// `budget` is passed through rather than a single pre-built AbortSignal -- a
+// timeout signal is a one-shot object that stays aborted forever once it fires,
+// so the previous version's "retry" on a GET timeout reused the *same* already-
+// fired signal on attempt 2, which made fetch() reject instantly with the exact
+// same TimeoutError ("signal timed out" / "Signal timeout" to the user) instead
+// of actually giving the retry its own fresh time budget. A fresh
+// AbortSignal.timeout(budget) is built per attempt below so a retry is a real
+// second chance, not a guaranteed instant repeat of the same failure -- and
+// since the pool having just been hit once makes it more likely to be warm by
+// the second attempt, this materially improves the odds a cold-start burst
+// self-heals instead of surfacing to the user.
+async function doFetch(url: string, init: RequestInit, method: string, budget: number, callerSignal?: AbortSignal | null): Promise<Response> {
   const maxAttempts = method === 'GET' ? 2 : 1
   let lastErr: unknown
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const timeoutSignal = AbortSignal.timeout(budget)
+    const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal
     try {
       const res = await fetch(url, { ...init, signal })
       if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
@@ -78,7 +96,9 @@ async function doFetch(url: string, init: RequestInit, method: string, signal: A
       return res
     } catch (err) {
       lastErr = err
-      if (attempt === maxAttempts) throw err
+      // The caller's own signal firing (e.g. component unmount) means the
+      // response is no longer wanted -- retrying would be pure waste.
+      if (callerSignal?.aborted || attempt === maxAttempts) throw err
       await sleep(400)
     }
   }
@@ -90,10 +110,6 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
   const method = (init.method || 'GET').toUpperCase()
 
   const budget = timeoutMs ?? (method === 'GET' ? DEFAULT_TIMEOUT_MS.GET : DEFAULT_TIMEOUT_MS.MUTATE)
-  // AbortSignal.any combines the caller's own signal (e.g. a component
-  // unmount abort) with our timeout, so neither cancellation path is lost.
-  const timeoutSignal = AbortSignal.timeout(budget)
-  const signal = init.signal ? AbortSignal.any([init.signal, timeoutSignal]) : timeoutSignal
 
   // A FormData body (e.g. the processed-image upload route) must NOT get a
   // manual Content-Type -- the browser sets its own multipart boundary, and
@@ -106,7 +122,7 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
   })
 
   const token = await getToken()
-  let res = await doFetch(url, { ...init, headers: buildHeaders(token) }, method, signal)
+  let res = await doFetch(url, { ...init, headers: buildHeaders(token) }, method, budget, init.signal)
 
   // 401 here always means "no valid session" (every route's convention -- 403 is
   // "signed in but not allowed," which is left alone). A single 401 can be the
@@ -119,7 +135,7 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
   if (res.status === 401) {
     const fresh = await getToken(true)
     if (fresh && fresh !== token) {
-      res = await doFetch(url, { ...init, headers: buildHeaders(fresh) }, method, signal)
+      res = await doFetch(url, { ...init, headers: buildHeaders(fresh) }, method, budget, init.signal)
     }
   }
 
