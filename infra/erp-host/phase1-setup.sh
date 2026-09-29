@@ -46,24 +46,42 @@ systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target 
 ok "lid close and all sleep targets disabled"
 warn "TEST THIS: close the lid and confirm you can still SSH in, before relying on it"
 
-step "3/8  Battery charge thresholds (ThinkPad)"
+step "3/8  Battery charge thresholds"
 # An always-plugged laptop held at 100% swells its battery within ~18 months --
 # and that battery is the UPS that keeps the database alive through power cuts.
-# Holding it at 75-80% preserves it for years.
+# Capping the charge around 80% preserves it for years.
+#
+# How this is done depends entirely on the vendor:
+#   - ThinkPad and some others expose charge_control_end_threshold in sysfs,
+#     which tlp can drive from userspace.
+#   - HP EliteBooks do NOT. Their equivalent lives in the BIOS and cannot be
+#     set from Linux at all, so this step detects and tells you rather than
+#     silently doing nothing.
 apt-get install -y -qq tlp >/dev/null
-if ! grep -q 'START_CHARGE_THRESH_BAT0' /etc/tlp.conf 2>/dev/null; then
-  cat >> /etc/tlp.conf <<'EOF'
+systemctl enable --now tlp >/dev/null 2>&1 || true
+
+THRESH_ATTR=$(ls /sys/class/power_supply/BAT*/charge_control_end_threshold 2>/dev/null | head -1 || true)
+VENDOR=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo unknown)
+
+if [ -n "$THRESH_ATTR" ]; then
+  BAT=$(basename "$(dirname "$THRESH_ATTR")")
+  if ! grep -q "STOP_CHARGE_THRESH_${BAT}" /etc/tlp.conf 2>/dev/null; then
+    cat >> /etc/tlp.conf <<EOF
 
 # ERP host: keep the battery healthy on a permanently plugged-in machine.
-START_CHARGE_THRESH_BAT0=75
-STOP_CHARGE_THRESH_BAT0=80
+START_CHARGE_THRESH_${BAT}=75
+STOP_CHARGE_THRESH_${BAT}=80
 EOF
-fi
-systemctl enable --now tlp >/dev/null 2>&1 || true
-if [ -d /sys/class/power_supply/BAT0 ]; then
-  ok "tlp active; battery present"
+  fi
+  tlp start >/dev/null 2>&1 || true
+  ok "charge threshold supported on $BAT -- capped at 80% via tlp"
+elif [ -d /sys/class/power_supply/BAT0 ]; then
+  warn "$VENDOR does not expose charge thresholds to Linux -- tlp cannot cap charging here"
+  warn "SET THIS IN BIOS INSTEAD: reboot, press F10, then"
+  warn "  Advanced > Power Management Options > Battery Health Manager"
+  warn "  choose 'Maximize my battery health' (caps charging near 80%)"
 else
-  warn "no BAT0 found -- thresholds are a no-op on this machine"
+  warn "no battery detected -- nothing to protect"
 fi
 
 step "4/8  Host clock in UTC"
