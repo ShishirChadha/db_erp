@@ -385,6 +385,16 @@ function ServicePageInner() {
         return
       }
     }
+    if (subType === 'replacement') {
+      if (amountCharged === '' || Number(amountCharged) < 0) {
+        setError("Enter the new item's sale value (0 is allowed for a free replacement).")
+        return
+      }
+      if (Number(additionalAmountPaid) < 0) {
+        setError('Additional amount paid now cannot be negative.')
+        return
+      }
+    }
 
     try {
       const endpoint = isAccessoryReplacement
@@ -440,10 +450,16 @@ function ServicePageInner() {
             job_date: serviceDate,
             parts: partsUsed.map(p => ({ sku_id: p.sku_id, quantity: p.quantity, unit_price: p.unit_price })),
           }
-      const res = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) })
+      let res = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify(payload) })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        throw new Error(err.error || 'Failed to save job.')
+        if (subType === 'replacement' && err.error_code === 'exceeds_sale_total' && confirm(`${err.error}\n\nProceed anyway?`)) {
+          res = await apiFetch(endpoint, { method: 'POST', body: JSON.stringify({ ...payload, confirm_overpayment: true }) })
+        }
+        if (!res.ok) {
+          const err2 = await res.json().catch(() => ({}))
+          throw new Error(err2.error || 'Failed to save job.')
+        }
       }
       const body = await res.json()
       setDone(`Job ${body.job_number} saved.`)

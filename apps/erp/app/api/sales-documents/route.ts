@@ -129,7 +129,19 @@ export async function POST(req: NextRequest) {
     .select()
     .single()
 
-  if (docErr) return NextResponse.json({ error: docErr.message }, { status: 500 })
+  if (docErr) {
+    // 23505 = unique_violation. document_number collisions should be impossible now
+    // that every entity has its own quotation/proforma prefix (see docs/decisions.md,
+    // 2026-09-29 -- all three previously shared "QUO"/"PI", so two entities'
+    // independently-numbered documents could format to the same string against
+    // sales_documents' single global unique constraint) -- this is a friendlier
+    // fallback in case a future prefix edit reintroduces the same clash, rather than
+    // surfacing a raw Postgres constraint-violation message to the end user.
+    if (docErr.code === '23505' && docErr.message.includes('sales_documents_document_number_key')) {
+      return NextResponse.json({ error: `Document number ${documentNumber} is already in use -- this usually means two business entities share the same quotation/proforma prefix. Check Settings > Business Profiles and try again.` }, { status: 409 })
+    }
+    return NextResponse.json({ error: docErr.message }, { status: 500 })
+  }
 
   const itemRows = computedItems.map(({ _lineAmount, _gstAmount, ...row }) => ({ ...row, sales_document_id: document.id }))
   const { error: itemsErr } = await supabaseAdmin.from('sales_document_items').insert(itemRows)

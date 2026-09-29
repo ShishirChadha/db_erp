@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
@@ -57,6 +57,50 @@ export async function GET(req: NextRequest) {
   const searchFilter = search
     ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}`
     : ''
+
+  // Customers Owed Money mode: two cases where money is owed back that nothing else
+  // surfaces -- (a) a live sale that's overpaid (amount_paid > sale_total, e.g. a
+  // confirmed replacement top-up overshoot) and (b) a voided sale that still shows a
+  // paid amount (a customer return with no refund mechanism -- see lib/rma.ts). Used
+  // by Pending Tasks. Case (a) needs a column-vs-column comparison PostgREST can't
+  // express directly, so it's bounded to `payment_status = 'paid'` sales (the only
+  // state where amount_paid could exceed sale_total) and filtered in JS -- this stays
+  // small because an overpayment is meant to be a rare confirmed exception, not a
+  // routine state, same "naturally-bounded queue" reasoning as this route's other
+  // owner-only Pending Tasks modes.
+  if (searchParams.get('credit_owed') === 'true') {
+    if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+    const [{ data: paidSales }, { data: voidedPaidSales, count: voidedCount }] = await Promise.all([
+      withRetry(() =>
+        supabaseAdmin
+          .from('sales')
+          .select('id, customer_name, sale_total, amount_paid, is_deleted, created_at')
+          .eq('is_deleted', false)
+          .eq('payment_status', 'paid')
+          .order('created_at', { ascending: false })
+          .limit(500)
+      ),
+      withRetry(() =>
+        supabaseAdmin
+          .from('sales')
+          .select('id, customer_name, sale_total, amount_paid, is_deleted, created_at', { count: 'exact' })
+          .eq('is_deleted', true)
+          .gt('amount_paid', 0.5)
+          .order('created_at', { ascending: false })
+          .limit(8)
+      ),
+    ])
+
+    const overpaidLive = (paidSales || []).filter((s: any) => Number(s.amount_paid) > Number(s.sale_total) + 0.5)
+    const combined = [...overpaidLive, ...(voidedPaidSales || [])]
+      .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+
+    return NextResponse.json({
+      data: combined.slice(0, 8),
+      total: overpaidLive.length + (voidedCount ?? (voidedPaidSales || []).length),
+    })
+  }
 
   // Stat-card counts mode: SQL exact counts for the same filters the ledger's stat
   // cards use (search/payment_status/received_into, never `finalized` -- matches

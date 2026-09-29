@@ -98,6 +98,12 @@ export async function POST(req: NextRequest) {
   if (job_date && !/^\d{4}-\d{2}-\d{2}$/.test(job_date)) {
     return NextResponse.json({ error: 'job_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
+  if (amount_charged == null || Number(amount_charged) < 0) {
+    return NextResponse.json({ error: "amount_charged must be a valid number (0 is allowed for a free replacement) -- the new unit's pre-GST sale price." }, { status: 400 })
+  }
+  if (additional_amount_paid !== undefined && !(Number(additional_amount_paid) >= 0)) {
+    return NextResponse.json({ error: 'additional_amount_paid cannot be negative.' }, { status: 400 })
+  }
 
   // Parts consumed during the swap (accessory sku_master rows) -- validated up front so a
   // job never gets created only to find out a part is oversold. replacement_job_parts links
@@ -138,6 +144,40 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Replacement unit is '${replacement.status}' and not available.` }, { status: 400 })
   }
 
+  // Price fields only depend on the request body, not on the old unit's return -- computed
+  // here, before that return runs, so the overpayment pre-check below can reject cleanly
+  // with nothing committed yet.
+  const resolvedSaleType = sale_type === 'Cash' ? 'Cash' : 'GST'
+  const gstPct = resolvedSaleType === 'GST' ? (gst_percentage ?? 18) : 0
+  const saleBasePrice = Number(amount_charged) || 0
+  const gstAmount = Math.round(saleBasePrice * gstPct) / 100
+  const saleTotal = saleBasePrice + gstAmount
+  const topUp = Number(additional_amount_paid) || 0
+
+  // Read-only pre-check of what the old sale has already paid -- same query
+  // lib/rma.ts's processCustomerReturn itself uses -- purely to gate the overpayment
+  // guard below before that return (which voids the old sale and reverses inventory)
+  // actually commits anything. The authoritative value used for the real payment insert
+  // still comes from processCustomerReturn's own result further down.
+  let precheckCarriedOverPaid = 0
+  if (is_own_stock && asset_id) {
+    const { data: oldSale } = await supabaseAdmin
+      .from('sales')
+      .select('amount_paid')
+      .eq('asset_ledger_id', asset_id)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    precheckCarriedOverPaid = Number(oldSale?.amount_paid) || 0
+  }
+  if (!body.confirm_overpayment && precheckCarriedOverPaid + topUp > saleTotal + 0.5) {
+    return NextResponse.json({
+      error: `Carried-over (₹${precheckCarriedOverPaid.toFixed(2)}) + top-up (₹${topUp.toFixed(2)}) = ₹${(precheckCarriedOverPaid + topUp).toFixed(2)}, above the new sale's total of ₹${saleTotal.toFixed(2)}. Submit again to confirm and record the excess as credit owed.`,
+      error_code: 'exceeds_sale_total',
+    }, { status: 409 })
+  }
+
   let jobNumber: string
   try {
     jobNumber = await generateReplacementJobNumber()
@@ -150,6 +190,8 @@ export async function POST(req: NextRequest) {
   // bare customer Return uses (lib/rma.ts). This runs before the job row is created so a
   // failure here leaves nothing committed.
   let carriedOverPaid = 0
+  let carriedOverPaymentDate: string | null = null
+  let resolvedOriginalSoldDate: string | null = null
   if (is_own_stock && asset_id) {
     const returnResult = await processCustomerReturn(asset_id, {
       reason: 'Replaced with another unit',
@@ -161,6 +203,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: returnResult.error }, { status: returnResult.status || 500 })
     }
     carriedOverPaid = returnResult.saleAmountPaid || 0
+    carriedOverPaymentDate = returnResult.earliestPaymentRecordedAt || null
+    // Propagates the earliest date in the chain -- if the old unit was itself a
+    // replacement, its own original_sold_date wins over its (already-a-replacement)
+    // sale_date.
+    resolvedOriginalSoldDate = returnResult.originalSoldDate || returnResult.saleDate || null
   }
 
   const { data: customer } = await supabaseAdmin
@@ -169,13 +216,11 @@ export async function POST(req: NextRequest) {
     .eq('id', customer_id)
     .single()
 
-  const resolvedSaleType = sale_type === 'Cash' ? 'Cash' : 'GST'
-  const gstPct = resolvedSaleType === 'GST' ? (gst_percentage ?? 18) : 0
-  const saleBasePrice = Number(amount_charged) || 0
-  const gstAmount = Math.round(saleBasePrice * gstPct) / 100
-  const saleTotal = saleBasePrice + gstAmount
-  const topUp = Number(additional_amount_paid) || 0
-  const amountPaidForItem = Math.min(carriedOverPaid + topUp, saleTotal)
+  // No clamp -- matches sales/[id]/payments' own behavior once confirmed, so an
+  // overpaid replacement becomes naturally queryable as amount_paid > sale_total, same
+  // signal as any other sale (see GET /api/sales?credit_owed=true). The pre-check above
+  // already rejected this combination unless explicitly confirmed.
+  const amountPaidForItem = carriedOverPaid + topUp
 
   const { data: job, error: jobErr } = await supabaseAdmin
     .from('replacement_jobs')
@@ -211,6 +256,7 @@ export async function POST(req: NextRequest) {
     payment_account: payment_account || null,
     notes: null,
     finalized: false,
+    original_sold_date: resolvedOriginalSoldDate,
   }
   const item: CartItemInput = {
     asset_ledger_id: replacement_asset_id,
@@ -230,12 +276,19 @@ export async function POST(req: NextRequest) {
   }
 
   if (amountPaidForItem > 0) {
+    // A pure carry-over (no top-up) is money that was already received on the old
+    // sale, not today -- backdate it to when it actually came in so payment-date
+    // reporting isn't thrown off by the replacement's own date. A carry-over mixed
+    // with a top-up stays dated today, since part of that lump sum genuinely is new
+    // money and one row can't carry two dates.
+    const backdateToOriginalPayment = carriedOverPaid > 0 && topUp === 0 && carriedOverPaymentDate
     const { error: paymentErr } = await supabaseAdmin.from('sale_payments').insert({
       sale_id: result.saleRow.id,
       amount: amountPaidForItem,
       payment_account: payment_account || 'Digitalbluez',
       note: carriedOverPaid > 0 ? 'Carried over from replaced sale, plus any top-up' : 'Recorded at replacement job creation',
       recorded_by: sessionUser.id,
+      ...(backdateToOriginalPayment ? { recorded_at: carriedOverPaymentDate } : {}),
     })
     if (paymentErr) {
       await reverseSaleInventoryEffects(result.saleRow, {

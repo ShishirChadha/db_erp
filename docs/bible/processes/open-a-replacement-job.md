@@ -17,7 +17,8 @@ sources:
   - apps/erp/app/api/accessory-replacement-jobs/[id]/finalize/route.ts
   - apps/erp/lib/accessory-replacement-jobs.ts
   - apps/erp/lib/accessory-rma.ts
-updated: 2026-09-19
+  - apps/erp/app/dashboard/entry/service/page.tsx
+updated: 2026-09-29
 ---
 
 ## What this is
@@ -52,10 +53,29 @@ reads `asset_number` or checks PO state at all.
 just has to be any currently sellable unit in stock (`SELLABLE_STATUSES`) —
 it doesn't have to share the original unit's SKU, spec, or price. If it's a
 different spec, the price difference isn't calculated automatically: whoever
-opens the job types the actual `amount_charged` for the new unit, same as a
-normal sale. Whatever the customer already paid on the old sale carries over
+opens the job types the actual `amount_charged` for the new unit (the new
+unit's **full** pre-GST price, not the delta), same as a normal sale.
+Whatever the customer already paid on the old sale carries over
 automatically (see below); the only thing staff enters manually is any
-top-up or refund adjustment.
+`additional_amount_paid` top-up.
+
+**Validation (2026-09-29):** `amount_charged` must be a valid, non-negative
+number (blank/negative rejected; **0 is allowed**, for a genuinely free/
+warranty replacement — matches the same zero-is-allowed rule as a normal
+sale, see **business-rules**) and `additional_amount_paid` can't be
+negative — both checked client-side (`entry/service/page.tsx`) and
+server-side (`replacement-jobs/route.ts` / `accessory-replacement-jobs/
+route.ts`), since only the server check is a real guarantee. If
+`carried-over paid + top-up` would exceed the new sale's total, the request
+is rejected (`409`, `error_code: 'exceeds_sale_total'`) unless the caller
+confirms with `confirm_overpayment: true` — the client shows a
+`confirm(...)` dialog and retries automatically, same pattern as `POST
+/api/sales/[id]/payments`. Once confirmed, the **true, uncapped** amount is
+recorded (no silent clamping), which is what makes an overpaid replacement
+naturally show up under Pending Tasks → **Customers Owed Money**
+(`GET /api/sales?credit_owed=true`) alongside voided sales that still show
+a paid amount (see **Common mix-ups** below for the incidents that drove
+this).
 
 ## Steps
 
@@ -78,7 +98,17 @@ top-up or refund adjustment.
      form would, so it shows correctly in Sold Stock, Reports, and everywhere
      else a sale appears;
    - carries over whatever was already paid on the old sale as the first
-     `sale_payments` entry on the new one, plus any top-up entered at intake;
+     `sale_payments` entry on the new one, plus any top-up entered at intake
+     — backdated to when that money was actually received when it's a pure
+     carry-over with no top-up (a carry-over mixed with a top-up stays dated
+     today, since one row can't hold two dates and part of it genuinely is
+     new money) (2026-09-29);
+   - stamps the new sale's `original_sold_date` with the earliest date in
+     the replacement chain (the old unit's own `sale_date`, or its
+     `original_sold_date` if it was itself a prior replacement) — purely a
+     display field; `sale_date` itself always stays the real transaction
+     date (today) so revenue/GST period reporting is never affected
+     (2026-09-29, see "Common mix-ups" below for why);
    - consumes any parts used, linked back to the job.
 6. The job stays open until the owner marks it **Done** (`/finalize`), which
    only closes the job record — the inventory and sale effects already
@@ -124,16 +154,24 @@ via `?item_kind=accessory` on the deep link). Everything else works the same way
 - **"The customer already paid for the original unit — why does the
   replacement show as unpaid / free?"** (real incident, 2026-09,
   `DBAS26-196`/`RPL-26-004`) — the already-paid amount only carries over up
-  to whatever `amount_charged` is typed in at step 4. If that field is left
-  at 0 (e.g. staff forgot it, or it was meant as a placeholder to fill in
-  later), the carried-over payment is clamped to 0 too — the job silently
-  looks like a free/unpaid swap even though money was already collected on
-  the original sale. There is no warning for this; the form doesn't display
-  or prefill the old sale's amount as a reference. Fix: check the *old*
-  unit's sale (Sales Ledger, by its asset/serial number, before the return)
-  for what was actually paid, then correct the *new* sale's price via the
-  owner-only Sales Ledger edit so the figures — and the carried-over
-  payment — are right.
+  to whatever `amount_charged` is typed in at step 4. Before the 2026-09-29
+  validation, leaving that field at 0 (e.g. staff forgot it, or it was meant
+  as a placeholder) silently clamped the carried-over payment to 0 too — the
+  job looked like a free/unpaid swap even though money was already
+  collected, with no warning either way. **As of 2026-09-29, `amount_charged
+  = 0` is still allowed** (a genuinely free/warranty replacement is a real
+  case), **but if the old sale had money on it, `carriedOverPaid > 0` against
+  a `saleTotal` of 0 now trips the overpayment guard** — the confirm dialog
+  ("carried-over ₹X + top-up ₹0, above the new sale's total of ₹0") makes
+  the mismatch visible instead of silently discarding it. Confirming records
+  the true amount, which then surfaces under Pending Tasks → **Customers
+  Owed Money**. The form still doesn't prefill the old sale's amount as a
+  reference, so a *wrong but positive* `amount_charged` (rather than 0) can
+  still slip through unnoticed if it happens not to trigger the guard. Fix
+  if it does happen: check the *old* unit's sale (Sales Ledger, by its
+  asset/serial number, before the return) for what was actually paid, then
+  correct the *new* sale's price via the owner-only Sales Ledger edit so the
+  figures — and the carried-over payment — are right.
 - **"I corrected the sale price afterward and the Replacement Jobs list
   still shows the old amount."** (real incident, 2026-09, `DBAS26-258`/
   `RPL-26-007`) — `replacement_jobs.amount_charged` is only a snapshot
@@ -146,3 +184,48 @@ via `?item_kind=accessory` on the deep link). Everything else works the same way
   self-corrects — but the underlying `replacement_jobs.amount_charged`
   column itself stays stale unless also edited directly (owner-only, via
   this record's own PATCH).
+- **"Why does the Sales Ledger/Sold Stock show the replacement date as the
+  sold date instead of when the customer originally bought it?"** (real
+  incident, 2026-09-29, `RPL-26-009`) — because the old unit's sale is
+  voided (see the `DBAS26-258` mix-up above) it's hidden from every list, so
+  only the brand-new sale on the replacement unit shows, correctly dated
+  today (that IS the true transaction date for that physical unit; changing
+  `sale_date` to an earlier date would retroactively move revenue into an
+  already-closed period). `sales.original_sold_date` (2026-09-29) is the
+  fix: a display-only column, stamped with the earliest `sale_date` in the
+  replacement chain, that Sales Ledger and Stock/Sold both show as the
+  primary "sold" date (with the actual `sale_date` shown alongside as
+  "Replaced X") whenever it's set — `sale_date` itself is never touched.
+  Only sales created via a replacement job from 2026-09-29 onward have it;
+  older replacement sales show just their own `sale_date`, same as before.
+- **A carried-over payment can go stale if the sale's price is edited
+  afterward.** (real incident, 2026-09-29, same `RPL-26-009`) — splitting a
+  bundled item's price out into its own separate sale (e.g. pulling a
+  camera/accessory that was priced into the unit's total out into its own
+  standalone accessory sale) doesn't automatically reduce the unit sale's
+  already-recorded carried-over payment to match the new, lower price — the
+  unit sale is left showing `amount_paid` greater than its own `sale_total`
+  (an invisible overpayment, still displayed as plain "paid"), and if the
+  split-out item also gets a brand-new payment recorded against it, that
+  same money is effectively double-counted across two sales. There's still
+  no validation that catches this specific case (editing a sale's price
+  after the fact, via Sales Ledger → Edit Sale, doesn't re-check its
+  existing payments against the new total) — the 2026-09-29 validation only
+  guards the *replacement job's own* carried-over + top-up math at creation
+  time, not a later manual price edit. Fix: after splitting a price like
+  this, always re-check the original (unit) sale's payment against its new,
+  lower total and correct it (delete + re-add via Sales Ledger → Edit Sale →
+  Payments, backdated to when the money was actually received) rather than
+  leaving the stale higher amount in place. An overpaid sale like this would
+  now at least surface under Pending Tasks → **Customers Owed Money** once
+  `amount_paid > sale_total` on it, even though nothing blocked the edit
+  that caused it.
+- **"I got a popup asking to confirm the payment before the job would
+  save."** (expected, 2026-09-29) — if carried-over paid + top-up would
+  exceed the new unit's total, submitting is blocked with a confirm dialog
+  instead of silently accepting it. This is almost always a sign the
+  top-up amount (or the new unit's `amount_charged`) was typed wrong —
+  double-check both before confirming. If it's genuinely correct (e.g. the
+  customer is deliberately leaving a credit for a future purchase),
+  confirming proceeds and records the true amount — which then shows up
+  under Pending Tasks → **Customers Owed Money** as a reminder.

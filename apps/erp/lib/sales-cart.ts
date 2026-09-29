@@ -27,6 +27,11 @@ export type BaseSaleFields = {
   payment_account: string | null
   notes: string | null
   finalized: false
+  // Display-only: the earliest sale_date in a replacement chain, so Sales Ledger/Stock
+  // can show "Originally sold X, replaced Y" instead of losing the original date when a
+  // replacement's own sale_date is (correctly) today. See migration
+  // add_sales_original_sold_date for why sale_date itself is never touched instead.
+  original_sold_date?: string | null
 }
 
 export type ProcessedSaleRow = {

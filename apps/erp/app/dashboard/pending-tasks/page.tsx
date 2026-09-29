@@ -48,6 +48,17 @@ interface AccessoryPoBacklog {
   quantity: number
 }
 
+// Either a live sale overpaid past its own total (a confirmed top-up overshoot), or a
+// voided sale still showing a paid amount (a customer return with no refund recorded) --
+// see GET /api/sales?credit_owed=true.
+interface CreditOwedSale {
+  id: string
+  customer_name: string | null
+  sale_total: number
+  amount_paid: number
+  is_deleted: boolean
+}
+
 function Section({
   title,
   count,
@@ -98,6 +109,8 @@ function PendingTasksPage() {
   const [needsPoAccessories, setNeedsPoAccessories] = useState<AccessoryPoBacklog[]>([])
   const [rentalsDueBack, setRentalsDueBack] = useState<any[]>([])
   const [rentalsDueToBill, setRentalsDueToBill] = useState<any[]>([])
+  const [creditOwed, setCreditOwed] = useState<CreditOwedSale[]>([])
+  const [creditOwedTotal, setCreditOwedTotal] = useState(0)
 
   // Every one of these was previously either an unpaginated fetch (the whole
   // table, just to show up to 8 rows + a count) or waited on the previous
@@ -111,7 +124,7 @@ function PendingTasksPage() {
   // full fetch each is fine -- they just no longer wait on anything else.
   const fetchAll = useCallback(async () => {
     setLoading(true)
-    const [stockRes, repairRes, rentalRes, rmaRes, salesRes, stockIntakeRes, salesEntryRes, accessoryPoRes] = await Promise.all([
+    const [stockRes, repairRes, rentalRes, rmaRes, salesRes, stockIntakeRes, salesEntryRes, accessoryPoRes, creditOwedRes] = await Promise.all([
       apiFetch('/api/stock?status=qc_pending&page=1&limit=8'),
       apiFetch('/api/repair-jobs?status=intake,in_progress&page=1&limit=8'),
       // Both rental lists are derived from live agreement data -- nothing about
@@ -123,6 +136,7 @@ function PendingTasksPage() {
       isOwner ? apiFetch('/api/stock-intake') : Promise.resolve(null),
       isOwner ? apiFetch('/api/sales-entry') : Promise.resolve(null),
       isOwner ? apiFetch('/api/purchase-orders/from-accessory-stock') : Promise.resolve(null),
+      isOwner ? apiFetch('/api/sales?credit_owed=true') : Promise.resolve(null),
     ])
 
     const stockJson = stockRes.ok ? await stockRes.json() : { data: [], total: 0 }
@@ -150,6 +164,10 @@ function PendingTasksPage() {
       setNeedsPo(stockIntakeRes?.ok ? await stockIntakeRes.json() : [])
       setNeedsInvoice(salesEntryRes?.ok ? await salesEntryRes.json() : [])
       setNeedsPoAccessories(accessoryPoRes?.ok ? await accessoryPoRes.json() : [])
+
+      const creditOwedJson = creditOwedRes?.ok ? await creditOwedRes.json() : { data: [], total: 0 }
+      setCreditOwed(creditOwedJson.data || [])
+      setCreditOwedTotal(creditOwedJson.total || 0)
     }
     setLoading(false)
   }, [isOwner])
@@ -161,6 +179,7 @@ function PendingTasksPage() {
     && paymentPendingTotal === 0 && needsPo.length === 0 && needsInvoice.length === 0
     && needsPoAccessories.length === 0
     && rentalsDueBack.length === 0 && rentalsDueToBill.length === 0
+    && creditOwedTotal === 0
 
   return (
     <div className="p-4 max-w-3xl mx-auto">
@@ -224,6 +243,17 @@ function PendingTasksPage() {
                 <Row key={s.id}>
                   <span className="font-medium">{s.customer_name || 'Unknown customer'}</span>
                   {' '}-- ₹{s.sale_total?.toFixed(2)} ({s.payment_status})
+                </Row>
+              ))}
+            </Section>
+
+            <Section title="Customers Owed Money" count={creditOwedTotal} href="/dashboard/sales" loading={loading}>
+              {creditOwed.slice(0, 8).map(s => (
+                <Row key={s.id}>
+                  <span className="font-medium">{s.customer_name || 'Unknown customer'}</span>
+                  {' '}-- {s.is_deleted
+                    ? <>₹{Number(s.amount_paid).toFixed(2)} paid, sale voided (refund) </>
+                    : <>₹{Number(s.amount_paid).toFixed(2)} paid vs ₹{Number(s.sale_total).toFixed(2)} owed (overpaid) </>}
                 </Row>
               ))}
             </Section>

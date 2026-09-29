@@ -301,7 +301,7 @@ export async function GET(req: NextRequest) {
       ? withRetry(() =>
           supabaseAdmin
             .from('sales')
-            .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account')
+            .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account, original_sold_date')
             .in('asset_ledger_id', soldIds)
         )
       : Promise.resolve({ data: [] as any[] }),
@@ -429,6 +429,7 @@ export async function GET(req: NextRequest) {
       payment_account: sale?.payment_account,
       bundled_accessories: sale?.bundled_accessories,
       bundled_accessories_display: sale?.bundled_accessories_display,
+      original_sold_date: sale?.original_sold_date,
     }
   })
 

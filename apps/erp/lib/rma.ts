@@ -17,6 +17,9 @@ export async function processCustomerReturn(
   status?: number
   saleId?: string
   saleAmountPaid?: number
+  saleDate?: string | null
+  originalSoldDate?: string | null
+  earliestPaymentRecordedAt?: string | null
   bundledAccessories?: Array<{ accessory_id: string; quantity: number; unit_price?: number }> | null
 }> {
   const { data: asset } = await supabaseAdmin
@@ -73,12 +76,27 @@ export async function processCustomerReturn(
   // decremented as part of that sale and nothing has ever offset them either.
   const { data: saleRow } = await supabaseAdmin
     .from('sales')
-    .select('id, amount_paid, bundled_accessories, finalized, invoice_number')
+    .select('id, amount_paid, bundled_accessories, finalized, invoice_number, sale_date, original_sold_date')
     .eq('asset_ledger_id', assetId)
     .eq('is_deleted', false)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
+
+  // Earliest payment on the old sale -- the caller carries this same recorded_at
+  // forward onto the new sale's payment so it stays dated to when the money was
+  // actually received instead of today (the replacement date).
+  let earliestPaymentRecordedAt: string | null = null
+  if (saleRow) {
+    const { data: earliestPayment } = await supabaseAdmin
+      .from('sale_payments')
+      .select('recorded_at')
+      .eq('sale_id', saleRow.id)
+      .order('recorded_at', { ascending: true })
+      .limit(1)
+      .maybeSingle()
+    earliestPaymentRecordedAt = earliestPayment?.recorded_at ?? null
+  }
 
   const bundled = saleRow?.bundled_accessories || []
   for (const item of bundled) {
@@ -102,7 +120,15 @@ export async function processCustomerReturn(
   // the invoice is recorded in the audit reason for a human to reconcile.
   if (saleRow) {
     await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', saleRow.id)
-    const reason = `Customer return -- ${opts.reason}`
+    const amountPaid = Number(saleRow.amount_paid) || 0
+    // A void here has no refund mechanism anywhere in the codebase -- the money in
+    // sale_payments just stays attached to a now-voided sale, invisible unless
+    // someone reads this reason directly. Saying it explicitly is the cheapest
+    // possible fix; the Pending Tasks "Customers Owed Money" section is the
+    // proactive surface for it (see GET /api/sales?credit_owed=true).
+    const reason = amountPaid > 0.5
+      ? `Customer return -- ${opts.reason} (₹${amountPaid.toFixed(2)} was paid on this sale -- no refund recorded, reconcile manually)`
+      : `Customer return -- ${opts.reason}`
     const fieldCorrectionIds = await logFieldCorrections(
       'sales',
       saleRow.id,
@@ -127,6 +153,9 @@ export async function processCustomerReturn(
   return {
     saleId: saleRow?.id,
     saleAmountPaid: saleRow?.amount_paid ?? 0,
+    saleDate: saleRow?.sale_date ?? null,
+    originalSoldDate: saleRow?.original_sold_date ?? null,
+    earliestPaymentRecordedAt,
     bundledAccessories: saleRow?.bundled_accessories ?? null,
   }
 }

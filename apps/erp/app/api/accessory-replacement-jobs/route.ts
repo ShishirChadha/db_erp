@@ -71,6 +71,12 @@ export async function POST(req: NextRequest) {
   if (job_date && !/^\d{4}-\d{2}-\d{2}$/.test(job_date)) {
     return NextResponse.json({ error: 'job_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
+  if (amount_charged == null || Number(amount_charged) < 0) {
+    return NextResponse.json({ error: "amount_charged must be a valid number (0 is allowed for a free replacement) -- the new item's pre-GST sale price." }, { status: 400 })
+  }
+  if (additional_amount_paid !== undefined && !(Number(additional_amount_paid) >= 0)) {
+    return NextResponse.json({ error: 'additional_amount_paid cannot be negative.' }, { status: 400 })
+  }
 
   // Parts consumed during the swap -- validated up front so a job never gets created
   // only to find out a part is oversold. Same idiom as repair_job_parts/replacement_job_parts.
@@ -128,7 +134,16 @@ export async function POST(req: NextRequest) {
   const gstAmount = Math.round(saleBasePrice * gstPct) / 100
   const saleTotal = saleBasePrice + gstAmount
   const topUp = Number(additional_amount_paid) || 0
-  const amountPaidForItem = Math.min(topUp, saleTotal)
+  if (!body.confirm_overpayment && topUp > saleTotal + 0.5) {
+    return NextResponse.json({
+      error: `Top-up of ₹${topUp.toFixed(2)} exceeds the new item's sale total of ₹${saleTotal.toFixed(2)}. Submit again to confirm and record the excess as credit owed.`,
+      error_code: 'exceeds_sale_total',
+    }, { status: 409 })
+  }
+  // No clamp -- matches sales/[id]/payments' own behavior once confirmed, so an
+  // overpaid item becomes naturally queryable as amount_paid > sale_total, same
+  // signal as any other sale (see GET /api/sales?credit_owed=true).
+  const amountPaidForItem = topUp
 
   const { data: job, error: jobErr } = await supabaseAdmin
     .from('accessory_replacement_jobs')

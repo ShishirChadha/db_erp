@@ -64,6 +64,7 @@ interface Sale {
   is_deleted?: boolean;
   invoice_number: string | null;
   invoice_id?: string | null;
+  original_sold_date?: string | null;
   invoice_mode?: "erp" | "external";
   sku_description?: string | null;
   full_sku_code?: string | null;
@@ -315,7 +316,16 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
-        <Field label="Sold Date">{sale.sale_date?.slice(0, 10)}</Field>
+        <Field label="Sold Date">
+          {sale.original_sold_date ? (
+            <>
+              {sale.original_sold_date.slice(0, 10)}
+              <span className="text-muted-foreground"> · Replaced {sale.sale_date?.slice(0, 10)}</span>
+            </>
+          ) : (
+            sale.sale_date?.slice(0, 10)
+          )}
+        </Field>
         <Field label="Payment Date"><PaymentDateField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
         <Field label="Description">
           {sale.sku_description || sale.full_sku_code || sale.repair_description || "—"}
@@ -394,7 +404,13 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
             <StatusBadge tone={sale.is_deleted ? "danger" : sale.finalized ? "success" : "warning"}>
               {sale.is_deleted ? "Voided" : sale.finalized ? "Invoiced" : "Pending"}
             </StatusBadge>
-            <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10)}</span>
+            <span
+              className="text-xs text-muted-foreground whitespace-nowrap"
+              title={sale.original_sold_date ? `Originally sold ${sale.original_sold_date.slice(0, 10)}, replaced ${sale.sale_date?.slice(0, 10)}` : undefined}
+            >
+              {(sale.original_sold_date || sale.sale_date)?.slice(0, 10)}
+              {sale.original_sold_date && <sup className="ml-0.5">R</sup>}
+            </span>
           </div>
         </div>
       </div>

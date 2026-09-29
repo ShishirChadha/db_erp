@@ -74,6 +74,7 @@ interface AssetRow {
   payment_date?: string | null
   payment_account?: string | null
   bundled_accessories_display?: { name: string; quantity: number }[]
+  original_sold_date?: string | null
 }
 
 interface Vendor {
@@ -1025,7 +1026,7 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
   onToggleChecked: () => void
   onOpen: () => void
 }) {
-  const dateStr = tab === 'sold' ? asset.sold_at?.slice(0, 10) : asset.created_at?.slice(0, 10)
+  const dateStr = tab === 'sold' ? (asset.original_sold_date || asset.sold_at)?.slice(0, 10) : asset.created_at?.slice(0, 10)
   const desc = buildConfigSummary(asset.category, asset.specifications, templates) || asset.description
   return (
     <div className={cn('w-full flex items-start gap-2 border-b border-border transition-colors', active ? 'bg-primary/10' : 'hover:bg-muted')}>
@@ -1054,9 +1055,13 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
         </div>
         <div className="flex items-baseline justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">{desc}</p>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
+          <span
+            className="text-xs text-muted-foreground whitespace-nowrap"
+            title={tab === 'sold' && asset.original_sold_date ? `Originally sold ${asset.original_sold_date.slice(0, 10)}, replaced ${asset.sold_at?.slice(0, 10)}` : undefined}
+          >
             {tab === 'sold' && asset.payment_account && `${ACCOUNT_ABBREV[asset.payment_account] ?? asset.payment_account} · `}
             {dateStr || '—'}
+            {tab === 'sold' && asset.original_sold_date && <sup className="ml-0.5">R</sup>}
           </span>
         </div>
       </button>
