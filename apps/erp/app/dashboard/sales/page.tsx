@@ -392,6 +392,9 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
           <span className="font-medium text-sm text-foreground truncate">{sale.customer_name || "—"}</span>
           <span className="text-sm font-medium tabular-nums whitespace-nowrap text-foreground">₹{sale.sale_total?.toFixed(2)}</span>
         </div>
+        {sale.customer_summary?.contact_person && (
+          <p className="text-xs text-muted-foreground truncate">{sale.customer_summary.contact_person}</p>
+        )}
         <div className="flex items-baseline justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">{item(sale)}</p>
           <div className="flex items-center gap-1.5 shrink-0">
@@ -676,10 +679,17 @@ function SalesLedgerPage() {
         />
       )}
 
-      {loading ? (
+      {loading && sales.length === 0 ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
+        <div className={cn(
+          "flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex",
+          // A background refresh (e.g. after Edit Sale saves) re-fetches in place
+          // rather than unmounting this pane -- that's what keeps the list's scroll
+          // position intact instead of snapping back to the top every time. This dim
+          // is just a subtle "updating" signal, not a full loading-state swap.
+          loading && "opacity-60"
+        )}>
           {/* List pane -- hidden on mobile once a sale is open, matching an
               email client's drill-in navigation; always visible at md+. */}
           <div

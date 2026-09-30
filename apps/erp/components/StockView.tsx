@@ -804,10 +804,20 @@ export default function StockView({
         />
       )}
 
-      {loading ? (
+      {loading && (
+        tab === 'accessories' ? accessoryStock.length === 0
+        : tab === 'sold_accessories' ? soldAccessories.length === 0
+        : assets.length === 0
+      ) ? (
         <div>Loading {tab === 'sold_accessories' ? 'sales' : tab === 'accessories' ? 'accessories' : 'assets'}…</div>
       ) : tab === 'accessories' ? (
-        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
+        <div className={cn(
+          "flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex",
+          // A background refresh re-fetches in place rather than unmounting this pane --
+          // that's what keeps the list's scroll position intact instead of snapping back
+          // to the top every time. This dim is just a subtle "updating" signal.
+          loading && "opacity-60"
+        )}>
           {/* List pane -- hidden on mobile once a SKU is open, matching the
               Current/Sold master-detail drill-in navigation. */}
           <div
@@ -851,7 +861,10 @@ export default function StockView({
           </div>
         </div>
       ) : tab === 'sold_accessories' ? (
-        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
+        <div className={cn(
+          "flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex",
+          loading && "opacity-60"
+        )}>
           {/* List pane -- hidden on mobile once a sale is open. */}
           <div
             className={cn('w-full md:flex-shrink-0 border-r border-border flex flex-col', activeSoldAccessoryId && 'hidden md:flex')}
@@ -904,7 +917,10 @@ export default function StockView({
           </div>
         </div>
       ) : (
-        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
+        <div className={cn(
+          "flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex",
+          loading && "opacity-60"
+        )}>
           {/* List pane -- hidden on mobile once a unit is open, matching the
               Sales/PO/Invoices email-client drill-in navigation; always visible at md+. */}
           <div

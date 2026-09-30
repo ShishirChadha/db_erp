@@ -27,7 +27,7 @@ import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
 
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
-const PART_CATEGORIES = ["RAM", "SSD", "CPU", "GPU", "KBD", "MOUSE", "ACC", "ADP"];
+const PART_CATEGORIES = ["RAM", "SSD", "CPU", "GPU", "KBD", "MOUSE", "ACC", "ADP", "SERVICE"];
 
 interface SaleLine {
   id: string;

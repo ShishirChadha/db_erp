@@ -30,6 +30,7 @@ export async function mintSalesInvoiceNumber(entityKey: string = 'digitalbluez')
 // since a rolled-back cart line was never a completed sale anyone saw).
 export async function reverseSaleInventoryEffects(
   saleRow: {
+    id?: string
     asset_ledger_id?: string | null
     accessory_id?: string | null
     accessory_quantity?: number | null
@@ -46,6 +47,25 @@ export async function reverseSaleInventoryEffects(
       .eq('id', saleRow.asset_ledger_id)
       .single()
     if (!asset) return { error: 'Linked unit not found.' }
+
+    // A stale sale being voided long after the fact (e.g. a duplicate/orphaned sale
+    // discovered later) must NOT clobber a newer, still-active sale on the same unit --
+    // 'status'='sold' alone can't tell which sale actually put it there. If a different
+    // non-deleted sale is now the most recent one on this asset, this sale being voided
+    // is superseded: skip the inventory/status reversal entirely (same as the
+    // already-physically-returned case below) so a stale void can never undo a real,
+    // current sale's stock/status effects.
+    if (saleRow.id) {
+      const { data: currentSale } = await supabaseAdmin
+        .from('sales')
+        .select('id')
+        .eq('asset_ledger_id', saleRow.asset_ledger_id)
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (currentSale && currentSale.id !== saleRow.id) return {}
+    }
 
     const { data: reverted, error: revertErr } = await supabaseAdmin
       .from('asset_ledger')

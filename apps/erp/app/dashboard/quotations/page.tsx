@@ -234,10 +234,13 @@ function QuotationsPage() {
         <CreateDocumentDialog docType={docType} onCreated={fetchDocs} />
       </div>
 
-      {loading ? (
+      {loading && docs.length === 0 ? (
         <div>Loading...</div>
       ) : (
-        <div className="flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex">
+        <div className={cn(
+          "flex-1 min-h-[1100px] md:min-h-[500px] lg:min-h-[320px] border rounded overflow-visible lg:overflow-hidden flex",
+          loading && "opacity-60"
+        )}>
           {/* List pane -- hidden on mobile once a document is open, matching Sales Ledger. */}
           <div
             className={cn('w-full md:flex-shrink-0 border-r border-border flex flex-col', activeDoc && 'hidden md:flex')}

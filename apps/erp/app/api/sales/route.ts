@@ -143,7 +143,11 @@ export async function GET(req: NextRequest) {
   // page's rows instead of the whole ledger, which is what let this endpoint's
   // cost grow forever with total sales history rather than with page size.
   const NATIVE_SORT_COLUMNS: Record<string, string> = {
-    sale_date: 'sale_date',
+    // effective_sale_date (generated, coalesce(original_sold_date, sale_date)) so a
+    // replacement's new sale sorts alongside whichever date it actually displays as
+    // "sold" (its original sale date when set), not its own sale_date -- see the
+    // 2026-09-30 migration.
+    sale_date: 'effective_sale_date',
     sale_total: 'sale_total',
     payment_status: 'payment_status',
     amount_paid: 'amount_paid',
@@ -335,7 +339,7 @@ export async function GET(req: NextRequest) {
 // pre-pagination) or would have been applied client-side.
 function getSortValue(key: string): (s: any) => string | number {
   switch (key) {
-    case 'sale_date': return (s) => s.sale_date || ''
+    case 'sale_date': return (s) => s.original_sold_date || s.sale_date || ''
     case 'payment_date': return (s) => s.payment_date || ''
     case 'customer_name': return (s) => s.customer_name || ''
     case 'item': return (s) => s.asset_number || (s.serial_number ? `SN: ${s.serial_number}` : s.accessory_id ? 'Accessory' : s.repair_job_id ? (s.repair_job_number || 'Repair') : s.is_rental_charge ? (s.rental_agreement_number || 'Rental') : '')
