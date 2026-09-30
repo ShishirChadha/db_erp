@@ -120,17 +120,34 @@ export async function GET(req: NextRequest) {
       }
       return withRetry(build)
     }
-    const [totalSold, pending, partial, awaitingInvoice] = await Promise.all([
+    // Sum of sale_total/amount_paid for the same base filter as totalSold, computed
+    // DB-side via sales_ledger_sum (see migration) -- this is what lets a search like an
+    // invoice number, or any other active filter, show its own total (e.g. "everything
+    // on invoice DBI2026/27-00731 sums to ₹95,580") without pulling matching rows into
+    // Node and reducing them in JS, which would cost more the larger the ledger gets.
+    const [totalSold, pending, partial, awaitingInvoice, sumResult] = await Promise.all([
       countQuery((q: any) => q),
       countQuery((q: any) => q.eq('payment_status', 'pending')),
       countQuery((q: any) => q.eq('payment_status', 'partial')),
       countQuery((q: any) => q.eq('finalized', false)),
+      withRetry(() =>
+        supabaseAdmin.rpc('sales_ledger_sum', {
+          p_voided: voided,
+          p_payment_status: paymentStatus || null,
+          p_payment_status_ne: paymentStatusNe || null,
+          p_payment_account: receivedInto || null,
+          p_search: search || null,
+        })
+      ),
     ])
+    const sumRow = (sumResult.data as any[] | null)?.[0]
     return NextResponse.json({
       totalCount: totalSold.count || 0,
       pendingCount: pending.count || 0,
       partialCount: partial.count || 0,
       awaitingInvoiceCount: awaitingInvoice.count || 0,
+      sumSaleTotal: Number(sumRow?.sum_sale_total) || 0,
+      sumAmountPaid: Number(sumRow?.sum_amount_paid) || 0,
     })
   }
 
@@ -275,7 +292,7 @@ export async function GET(req: NextRequest) {
       .filter(Boolean)
   )]
   const { data: skus } = skuIds.length
-    ? await withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications').in('id', skuIds))
+    ? await withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications, hsn_code').in('id', skuIds))
     : { data: [] as any[] }
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
 
@@ -292,6 +309,7 @@ export async function GET(req: NextRequest) {
     withName.generation = sku?.specifications?.generation || null
     withName.ram = sku?.specifications?.ram || null
     withName.ssd = sku?.specifications?.ssd || null
+    withName.hsn_code = sku?.hsn_code || null
     withName.bundled_accessories_display = (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
       const bsku = bundledSkuById.get(b.accessory_id)
       return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity, unit_price: b.unit_price || 0 }

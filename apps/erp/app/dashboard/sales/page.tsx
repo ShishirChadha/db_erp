@@ -68,6 +68,7 @@ interface Sale {
   invoice_mode?: "erp" | "external";
   sku_description?: string | null;
   full_sku_code?: string | null;
+  hsn_code?: string | null;
   cpu?: string | null;
   generation?: string | null;
   ram?: string | null;
@@ -336,6 +337,7 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
             <span className="text-muted-foreground"> · {specParts.join(" / ")}</span>
           )}
         </Field>
+        {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
         {sale.bundled_accessories_display && sale.bundled_accessories_display.length > 0 && (
           <Field label="Bundled Accessories">
             <div className="space-y-0.5">
@@ -462,7 +464,7 @@ function SalesLedgerPage() {
   // Stat cards (Total Sold / Pending / Partial / Awaiting Invoice) need counts over
   // every matching sale, not just the current page -- SQL exact counts (see
   // /api/sales' counts=true branch), same pattern StockView.tsx uses for its own.
-  const [statCounts, setStatCounts] = useState({ totalCount: 0, pendingCount: 0, partialCount: 0, awaitingInvoiceCount: 0 });
+  const [statCounts, setStatCounts] = useState({ totalCount: 0, pendingCount: 0, partialCount: 0, awaitingInvoiceCount: 0, sumSaleTotal: 0, sumAmountPaid: 0 });
   // Which sale is open in the right-hand detail pane.
   const [activeSaleId, setActiveSaleId] = useState<string | null>(null);
   const isDesktop = useIsDesktopViewport();
@@ -544,16 +546,22 @@ function SalesLedgerPage() {
     });
   };
 
-  // Only un-finalized, non-voided sales are ever selectable for a combined
-  // invoice -- select-all must match that same set, not every visible row.
-  const selectableIds = sales.filter(s => !s.finalized && !s.is_deleted).map(s => s.id);
-  const { totalCount, pendingCount, partialCount, awaitingInvoiceCount } = statCounts;
+  const { totalCount, pendingCount, partialCount, awaitingInvoiceCount, sumSaleTotal, sumAmountPaid } = statCounts;
+
+  // Checkboxes are selectable on every row (any sale can be picked to total up for a
+  // bank-reconciliation check) -- but combining into ONE invoice still only makes sense
+  // for a set that's entirely un-finalized and non-voided, so that eligibility is
+  // checked separately from "is this row selected at all" rather than baked into which
+  // rows can be checked in the first place.
+  const selectedSales = sales.filter(s => selected.has(s.id));
+  const selectedTotal = selectedSales.reduce((a, s) => a + (Number(s.sale_total) || 0), 0);
+  const selectedPaidTotal = selectedSales.reduce((a, s) => a + (Number(s.amount_paid) || 0), 0);
+  const eligibleForCombinedInvoice = selectedSales.length >= 2 && selectedSales.every(s => !s.finalized && !s.is_deleted);
 
   // A combined invoice over the selected sales is either a Zoho recording (all
   // selected are external-mode) or ERP generation (none are) -- mixed selections
   // are already invalid (different entities) and the server rejects them.
-  const selectedSales = sales.filter(s => selected.has(s.id));
-  const allSelectedExternal = selectedSales.length >= 2 && selectedSales.every(s => s.invoice_mode === "external");
+  const allSelectedExternal = eligibleForCombinedInvoice && selectedSales.every(s => s.invoice_mode === "external");
 
   const { run: generateCombinedInvoice, pending: batchBusy } = useAsyncAction(async () => {
     setBatchErr("");
@@ -650,7 +658,7 @@ function SalesLedgerPage() {
           <Checkbox checked={showVoided} onCheckedChange={(v) => setShowVoided(!!v)} />
           Show voided
         </label>
-        {isOwner && selected.size >= 2 && (
+        {isOwner && eligibleForCombinedInvoice && (
           allSelectedExternal ? (
             <button
               onClick={() => setShowBatchZoho(true)}
@@ -679,6 +687,25 @@ function SalesLedgerPage() {
         />
       )}
 
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2 text-xs text-muted-foreground">
+        {/* Sum for whatever's currently searched/filtered (e.g. every line item on one
+            invoice number) -- computed server-side (see /api/sales' counts=true branch),
+            so it stays accurate across every matching sale, not just the current page,
+            without fetching them all into the browser to add up. */}
+        <span>
+          {total} sale{total === 1 ? "" : "s"} in this view -- total <span className="font-medium text-foreground">₹{sumSaleTotal.toFixed(2)}</span>
+          {" "}· paid <span className="font-medium text-foreground">₹{sumAmountPaid.toFixed(2)}</span>
+        </span>
+        {isOwner && selected.size > 0 && (
+          <span>
+            {selected.size} selected -- total <span className="font-medium text-foreground">₹{selectedTotal.toFixed(2)}</span>
+            {" "}· paid <span className="font-medium text-foreground">₹{selectedPaidTotal.toFixed(2)}</span>
+            {" "}
+            <button type="button" onClick={() => setSelected(new Set())} className="underline hover:text-foreground">Clear</button>
+          </span>
+        )}
+      </div>
+
       {loading && sales.length === 0 ? (
         <div>Loading...</div>
       ) : (
@@ -702,7 +729,7 @@ function SalesLedgerPage() {
                   key={s.id}
                   sale={s}
                   active={s.id === activeSaleId}
-                  selectable={isOwner && !s.finalized && !s.is_deleted}
+                  selectable={isOwner}
                   checked={selected.has(s.id)}
                   onToggleCheck={() => toggleSelect(s.id)}
                   onOpen={() => setActiveSaleId(s.id)}
