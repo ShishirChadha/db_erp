@@ -98,6 +98,23 @@ export async function processCustomerReturn(
     earliestPaymentRecordedAt = earliestPayment?.recorded_at ?? null
   }
 
+  // No active sale found for a unit that was just 'sold' -- either it's a legacy-
+  // sourced unit that was migrated as already-sold with no `sales` row ever created
+  // (see docs/decisions.md), or something desynced the link. Flag it rather than
+  // silently proceeding with nothing to void, so it doesn't go unnoticed the way the
+  // failed-void case above used to.
+  if (!saleRow) {
+    await logAuditEvent({
+      actor: { id: opts.userId },
+      actionType: 'update',
+      module: 'sales',
+      tableName: 'asset_ledger',
+      recordId: assetId,
+      recordLabel: 'Customer return with no linked sale',
+      reason: `Customer return -- ${opts.reason} -- no active 'sales' row was found for this unit to void. If this wasn't a legacy-sourced unit, check for an orphaned/duplicate sale manually.`,
+    })
+  }
+
   const bundled = saleRow?.bundled_accessories || []
   for (const item of bundled) {
     if (!item?.accessory_id || !item?.quantity) continue
@@ -119,7 +136,13 @@ export async function processCustomerReturn(
   // too since the physical return already happened regardless; that mismatch with
   // the invoice is recorded in the audit reason for a human to reconcile.
   if (saleRow) {
-    await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', saleRow.id)
+    // Checked explicitly -- this used to be fire-and-forget, which meant a failed
+    // update here (rare, but possible) left the old sale silently active alongside
+    // the unit's now-reverted status: two live sales rows pointing at one asset,
+    // which is exactly what made the Sold Stock tab (and the asset detail page's
+    // single-sale lookup) stop showing sale/payment details for that unit.
+    const { error: voidErr } = await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', saleRow.id)
+    if (voidErr) return { error: `Return recorded, but failed to void the original sale: ${voidErr.message}. Reconcile manually.`, status: 500 }
     const amountPaid = Number(saleRow.amount_paid) || 0
     // A void here has no refund mechanism anywhere in the codebase -- the money in
     // sale_payments just stays attached to a now-voided sale, invisible unless
