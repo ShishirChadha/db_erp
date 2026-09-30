@@ -1,0 +1,117 @@
+===== object counts =====
+          object           |  n  
+---------------------------+-----
+ auth.users                | 119
+ auth.users with password  | 119
+ cron jobs                 | 7
+ policies (public+storage) | 72
+ public functions          | 59
+ public_* storefront views | 9
+ storage.buckets           | 5
+ storage.objects           | 248
+ tables in public          | 95
+ triggers (non-internal)   | 20
+ views in public           | 16
+(11 rows)
+
+
+===== exact row count per table (largest is ~1150 rows, so exact is cheap) =====
+           table_name            | rows 
+---------------------------------+------
+ _migration_tracking             |  751
+ accessory_replacement_job_parts |    0
+ accessory_replacement_jobs      |    2
+ accessory_rma_events            |    2
+ activities                      |  111
+ activity_assignees              |  140
+ activity_checklist_items        |    0
+ activity_comment_reactions      |    0
+ activity_comments               |   92
+ activity_watchers               |   27
+ app_settings                    |    1
+ asset_cost_adjustments          |    3
+ asset_counters                  |   12
+ asset_ledger                    | 1195
+ asset_qc_checks                 | 3583
+ asset_rma_events                |   15
+ audit_log                       | 3176
+ backup_settings                 |    1
+ backup_snapshots                |    1
+ bank_accounts                   |    2
+ bank_categorization_rules       |    0
+ bank_column_profiles            |    1
+ bank_statements                 |    1
+ bank_transaction_matches        |    0
+ bank_transactions               |  326
+ blog_posts                      |    0
+ business_profiles               |    3
+ cart_items                      |    2
+ custom_options                  |  295
+ customer_profiles               |    5
+ customers                       |  286
+ digest_channel_config           |    1
+ digest_runs                     |    0
+ digest_subscriptions            |   20
+ document_sends                  |    0
+ expense_reimbursements          |   89
+ expenses                        |  138
+ extraction_templates            |    4
+ festival_calendar               |  158
+ field_corrections               | 1245
+ homepage_banners                |    3
+ invoice_items                   |  127
+ invoice_sequences               |    8
+ invoices                        |   90
+ kb_chapter_sections             |  416
+ kb_chapters                     |   71
+ market_price_observations       |    1
+ marketing_assets                |   43
+ marketing_settings              |    1
+ newsletter_subscribers          |    0
+ notifications                   |  980
+ order_items                     |    0
+ orders                          |    0
+ po_counter                      |    1
+ product_images                  |  171
+ profile_page_actions            |   11
+ profiles                        |    6
+ promotion_redemptions           |    0
+ promotions                      |    0
+ purchase_files                  |   18
+ purchase_order_items            |  791
+ purchase_orders                 |  772
+ purchases                       |  764
+ recon_sessions                  |    4
+ recurring_expense_rules         |    3
+ redaction_rules                 |   37
+ rental_agreement_counter        |    1
+ rental_agreement_items          |    1
+ rental_agreements               |    1
+ reorder_rules                   |    0
+ repair_job_counter              |    1
+ repair_job_parts                |    7
+ repair_jobs                     |   85
+ replacement_job_counter         |    1
+ replacement_job_parts           |    0
+ replacement_jobs                |    7
+ sac_codes                       |    2
+ sale_payments                   |  430
+ sales                           |  484
+ sales_document_items            |  103
+ sales_documents                 |   27
+ sku_category_templates          |   15
+ sku_cross_sell_rules            |   12
+ sku_master                      |  351
+ sku_upgrade_rules               |    0
+ stock_movements                 | 2026
+ uploaded_documents              |    5
+ user_sessions                   |   23
+ users                           |    0
+ vendor_correction_proposals     |   17
+ vendor_payments                 |   14
+ vendors                         |   81
+ web_reservations                |    0
+ website_health_checks           | 5381
+ wishlist_items                  |    0
+(95 rows)
+
