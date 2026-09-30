@@ -10,6 +10,7 @@ import { useRole } from '@/lib/auth/useRole';
 import { apiFetch } from '@/lib/api-client';
 import { useCustomOptions } from '@/lib/useCustomOptions';
 import ActivityCommentThread from '@/components/ActivityCommentThread';
+import ActivityDescriptionTable, { DescriptionTableData, tableFromPastedText } from '@/components/ActivityDescriptionTable';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SimpleModal } from '@/components/SimpleModal';
 
@@ -22,6 +23,7 @@ interface Activity {
   id: string;
   title: string;
   description?: string | null;
+  description_table?: DescriptionTableData | null;
   tags: string[];
   status: Status;
   priority: Priority;
@@ -109,6 +111,7 @@ function getTagColor(tag: string): string {
 interface TaskFormState {
   title: string;
   description: string;
+  description_table: DescriptionTableData | null;
   tags: string[];
   status: Status;
   priority: Priority;
@@ -128,6 +131,17 @@ function TaskForm({
   tagOptions: string[];
   assignableUsers: AssignableUser[];
 }) {
+  // Pasting a tab-separated range (from Excel/Numbers/Sheets) into Description
+  // is tabular data, not a paragraph -- divert it into the table below instead
+  // of dumping raw tab characters into the plain-text field. A normal
+  // (non-tabular) paste falls through to the textarea as usual.
+  const handleDescriptionPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const parsed = tableFromPastedText(e.clipboardData.getData('text/plain'));
+    if (!parsed) return;
+    e.preventDefault();
+    setForm(prev => ({ ...prev, description_table: parsed }));
+  };
+
   const toggleTag = (tag: string) => {
     setForm(prev => ({
       ...prev,
@@ -162,8 +176,18 @@ function TaskForm({
       </div>
       <div>
         <label className="block text-sm font-medium">Description</label>
-        <textarea rows={3} className="w-full border rounded p-2" value={form.description} onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))} />
+        <textarea
+          rows={3} className="w-full border rounded p-2" value={form.description}
+          onChange={e => setForm(prev => ({ ...prev, description: e.target.value }))}
+          onPaste={handleDescriptionPaste}
+        />
+        <p className="text-xs text-muted-foreground mt-1">Tip: pasting a copied spreadsheet range here builds a table below instead of raw text.</p>
       </div>
+
+      <ActivityDescriptionTable
+        table={form.description_table}
+        onChange={t => setForm(prev => ({ ...prev, description_table: t }))}
+      />
 
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -281,7 +305,7 @@ function buildEmptyForm(): TaskFormState {
   const reminder = new Date(due);
   reminder.setHours(reminder.getHours() - 2);
   return {
-    title: '', description: '', tags: [], status: 'pending', priority: 'normal',
+    title: '', description: '', description_table: null, tags: [], status: 'pending', priority: 'normal',
     due_date: format(due, "yyyy-MM-dd'T'HH:mm"),
     reminder_at: format(reminder, "yyyy-MM-dd'T'HH:mm"),
     related_type: '', related_id: '', assignee_ids: [], watcher_ids: [],
@@ -295,12 +319,16 @@ function AddActivityModal({
   isOpen: boolean; onClose: () => void; onUpdate: () => void; tagOptions: string[]; assignableUsers: AssignableUser[];
 }) {
   const [form, setForm] = useState<TaskFormState>(buildEmptyForm);
+  // Bumped on every open so TaskForm (and its ActivityDescriptionTable child,
+  // which owns its own local edit state) fully remounts rather than carrying
+  // over a table pasted into a previous, since-abandoned draft.
+  const [formInstance, setFormInstance] = useState(0);
 
   // Fresh defaults every time the modal is opened (including reopen-after-cancel),
   // not just after a successful submit -- so the due-date/reminder defaults
   // never go stale relative to "now".
   useEffect(() => {
-    if (isOpen) setForm(buildEmptyForm());
+    if (isOpen) { setForm(buildEmptyForm()); setFormInstance(n => n + 1); }
   }, [isOpen]);
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async () => {
@@ -327,7 +355,7 @@ function AddActivityModal({
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="New Task" wide closeOnBackdropClick={false}>
-      <TaskForm form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
+      <TaskForm key={formInstance} form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
         <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
@@ -353,6 +381,7 @@ function EditActivityModal({
       setForm({
         title: activity.title || '',
         description: activity.description || '',
+        description_table: activity.description_table || null,
         tags: activity.tags || [],
         status: activity.status || 'pending',
         priority: activity.priority || 'normal',
@@ -389,7 +418,7 @@ function EditActivityModal({
 
   return (
     <SimpleModal isOpen={isOpen} onClose={onClose} title="Edit Task" wide closeOnBackdropClick={false}>
-      <TaskForm form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
+      <TaskForm key={activity?.id || 'none'} form={form} setForm={setForm} tagOptions={tagOptions} assignableUsers={assignableUsers} />
       <div className="flex justify-end gap-2 pt-4">
         <button onClick={onClose} className="px-4 py-2 border rounded">Cancel</button>
         <button onClick={handleSubmit} disabled={submitting} className="px-4 py-2 bg-primary text-primary-foreground rounded disabled:opacity-50">
@@ -525,6 +554,21 @@ function DetailModal({
 
   const handleChecklistChange = () => { refetchDetail(); onUpdate(); };
 
+  // Anyone who can see the task can edit its table (same boundary as comments/
+  // checklist) -- persisted immediately on a structural change or a cell blur,
+  // not per keystroke (see ActivityDescriptionTable).
+  const handleTableChange = async (table: DescriptionTableData | null) => {
+    if (!activityId) return;
+    const res = await apiFetch(`/api/activities/${activityId}`, {
+      method: 'PUT', body: JSON.stringify({ description_table: table }),
+    });
+    if (res.ok) onUpdate();
+    else {
+      const body = await res.json().catch(() => ({}));
+      alert(body.error || 'Failed to save table.');
+    }
+  };
+
   const handleDownloadIcs = async () => {
     if (!activityId || downloadingIcs) return;
     setDownloadingIcs(true);
@@ -580,6 +624,8 @@ function DetailModal({
               </button>
             )}
           </div>
+
+          <ActivityDescriptionTable key={detail.id} table={detail.description_table ?? null} onChange={handleTableChange} />
 
           <div className="grid grid-cols-2 gap-2 text-sm">
             <p><strong>Status:</strong> <span className="capitalize">{detail.status.replace('_', ' ')}</span></p>
@@ -688,8 +734,16 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
     return () => clearTimeout(timer);
   }, [search]);
 
-  const fetchActivities = async () => {
-    setLoading(true);
+  // `silent` skips the loading-flag toggle -- used for a background reload
+  // triggered by an action inside an already-open modal (e.g. editing a
+  // task's table, toggling a checklist item). Setting `loading` there used to
+  // make the whole component render its "Loading..." placeholder instead of
+  // its tree, which unmounts every open modal along with it for the duration
+  // of the fetch -- felt like the page "refreshing"/the modal flashing closed
+  // on every single edit. The plain (non-silent) path is only for filter/
+  // sort/search changes and the very first mount, where no modal is open yet.
+  const fetchActivities = async (silent = false) => {
+    if (!silent) setLoading(true);
     const params = new URLSearchParams();
     if (selectedStatuses.length > 0 && selectedStatuses.length < 4) {
       params.append('status', selectedStatuses.join(','));
@@ -701,12 +755,12 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
     const res = await apiFetch(`/api/activities?${params.toString()}`);
     const data = await res.json();
     if (res.ok) setActivities(data);
-    setLoading(false);
+    if (!silent) setLoading(false);
   };
 
   useEffect(() => { fetchActivities(); }, [selectedStatuses, tagFilter, debouncedSearch, sortBy, sortOrder]);
 
-  const triggerReload = () => { onUpdate(); fetchActivities(); };
+  const triggerReload = () => { onUpdate(); fetchActivities(true); };
 
   const toggleStatus = (status: string) => {
     setSelectedStatuses(prev => prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]);

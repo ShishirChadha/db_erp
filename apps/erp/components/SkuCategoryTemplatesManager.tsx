@@ -17,6 +17,7 @@ interface Template {
   category: string
   display_name: string
   sku_code_format: string
+  default_hsn_code: string | null
   field_schema: { fields: TemplateField[]; variant_fields?: string[] }
 }
 
@@ -46,6 +47,7 @@ export default function SkuCategoryTemplatesManager() {
 
   const [displayName, setDisplayName] = useState('')
   const [skuCodeFormat, setSkuCodeFormat] = useState('')
+  const [defaultHsnCode, setDefaultHsnCode] = useState('')
   const [draftFields, setDraftFields] = useState<TemplateField[]>([])
   const [draftVariantFields, setDraftVariantFields] = useState<string[]>([])
   const [newField, setNewField] = useState(emptyNewField)
@@ -71,6 +73,7 @@ export default function SkuCategoryTemplatesManager() {
     setSelected(category)
     setDisplayName(t.display_name)
     setSkuCodeFormat(t.sku_code_format)
+    setDefaultHsnCode(t.default_hsn_code || '')
     setDraftFields(t.field_schema?.fields || [])
     setDraftVariantFields(t.field_schema?.variant_fields || [])
     setNewField(emptyNewField)
@@ -84,7 +87,7 @@ export default function SkuCategoryTemplatesManager() {
     try {
       const res = await apiFetch(`/api/sku-category-templates/${selected}`, {
         method: 'PATCH',
-        body: JSON.stringify({ display_name: displayName, sku_code_format: skuCodeFormat }),
+        body: JSON.stringify({ display_name: displayName, sku_code_format: skuCodeFormat, default_hsn_code: defaultHsnCode }),
       })
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || 'Failed to save.')
       await fetchTemplates()
@@ -244,7 +247,7 @@ export default function SkuCategoryTemplatesManager() {
           <div className="flex-1 min-w-0 space-y-6">
             <div className="border rounded p-3">
               <h3 className="font-medium mb-2 text-sm">Category Info</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-2">
                 <div>
                   <label className="block text-xs text-muted-foreground">Display Name</label>
                   <input value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="border p-1 w-full rounded text-sm" />
@@ -253,7 +256,19 @@ export default function SkuCategoryTemplatesManager() {
                   <label className="block text-xs text-muted-foreground">SKU Code Format</label>
                   <input value={skuCodeFormat} onChange={(e) => setSkuCodeFormat(e.target.value)} className="border p-1 w-full rounded text-sm font-mono" />
                 </div>
+                <div>
+                  <label className="block text-xs text-muted-foreground">Default HSN Code</label>
+                  <input
+                    value={defaultHsnCode}
+                    onChange={(e) => setDefaultHsnCode(e.target.value)}
+                    placeholder="e.g. 84713010"
+                    className="border p-1 w-full rounded text-sm font-mono"
+                  />
+                </div>
               </div>
+              <p className="text-xs text-muted-foreground mb-2">
+                A new SKU in this category is required to have an HSN code (services use SAC codes instead) -- if the New SKU form leaves it blank, this default is used automatically. Leave blank for a category too varied to have one sensible default (e.g. a catch-all "Other"); New SKU will then require it to be typed in manually.
+              </p>
               <button onClick={saveCategoryInfo} disabled={busy} className="bg-primary text-primary-foreground px-3 py-1 rounded text-sm disabled:opacity-50">Save Category Info</button>
             </div>
 

@@ -20,7 +20,6 @@ import RequirePageAccess from '@/components/RequirePageAccess';
 
 function ActivitiesPage() {
   const [view, setView] = useState<'list' | 'calendar'>('list');
-  const [refreshKey, setRefreshKey] = useState(0);
   const router = useRouter();
 
   // Poll for reminders every minute
@@ -43,7 +42,16 @@ function ActivitiesPage() {
     return () => clearInterval(interval);
   }, []);
 
-  const refresh = () => setRefreshKey(prev => prev + 1);
+  // List and Calendar are separate Tabs.Content panels -- Radix unmounts
+  // whichever one isn't active, so switching tabs already remounts it and
+  // fetches fresh data with no extra signal needed. There used to be a
+  // `key={refreshKey}`-driven forced remount here to keep the two tabs in
+  // sync, but keying a component on its own "something changed" callback
+  // means every in-place edit (e.g. a table cell save inside an open task
+  // detail modal) tears down and rebuilds the whole tree, closing whatever
+  // modal was open. ActivityList/ActivityCalendar already refetch their own
+  // data after any change they make; no-op is enough here.
+  const refresh = () => {};
 
   return (
     <div className="space-y-4">
@@ -57,10 +65,10 @@ function ActivitiesPage() {
           <TabsTrigger value="calendar">Calendar View</TabsTrigger>
         </TabsList>
         <TabsContent value="list">
-          <ActivityList key={refreshKey} onUpdate={refresh} />
+          <ActivityList onUpdate={refresh} />
         </TabsContent>
         <TabsContent value="calendar">
-          <ActivityCalendar key={refreshKey} onUpdate={refresh} />
+          <ActivityCalendar onUpdate={refresh} />
         </TabsContent>
       </Tabs>
     </div>

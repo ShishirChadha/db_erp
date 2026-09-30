@@ -38,6 +38,10 @@ export async function PATCH(
     updates.sku_code_format = String(body.sku_code_format).trim() || `SKU-${category}-{brand}-{model}`
   }
 
+  if (body.default_hsn_code !== undefined) {
+    updates.default_hsn_code = String(body.default_hsn_code).trim() || null
+  }
+
   if (body.field_schema !== undefined) {
     const schemaError = validateFieldSchema(body.field_schema)
     if (schemaError) return NextResponse.json({ error: schemaError }, { status: 400 })

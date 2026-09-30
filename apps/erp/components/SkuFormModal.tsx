@@ -38,6 +38,7 @@ interface CategoryTemplate {
   display_name: string
   field_schema: any
   sku_code_format?: string
+  default_hsn_code?: string | null
 }
 
 export function SkuFormModal({
@@ -80,6 +81,17 @@ export function SkuFormModal({
   }, [isService])
 
   const selectedTemplate = templates.find(t => t.category === category)
+
+  // HSN is mandatory for a goods SKU (services use sac_code_id instead) -- auto-fill
+  // from the category's owner-configured default (Settings -> SKU Categories) so
+  // most categories never need it typed by hand; a category left without a default
+  // (e.g. a catch-all "Other") just leaves this blank and the required check below
+  // forces it to be typed in.
+  useEffect(() => {
+    if (!existingSku && !isService && !hsnCode && selectedTemplate?.default_hsn_code) {
+      setHsnCode(selectedTemplate.default_hsn_code)
+    }
+  }, [category, selectedTemplate, existingSku, isService])
 
   const fieldSchema = parseFieldSchema(selectedTemplate?.field_schema)
   const fields = fieldSchema?.fields || []
@@ -152,6 +164,10 @@ export function SkuFormModal({
     e.preventDefault()
     if (isService && !sacCodeId) {
       alert('Select a SAC code for this service.')
+      return
+    }
+    if (!isService && !hsnCode.trim()) {
+      alert('HSN code is required. Set a default for this category in Settings → SKU Categories, or type one in here.')
       return
     }
     const payload: any = {
@@ -258,14 +274,18 @@ export function SkuFormModal({
             </div>
           ) : (
             <div className="mb-3">
-              <label className="block text-sm font-medium">HSN Code</label>
+              <label className="block text-sm font-medium">HSN Code *</label>
               <input
                 type="text"
                 value={hsnCode}
                 onChange={(e) => setHsnCode(e.target.value)}
                 className="border p-2 w-full rounded"
                 placeholder="e.g., 84713010"
+                required
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Auto-filled from this category's default (Settings → SKU Categories) when one is set. A goods SKU can't be saved without one.
+              </p>
             </div>
           )}
 

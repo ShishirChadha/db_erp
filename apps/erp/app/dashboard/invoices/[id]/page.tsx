@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark, X } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark, X, Truck, Pencil } from "lucide-react";
 import { format } from "date-fns";
 import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
@@ -36,6 +37,10 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
   const { isOwner } = useRole();
   const [removingItem, setRemovingItem] = useState<any>(null);
   const [removeErr, setRemoveErr] = useState("");
+  const [editingEway, setEditingEway] = useState(false);
+  const [ewayNumber, setEwayNumber] = useState("");
+  const [ewayDate, setEwayDate] = useState("");
+  const [ewayErr, setEwayErr] = useState("");
 
   const fetchInvoice = async () => {
     const { data: invoiceData, error: invoiceError } = await supabase
@@ -65,6 +70,23 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
     if (id) fetchInvoice();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  const { run: handleSaveEway, pending: savingEway } = useAsyncAction(async () => {
+    setEwayErr("");
+    const { error } = await supabase
+      .from("invoices")
+      .update({
+        eway_bill_number: ewayNumber.trim() || null,
+        eway_bill_date: ewayDate || null,
+      })
+      .eq("id", id);
+    if (error) {
+      setEwayErr(error.message || "Failed to save e-way bill.");
+      throw new Error(error.message || "Failed to save e-way bill.");
+    }
+    setInvoice((prev: any) => ({ ...prev, eway_bill_number: ewayNumber.trim() || null, eway_bill_date: ewayDate || null }));
+    setEditingEway(false);
+  });
 
   const handleRemoveItem = async (reason: string) => {
     setRemoveErr("");
@@ -172,6 +194,59 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
             <StatusBadge tone={toneFor(INVOICE_STATUS_TONES, invoice.status)} className="text-sm px-3 py-1">
               {invoice.status.replace("_", " ").toUpperCase()}
             </StatusBadge>
+          </div>
+
+          {/* E-way Bill -- not every invoice needs one (only GST-relevant goods movement
+              above the threshold), so it's a quiet, optional field rather than a required
+              part of invoice creation -- filled in after the fact once the bill is raised. */}
+          <div className="flex items-center gap-2 mt-3 text-sm">
+            <Truck className="h-4 w-4 text-muted-foreground" />
+            {editingEway ? (
+              <>
+                <Input
+                  value={ewayNumber}
+                  onChange={(e) => setEwayNumber(e.target.value)}
+                  placeholder="E-way bill number"
+                  className="h-8 w-44"
+                />
+                <Input
+                  type="date"
+                  value={ewayDate}
+                  onChange={(e) => setEwayDate(e.target.value)}
+                  className="h-8 w-40"
+                />
+                <Button size="sm" onClick={() => handleSaveEway()} disabled={savingEway} loading={savingEway}>Save</Button>
+                <Button size="sm" variant="outline" onClick={() => setEditingEway(false)} disabled={savingEway}>Cancel</Button>
+                {ewayErr && <span className="text-destructive text-xs">{ewayErr}</span>}
+              </>
+            ) : invoice.eway_bill_number || invoice.eway_bill_date ? (
+              <>
+                <span className="text-muted-foreground">
+                  E-way Bill: <span className="text-foreground font-medium">{invoice.eway_bill_number || "—"}</span>
+                  {invoice.eway_bill_date && ` · dated ${format(new Date(invoice.eway_bill_date), "dd MMM yyyy")}`}
+                </span>
+                {isOwner && (
+                  <button
+                    type="button"
+                    title="Edit e-way bill"
+                    onClick={() => { setEwayNumber(invoice.eway_bill_number || ""); setEwayDate(invoice.eway_bill_date || ""); setEwayErr(""); setEditingEway(true); }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </>
+            ) : isOwner ? (
+              <button
+                type="button"
+                onClick={() => { setEwayNumber(""); setEwayDate(""); setEwayErr(""); setEditingEway(true); }}
+                className="text-muted-foreground underline text-xs"
+              >
+                + Add e-way bill
+              </button>
+            ) : (
+              <span className="text-muted-foreground text-xs">No e-way bill on file</span>
+            )}
           </div>
         </div>
 

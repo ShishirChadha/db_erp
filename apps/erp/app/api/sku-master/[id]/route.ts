@@ -136,6 +136,18 @@ export async function PUT(
     }
   }
 
+  // HSN is mandatory for a goods SKU -- block an edit that clears it to blank
+  // (doesn't force one on unrelated edits that never touch this field, since a
+  // legacy SKU predating this rule may still have none set).
+  if ('hsn_code' in updatable && !String(updatable.hsn_code || '').trim()) {
+    const effectiveCategory = updatable.category ?? (
+      await supabaseAdmin.from('sku_master').select('category').eq('id', id).single()
+    ).data?.category
+    if (effectiveCategory !== 'SERVICE') {
+      return NextResponse.json({ error: 'HSN code is required and cannot be cleared for a goods SKU.' }, { status: 400 })
+    }
+  }
+
   if (Object.keys(updatable).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 })
   }

@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Loader2, ArrowLeft, X } from "lucide-react";
+import { Loader2, ArrowLeft, X, Pencil } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { getCachedListPageSize } from "@/lib/useListPageSize";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
@@ -69,6 +69,8 @@ interface Sale {
   sku_description?: string | null;
   full_sku_code?: string | null;
   hsn_code?: string | null;
+  eway_bill_number?: string | null;
+  eway_bill_date?: string | null;
   cpu?: string | null;
   generation?: string | null;
   ram?: string | null;
@@ -263,6 +265,66 @@ function PaymentDateField({ sale, canEditSale, onDone }: { sale: Sale; canEditSa
   );
 }
 
+// Not every sale needs an e-way bill (only GST goods movement above the
+// threshold) -- a quiet, optional field filled in after the fact once the
+// bill is raised, rather than something required at sale entry.
+function EwayBillField({ sale, canEditSale, onDone }: { sale: Sale; canEditSale: boolean; onDone: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [number, setNumber] = useState("");
+  const [date, setDate] = useState("");
+  const [err, setErr] = useState("");
+
+  const { run: save, pending: saving } = useAsyncAction(async () => {
+    setErr("");
+    const res = await apiFetch(`/api/sales/${sale.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ eway_bill_number: number.trim() || null, eway_bill_date: date || null }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setErr(e.error || "Failed to save.");
+      throw new Error(e.error || "Failed to save.");
+    }
+    setEditing(false);
+    onDone();
+  });
+
+  if (editing) {
+    return (
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Input value={number} onChange={(e) => setNumber(e.target.value)} placeholder="E-way bill number" className="h-8 w-40" />
+        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="h-8 w-36" />
+        <Button size="sm" onClick={() => save()} disabled={saving} loading={saving}>Save</Button>
+        <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={saving}>Cancel</Button>
+        {err && <span className="text-destructive text-xs">{err}</span>}
+      </div>
+    );
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1.5">
+      {sale.eway_bill_number || sale.eway_bill_date ? (
+        <>
+          {sale.eway_bill_number || "—"}
+          {sale.eway_bill_date && ` · dated ${sale.eway_bill_date.slice(0, 10)}`}
+        </>
+      ) : (
+        <span className="text-muted-foreground">Not set</span>
+      )}
+      {canEditSale && (
+        <button
+          type="button"
+          title="Edit e-way bill"
+          onClick={() => { setNumber(sale.eway_bill_number || ""); setDate(sale.eway_bill_date || ""); setErr(""); setEditing(true); }}
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Pencil className="h-3.5 w-3.5" />
+        </button>
+      )}
+    </span>
+  );
+}
+
 // One field in the detail pane's label/value grid -- keeps every row's spacing
 // and label styling consistent without repeating the wrapper markup.
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -338,6 +400,7 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           )}
         </Field>
         {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
+        <Field label="E-way Bill"><EwayBillField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
         {sale.bundled_accessories_display && sale.bundled_accessories_display.length > 0 && (
           <Field label="Bundled Accessories">
             <div className="space-y-0.5">

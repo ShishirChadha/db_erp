@@ -5,6 +5,7 @@ import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
   buildOwnVisibilityFilter, getAssigneesForActivities, getWatchersForActivities,
   getChecklistCountsForActivities, getProfileMap, areValidUsers, areValidTags,
+  normalizeDescriptionTable,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -95,11 +96,13 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const {
-    title, description, tags, status, due_date, reminder_at,
+    title, description, description_table, tags, status, due_date, reminder_at,
     priority, related_type, related_id, assignee_ids, watcher_ids,
   } = body
 
   if (!title || !String(title).trim()) return NextResponse.json({ error: 'Title is required.' }, { status: 400 })
+  const normalizedTable = normalizeDescriptionTable(description_table)
+  if (normalizedTable === 'invalid') return NextResponse.json({ error: 'Invalid description table.' }, { status: 400 })
   if (status && !ACTIVITY_STATUSES.includes(status)) return NextResponse.json({ error: 'Invalid status.' }, { status: 400 })
   if (priority && !ACTIVITY_PRIORITIES.includes(priority)) return NextResponse.json({ error: 'Invalid priority.' }, { status: 400 })
   if (related_type && !ACTIVITY_RELATED_TYPES.includes(related_type)) return NextResponse.json({ error: 'Invalid related_type.' }, { status: 400 })
@@ -133,6 +136,7 @@ export async function POST(req: NextRequest) {
       created_by: sessionUser.id,
       title: String(title).trim(),
       description: description || null,
+      description_table: normalizedTable,
       tags: tagList,
       status: status || 'pending',
       priority: priority || 'normal',

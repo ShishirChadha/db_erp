@@ -4,7 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import {
   ACTIVITY_PRIORITIES, ACTIVITY_STATUSES, ACTIVITY_RELATED_TYPES,
-  canSeeActivity, getProfileMap, areValidUsers, areValidTags,
+  canSeeActivity, getProfileMap, areValidUsers, areValidTags, normalizeDescriptionTable,
 } from '@/lib/activities'
 import { notifyMany } from '@/lib/notifications'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -108,6 +108,12 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     updates.tags = tagList
   }
   if (body.reminder_at !== undefined) updates.reminder_at = body.reminder_at
+
+  if (body.description_table !== undefined) {
+    const normalizedTable = normalizeDescriptionTable(body.description_table)
+    if (normalizedTable === 'invalid') return NextResponse.json({ error: 'Invalid description table.' }, { status: 400 })
+    updates.description_table = normalizedTable
+  }
 
   // Completion timestamp follows the status transition, not a client-supplied value.
   if (body.status !== undefined && body.status !== existing.status) {

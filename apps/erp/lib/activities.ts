@@ -27,6 +27,28 @@ export async function areValidTags(tags: string[]): Promise<boolean> {
   return tags.every((t) => allowed.has(t))
 }
 
+export interface DescriptionTable {
+  columns: string[]
+  rows: string[][]
+}
+
+// A small ad hoc table pasted (or built) directly under a task's Description --
+// e.g. serial numbers + models pasted from Excel, with a "Status" column added
+// afterward. `null` means no table. Anything else must be this exact shape
+// (every row the same width as columns) or it's rejected -- this is jsonb with
+// no DB-level CHECK constraint, so the API layer is the only shape guarantee.
+export function normalizeDescriptionTable(value: unknown): DescriptionTable | null | 'invalid' {
+  if (value === null || value === undefined) return null
+  if (typeof value !== 'object') return 'invalid'
+  const v = value as { columns?: unknown; rows?: unknown }
+  if (!Array.isArray(v.columns) || !v.columns.every((c) => typeof c === 'string')) return 'invalid'
+  if (!Array.isArray(v.rows) || !v.rows.every((r) => Array.isArray(r) && r.length === (v.columns as unknown[]).length && r.every((c) => typeof c === 'string'))) {
+    return 'invalid'
+  }
+  if (v.columns.length === 0) return null
+  return { columns: v.columns as string[], rows: v.rows as string[][] }
+}
+
 // PostgREST `.or()` filter string expressing "created by me OR assigned to me
 // OR watching it". Owners pass no filter at all (see call sites) since they
 // see every task. Watching is a lighter-weight "CC" relationship (see

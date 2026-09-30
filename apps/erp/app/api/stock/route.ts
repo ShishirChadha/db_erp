@@ -542,5 +542,34 @@ export async function PUT(req: NextRequest) {
     reason: reason || null,
   })
 
+  // sales.asset_number/serial_number are snapshots frozen at sale time, not a live join
+  // to asset_ledger -- a correction here (typo fix, or filling in a serial that wasn't
+  // known yet at sale time) would otherwise leave the Sales Ledger showing the old/blank
+  // value forever, with no visible link back to this correction. Propagate the same
+  // change into any live (non-voided) linked sale so the two never drift apart.
+  if (updates.asset_number !== undefined || updates.serial_number !== undefined) {
+    const saleUpdates: Record<string, any> = {}
+    if (updates.asset_number !== undefined) saleUpdates.asset_number = updates.asset_number
+    if (updates.serial_number !== undefined) saleUpdates.serial_number = updates.serial_number
+    const { data: linkedSales } = await supabaseAdmin
+      .from('sales')
+      .select('id, asset_number, serial_number')
+      .eq('asset_ledger_id', id)
+      .eq('is_deleted', false)
+    for (const sale of linkedSales || []) {
+      await supabaseAdmin.from('sales').update(saleUpdates).eq('id', sale.id)
+      await logFieldCorrections(
+        'sales',
+        sale.id,
+        [
+          ...(updates.asset_number !== undefined ? [{ field: 'asset_number', oldValue: sale.asset_number, newValue: saleUpdates.asset_number }] : []),
+          ...(updates.serial_number !== undefined ? [{ field: 'serial_number', oldValue: sale.serial_number, newValue: saleUpdates.serial_number }] : []),
+        ],
+        sessionUser.id,
+        `Propagated from asset correction${reason ? `: ${reason}` : ''}`
+      )
+    }
+  }
+
   return NextResponse.json({ success: true })
 }

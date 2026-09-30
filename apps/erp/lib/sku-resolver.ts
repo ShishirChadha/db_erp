@@ -54,6 +54,26 @@ export async function resolveOrCreateSku(
   const normalizedSpecs = await normalizeSpecifications(input.category, input.specifications || {})
   const baseSkuCode = await generateBaseSkuCode(input.category, normalizedSpecs)
 
+  // HSN is mandatory for every goods SKU (services use sac_code_id instead) -- a
+  // caller-supplied value always wins, otherwise fall back to the category's
+  // owner-configured default (Settings -> SKU Categories) so touchpoints that don't
+  // have their own HSN input (Stock Intake, the legacy Purchases dialog) still get a
+  // correct code automatically instead of silently creating an SKU without one.
+  let hsnCode = (input.hsn_code || '').trim() || null
+  if (!hsnCode && input.category !== 'SERVICE') {
+    const { data: template } = await supabaseAdmin
+      .from('sku_category_templates')
+      .select('default_hsn_code')
+      .eq('category', input.category)
+      .maybeSingle()
+    hsnCode = template?.default_hsn_code || null
+  }
+  if (!hsnCode && input.category !== 'SERVICE') {
+    throw new Error(
+      `HSN code is required to create a new "${input.category}" SKU. Set a default for this category in Settings -> SKU Categories, or provide one directly.`
+    )
+  }
+
   const { data: existing } = await supabaseAdmin
     .from('sku_master')
     .select('variant_number, specifications, full_sku_code')
@@ -115,7 +135,7 @@ export async function resolveOrCreateSku(
         selling_price_default: input.selling_price_default ?? null,
         reorder_level: input.reorder_level ?? 5,
         quantity_in_stock: 0,
-        hsn_code: input.hsn_code ?? null,
+        hsn_code: hsnCode,
         sac_code_id: input.sac_code_id ?? null,
       })
       .select()
