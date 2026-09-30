@@ -16,6 +16,15 @@ const nextConfig: NextConfig = {
         hostname: "*.supabase.co",
         pathname: "/storage/v1/object/public/**",
       },
+      {
+        // Self-hosted Supabase. Kept alongside the hosted pattern above rather
+        // than replacing it, so rolling back is a single env-var change
+        // (NEXT_PUBLIC_SUPABASE_URL) with no code revert and no rebuild race.
+        // Drop the *.supabase.co entry once the hosted project is retired.
+        protocol: "https",
+        hostname: "db.digitalbluez.com",
+        pathname: "/storage/v1/object/public/**",
+      },
     ],
   },
 };
