@@ -33,9 +33,32 @@ export async function POST(req: NextRequest) {
   let processed;
   try {
     const input = Buffer.from(await file.arrayBuffer());
+    // A truncated body is the common real-world failure here, not a corrupt
+    // file: Vercel caps a Serverless Function request body at 4.5MB, well
+    // under this route's own 20MB allowance, and lib/api-client.ts aborts a
+    // mutation at 30s -- either cuts the multipart stream short, and sharp
+    // then reports "VipsJpeg: premature end of JPEG image", which tells the
+    // user nothing they can act on. Clients downscale before uploading now
+    // (lib/client-image.ts); this translates the error for anything that
+    // still slips through.
+    if (input.byteLength < (file.size || 0)) {
+      return NextResponse.json(
+        { error: `Upload was cut short (received ${input.byteLength} of ${file.size} bytes). The photo is probably too large -- try one under 4MB.` },
+        { status: 400 }
+      );
+    }
     processed = await processUploadedImage(input);
   } catch (err: any) {
-    return NextResponse.json({ error: err.message || 'Could not process image' }, { status: 400 });
+    const raw = err?.message || '';
+    const truncated = /premature end|truncated|unexpected end/i.test(raw);
+    return NextResponse.json(
+      {
+        error: truncated
+          ? 'Upload was cut short, so the photo could not be read. It is probably too large -- try one under 4MB.'
+          : raw || 'Could not process image',
+      },
+      { status: 400 }
+    );
   }
 
   const timestamp = Date.now();

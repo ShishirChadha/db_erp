@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Loader2, Trash2, Upload } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { downscaleImageFile } from '@/lib/client-image'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 
@@ -643,8 +644,12 @@ function BannersSection() {
       // -- fit: 'inside', preserving aspect ratio, since banners render uncropped,
       // see HomeBanners.tsx) and re-encodes to webp server-side before it lands in
       // storage. width/height are the PROCESSED image's dimensions.
+      // Shrunk in the browser first -- see lib/client-image.ts and the note in
+      // SkuWebPublishDialog's uploader.
+      const toSend = await downscaleImageFile(file)
+
       const form = new FormData()
-      form.append('file', file)
+      form.append('file', toSend)
       form.append('folder', 'banners')
       form.append('fileType', 'banner')
 

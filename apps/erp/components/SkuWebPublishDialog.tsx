@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { Loader2, Star, Trash2, Upload } from 'lucide-react'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
+import { downscaleImageFile } from '@/lib/client-image'
 import { SimpleModal } from '@/components/SimpleModal'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
 import { useCustomOptions } from '@/lib/useCustomOptions'
@@ -115,8 +116,13 @@ export function SkuWebPublishDialog({
         // webp server-side (see lib/image-process.ts) before it ever lands in
         // storage -- width/height below are the PROCESSED image's dimensions, not
         // the original file's, since resizing changes them.
+        // Shrunk in the browser first -- a raw phone photo exceeds Vercel's
+        // 4.5MB request-body cap and arrives truncated, which surfaces as
+        // sharp's "premature end of JPEG image". See lib/client-image.ts.
+        const toSend = await downscaleImageFile(file)
+
         const form = new FormData()
-        form.append('file', file)
+        form.append('file', toSend)
         form.append('folder', `products/${sku.id}`)
         form.append('fileType', 'photo')
 
