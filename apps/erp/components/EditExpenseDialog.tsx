@@ -95,8 +95,10 @@ export default function EditExpenseDialog({
     if (!showVendorField) updateData.vendor_id = "";
     const res = await apiFetch(`/api/expenses/${expense.id}`, { method: "PATCH", body: JSON.stringify(updateData) });
     if (!res.ok) {
-      console.error(await res.json().catch(() => ({})));
-      alert("Update failed.");
+      // Same fix as AddExpenseDialog: show the server's own message rather
+      // than a fixed string that hides why the update was rejected.
+      const body = await res.json().catch(() => null);
+      alert(body?.error || `Update failed (HTTP ${res.status}).`);
     } else {
       onOpenChange(false);
       onUpdate();
@@ -112,7 +114,7 @@ export default function EditExpenseDialog({
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Expense Date</Label>
+              <Label>Expense Date *</Label>
               <Input
                 type="date"
                 value={formData.expense_date?.slice(0, 10) || ""}
@@ -172,7 +174,7 @@ export default function EditExpenseDialog({
               </>
             )}
             <div>
-              <Label>Amount</Label>
+              <Label>Amount *</Label>
               <Input
                 type="number"
                 step="0.01"
@@ -198,7 +200,7 @@ export default function EditExpenseDialog({
               </div>
             )}
             <div className="col-span-2">
-              <Label>Description</Label>
+              <Label>Description *</Label>
               <Input
                 value={formData.description || ""}
                 onChange={(e) => handleChange("description", e.target.value)}

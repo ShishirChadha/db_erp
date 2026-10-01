@@ -74,8 +74,19 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   const { expense_date, description, type, from_location, to_location, amount, remarks, payment_account, vendor_id, attachments, paid_by_staff } = body
 
-  if (!expense_date || !description || amount === undefined || amount === null) {
-    return NextResponse.json({ error: 'expense_date, description, and amount are required.' }, { status: 400 })
+  // Name the field(s) actually missing. The previous message listed all three
+  // regardless of which was blank, so a user who left only Description empty
+  // was told "expense_date, description, and amount are required" and had to
+  // guess -- and the dialog then replaced even that with a generic alert.
+  const missing: string[] = []
+  if (!expense_date) missing.push('Expense Date')
+  if (!description) missing.push('Description')
+  if (amount === undefined || amount === null || amount === '') missing.push('Amount')
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: `${missing.join(' and ')} ${missing.length > 1 ? 'are' : 'is'} required.` },
+      { status: 400 }
+    )
   }
 
   if (!isOwner(sessionUser)) {

@@ -88,8 +88,12 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
       }),
     });
     if (!res.ok) {
-      console.error(await res.json().catch(() => ({})));
-      alert("Failed to add expense.");
+      // Show what the server actually said. This used to console.error the body
+      // and alert a fixed "Failed to add expense.", which hid genuinely
+      // actionable messages -- e.g. the required-fields error raised when
+      // Description or Amount was blank, which the form did not mark required.
+      const body = await res.json().catch(() => null);
+      alert(body?.error || `Failed to add expense (HTTP ${res.status}).`);
     } else {
       setOpen(false);
       onAdd();
@@ -160,7 +164,7 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
                 <div><Label>To</Label><Input value={formData.to_location} onChange={(e) => handleChange("to_location", e.target.value)} /></div>
               </>
             )}
-            <div><Label>Amount</Label><Input type="number" step="0.01" value={formData.amount ?? ""} onChange={(e) => handleChange("amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+            <div><Label>Amount *</Label><Input type="number" step="0.01" required value={formData.amount ?? ""} onChange={(e) => handleChange("amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
             {showVendorField && (
               <div className="col-span-2">
                 <Label>Vendor</Label>
@@ -176,7 +180,7 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
                 </div>
               </div>
             )}
-            <div className="col-span-2"><Label>Description</Label><Input value={formData.description} onChange={(e) => handleChange("description", e.target.value)} /></div>
+            <div className="col-span-2"><Label>Description *</Label><Input required value={formData.description} onChange={(e) => handleChange("description", e.target.value)} /></div>
             <ExpenseAttachmentsField value={attachments} onChange={setAttachments} />
           </div>
           <div className="flex justify-end space-x-2">
