@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this covers
