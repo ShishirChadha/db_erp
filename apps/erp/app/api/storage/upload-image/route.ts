@@ -31,30 +31,26 @@ export async function POST(req: NextRequest) {
   }
 
   let processed;
+  let bytes = 0;
   try {
     const input = Buffer.from(await file.arrayBuffer());
-    // A truncated body is the common real-world failure here, not a corrupt
-    // file: Vercel caps a Serverless Function request body at 4.5MB, well
-    // under this route's own 20MB allowance, and lib/api-client.ts aborts a
-    // mutation at 30s -- either cuts the multipart stream short, and sharp
-    // then reports "VipsJpeg: premature end of JPEG image", which tells the
-    // user nothing they can act on. Clients downscale before uploading now
-    // (lib/client-image.ts); this translates the error for anything that
-    // still slips through.
-    if (input.byteLength < (file.size || 0)) {
-      return NextResponse.json(
-        { error: `Upload was cut short (received ${input.byteLength} of ${file.size} bytes). The photo is probably too large -- try one under 4MB.` },
-        { status: 400 }
-      );
-    }
+    bytes = input.byteLength;
     processed = await processUploadedImage(input);
   } catch (err: any) {
     const raw = err?.message || '';
-    const truncated = /premature end|truncated|unexpected end/i.test(raw);
+    // sharp says "VipsJpeg: premature end of JPEG image" whenever the JPEG
+    // data runs out early -- which can mean the upload was cut short OR that
+    // the source file itself is incomplete. Those are indistinguishable from
+    // here (file.size is derived from the same parsed body as the buffer, so
+    // comparing them proves nothing), so report the facts instead of guessing
+    // a cause: the byte count received and the declared type. Clients
+    // re-encode through canvas before uploading (lib/client-image.ts), which
+    // repairs an incomplete source, so reaching this is now unexpected.
+    const incomplete = /premature end|truncated|unexpected end/i.test(raw);
     return NextResponse.json(
       {
-        error: truncated
-          ? 'Upload was cut short, so the photo could not be read. It is probably too large -- try one under 4MB.'
+        error: incomplete
+          ? `Could not read the image: the file data ends earlier than expected (received ${bytes} bytes, type "${file.type || 'unknown'}"). Try re-saving or re-exporting the photo.`
           : raw || 'Could not process image',
       },
       { status: 400 }

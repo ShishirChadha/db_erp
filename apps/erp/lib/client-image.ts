@@ -22,13 +22,16 @@
 const MAX_DIMENSION = 1600
 const JPEG_QUALITY = 0.9
 
-// Files below this are already small enough to send untouched -- re-encoding
-// them would only lose quality for no transport benefit.
-const SKIP_BELOW_BYTES = 1024 * 1024
+// Deliberately NO size threshold. An earlier version skipped files under 1MB
+// on the theory that only large uploads were failing -- but a 426KB photo
+// failed the same way, and skipping meant the original bytes were forwarded
+// untouched, so the guard never ran on exactly the file that needed it.
+// Re-encoding through canvas also *repairs* a source whose JPEG data is
+// incomplete: the browser decodes what it can and we re-encode a well-formed
+// image, which is what sharp then receives.
 
 export async function downscaleImageFile(file: File): Promise<File> {
   if (!file.type.startsWith('image/')) return file
-  if (file.size < SKIP_BELOW_BYTES) return file
 
   let bitmap: ImageBitmap
   try {
@@ -59,9 +62,10 @@ export async function downscaleImageFile(file: File): Promise<File> {
   const blob = await new Promise<Blob | null>(resolve =>
     canvas.toBlob(resolve, 'image/jpeg', JPEG_QUALITY)
   )
-  // Never return something larger than we started with (can happen when the
-  // source was already well-compressed at a modest resolution).
-  if (!blob || blob.size >= file.size) return file
+  // Used even when it is larger than the source. Validity matters more than
+  // bytes here: the re-encode is what guarantees sharp gets a complete JPEG,
+  // and output is bounded anyway by MAX_DIMENSION + quality.
+  if (!blob) return file
 
   const name = file.name.replace(/\.[^.]+$/, '') + '.jpg'
   return new File([blob], name, { type: 'image/jpeg', lastModified: Date.now() })
