@@ -959,7 +959,7 @@ Plain reference calendar of major/minor Indian festivals for the Marketing Studi
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~416 rows (estimate)
+~446 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
