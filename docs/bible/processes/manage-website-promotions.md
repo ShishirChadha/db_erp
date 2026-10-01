@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/promotions/[id]/route.ts
   - apps/web/lib/promotions.ts
   - apps/web/app/api/checkout/start/route.ts
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this is
@@ -105,3 +105,18 @@ Owner-only. Settings → Website Admin → Promotions tab.
 - **"The promotion isn't applying even though it's active."** Check the
   Starts/Ends window — it's enforced server-side regardless of the Active
   toggle, so an active promotion outside its date window still won't apply.
+
+## Photo uploads are shrunk in your browser first
+
+Since 2026-10-01 an image is resized and re-encoded in the browser before it is
+uploaded (longest side 1600px), then the server resizes and converts it to webp
+as it always did.
+
+This exists because the upload has to survive the trip at all: Vercel caps a
+request body at 4.5MB and a raw phone photo is routinely larger, so the file
+arrived truncated and the server reported "premature end of JPEG image". The
+browser step also repairs a source whose own JPEG data is incomplete, because
+it decodes what is there and re-encodes a well-formed image.
+
+Nothing changes in how you use it -- pick a photo as before. Large photos simply
+upload faster now.

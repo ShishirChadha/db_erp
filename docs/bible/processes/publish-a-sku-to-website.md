@@ -8,7 +8,7 @@ routes: [/dashboard/sku-master]
 keywords: [publish, website, online, list on site, digitalbluez.com, web price, unpublish]
 sources:
   - apps/erp/components/SkuWebPublishDialog.tsx
-updated: 2026-09-15
+updated: 2026-10-01
 ---
 
 ## What this is
@@ -37,3 +37,18 @@ per SKU.
 ## Related
 
 **website**, **inventory-sku**, **qc-a-unit**.
+
+## Photo uploads are shrunk in your browser first
+
+Since 2026-10-01 an image is resized and re-encoded in the browser before it is
+uploaded (longest side 1600px), then the server resizes and converts it to webp
+as it always did.
+
+This exists because the upload has to survive the trip at all: Vercel caps a
+request body at 4.5MB and a raw phone photo is routinely larger, so the file
+arrived truncated and the server reported "premature end of JPEG image". The
+browser step also repairs a source whose own JPEG data is incomplete, because
+it decodes what is there and re-encodes a well-formed image.
+
+Nothing changes in how you use it -- pick a photo as before. Large photos simply
+upload faster now.

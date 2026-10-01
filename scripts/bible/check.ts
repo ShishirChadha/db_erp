@@ -88,7 +88,12 @@ function main() {
         }
       } else {
         const hit = [...changed!].find((f) => minimatch(f, glob) || minimatch(f, glob + '/**'))
-        if (hit) {
+        // The chapter itself being in the same diff IS the bump -- that is what
+        // the message has always claimed to check, but it never looked. Without
+        // this, every push that touches a watched source warns even when the
+        // chapter was updated in the very same commit, which trains everyone to
+        // ignore the warning.
+        if (hit && !changed!.has(rel)) {
           stale.push({ slug: chapter.meta.slug, path: rel, reason: `${hit} changed since ${since}, but ${rel}'s frontmatter "updated" wasn't bumped in this diff` })
         }
       }

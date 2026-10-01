@@ -19,4 +19,23 @@ if [ $? -ne 0 ]; then
   echo ""
 fi
 
+# Push the chapters into kb_chapters, which is what the in-app DB Guide reads.
+# Without this the guide drifts from the repo with nothing to indicate it -- on
+# 2026-10-01 it was found to be two weeks stale, so ten chapters had been wrong
+# in the app while correct in git.
+#
+# Skipped silently when there are no credentials (a clone without
+# apps/erp/.env.local), and never blocks a push: documentation must not stop
+# code shipping.
+if [ -f apps/erp/.env.local ]; then
+  npx tsx scripts/bible/sync.ts >/tmp/bible-sync.log 2>&1
+  if [ $? -ne 0 ]; then
+    echo ""
+    echo "^ Bible sync to the DB Guide failed -- push continuing. See /tmp/bible-sync.log"
+    echo ""
+  else
+    tail -1 /tmp/bible-sync.log
+  fi
+fi
+
 exit 0

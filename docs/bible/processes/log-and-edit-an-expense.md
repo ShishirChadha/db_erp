@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/ExpenseAttachmentsField.tsx
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this is
@@ -136,3 +136,15 @@ attach or view one, unlike Vendor.
 **expenses** (module overview — data model, owner-only types, reporting),
 **settle-staff-reimbursements**, **set-up-a-recurring-expense**,
 **business-rules** (vendor-identity redaction default).
+
+## Required fields
+
+Expense Date, Description and Amount are all required. Until 2026-10-01 only
+Expense Date was marked required in the form while the server rejected all
+three, so it was possible to submit an expense that was always going to be
+refused -- and the dialog replaced the server's explanation with a generic
+"Failed to add expense."
+
+All three are now marked with an asterisk in both the add and edit dialogs, and
+if the server does refuse, the message shown is its own and names the missing
+field (for example "Description is required.").

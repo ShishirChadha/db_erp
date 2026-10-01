@@ -3,7 +3,7 @@
 # Project Instructions
 
 ## What this is
-ERP for a refurbished-laptop/desktop reseller (Digitalbluez / Techtenth — two buying/payment entities under one business, not separate vendors). Covers purchasing, SKU/inventory, sales, accessories, and repair/replacement/return tracking. Supabase project is currently a **dev/staging copy**, not production — but treat schema changes with the same care as prod (always back up first; see below).
+ERP for a refurbished-laptop/desktop reseller (Digitalbluez / Techtenth — two buying/payment entities under one business, not separate vendors). Covers purchasing, SKU/inventory, sales, accessories, and repair/replacement/return tracking. The database is **live production** on self-hosted hardware (since 2026-10-01) — there is no separate staging copy any more, and `apps/*/.env.local` points local dev at it too, so `npm run dev` touches real business data. Back up before any schema change (see below).
 
 This repo is an **npm-workspaces monorepo**: `apps/erp` (this ERP, unchanged behavior — see `docs/decisions.md`, 2026-07-28) and `apps/web` (the public DigitalBluez e-commerce storefront) share `packages/{shared,ui,db}`. The ERP remains the single source of truth for catalogue/inventory/pricing/sales; the storefront never duplicates that data — see "E-commerce website" below.
 
@@ -81,8 +81,12 @@ This repo is an **npm-workspaces monorepo**: `apps/erp` (this ERP, unchanged beh
 - `docs/bible/**` is a living internal manual (modules/processes/rules, plus auto-generated schema/routes/nav/permissions reference in `docs/bible/generated/`) — check it for "how does X actually work today" the same way you'd check `docs/project-context.md`. If a change touches a file listed in a chapter's frontmatter `sources`, update that chapter too (or run `/bible` to draft the update) — `npm run bible:check` will otherwise flag it as stale on push. Never hand-edit `docs/bible/generated/**`; it's rebuilt by `npm run bible:generate`.
 
 ## Autonomous development rules
-- Always back up before a schema migration: `supabase db dump --linked -f backups/<date>_<label>_schema_backup.sql` (schema) and `--data-only` (data).
-- Apply migrations via the Supabase MCP tools, not raw psql.
-- Run `mcp__supabase__get_advisors` after schema changes.
+- **The database is self-hosted since 2026-10-01.** It runs on the HP ProDesk, reachable at `https://db.digitalbluez.com` (public API) and `db_erp@100.74.71.92` over Tailscale (shell). The old hosted Supabase project is frozen and kept only as a rollback target — **the `mcp__supabase__*` tools and `supabase --linked` still point at it, so they no longer reflect production.** See `docs/bible/rules/architecture.md`.
+- Always back up before a schema migration. Backups run hourly on the box; take a fresh one first: `ssh db_erp@100.74.71.92 'sudo /usr/local/bin/erp-backup.sh'`.
+- Apply migrations directly against the self-hosted database, as `supabase_admin` (not `postgres`, which is not a superuser there):
+  `docker exec -i supabase-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -f <file>`
+  Transfer SQL base64-encoded — SSH mangles quoting, which has produced several silent failures.
+- Two schema rules that are easy to get wrong: `pg_trgm` must be created `SCHEMA extensions` (the dump references `extensions.gin_trgm_ops`), and `POSTGRES_DB` must stay `postgres` because `cron.database_name` is hardcoded to it.
+- After adding a table that the apps read, run `npm run bible:generate` so `docs/bible/generated/schema.md` stays accurate.
 - Type-check and build per-app now that this is a monorepo: `cd apps/erp && npx tsc --noEmit -p . && npx next build` (same for `apps/web`), or `npm run typecheck`/`npm run build` at the repo root to run both via Turborepo. Always with the dev server stopped.
 - Don't ask "should I proceed?" once a plan is approved — proceed and only pause for destructive/irreversible actions or a decision only the user can make.
