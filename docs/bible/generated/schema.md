@@ -1774,7 +1774,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sku_category_templates
 
-~0 rows (estimate)
+~15 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1787,6 +1787,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 | updated_at | timestamp with time zone | yes | `now()` |  |  |
 | sku_code_format | text | yes |  |  |  |
 | default_hsn_code | text | yes |  |  |  |
+| qc_checklist | jsonb | yes |  |  | Ordered list of QC check items for this category, as a JSON array of strings. NULL means the category is not per-unit QC'd (fungible accessories). |
 
 ## sku_cross_sell_rules
 

@@ -996,6 +996,7 @@ export default function StockView({
                 pendingRowKey={pendingRowKey}
                 returnToPath={returnToPath}
                 templates={templates}
+                onChanged={fetchAssets}
                 onBack={() => setActiveAssetId(null)}
                 onSell={() => router.push(`/dashboard/entry/sell?asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
                 onRepair={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
@@ -1095,7 +1096,7 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
 function AssetDetailPane({
   asset, tab, idx, page, pageSize, canEdit, isOwner, showServiceActions, pendingRowKey, returnToPath, templates,
   onBack, onSell, onRepair, onReturn, onSendBackToQc, onFixSku, onDelete, onForceDelete,
-  onAddPayment, onGenerateInvoice, onRecordZohoInvoice,
+  onAddPayment, onGenerateInvoice, onRecordZohoInvoice, onChanged,
 }: {
   asset: AssetRow | null
   tab: 'current' | 'sold'
@@ -1119,6 +1120,9 @@ function AssetDetailPane({
   onAddPayment: (asset: AssetRow) => void
   onGenerateInvoice: (asset: AssetRow) => void
   onRecordZohoInvoice: (asset: AssetRow) => void
+  // Called when the embedded detail panel changes the unit, so this list can
+  // refetch instead of showing a status it has already been told is stale.
+  onChanged: () => void
 }) {
   if (!asset) return null
   const rowNumber = idx >= 0 ? (page - 1) * pageSize + idx + 1 : null
@@ -1196,7 +1200,7 @@ function AssetDetailPane({
         </div>
       </div>
       <div className="flex-1 overflow-y-auto p-4 pt-2">
-        <AssetQCPage assetId={asset.id} embedded templates={templates} />
+        <AssetQCPage assetId={asset.id} embedded templates={templates} onChanged={onChanged} />
       </div>
     </div>
   )

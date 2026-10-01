@@ -7,6 +7,9 @@ export interface ConfigSummaryField {
 export interface ConfigSummaryTemplate {
   category: string
   field_schema: any
+  // Ordered QC check items for this category. Optional because only the ERP's
+  // QC screen reads it; the storefront uses this type purely for spec summaries.
+  qc_checklist?: string[] | null
 }
 
 function parseFieldSchema(schema: any): { fields: ConfigSummaryField[] } {

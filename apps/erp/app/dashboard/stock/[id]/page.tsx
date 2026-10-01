@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, useRouter, useSearchParams } from 'next/navigation'
 import { Loader2, MessageSquare } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -18,6 +18,11 @@ import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 // Matches the abbreviations used on Sales Ledger / StockView's list rows.
 const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: 'DB', Techtenth: 'TT', Cash: 'CS' }
 
+// Fallback only. The real list comes from sku_category_templates.qc_checklist
+// so that a Monitor is not checked for "Keyboard", "Trackpad", "Battery Health"
+// and "Boot / OS" -- which is what happened for every monitor and desktop QC'd
+// before 2026-10-01. This array is used when a category has no checklist
+// configured yet, so QC never silently loses its questions.
 const DEFAULT_CHECK_ITEMS = [
   'Screen',
   'Keyboard',
@@ -35,6 +40,21 @@ const DEFAULT_CHECK_ITEMS = [
   'Charging',
   'Stress Test',
 ]
+
+// The checklist for a unit is its category's, falling back to the laptop-shaped
+// default only when a category has none configured.
+// The structured QC fields are laptop-shaped. A monitor has no battery and no
+// keyboard; a desktop has neither plus no screen. Showing them invites someone
+// to fill in a value that means nothing, or to wonder whether leaving it blank
+// is an omission.
+const CATEGORIES_WITH_BATTERY = ['LAP', 'TAB']
+const CATEGORIES_WITH_KEYBOARD = ['LAP']
+const CATEGORIES_WITH_SCREEN = ['LAP', 'TAB', 'MON']
+
+function checklistFor(category: string | undefined, templates: ConfigSummaryTemplate[]): string[] {
+  const list = templates.find(t => t.category === category)?.qc_checklist
+  return Array.isArray(list) && list.length > 0 ? list : DEFAULT_CHECK_ITEMS
+}
 
 interface CheckResult {
   check_item: string
@@ -124,7 +144,12 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 // `poId`/`embedded` props. Embedded mode fetches by the given id instead of a route
 // param, and drops the standalone-page chrome (back link, outer padding/max-width,
 // which the host pane already supplies).
-export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templatesProp }: { assetId?: string; embedded?: boolean; templates?: ConfigSummaryTemplate[] } = {}) {
+export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templatesProp, onChanged }: { assetId?: string; embedded?: boolean; templates?: ConfigSummaryTemplate[];
+  // Embedded in StockView, this component refetches its OWN copy of the unit
+  // after a change, but the surrounding list still holds the stale row -- so
+  // marking a unit Ready for Sale updated the panel while the list behind it
+  // kept showing the old status. The parent passes a refetch here.
+  onChanged?: () => void } = {}) {
   const params = useParams()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -141,6 +166,10 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
 
   const [asset, setAsset] = useState<AssetDetail | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>(templatesProp ?? [])
+  // applyQcFieldsFromAsset is a []-dep callback, so it cannot read `templates`
+  // directly; this keeps the latest list reachable from inside it.
+  const templatesRef = useRef<ConfigSummaryTemplate[]>(templatesProp ?? [])
+  useEffect(() => { templatesRef.current = templates }, [templates])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -282,7 +311,10 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
         }))
       )
     } else {
-      setCheckResults(DEFAULT_CHECK_ITEMS.map((item) => ({ check_item: item, result: 'pass', notes: '' })))
+      const category = data.purchase_order_items?.sku_master?.category
+      setCheckResults(
+        checklistFor(category, templatesRef.current).map((item) => ({ check_item: item, result: 'pass', notes: '' }))
+      )
     }
   }, [])
 
@@ -352,6 +384,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
         return
       }
       await fetchAsset()
+      onChanged?.()
       // Collapse back to the compact read-only summary once saved -- confirms the
       // save happened and matches Unit Details' own edit->view collapse on Save.
       setEditingQC(false)
@@ -370,6 +403,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
         return
       }
       await fetchAsset()
+      onChanged?.()
     } finally {
       setSaving(false)
     }
@@ -380,6 +414,10 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
   if (!asset) return null
 
   const sku = asset.purchase_order_items?.sku_master
+  const unitCategory = sku?.category
+  const showBattery = !unitCategory || CATEGORIES_WITH_BATTERY.includes(unitCategory)
+  const showKeyboard = !unitCategory || CATEGORIES_WITH_KEYBOARD.includes(unitCategory)
+  const showScreen = !unitCategory || CATEGORIES_WITH_SCREEN.includes(unitCategory)
   const canEditQC = ['qc_pending', 'qc_passed', 'faulty'].includes(asset.status)
 
   // "Has QC data" -- the same signal fetchAsset()/applyQcFieldsFromAsset() already use
@@ -709,36 +747,44 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
                   </div>
                 </div>
 
-                <h3 className="text-sm font-semibold mb-2 mt-4">Condition &amp; Battery (shown on the website)</h3>
+                <h3 className="text-sm font-semibold mb-2 mt-4">Condition{showBattery ? ' & Battery' : ''} (shown on the website)</h3>
                 <div className="grid grid-cols-2 gap-4 mb-4">
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Battery Health (%)</label>
-                    <input
-                      type="number" min={0} max={100}
-                      value={batteryHealthPercent}
-                      onChange={(e) => setBatteryHealthPercent(e.target.value)}
-                      placeholder="e.g. 87"
-                      className="border p-2 w-full rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Estimated Backup (hours)</label>
-                    <input
-                      type="number" min={0} step={0.5}
-                      value={estimatedBackupHours}
-                      onChange={(e) => setEstimatedBackupHours(e.target.value)}
-                      placeholder="e.g. 4.5"
-                      className="border p-2 w-full rounded"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Screen Condition</label>
-                    <SearchableSelect options={conditionGradeOptions} value={screenCondition} onChange={setScreenCondition} placeholder="Select..." />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium mb-1">Keyboard Condition</label>
-                    <SearchableSelect options={conditionGradeOptions} value={keyboardCondition} onChange={setKeyboardCondition} placeholder="Select..." />
-                  </div>
+                  {showBattery && (
+                    <>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Battery Health (%)</label>
+                        <input
+                          type="number" min={0} max={100}
+                          value={batteryHealthPercent}
+                          onChange={(e) => setBatteryHealthPercent(e.target.value)}
+                          placeholder="e.g. 87"
+                          className="border p-2 w-full rounded"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Estimated Backup (hours)</label>
+                        <input
+                          type="number" min={0} step={0.5}
+                          value={estimatedBackupHours}
+                          onChange={(e) => setEstimatedBackupHours(e.target.value)}
+                          placeholder="e.g. 4.5"
+                          className="border p-2 w-full rounded"
+                        />
+                      </div>
+                    </>
+                  )}
+                  {showScreen && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Screen Condition</label>
+                      <SearchableSelect options={conditionGradeOptions} value={screenCondition} onChange={setScreenCondition} placeholder="Select..." />
+                    </div>
+                  )}
+                  {showKeyboard && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Keyboard Condition</label>
+                      <SearchableSelect options={conditionGradeOptions} value={keyboardCondition} onChange={setKeyboardCondition} placeholder="Select..." />
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-medium mb-1">Body Condition</label>
                     <SearchableSelect options={conditionGradeOptions} value={bodyCondition} onChange={setBodyCondition} placeholder="Select..." />

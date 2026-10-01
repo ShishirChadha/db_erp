@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this covers
@@ -62,3 +62,31 @@ can be sold or rented again. See **rentals**.
 
 **inventory-sku**, **qc-a-unit**, **receive-stock**, **attach-units-to-po**,
 **sales-invoicing**.
+
+## QC checklists are per category
+
+Until 2026-10-01 every serialized unit was checked against one hardcoded list of
+12 items, written for laptops. A Monitor was therefore asked about "Keyboard",
+"Trackpad", "Battery Health" and "Boot / OS" -- 11 monitors and 14 desktops had
+already been QC'd that way.
+
+The checklist now lives on `sku_category_templates.qc_checklist`, beside the
+spec `field_schema` that was already per-category, so both are owner-editable in
+one place and no new table was needed. Seeded lists:
+
+- **Laptop** - 12 items, unchanged from the old default
+- **Desktop** - PSU, fans/cooling, storage health, RAM, network; no battery, no trackpad
+- **Monitor** - panel/dead pixels, backlight uniformity, colour, inputs, OSD, stand/VESA
+- **Tablet** - touch response, battery, charging, camera, buttons
+- **Other / Camera** - a short generic list
+
+A category with no checklist configured falls back to the laptop list, so QC
+never silently loses its questions.
+
+The structured fields are gated the same way: Battery Health and Estimated
+Backup appear only for Laptop and Tablet, Keyboard Condition only for Laptop,
+Screen Condition for Laptop, Tablet and Monitor. Body Condition and the grade
+apply to everything.
+
+Existing QC records are untouched -- `asset_qc_checks.check_item` is free text,
+so historical rows keep whatever was asked at the time.
