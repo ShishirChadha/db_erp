@@ -84,14 +84,39 @@ function Card({ title, children, right }: { title: string; children: React.React
   )
 }
 
-function Row({ label, value, tone }: { label: string; value: React.ReactNode; tone?: 'bad' | 'warn' }) {
+function Row({ label, value, tone, hint }: { label: string; value: React.ReactNode; tone?: 'bad' | 'warn'; hint?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-1 text-sm">
-      <span className="text-muted-foreground">{label}</span>
+      <span className="text-muted-foreground">
+        {label}
+        {/* The number alone does not tell you whether to worry -- 51 degrees
+            means nothing without knowing the safe range for this machine. */}
+        {hint && <span className="ml-1.5 text-xs opacity-70">({hint})</span>}
+      </span>
       <span className={`tabular-nums font-medium ${tone === 'bad' ? 'text-destructive' : tone === 'warn' ? 'text-amber-600' : ''}`}>{value}</span>
     </div>
   )
 }
+
+// Thresholds for THIS machine (HP ProDesk 400 G2 Mini, i5-6500T, 32GB, 466GB
+// SSD) running the Supabase stack. Chosen against what the hardware actually
+// tolerates, not generic server advice:
+//   temp   - Intel 6th-gen Tjunction is ~100C; it throttles before damage, so
+//            85 is "act" and 75 is "watch", leaving real headroom.
+//   load   - relative to 4 cores: sustained load above core count means work is
+//            queueing. A 43MB database should never get close.
+//   disk   - Postgres and the hourly backups both grow here; 85% is where a
+//            WAL spike could genuinely fill the disk.
+//   backup - the timer is hourly, so >1.5h means one run was missed and >3h
+//            means the timer itself is broken.
+type Level = 'good' | 'watch' | 'act'
+function level(value: number | null, watch: number, act: number): Level {
+  if (value === null || Number.isNaN(value)) return 'good'
+  if (value >= act) return 'act'
+  if (value >= watch) return 'watch'
+  return 'good'
+}
+const toneOf = (l: Level) => (l === 'act' ? 'bad' : l === 'watch' ? 'warn' : undefined) as 'bad' | 'warn' | undefined
 
 // Tiny inline trend strip. Deliberately not a chart library -- this is 180
 // points of one series and a sparkline communicates the shape just as well
@@ -150,6 +175,38 @@ function MonitoringInner() {
   const loadPct = s && s.cpu_count ? (Number(s.load_1) / Number(s.cpu_count)) * 100 : null
   const unhealthy = (s?.containers_unhealthy as string[] | undefined) || []
   const backupAgeH = s?.backup_last_at ? (Date.now() - new Date(String(s.backup_last_at)).getTime()) / 3_600_000 : null
+  const tempC = s?.cpu_temp_c != null ? Number(s.cpu_temp_c) : null
+  const upDays = s?.uptime_seconds != null ? Number(s.uptime_seconds) / 86400 : null
+  const rebootNeeded = s?.reboot_required === true
+  const secUpdates = s?.pending_security_updates != null ? Number(s.pending_security_updates) : null
+
+  const lvl = {
+    temp: level(tempC, 75, 85),
+    load: level(loadPct, 70, 100),
+    mem: level(memPct, 75, 90),
+    disk: level(diskPct, 70, 85),
+    backup: level(backupAgeH, 1.5, 3),
+  }
+
+  // Plain-language actions, worst first. Each says what to do, not just that a
+  // number is high -- a dashboard that only colours things red still leaves you
+  // guessing.
+  const actions: { level: Level; text: string }[] = []
+  if (data?.serverStale) actions.push({ level: 'act', text: 'The server is not reporting. Check that the ProDesk is powered on and that at least one internet link is up.' })
+  if (rebootNeeded) actions.push({ level: 'act', text: `A restart is needed to finish a security update${s?.reboot_required_pkgs ? ` (${String(s.reboot_required_pkgs)})` : ''}. Plan 3-5 minutes of downtime — everything comes back automatically.` })
+  if (unhealthy.length > 0) actions.push({ level: 'act', text: `Container(s) not healthy: ${unhealthy.join(', ')}. The stack may be partly down.` })
+  if (lvl.disk === 'act') actions.push({ level: 'act', text: 'Disk is nearly full. Old backups are pruned automatically, so investigate before it stops accepting writes.' })
+  if (lvl.backup === 'act') actions.push({ level: 'act', text: 'No backup for over 3 hours — the hourly timer has probably stopped.' })
+  if (s && s.tunnel_ok === false) actions.push({ level: 'act', text: 'The Cloudflare tunnel is down, so the ERP and website cannot reach the database.' })
+  if (s && s.active_interface && String(s.active_interface) !== 'enp2s0') actions.push({ level: 'watch', text: 'Running on the WiFi backup — the LAN link or its ISP is down. Service is fine, but you have no second line left.' })
+  if (lvl.temp === 'act') actions.push({ level: 'act', text: 'Running hot. Check the vents are clear and the fan is spinning.' })
+  else if (lvl.temp === 'watch') actions.push({ level: 'watch', text: 'Temperature is higher than usual. Worth checking for dust in the vents.' })
+  if (lvl.disk === 'watch') actions.push({ level: 'watch', text: 'Disk is filling up. Fine for now, but keep an eye on it.' })
+  if (lvl.backup === 'watch') actions.push({ level: 'watch', text: 'The last backup is older than an hour — one run may have been missed.' })
+  if (lvl.mem === 'act') actions.push({ level: 'act', text: 'Memory is nearly exhausted.' })
+  if (lvl.load === 'act') actions.push({ level: 'act', text: 'CPU is saturated — work is queueing.' })
+  if (secUpdates !== null && secUpdates > 0 && !rebootNeeded) actions.push({ level: 'watch', text: `${secUpdates} security update(s) pending. They install automatically; a restart is only needed if this page later asks for one.` })
+  if (!rebootNeeded && upDays !== null && upDays > 90) actions.push({ level: 'watch', text: `Up ${Math.round(upDays)} days with no restart pending. Linux does not need routine reboots, but a planned one now and then proves it still boots cleanly.` })
 
   return (
     <div className="space-y-4">
@@ -186,6 +243,51 @@ function MonitoringInner() {
         </div>
       )}
 
+      <Card
+        title={actions.length === 0 ? 'Everything looks healthy' : 'Needs your attention'}
+        right={<span className="text-xs text-muted-foreground">{actions.length === 0 ? 'no action needed' : `${actions.length} item(s)`}</span>}
+      >
+        {actions.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            All vitals are within their normal ranges, the stack is fully up, and backups are current.
+            Nothing to do.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {actions
+              .slice()
+              .sort((a, b) => (a.level === b.level ? 0 : a.level === 'act' ? -1 : 1))
+              .map((a, i) => (
+                <li key={i} className="flex items-start gap-2 text-sm">
+                  <span className="mt-1.5"><Dot ok={false} warn={a.level === 'watch'} /></span>
+                  <span>
+                    <strong className={a.level === 'act' ? 'text-destructive' : 'text-amber-600'}>
+                      {a.level === 'act' ? 'Act: ' : 'Watch: '}
+                    </strong>
+                    {a.text}
+                  </span>
+                </li>
+              ))}
+          </ul>
+        )}
+        <details className="mt-3 border-t pt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground">What counts as normal, and when to restart</summary>
+          <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+            <p><strong>Temperature</strong> — under 75 °C is normal for this machine, 75-85 °C worth checking, over 85 °C act. It throttles itself long before any damage.</p>
+            <p><strong>CPU load</strong> — compared against 4 cores. Under 70% is normal; sustained above 100% means work is queueing.</p>
+            <p><strong>Memory</strong> — under 75% is normal. The database is small, so high memory use would be unusual.</p>
+            <p><strong>Disk</strong> — under 70% is normal, over 85% act. Postgres and the hourly backups both grow here.</p>
+            <p><strong>Backups</strong> — hourly. Older than 1.5h means a run was missed; older than 3h means the timer has stopped.</p>
+            <p>
+              <strong>Restarting</strong> — Linux does not need routine reboots, so uptime alone is not a reason.
+              This page will say so explicitly when a security update has replaced something the running system is
+              still using. A restart takes 3-5 minutes: the stack, the tunnel and the backup timer all come back on
+              their own, so plan it outside working hours and nothing else is needed.
+            </p>
+          </div>
+        </details>
+      </Card>
+
       {/* Public endpoints -- probed from Vercel, so these stay meaningful even
           when the box itself is unreachable. */}
       <Card title="Public endpoints" right={<span className="text-xs text-muted-foreground">checked from outside your network</span>}>
@@ -207,11 +309,18 @@ function MonitoringInner() {
         <Card title="Server — HP ProDesk" right={s ? <span className="text-xs text-muted-foreground">{String(s.hostname)}</span> : null}>
           {s ? (
             <>
-              <Row label="CPU load (1m)" value={`${Number(s.load_1).toFixed(2)} of ${s.cpu_count} cores`} tone={loadPct && loadPct > 90 ? 'bad' : loadPct && loadPct > 70 ? 'warn' : undefined} />
-              <Row label="Temperature" value={s.cpu_temp_c ? `${Number(s.cpu_temp_c).toFixed(1)} °C` : '—'} tone={Number(s.cpu_temp_c) > 85 ? 'bad' : Number(s.cpu_temp_c) > 75 ? 'warn' : undefined} />
-              <Row label="Memory" value={`${bytes(Number(s.mem_used_bytes))} / ${bytes(Number(s.mem_total_bytes))}${memPct ? ` (${memPct.toFixed(0)}%)` : ''}`} tone={memPct && memPct > 90 ? 'bad' : undefined} />
-              <Row label="Disk" value={`${bytes(Number(s.disk_used_bytes))} / ${bytes(Number(s.disk_total_bytes))}${diskPct ? ` (${diskPct.toFixed(0)}%)` : ''}`} tone={diskPct && diskPct > 85 ? 'bad' : diskPct && diskPct > 75 ? 'warn' : undefined} />
+              <Row label="CPU load (1m)" hint="normal under 70%" value={`${Number(s.load_1).toFixed(2)} of ${s.cpu_count} cores${loadPct ? ` (${loadPct.toFixed(0)}%)` : ''}`} tone={toneOf(lvl.load)} />
+              <Row label="Temperature" hint="normal under 75 °C" value={tempC !== null ? `${tempC.toFixed(1)} °C` : '—'} tone={toneOf(lvl.temp)} />
+              <Row label="Memory" hint="normal under 75%" value={`${bytes(Number(s.mem_used_bytes))} / ${bytes(Number(s.mem_total_bytes))}${memPct ? ` (${memPct.toFixed(0)}%)` : ''}`} tone={toneOf(lvl.mem)} />
+              <Row label="Disk" hint="normal under 70%" value={`${bytes(Number(s.disk_used_bytes))} / ${bytes(Number(s.disk_total_bytes))}${diskPct ? ` (${diskPct.toFixed(0)}%)` : ''}`} tone={toneOf(lvl.disk)} />
               <Row label="Uptime" value={duration(Number(s.uptime_seconds))} />
+              <Row
+                label="Restart needed"
+                hint="only after a kernel update"
+                value={rebootNeeded ? 'Yes — plan a restart' : 'No'}
+                tone={rebootNeeded ? 'bad' : undefined}
+              />
+              <Row label="Updates pending" value={`${s.pending_updates ?? '—'}${secUpdates ? ` (${secUpdates} security)` : ''}`} tone={secUpdates ? 'warn' : undefined} />
               <Row label="Last report" value={ago(String(s.recorded_at))} tone={data?.serverStale ? 'bad' : undefined} />
               <div className="mt-3 border-t pt-3">
                 <div className="mb-1 text-xs text-muted-foreground">CPU load trend (last 3h)</div>
@@ -267,7 +376,7 @@ function MonitoringInner() {
         <Card title="Backups">
           {s ? (
             <>
-              <Row label="Last backup" value={ago(String(s.backup_last_at))} tone={backupAgeH !== null && backupAgeH > 3 ? 'bad' : backupAgeH !== null && backupAgeH > 1.5 ? 'warn' : undefined} />
+              <Row label="Last backup" value={ago(String(s.backup_last_at))} tone={toneOf(lvl.backup)} hint="hourly" />
               <Row label="Size" value={bytes(Number(s.backup_last_bytes))} />
               <Row label="Copies kept" value={String(s.backup_count ?? '—')} />
               <p className="mt-3 border-t pt-3 text-xs text-muted-foreground">
