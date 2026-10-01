@@ -126,6 +126,9 @@ function SellPageInner() {
 
   // "Add an accessory" search (accessory-only mode)
   const [accessorySearch, setAccessorySearch] = useState('')
+  // Holds an accessory picked while several units are in the cart, until the
+  // user says which unit it belongs to.
+  const [pendingBundleAccessory, setPendingBundleAccessory] = useState<Accessory | null>(null)
   const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
   const [browsableAccessories, setBrowsableAccessories] = useState<Accessory[]>([])
 
@@ -209,9 +212,45 @@ function SellPageInner() {
     setUnitSearch(''); setUnits([])
   }
 
+  // Picking an accessory attaches it to the unit being sold, rather than
+  // creating a separate sale line.
+  //
+  // This screen used to do the opposite: the prominent search box always made a
+  // standalone accessory sale, while the control that actually attached to the
+  // unit was a small text link inside the unit's row. So the common action --
+  // "this cable goes with this laptop" -- was the hidden one, and the default
+  // silently produced an accessory sale linked to no unit. That accessory then
+  // never appeared on the unit's Overview, and the mistake was invisible until
+  // someone went looking for it (2026-10-01).
+  //
+  // With no unit in the cart it still creates a standalone line, which is the
+  // correct behaviour when selling a loose accessory on its own.
   const addAccessoryLine = (a: Accessory) => {
+    const unitLines = cartItems.filter(l => l.kind === 'unit')
+    const target = unitLines.length === 1 ? unitLines[0] : undefined
+
+    if (target) {
+      addBundledAccessory(target.id, a)
+      setAccessorySearch(''); setAccessoryOptions([])
+      return
+    }
+    if (unitLines.length > 1) {
+      // Several units in one cart: which one it belongs to is a real question,
+      // so ask rather than guess. Guessing here would recreate the same class
+      // of silent mis-attachment.
+      setPendingBundleAccessory(a)
+      setAccessorySearch(''); setAccessoryOptions([])
+      return
+    }
     setCartItems(prev => [...prev, { id: crypto.randomUUID(), kind: 'accessory', accessory: a, quantity: 1, salePrice: 0 }])
     setAccessorySearch(''); setAccessoryOptions([])
+  }
+
+  // Set when an accessory was picked while more than one unit is in the cart.
+  const assignPendingTo = (lineId: string) => {
+    if (!pendingBundleAccessory) return
+    addBundledAccessory(lineId, pendingBundleAccessory)
+    setPendingBundleAccessory(null)
   }
 
   const removeLine = (id: string) => setCartItems(prev => prev.filter(l => l.id !== id))
@@ -520,9 +559,47 @@ function SellPageInner() {
         ) : (
           <div className="relative">
             <label className="block font-medium text-sm mb-1">Search for an accessory to add</label>
-            <p className="text-xs text-muted-foreground mb-1">
-              Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
-            </p>
+            {cartItems.some(l => l.kind === 'unit') ? (
+              <p className="text-xs text-muted-foreground mb-1">
+                {cartItems.filter(l => l.kind === 'unit').length === 1
+                  ? `Will be included with ${unitLabel((cartItems.find(l => l.kind === 'unit') as Extract<CartLine, { kind: 'unit' }>).unit)} — free unless you set a price.`
+                  : 'You will be asked which unit it goes with.'}
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground mb-1">
+                Sold on its own. Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
+              </p>
+            )}
+
+            {pendingBundleAccessory && (
+              <div className="mb-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+                <div className="mb-1.5">
+                  Which unit is <strong>{pendingBundleAccessory.accessory_name}</strong> going with?
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {cartItems.filter(l => l.kind === 'unit').map(l => (
+                    <button
+                      key={l.id}
+                      type="button"
+                      onClick={() => assignPendingTo(l.id)}
+                      className="rounded border bg-background px-2 py-1 text-xs hover:bg-muted"
+                    >
+                      {unitLabel((l as Extract<CartLine, { kind: 'unit' }>).unit)}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCartItems(prev => [...prev, { id: crypto.randomUUID(), kind: 'accessory', accessory: pendingBundleAccessory, quantity: 1, salePrice: 0 }])
+                      setPendingBundleAccessory(null)
+                    }}
+                    className="rounded border px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                  >
+                    Sell on its own
+                  </button>
+                </div>
+              </div>
+            )}
             <input
               value={accessorySearch}
               onChange={(e) => setAccessorySearch(e.target.value)}
