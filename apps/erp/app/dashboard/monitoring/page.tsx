@@ -41,6 +41,50 @@ interface Payload {
   } | null
 }
 
+// Plain-language descriptions, keyed by the real table and job names. Shown
+// behind an (i) on each row -- a table called "asset_qc_checks" means nothing
+// to someone who did not build it, and a dashboard you cannot read is not
+// telling you anything.
+//
+// Unknown names simply get no icon rather than a guess, so a table added later
+// degrades quietly instead of being described wrongly.
+const TABLE_INFO: Record<string, string> = {
+  audit_log: 'A record of every change made in the ERP — who changed what, when, and what it was before. This is why a wrong edit can be traced and undone. It is normally the largest table and grows forever by design.',
+  asset_ledger: 'One row per physical unit you own — every laptop, desktop, monitor and tablet, with its serial number, condition, status and sale. This should roughly match the number of units you have ever handled.',
+  asset_qc_checks: 'The testing checklist filled in for each unit during QC. Several rows per unit, which is why it is large. Also powers the Test Report shown to customers on the website.',
+  sku_master: 'The catalogue — one row per product model you buy or sell, including accessories. Not individual units; those are in asset_ledger.',
+  stock_movements: 'Every stock in and out, as a running ledger. Quantities shown elsewhere are calculated from this, which is why it must never be edited directly.',
+  sales: 'One row per sale line — shop sales, website orders, repair charges and rental charges all land here.',
+  purchases: 'Historical purchase records from before the Purchase Order system, kept for reference.',
+  notifications: 'In-app alerts shown to you and staff — task assignments, mentions, reminders. Old ones are not deleted automatically.',
+  website_health_checks: 'The log of automated website checks, one row per check. It grows quickly because it runs often; it is pruned on a schedule.',
+  backup_snapshots: 'Records of backups taken through the ERP’s own Backup screen. Separate from the hourly server backups, which the app knows nothing about.',
+  kb_chapters: 'The DB Guide content — the manual you read inside the ERP. Updated automatically when documentation is pushed.',
+  kb_chapter_sections: 'Individual sections of DB Guide chapters, stored separately so search can point at the right part of a page.',
+  customers: 'Your customer records, shared by shop sales and website accounts.',
+  invoices: 'GST invoices and their line items.',
+  activities: 'Tasks and reminders — the Activity Hub. Also used by automated jobs to raise work for someone.',
+  profiles: 'Staff accounts and what each one is allowed to see and edit.',
+  server_metrics: 'The vitals on this page. The server writes one row a minute; rows older than 30 days are deleted automatically.',
+}
+
+const JOB_INFO: Record<string, string> = {
+  'release-expired-web-reservations':
+    'Runs twice an hour. When a customer starts checkout, the item is held for 15 minutes so nobody else can buy it. If they do not pay, this releases the hold and puts the item back on sale. Without it, abandoned carts would lock up stock permanently.',
+  'erp-digest-dispatch':
+    'Sends the scheduled summary emails (configured in Settings → Digests). Runs at 21:37 UTC, which is 3:07am India time.',
+  'activity-due-date-scan':
+    'Checks for tasks that are due soon or overdue and raises an in-app notification. Does not email — that was a deliberate choice to avoid nagging.',
+  'scan-rental-cycles':
+    'Looks for rentals that are due for billing or overdue for return, and raises a task plus a notification. It never creates the charge itself — money rows always stay human-initiated.',
+  'scan-recurring-expenses':
+    'Checks recurring expense rules (rent, salaries and similar) and raises a reminder when one is due. Like rentals, it does not create the expense for you.',
+  'erp-scheduled-backup':
+    'The ERP’s own weekly backup snapshot, taken through the app. Separate from — and not a substitute for — the hourly server backups shown in the Backups card.',
+  'prune-cron-history':
+    'Housekeeping. Deletes old records of these jobs having run, which would otherwise grow by tens of thousands of rows a month on a self-hosted setup.',
+}
+
 const REFRESH_MS = 30_000
 
 function bytes(n: number | null | undefined): string {
@@ -436,7 +480,12 @@ function MonitoringInner() {
                 <tbody>
                   {data.db.largest_tables.map(t => (
                     <tr key={t.table_name} className="border-b last:border-0">
-                      <td className="py-1">{t.table_name}</td>
+                      <td className="py-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          {t.table_name}
+                          {TABLE_INFO[t.table_name] && <InfoHint text={TABLE_INFO[t.table_name]} />}
+                        </span>
+                      </td>
                       <td className="py-1 text-right tabular-nums">{t.row_estimate.toLocaleString()}</td>
                       <td className="py-1 text-right tabular-nums">{bytes(t.total_bytes)}</td>
                     </tr>
@@ -456,7 +505,12 @@ function MonitoringInner() {
                 <tbody>
                   {data.db.cron_jobs.map(j => (
                     <tr key={j.jobname} className="border-b last:border-0">
-                      <td className="py-1">{j.jobname}</td>
+                      <td className="py-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          {j.jobname}
+                          {JOB_INFO[j.jobname] && <InfoHint text={JOB_INFO[j.jobname]} />}
+                        </span>
+                      </td>
                       <td className="py-1 font-mono text-xs text-muted-foreground">{j.schedule}</td>
                       <td className="py-1 text-right"><span className="inline-flex items-center gap-1.5"><Dot ok={j.active} />{j.active ? 'on' : 'off'}</span></td>
                     </tr>
