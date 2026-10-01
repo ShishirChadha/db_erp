@@ -19,7 +19,7 @@ sources:
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/lib/owner-only-expense-types.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-09-02
+updated: 2026-10-01
 ---
 
 ## What this covers
@@ -229,3 +229,12 @@ expense watch this module now also drives), **finance-gst-reports** (the
 reporting dispatcher this module's new metrics plug into), **business-rules**
 (the default vendor-identity redaction posture), **activities-notifications**
 (the task type `scan_recurring_expenses()` creates).
+
+## Required fields
+
+Expense Date, Description and Amount are all required by the server. Until
+2026-10-01 only Expense Date was marked required in the form, so it was
+possible to submit an expense the server was always going to reject — and the
+dialog replaced the server's explanation with a generic "Failed to add
+expense." All three are now marked in both the add and edit dialogs, and the
+error shown is the server's own, naming the field that is missing.

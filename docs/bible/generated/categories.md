@@ -446,6 +446,11 @@ Defines the spec schema captured per `sku_master.category`. Source of truth for 
       "name": "has_backlit_keyboard",
       "type": "checkbox",
       "label": "Backlit Keyboard"
+    },
+    {
+      "name": "os",
+      "type": "text",
+      "label": "Operating System"
     }
   ],
   "variant_fields": [
@@ -669,6 +674,29 @@ Defines the spec schema captured per `sku_master.category`. Source of truth for 
     "type",
     "speed",
     "form_factor"
+  ]
+}
+```
+
+## SERVICE — Service / Labor
+
+```json
+{
+  "fields": [
+    {
+      "name": "service_name",
+      "type": "text",
+      "label": "Service Name",
+      "required": true
+    },
+    {
+      "name": "description",
+      "type": "textarea",
+      "label": "Description"
+    }
+  ],
+  "variant_fields": [
+    "service_name"
   ]
 }
 ```

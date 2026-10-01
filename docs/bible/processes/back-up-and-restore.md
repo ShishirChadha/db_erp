@@ -14,7 +14,7 @@ sources:
   - apps/erp/app/api/backup/restore/preview/route.ts
   - apps/erp/app/api/backup/restore/apply/route.ts
   - apps/erp/app/api/settings/backup-schedule/route.ts
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this is
@@ -142,3 +142,59 @@ the same way.
   hour is your local (`Asia/Kolkata`) hour converted once to a UTC cron
   expression at save time; if that ever needs to shift for DST-like
   reasons, re-save the schedule.
+
+## Infrastructure backups (separate from the in-app ones above)
+
+Everything above is the **in-app** snapshot feature, which captures table data
+through the application. Since the move to self-hosted infrastructure on
+2026-10-01 there is a second, lower-level layer that the app knows nothing
+about — and it is the one that actually protects the business.
+
+On the ProDesk, `erp-backup.timer` runs `/usr/local/bin/erp-backup.sh` **hourly**:
+
+- `pg_dump -Fc` of the whole database to `/var/backups/erp/db`
+- once a day, a `tar` of the storage volume to `/var/backups/erp/storage`,
+  **including extended attributes** — storage-api reads an object's
+  content-type from `user.supabase.content-type` on disk rather than from the
+  database, so an archive without xattrs restores images that every browser
+  treats as a download instead of displaying
+
+Retention is 72 hourly, then one per day for 30 days, then one per month for 12.
+
+Each dump is written to a `.part` file and renamed only on success, then checked
+for the `PGDMP` magic header and a minimum size — so a truncated or failed dump
+can never be mistaken for a good one.
+
+The age and size of the newest backup are shown on **System Health**
+(`/dashboard/monitoring`), which turns amber past 1.5 hours and red past 3.
+
+### Restoring one of these
+
+Install the extensions **first** — `pg_cron`, `pg_net`, and `pg_trgm` created
+`SCHEMA extensions` — or a large number of trigram indexes will fail. Then:
+
+```
+docker exec -i supabase-db pg_restore -U supabase_admin -d postgres \
+  --data-only --disable-triggers --no-owner /tmp/<dump>
+```
+
+`--disable-triggers` is not optional. Without it the stock-sync trigger
+recomputes `sku_master.quantity_in_stock` from a half-loaded `stock_movements`
+table and leaves the cache wrong.
+
+Connect as `supabase_admin`, not `postgres` — `postgres` is not a superuser in
+the self-hosted stack.
+
+### This has been tested, not assumed
+
+The backup was restored into a throwaway database and compared against live:
+row counts, `auth.users`, functions, policies and views all matched exactly.
+The only difference was `cron.job`'s own internal trigger, which
+`CREATE EXTENSION pg_cron` recreates.
+
+### Known gap
+
+**There is no offsite copy.** These backups sit on the same SSD as the database
+they protect, plus one manual copy on the owner's Mac. A fire, theft or disk
+failure takes both together. Fixing this means an encrypted copy pushed to
+object storage — not yet done.

@@ -29,8 +29,23 @@ function write(file: string, content: string) {
 // 1) schema.md -- tables, columns, types, FKs, comments, row estimates
 // ---------------------------------------------------------------------------
 async function genSchema() {
-  const { data, error } = await supabaseAdmin.rpc('bible_introspect_schema')
-  if (error) throw new Error(`bible_introspect_schema: ${error.message}`)
+  // Paged. The RPC returns one row per COLUMN -- ~1,250 rows across the public
+  // schema -- while PostgREST caps a response at PGRST_DB_MAX_ROWS (1000 on the
+  // self-hosted stack). Fetching it in one call silently returned the first
+  // 1000 rows, so schema.md documented only 79 of 96 tables and gave no hint
+  // that anything was missing. Paging is the right fix here rather than raising
+  // the server-wide cap for one build script.
+  const PAGE = 500
+  const data: unknown[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data: page, error } = await supabaseAdmin
+      .rpc('bible_introspect_schema')
+      .range(from, from + PAGE - 1)
+    if (error) throw new Error(`bible_introspect_schema: ${error.message}`)
+    const rows = page || []
+    data.push(...rows)
+    if (rows.length < PAGE) break
+  }
   type Row = {
     table_name: string; table_comment: string | null; column_name: string
     ordinal_position: number; data_type: string; is_nullable: boolean

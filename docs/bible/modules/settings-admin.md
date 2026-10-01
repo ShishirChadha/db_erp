@@ -7,7 +7,7 @@ routes: [/dashboard/settings]
 keywords: [settings, admin, configure, dropdown options, users, business profiles, tags, sku categories, digests]
 sources:
   - apps/erp/app/dashboard/settings/page.tsx
-updated: 2026-08-29
+updated: 2026-10-01
 ---
 
 ## What lives here
@@ -28,3 +28,10 @@ dropdown types should follow this pattern.
 ## Related
 
 **roles-permissions**, **inventory-sku**, **website**.
+
+## System Health
+
+A new owner-only page at `/dashboard/monitoring` shows the state of the server,
+both internet links, the Supabase stack, backups and the database, with
+thresholds for what is normal and explicit guidance on when a restart is
+needed. See `system-health.md` and `restart-or-recover-the-server.md`.

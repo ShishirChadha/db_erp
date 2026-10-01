@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## The three roles
@@ -87,3 +87,21 @@ existing owner-only sales finalize routes like every other invoice.
 3. If it's a *field* visible/hidden question (cost, vendor, margin) rather than
    a page/action question, check the Redacted fields table in the same
    generated file.
+
+## Self-hosted auth (since 2026-10-01)
+
+Tokens are now signed by the self-hosted GoTrue with **ES256**, and
+`session.ts` verifies them against the JWKS published at
+`db.digitalbluez.com/auth/v1/.well-known/jwks.json`. The issuer must match
+`https://db.digitalbluez.com/auth/v1` byte for byte.
+
+Two consequences worth knowing:
+
+- Changing the backend hostname invalidates every existing token, so everyone
+  is signed out once and must log in again. This is expected, and looks exactly
+  like a rejected password.
+- A failed *network* call to the database is currently indistinguishable from
+  "not signed in": `getSessionUser()` returns null either way, the route
+  answers 401, and `api-client.ts` signs the user out. On a home connection
+  this will eventually happen again. The proper fix is for routes to answer 503
+  on a backend-unreachable error so the client retries instead of logging out.

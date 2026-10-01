@@ -154,6 +154,11 @@
     "ownerOnly": false
   },
   {
+    "label": "System Health",
+    "route": "/dashboard/monitoring",
+    "ownerOnly": true
+  },
+  {
     "label": "Settings",
     "route": "/dashboard/settings",
     "ownerOnly": false

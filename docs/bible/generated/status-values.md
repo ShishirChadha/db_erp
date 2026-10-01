@@ -60,6 +60,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | expenses | reimbursement_status | expenses_reimbursement_status_check | `CHECK ((reimbursement_status = ANY (ARRAY['not_applicable'::text, 'pending'::text, 'partial'::text, 'reimbursed'::text])))` |
 | expenses | source | expenses_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'bank_recon'::text])))` |
 | extraction_templates | template_kind | extraction_templates_template_kind_check | `CHECK ((template_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
+| homepage_banners | theme | homepage_banners_theme_check | `CHECK ((theme = ANY (ARRAY['default'::text, 'diwali'::text, 'christmas'::text, 'sale'::text, 'custom'::text])))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
 | invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text, 'rental'::text])))` |
 | invoices | invoice_type | invoices_invoice_type_check | `CHECK ((invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])))` |
