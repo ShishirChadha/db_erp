@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState, useCallback } from 'react'
+import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter, usePathname, useSearchParams } from 'next/navigation'
 import dynamic from 'next/dynamic'
@@ -312,8 +312,15 @@ export default function StockView({
 
   const sourceParam = sourceMode === 'employee_intake' ? 'source=employee_intake' : 'exclude_source=employee_intake'
 
+  // Guards against an out-of-order response -- switching tabs fast (e.g. Current ->
+  // Sold) fires a new request while the previous tab's request may still be in
+  // flight; without this, a slower Current-tab response arriving AFTER the Sold-tab
+  // response would overwrite the correct Sold rows with stale Current ones, which
+  // only a hard refresh (a single fresh request) would then clear.
+  const assetsRequestIdRef = useRef(0)
   const fetchAssets = useCallback(async () => {
     if (tab === 'sold_accessories' || tab === 'accessories') return
+    const requestId = ++assetsRequestIdRef.current
     setLoading(true)
     setError(null)
     try {
@@ -338,6 +345,7 @@ export default function StockView({
       const res = await apiFetch(`/api/stock?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch assets')
       const json = await res.json()
+      if (requestId !== assetsRequestIdRef.current) return // a newer request has since superseded this one
       const data: AssetRow[] = json.data || []
       setAssets(data)
       setTotal(json.total || 0)
@@ -347,16 +355,19 @@ export default function StockView({
       // as one PO. It's only cleared explicitly: on successful PO creation, or when the
       // owner unchecks a row/hits "select all" again.
     } catch (err: any) {
-      setError(err.message)
+      if (requestId === assetsRequestIdRef.current) setError(err.message)
     } finally {
-      setLoading(false)
+      if (requestId === assetsRequestIdRef.current) setLoading(false)
     }
   }, [tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam, sortField, sortOrder, page, PAGE_SIZE])
 
   useEffect(() => { fetchAssets() }, [fetchAssets])
 
+  // Same stale-response guard as fetchAssets above.
+  const soldAccessoriesRequestIdRef = useRef(0)
   const fetchSoldAccessories = useCallback(async () => {
     if (tab !== 'sold_accessories') return
+    const requestId = ++soldAccessoriesRequestIdRef.current
     setLoading(true)
     setError(null)
     try {
@@ -373,21 +384,25 @@ export default function StockView({
       const res = await apiFetch(`/api/stock/sold-accessories?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch sold accessories')
       const json = await res.json()
+      if (requestId !== soldAccessoriesRequestIdRef.current) return
       const data: SoldAccessoryRow[] = json.data || []
       setSoldAccessories(data)
       setTotal(json.total || 0)
       setActiveSoldAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } catch (err: any) {
-      setError(err.message)
+      if (requestId === soldAccessoriesRequestIdRef.current) setError(err.message)
     } finally {
-      setLoading(false)
+      if (requestId === soldAccessoriesRequestIdRef.current) setLoading(false)
     }
   }, [tab, searchTerm, monthFilter, yearFilter, page, soldAccOrder, PAGE_SIZE])
 
   useEffect(() => { fetchSoldAccessories() }, [fetchSoldAccessories])
 
+  // Same stale-response guard as fetchAssets above.
+  const accessoryStockRequestIdRef = useRef(0)
   const fetchAccessoryStock = useCallback(async () => {
     if (tab !== 'accessories') return
+    const requestId = ++accessoryStockRequestIdRef.current
     setLoading(true)
     setError(null)
     try {
@@ -399,14 +414,15 @@ export default function StockView({
       const res = await apiFetch(`/api/stock/accessories?${params.toString()}`)
       if (!res.ok) throw new Error('Failed to fetch accessories')
       const json = await res.json()
+      if (requestId !== accessoryStockRequestIdRef.current) return
       const data: AccessoryStockRow[] = json.data || []
       setAccessoryStock(data)
       setTotal(json.total || 0)
       setActiveAccessoryId((prev) => (prev && data.some((s) => s.id === prev)) ? prev : (isDesktop ? (data[0]?.id ?? null) : null))
     } catch (err: any) {
-      setError(err.message)
+      if (requestId === accessoryStockRequestIdRef.current) setError(err.message)
     } finally {
-      setLoading(false)
+      if (requestId === accessoryStockRequestIdRef.current) setLoading(false)
     }
   }, [tab, searchTerm, page, PAGE_SIZE])
 
