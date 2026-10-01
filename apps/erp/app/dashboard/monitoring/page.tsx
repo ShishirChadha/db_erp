@@ -5,7 +5,8 @@ import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { Button } from '@/components/ui/button'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Info } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 
 // System Health. Everything here is read-only; the page never writes.
 //
@@ -72,11 +73,36 @@ function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${tone}`} aria-hidden />
 }
 
-function Card({ title, children, right }: { title: string; children: React.ReactNode; right?: React.ReactNode }) {
+// A short "what is this and why do I care" note behind an (i). A popover
+// rather than a title attribute so it works on a phone, where this page is
+// most likely to be opened in a hurry.
+function InfoHint({ text }: { text: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="What is this?"
+          className="text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Info className="h-3.5 w-3.5" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="max-w-xs text-xs leading-relaxed">
+        {text}
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function Card({ title, children, right, info }: { title: string; children: React.ReactNode; right?: React.ReactNode; info?: string }) {
   return (
     <div className="rounded-md border p-4">
       <div className="mb-3 flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">{title}</h2>
+        <h2 className="flex items-center gap-1.5 text-sm font-semibold">
+          {title}
+          {info && <InfoHint text={info} />}
+        </h2>
         {right}
       </div>
       {children}
@@ -290,7 +316,9 @@ function MonitoringInner() {
 
       {/* Public endpoints -- probed from Vercel, so these stay meaningful even
           when the box itself is unreachable. */}
-      <Card title="Public endpoints" right={<span className="text-xs text-muted-foreground">checked from outside your network</span>}>
+      <Card
+            title="Public endpoints"
+            info="Checked live from Vercel every time this page loads — that is, from outside your premises. This is what a customer or staff member on the internet would get. The Database API answering 401 is correct and healthy: it means the gateway replied but was not given a key." right={<span className="text-xs text-muted-foreground">checked from outside your network</span>}>
         <div className="grid gap-2 sm:grid-cols-3">
           {(data?.endpoints || []).map(e => (
             <div key={e.key} className="rounded-md border p-3">
@@ -332,7 +360,10 @@ function MonitoringInner() {
           ) : <p className="text-sm text-muted-foreground">No samples yet.</p>}
         </Card>
 
-        <Card title="Internet links">
+        <Card
+            title="Internet links"
+            info="Your two internet connections. Traffic normally uses the LAN; if it fails, the WiFi dongle takes over automatically and hands back when the LAN returns. If this shows WiFi in use, everything still works — but you have no backup line left until the LAN is fixed."
+          >
           {s ? (
             <>
               <div className="mb-3 rounded-md bg-muted/50 p-2 text-sm">
@@ -350,7 +381,9 @@ function MonitoringInner() {
           ) : <p className="text-sm text-muted-foreground">No samples yet.</p>}
         </Card>
 
-        <Card title="Supabase stack" right={s ? <span className="text-xs tabular-nums text-muted-foreground">{String(s.containers_healthy)}/{String(s.containers_total)} healthy</span> : null}>
+        <Card
+            title="Supabase stack"
+            info="The eleven Docker containers that make up the database service on the ProDesk — Postgres itself plus the gateway, auth, file storage and the rest. All eleven should be healthy. Connections shows how many are in use of the limit; running out is what caused the outages on the old hosted plan." right={s ? <span className="text-xs tabular-nums text-muted-foreground">{String(s.containers_healthy)}/{String(s.containers_total)} healthy</span> : null}>
           {s ? (
             <>
               <div className="flex items-center gap-2 text-sm">
@@ -373,7 +406,10 @@ function MonitoringInner() {
           ) : <p className="text-sm text-muted-foreground">No samples yet.</p>}
         </Card>
 
-        <Card title="Backups">
+        <Card
+            title="Backups"
+            info="Taken automatically every hour on the server, with the storage files archived once a day. Older copies are thinned out over time (hourly for 3 days, then daily for a month, then monthly). These currently live on the same machine as the database, so they protect against mistakes and corruption — not against the machine being lost or stolen."
+          >
           {s ? (
             <>
               <Row label="Last backup" value={ago(String(s.backup_last_at))} tone={toneOf(lvl.backup)} hint="hourly" />
@@ -390,7 +426,10 @@ function MonitoringInner() {
 
       {data?.db && (
         <div className="grid gap-4 lg:grid-cols-2">
-          <Card title="Largest tables">
+          <Card
+            title="Largest tables"
+            info="The biggest tables in your database, by disk space. Useful for two things: spotting what is actually growing (audit_log and asset_qc_checks grow fastest here), and sanity-checking a number you recognise — if asset_ledger suddenly showed far fewer rows than you have units, something is wrong. Row counts are Postgres estimates, so they can be slightly off between maintenance runs."
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-1 font-medium">Table</th><th className="py-1 text-right font-medium">Rows</th><th className="py-1 text-right font-medium">Size</th></tr></thead>
@@ -407,7 +446,10 @@ function MonitoringInner() {
             </div>
           </Card>
 
-          <Card title="Scheduled jobs">
+          <Card
+            title="Scheduled jobs"
+            info="Background jobs the database runs on a timer, with no one logged in — releasing expired website reservations, sending digest emails, raising due-date and rental reminders, and pruning old job history. The schedule is in UTC (India is 5h30m ahead, so 21:30 UTC is 3:00am here). All should normally show 'on'; a job switched off silently stops that piece of automation."
+          >
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-1 font-medium">Job</th><th className="py-1 font-medium">Schedule</th><th className="py-1 text-right font-medium">State</th></tr></thead>
@@ -427,7 +469,9 @@ function MonitoringInner() {
       )}
 
       {(data?.healthChecks?.length ?? 0) > 0 && (
-        <Card title="Website health history" right={<span className="text-xs text-muted-foreground">from the scheduled check</span>}>
+        <Card
+            title="Website health history"
+            info="A log of automated checks against the public website, recorded by a scheduled job. Each row is one check: when it ran, what it got back, and how long it took. Occasional slow responses are normal; a run of failures means the storefront was unreachable." right={<span className="text-xs text-muted-foreground">from the scheduled check</span>}>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-1 font-medium">When</th><th className="py-1 font-medium">URL</th><th className="py-1 text-right font-medium">Status</th><th className="py-1 text-right font-medium">Latency</th></tr></thead>
