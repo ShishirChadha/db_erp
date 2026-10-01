@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/StockView.tsx
   - apps/erp/app/api/purchase-orders/route.ts
   - apps/erp/app/api/purchase-orders/from-intake/route.ts
-updated: 2026-09-16
+updated: 2026-10-01
 ---
 
 ## What this is
