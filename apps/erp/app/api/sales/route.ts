@@ -7,6 +7,7 @@ import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 import { buildCustomerSummary } from '@/lib/customer-summary'
 import { withRetry } from '@/lib/db-retry'
+import { chunkedIn } from '@/lib/chunked-in'
 
 // ---------- GET: the full Sales ledger (every sale, unit + accessory) ----------
 // This is the transactional/financial view (payment state, incentive attribution),
@@ -247,28 +248,28 @@ export async function GET(req: NextRequest) {
     { data: rentalAgreements },
     paymentDateBySaleId,
   ] = await Promise.all([
-    unfinalizedCustomerIds.length
-      ? withRetry(() => supabaseAdmin.from('customers').select('id, customer_name').in('id', unfinalizedCustomerIds))
-      : Promise.resolve({ data: [] as any[] }),
-    allCustomerIds.length
-      ? withRetry(() => supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds))
-      : Promise.resolve({ data: [] as any[] }),
+    chunkedIn<any>(unfinalizedCustomerIds, chunk =>
+      supabaseAdmin.from('customers').select('id, customer_name').in('id', chunk)
+    ),
+    chunkedIn<any>(allCustomerIds, chunk =>
+      supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', chunk)
+    ),
     // Per-sale invoicing mode (Zoho transition): resolve each sale's entity from its
     // payment_account and tag it 'erp' or 'external' so the ledger UI shows the right
     // action -- "Generate Invoice" (ERP) vs "Record Zoho Invoice #" (external).
     withRetry(() => supabaseAdmin.from('business_profiles').select('key, invoicing_mode')),
-    assetLedgerIds.length
-      ? withRetry(() => supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', assetLedgerIds))
-      : Promise.resolve({ data: [] as any[] }),
-    bundledAccessoryIds.length
-      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds))
-      : Promise.resolve({ data: [] as any[] }),
-    repairJobIds.length
-      ? withRetry(() => supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', repairJobIds))
-      : Promise.resolve({ data: [] as any[] }),
-    rentalAgreementIds.length
-      ? withRetry(() => supabaseAdmin.from('rental_agreements').select('id, agreement_number').in('id', rentalAgreementIds))
-      : Promise.resolve({ data: [] as any[] }),
+    chunkedIn<any>(assetLedgerIds, chunk =>
+      supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', chunk)
+    ),
+    chunkedIn<any>(bundledAccessoryIds, chunk =>
+      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', chunk)
+    ),
+    chunkedIn<any>(repairJobIds, chunk =>
+      supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', chunk)
+    ),
+    chunkedIn<any>(rentalAgreementIds, chunk =>
+      supabaseAdmin.from('rental_agreements').select('id, agreement_number').in('id', chunk)
+    ),
     // Most recent sale_payments installment date per sale -- shown as "Payment Date"
     // alongside sale_date; a sale with 2+ partial payments shows its latest one.
     latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
@@ -291,9 +292,9 @@ export async function GET(req: NextRequest) {
       .map((s: any) => s.accessory_id || skuIdByAssetLedgerId.get(s.asset_ledger_id))
       .filter(Boolean)
   )]
-  const { data: skus } = skuIds.length
-    ? await withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications, hsn_code').in('id', skuIds))
-    : { data: [] as any[] }
+  const { data: skus } = await chunkedIn<any>(skuIds as string[], chunk =>
+    supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, specifications, hsn_code').in('id', chunk)
+  )
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
 
   const result = (data || []).map((s: any) => {

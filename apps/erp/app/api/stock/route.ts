@@ -11,6 +11,7 @@ import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
 import { buildCustomerSummary } from '@/lib/customer-summary'
 import { getSpecFieldNames } from '@/lib/spec-fields'
 import { withRetry } from '@/lib/db-retry'
+import { chunkedIn } from '@/lib/chunked-in'
 
 // business_profiles.invoicing_mode barely ever changes -- same short-TTL cache pattern
 // as getSpecFieldNames below, so it doesn't become another unconditional query on every
@@ -288,23 +289,21 @@ export async function GET(req: NextRequest) {
     { data: salesRows },
     invoicingModeByKey,
   ] = await Promise.all([
-    fallbackSkuIds.length
-      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', fallbackSkuIds))
-      : Promise.resolve({ data: [] as any[] }),
-    fallbackVendorIds.length
-      ? withRetry(() => supabaseAdmin.from('vendors').select('id, company_name').in('id', fallbackVendorIds))
-      : Promise.resolve({ data: [] as any[] }),
-    assetIds.length
-      ? withRetry(() => supabaseAdmin.from('repair_jobs').select('asset_id, job_number').in('asset_id', assetIds).in('status', ['intake', 'in_progress']))
-      : Promise.resolve({ data: [] as any[] }),
-    soldIds.length
-      ? withRetry(() =>
-          supabaseAdmin
-            .from('sales')
-            .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account, original_sold_date')
-            .in('asset_ledger_id', soldIds)
-        )
-      : Promise.resolve({ data: [] as any[] }),
+    chunkedIn<any>(fallbackSkuIds, chunk =>
+      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category, specifications').in('id', chunk)
+    ),
+    chunkedIn<any>(fallbackVendorIds, chunk =>
+      supabaseAdmin.from('vendors').select('id, company_name').in('id', chunk)
+    ),
+    chunkedIn<any>(assetIds, chunk =>
+      supabaseAdmin.from('repair_jobs').select('asset_id, job_number').in('asset_id', chunk).in('status', ['intake', 'in_progress'])
+    ),
+    chunkedIn<any>(soldIds, chunk =>
+      supabaseAdmin
+        .from('sales')
+        .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account, original_sold_date')
+        .in('asset_ledger_id', chunk)
+    ),
     // Digitalbluez is currently in Zoho "external" invoicing mode during the
     // transition (docs/decisions.md, 2026-07-24) -- generating an ERP invoice for it
     // is blocked server-side regardless, but the Stock/Live Stock Sold tab's
@@ -341,12 +340,12 @@ export async function GET(req: NextRequest) {
   const allCustomerIds = [...new Set((salesRows || []).filter((s: any) => s.customer_id).map((s: any) => s.customer_id))]
   // All three depend on salesRows above, but not on each other -- concurrent again.
   const [{ data: liveCustomers }, { data: bundledSkus }, paymentDateBySaleId] = await Promise.all([
-    allCustomerIds.length
-      ? withRetry(() => supabaseAdmin.from('customers').select('id, customer_name, type, contact_person, address_line1, address_line2, city, source').in('id', allCustomerIds))
-      : Promise.resolve({ data: [] as any[] }),
-    bundledAccessoryIds.length
-      ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', bundledAccessoryIds))
-      : Promise.resolve({ data: [] as any[] }),
+    chunkedIn<any>(allCustomerIds, chunk =>
+      supabaseAdmin.from('customers').select('id, customer_name, type, contact_person, address_line1, address_line2, city, source').in('id', chunk)
+    ),
+    chunkedIn<any>(bundledAccessoryIds, chunk =>
+      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', chunk)
+    ),
     latestPaymentDatesBySaleId((salesRows || []).map((s: any) => s.id)),
   ])
   const liveCustomerNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))

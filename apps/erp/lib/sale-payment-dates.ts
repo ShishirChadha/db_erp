@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase/service'
+import { chunkedIn } from './chunked-in'
 
 // A sale can have several partial-payment installments (sale_payments rows) --
 // "the payment date" shown on a sale-list view is the most recent installment's
@@ -9,10 +10,15 @@ import { supabaseAdmin } from './supabase/service'
 export async function latestPaymentDatesBySaleId(saleIds: string[]): Promise<Map<string, string>> {
   if (saleIds.length === 0) return new Map()
 
-  const { data } = await supabaseAdmin
-    .from('sale_payments')
-    .select('sale_id, recorded_at')
-    .in('sale_id', saleIds)
+  // Batched: Live Stock's Sold tab passes every sold sale id at once, which
+  // overruns the proxy's request-line limit as a single .in() filter. See
+  // lib/chunked-in.ts.
+  const { data } = await chunkedIn<{ sale_id: string; recorded_at: string }>(saleIds, chunk =>
+    supabaseAdmin
+      .from('sale_payments')
+      .select('sale_id, recorded_at')
+      .in('sale_id', chunk)
+  )
 
   const latest = new Map<string, string>()
   for (const row of data || []) {
