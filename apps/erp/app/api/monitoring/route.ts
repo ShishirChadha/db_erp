@@ -56,6 +56,17 @@ export async function GET(req: NextRequest) {
   const history = (historyRes.data || []).slice().reverse()
   const healthChecks = healthRes.data || []
 
+  // Report query failures instead of letting them look like "no data". Without
+  // this, a permissions or connectivity problem renders as the same empty page
+  // as a genuinely silent server, which is exactly the ambiguity that makes an
+  // outage page useless -- "nothing reported" and "could not ask" must not look
+  // identical.
+  const queryErrors = [
+    latestRes.error ? `server_metrics: ${latestRes.error.message}` : null,
+    historyRes.error ? `history: ${historyRes.error.message}` : null,
+    healthRes.error ? `website_health_checks: ${healthRes.error.message}` : null,
+  ].filter(Boolean) as string[]
+
   const latestAgeSeconds = latest?.recorded_at
     ? Math.round((Date.now() - new Date(latest.recorded_at as string).getTime()) / 1000)
     : null
@@ -66,9 +77,10 @@ export async function GET(req: NextRequest) {
   const endpoints = await probeEndpoints()
 
   // Database size and the heaviest tables, straight from Postgres.
-  const { data: dbStats } = await withRetry(() =>
-    supabaseAdmin.rpc('monitoring_db_stats')
-  ).catch(() => ({ data: null }))
+  const dbRes = await withRetry(() => supabaseAdmin.rpc('monitoring_db_stats'))
+    .catch((e: unknown) => ({ data: null, error: { message: e instanceof Error ? e.message : 'rpc failed' } }))
+  const dbStats = dbRes.data
+  if (dbRes.error) queryErrors.push(`monitoring_db_stats: ${dbRes.error.message}`)
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -80,6 +92,7 @@ export async function GET(req: NextRequest) {
     healthChecks,
     endpoints,
     db: dbStats ?? null,
+    queryErrors,
   })
 }
 

@@ -31,6 +31,7 @@ interface Payload {
   history: Record<string, number | string | boolean | null>[]
   healthChecks: { checked_at: string; url: string; ok: boolean; status_code: number | null; latency_ms: number | null; error_message: string | null }[]
   endpoints: Endpoint[]
+  queryErrors?: string[]
   db: {
     database_bytes: number; connections: number; max_connections: number
     postgres_version: string
@@ -165,6 +166,15 @@ function MonitoringInner() {
       </div>
 
       {error && <ErrorBanner message={error} onRetry={load} />}
+
+      {(data?.queryErrors?.length ?? 0) > 0 && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
+          <strong className="text-destructive">Some vitals could not be read.</strong>
+          <ul className="mt-1 list-inside list-disc">
+            {data!.queryErrors!.map((q, i) => <li key={i} className="font-mono text-xs">{q}</li>)}
+          </ul>
+        </div>
+      )}
 
       {data?.serverStale && (
         <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm">
