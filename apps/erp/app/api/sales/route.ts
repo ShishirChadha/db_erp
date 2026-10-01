@@ -181,6 +181,12 @@ export async function GET(req: NextRequest) {
     .select('*', paginateInSql ? { count: 'exact' } : undefined)
     .eq('is_deleted', voided)
     .order(nativeSortColumn || 'created_at', { ascending: nativeSortColumn ? sortDir === 1 : false })
+    // The ledger always sorts by sale_date (-> effective_sale_date), which is a
+    // DATE -- so every sale made on the same day tied and came back in whatever
+    // order Postgres happened to produce. A sale recorded minutes ago could
+    // appear below one from the morning. created_at breaks the tie by when the
+    // sale was actually entered, which is what "newest on top" means here.
+    .order('created_at', { ascending: false })
 
   if (paymentStatus) query = query.eq('payment_status', paymentStatus)
   if (paymentStatusNe) query = query.neq('payment_status', paymentStatusNe)

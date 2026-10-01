@@ -148,6 +148,14 @@ export async function GET(req: NextRequest) {
     // sold_at) in a different order per request, causing page 1 and page 2 to
     // silently overlap or skip rows under .range()-based pagination.
     .order(sortField, { ascending: sortAscending, nullsFirst: false })
+    // sold_at holds the chosen sale DATE at a fixed 12:00Z, so every unit sold
+    // on the same day ties exactly. Without this, "most recently sold first"
+    // fell through to the id tiebreak below -- a random UUID -- and a sale
+    // entered this afternoon could sit below one entered this morning.
+    // sold_recorded_at is the wall-clock moment the sale was entered
+    // (trigger-maintained); it is NULL for current stock and for legacy sold
+    // units with no sales row, which is why nullsFirst is false.
+    .order('sold_recorded_at', { ascending: false, nullsFirst: false })
     .order('id', { ascending: true })
 
   if (statusFilter) {

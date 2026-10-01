@@ -354,6 +354,7 @@ Live schema snapshot -- 96 tables. Regenerate with `npm run bible:generate`.
 | body_condition | text | yes |  |  |  |
 | included_accessories | text | yes |  |  |  |
 | current_sku_id | uuid | yes |  | FK -> sku_master.id | Optional override of this unit's effective spec, distinct from sku_id (the as-purchased/as-received spec, set at intake/PO time and never overwritten again). NULL means no override -- current spec equals purchased spec. Set only via SKU reassignment (Change SKU) when a unit is physically modified after purchase, so the original purchase record stays historically accurate. |
+| sold_recorded_at | timestamp with time zone | yes |  |  | When this unit was recorded as sold (wall-clock). Trigger-maintained; use for "most recently sold" ordering. sold_at is the user-chosen sale DATE and is not unique within a day. |
 
 ## asset_qc_checks
 
@@ -1735,7 +1736,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## server_metrics
 
-~0 rows (estimate)
+~107 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1911,7 +1912,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## user_sessions
 
-~28 rows (estimate)
+~30 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

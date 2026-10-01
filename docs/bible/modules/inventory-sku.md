@@ -66,3 +66,19 @@ honest throughout. See **rentals**.
 **live-stock-qc**, **accessories**, **purchasing** (SKU resolution during PO
 entry, via `lib/sku-resolver.ts`'s `resolveOrCreateSku`), **finance-gst-reports**
 (inventory valuation).
+
+## Why "newest on top" needs two date columns
+
+`asset_ledger.sold_at` stores the sale DATE you picked, fixed at 12:00 UTC so a
+timezone can never shift which day a sale displays as. That makes it unsuitable
+for ordering within a day: two units sold on the same date have byte-identical
+values.
+
+`sold_recorded_at` (added 2026-10-01) holds the wall-clock moment the sale was
+actually entered, and is what Sold Stock uses to break that tie. It is
+maintained by a trigger, not by application code, because `status` becomes
+`sold` in six separate places and any one of them forgetting to set it would
+quietly bring the bug back.
+
+The Sales Ledger has the same shape of problem and breaks its tie on
+`sales.created_at`.
