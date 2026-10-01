@@ -25,8 +25,7 @@ import {
   Search,
   Star,
   Megaphone,
-  HelpCircle,
-} from 'lucide-react'
+  HelpCircle, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -157,6 +156,16 @@ export const menuGroups = [
     icon: Megaphone,
     href: '/dashboard/marketing',
     pageKey: 'marketing',
+  },
+  {
+    // Owner-only rather than a page-key grant: this surfaces infrastructure
+    // detail (host vitals, container names, backup sizes) that no other role
+    // has a reason to see, and there is no useful partial view to grant.
+    key: 'monitoring',
+    label: 'System Health',
+    icon: Activity,
+    href: '/dashboard/monitoring',
+    ownerOnly: true,
   },
   {
     key: 'settings',
