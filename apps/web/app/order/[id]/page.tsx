@@ -6,6 +6,7 @@ import { getCustomerSession } from '@/lib/customer-session'
 import { formatCurrency } from '@db/shared'
 import { OrderStatusPoller } from '@/components/OrderStatusPoller'
 import { ReservationCountdown } from '@/components/ReservationCountdown'
+import { TrackPurchase } from '@/components/TrackPurchase'
 
 export const dynamic = 'force-dynamic'
 
@@ -54,6 +55,24 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
   return (
     <main className="mx-auto max-w-lg px-4 py-14 sm:px-6">
       {order.status === 'pending_payment' && <OrderStatusPoller />}
+
+      {/* Reported from committed 'paid' state rather than the Razorpay
+          callback, and deduped per order inside the component -- this page
+          refreshes itself while pending, so it remounts the moment the webhook
+          lands. */}
+      {order.status === 'paid' && (
+        <TrackPurchase
+          orderId={order.id}
+          value={Number(order.total_amount)}
+          discount={order.discount_amount ? Number(order.discount_amount) : undefined}
+          items={(items || []).map((item: any) => ({
+            item_id: item.id,
+            item_name: item.title_snapshot || 'Item',
+            price: Number(item.unit_price),
+            quantity: item.quantity,
+          }))}
+        />
+      )}
 
       <h1 className="text-2xl font-semibold tracking-tight text-foreground">{STATUS_LABEL[order.status] || order.status}</h1>
       <p className="mt-1 text-sm text-muted-foreground">Order #{order.id.slice(0, 8)}</p>

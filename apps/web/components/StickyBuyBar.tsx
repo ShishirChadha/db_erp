@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PriceTag } from './PriceTag'
 import { AddToCartButton } from './AddToCartButton'
+import type { GaItem } from '@/lib/analytics'
 import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 
 // Looks up its target by id (rather than a ref) because it's a sibling of the
@@ -16,12 +17,14 @@ export function StickyBuyBar({
   skuId,
   disabled,
   whatsappHref,
+  item,
 }: {
   price: number
   marketPrice: number | null
   skuId: string
   disabled?: boolean
   whatsappHref: string
+  item?: GaItem
 }) {
   const [visible, setVisible] = useState(false)
 
@@ -46,7 +49,7 @@ export function StickyBuyBar({
         <div className="flex shrink-0 items-center gap-2">
           <WhatsAppOrderButton href={whatsappHref} compact />
           <div className="w-24">
-            <AddToCartButton skuId={skuId} disabled={disabled} />
+            <AddToCartButton skuId={skuId} disabled={disabled} item={item} />
           </div>
         </div>
       </div>

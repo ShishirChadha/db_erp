@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import Script from 'next/script'
 import { formatCurrency } from '@db/shared'
 import { ReservationCountdown } from './ReservationCountdown'
+import { track } from '@/lib/analytics'
 
 declare global {
   interface Window {
@@ -37,6 +38,13 @@ export function CheckoutForm({
     e.preventDefault()
     setError(null)
     setSubmitting(true)
+
+    // Fired BEFORE the request, deliberately: a checkout that fails because an
+    // item sold out in the meantime is still a customer who tried to buy, and
+    // that is exactly the drop-off this funnel step exists to measure. Firing
+    // it after a 2xx would hide the failures.
+    track({ name: 'begin_checkout', params: { currency: 'INR', value: subtotal, items: [] } })
+
     try {
       const res = await fetch('/api/checkout/start', {
         method: 'POST',

@@ -8,7 +8,7 @@ import { BetaAnalyticsDataClient } from '@google-analytics/data'
 import { AnalyticsAdminServiceClient } from '@google-analytics/admin'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
-const METRICS = ['config', 'summary', 'timeseries', 'top_pages', 'devices', 'demographics_age', 'demographics_gender', 'geo', 'traffic_source'] as const
+const METRICS = ['config', 'ecommerce_funnel', 'search_terms', 'summary', 'timeseries', 'top_pages', 'devices', 'demographics_age', 'demographics_gender', 'geo', 'traffic_source'] as const
 type Metric = (typeof METRICS)[number]
 
 function getClient() {
@@ -137,6 +137,84 @@ export async function GET(req: NextRequest) {
           admin_error: adminError,
           search_console_configured: !!process.env.GSC_SITE_URL,
         })
+      }
+
+      // The visitor-level funnel, from the GA4 e-commerce events the storefront
+      // sends (apps/web/lib/analytics.ts). This is intentionally a DIFFERENT
+      // measurement from report_web_funnel: this one counts every visitor
+      // including anonymous ones, while the SQL funnel counts rows that reached
+      // the database. They will never agree, and the gap between them is the
+      // interesting part -- people who browsed and added to a cart but never
+      // created an order row.
+      case 'ecommerce_funnel': {
+        const STEPS = ['view_item', 'add_to_cart', 'view_cart', 'begin_checkout', 'purchase'] as const
+        const [resp] = await client.runReport({
+          property,
+          dateRanges: [{ startDate: from, endDate: to }],
+          dimensions: [{ name: 'eventName' }],
+          metrics: [{ name: 'eventCount' }],
+          dimensionFilter: {
+            filter: { fieldName: 'eventName', inListFilter: { values: [...STEPS] } },
+          },
+        })
+        const counts: Record<string, number> = {}
+        for (const r of resp.rows || []) {
+          counts[r.dimensionValues?.[0]?.value || ''] = Number(r.metricValues?.[0]?.value || 0)
+        }
+
+        // Rates are computed here rather than in the browser, consistent with
+        // every other metric on this page -- but note the authority is GA4's
+        // own numbers, not SQL.
+        const rate = (num: number, den: number) => (den > 0 ? Math.round((1000 * num) / den) / 10 : null)
+        const steps = STEPS.map((name) => ({ name, count: counts[name] ?? 0 }))
+
+        return NextResponse.json({
+          steps,
+          view_item: counts.view_item ?? 0,
+          add_to_cart: counts.add_to_cart ?? 0,
+          view_cart: counts.view_cart ?? 0,
+          begin_checkout: counts.begin_checkout ?? 0,
+          purchase: counts.purchase ?? 0,
+          view_to_cart_rate: rate(counts.add_to_cart ?? 0, counts.view_item ?? 0),
+          cart_to_checkout_rate: rate(counts.begin_checkout ?? 0, counts.add_to_cart ?? 0),
+          checkout_to_purchase_rate: rate(counts.purchase ?? 0, counts.begin_checkout ?? 0),
+          // True when the storefront has not reported a single e-commerce event
+          // in the window, which is what "the events were only just added" or
+          // "tracking is broken" looks like -- distinct from a real zero.
+          no_events: steps.every((st) => st.count === 0),
+        })
+      }
+
+      // On-site search terms. `search_term` is a custom event parameter, so it
+      // is only reportable once it has been registered as an event-scoped
+      // custom dimension in GA4 Admin > Custom definitions. Until then the API
+      // rejects the dimension outright, so that case is caught and reported as
+      // a setup step rather than surfacing as a broken panel.
+      case 'search_terms': {
+        try {
+          const [resp] = await client.runReport({
+            property,
+            dateRanges: [{ startDate: from, endDate: to }],
+            dimensions: [{ name: 'customEvent:search_term' }],
+            metrics: [{ name: 'eventCount' }],
+            orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }],
+            limit: 20,
+          })
+          const rows = (resp.rows || [])
+            .map((r) => ({
+              term: r.dimensionValues?.[0]?.value || '(not set)',
+              count: Number(r.metricValues?.[0]?.value || 0),
+            }))
+            .filter((r) => r.term !== '(not set)')
+          return NextResponse.json({ rows, dimension_missing: false })
+        } catch (err: any) {
+          const msg: string = err?.message || ''
+          // GA4 returns 400 INVALID_ARGUMENT for an unregistered custom dimension.
+          if (/did not match|INVALID_ARGUMENT|not valid|customEvent/i.test(msg)) {
+            return NextResponse.json({ rows: [], dimension_missing: true, detail: msg })
+          }
+          throw err
+        }
       }
 
       case 'summary': {

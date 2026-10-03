@@ -31,6 +31,7 @@ import { ShareButtons } from "@/components/ShareButtons";
 import { WishlistButton } from "@/components/WishlistButton";
 import { ProductGrid } from "@/components/ProductGrid";
 import { StickyBuyBar } from "@/components/StickyBuyBar";
+import { TrackViewItem } from "@/components/TrackViewItem";
 
 export const revalidate = 60;
 
@@ -114,6 +115,19 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const rows = specRows(product.specifications, template?.field_schema);
   const title = product.web_title || [product.brand, product.model_name].filter(Boolean).join(" ");
   const categorySlug = categoryToSlug(product.category);
+
+  // One GA4 item shape, built once and shared by view_item, add_to_cart (main
+  // CTA and sticky bar) and anything added later -- so a product can never be
+  // reported under two different names or categories depending on which
+  // control the customer used.
+  const gaItem = {
+    item_id: product.id,
+    item_name: title,
+    item_category: product.category,
+    item_brand: product.brand ?? undefined,
+    price: product.web_price,
+    quantity: 1,
+  };
   const productUrl = `${SITE_URL}/product/${slug}`;
   const whatsappMessage = `Hi, I'm interested in this: ${title}\n${productUrl}\nPrice: ${formatCurrency(product.web_price)}`;
   const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
@@ -251,6 +265,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
                 disabled={product.availability_bucket === "sold_out"}
                 options={upgradeOptions}
                 whatsappHref={whatsappHref}
+                item={gaItem}
               />
             </div>
 
@@ -298,7 +313,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
         skuId={product.id}
         disabled={product.availability_bucket === "sold_out"}
         whatsappHref={whatsappHref}
+        item={gaItem}
       />
+      <TrackViewItem item={gaItem} />
     </>
   );
 }

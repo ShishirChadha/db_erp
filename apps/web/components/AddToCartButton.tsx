@@ -4,15 +4,22 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserSupabaseClient } from '@db/db/browser'
 import { sortSelectedUpgrades, type SelectedUpgrade } from '@/lib/upgrades'
+import { track, type GaItem } from '@/lib/analytics'
 
 export function AddToCartButton({
   skuId,
   disabled,
   selectedUpgrades = [],
+  item,
 }: {
   skuId: string
   disabled?: boolean
   selectedUpgrades?: SelectedUpgrade[]
+  // Product details for the GA4 add_to_cart payload. Passed in rather than
+  // fetched here: the callers already hold the product record, and a button
+  // should not issue a query to describe what it is adding. Optional so a
+  // caller without the data degrades to no event rather than no button.
+  item?: GaItem
 }) {
   const router = useRouter()
   const [pending, setPending] = useState(false)
@@ -47,6 +54,18 @@ export function AddToCartButton({
         await supabase.from('cart_items').update({ quantity: existing.quantity + 1 }).eq('id', existing.id)
       } else {
         await supabase.from('cart_items').insert({ customer_id: user.id, sku_id: skuId, quantity: 1, selected_upgrades: upgrades })
+      }
+
+      // After the write, never before -- an add_to_cart that did not persist
+      // would inflate the funnel's first step and make the drop-off to
+      // checkout look worse than it is.
+      if (item) {
+        const upgradeDelta = upgrades.reduce((sum, u) => sum + (u.price_delta ?? 0), 0)
+        const priced = { ...item, price: item.price + upgradeDelta }
+        track({
+          name: 'add_to_cart',
+          params: { currency: 'INR', value: priced.price * priced.quantity, items: [priced] },
+        })
       }
 
       setAdded(true)

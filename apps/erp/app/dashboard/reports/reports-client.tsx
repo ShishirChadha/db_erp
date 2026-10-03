@@ -886,6 +886,13 @@ function AnalyticsConnectionCard({
   )
 }
 
+// Step-to-step conversion for the GA4 funnel. Returns null (not "0%") when
+// the previous step was zero, because the rate is undefined there rather than
+// nil -- distinct from the existing pct(), which formats signed period deltas.
+function stepRate(v: number | null | undefined): string | null {
+  return v === null || v === undefined ? null : `${v}%`
+}
+
 function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
   const [summary, setSummary] = useState<any>(null)
   const [timeseries, setTimeseries] = useState<any[] | null>(null)
@@ -898,6 +905,8 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
   const [notConfigured, setNotConfigured] = useState(false)
   const [trafficError, setTrafficError] = useState<string | null>(null)
   const [gaConfig, setGaConfig] = useState<any>(null)
+  const [gaFunnel, setGaFunnel] = useState<any>(null)
+  const [searchTerms, setSearchTerms] = useState<any>(null)
 
   const [gscSummary, setGscSummary] = useState<any>(null)
   const [gscTimeseries, setGscTimeseries] = useState<any[] | null>(null)
@@ -919,6 +928,8 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
     const p = { from: period.from, to: period.to }
     Promise.all([
       getWebsiteReport('config'),
+      getWebsiteReport('ecommerce_funnel', p),
+      getWebsiteReport('search_terms', p),
       getWebsiteReport('summary', p),
       getWebsiteReport('timeseries', p),
       getWebsiteReport('top_pages', p),
@@ -934,8 +945,10 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
       getReport('web_funnel', p),
       getReport('web_funnel_timeseries', p),
       getReport('website_health', p),
-    ]).then(([cfg, s, t, tp, d, a, g, geoR, ts, gscS, gscT, gscQ, gscP, wf, wfs, wh]) => {
+    ]).then(([cfg, gaf, stm, s, t, tp, d, a, g, geoR, ts, gscS, gscT, gscQ, gscP, wf, wfs, wh]) => {
       setGaConfig(cfg.data)
+      setGaFunnel(gaf.data)
+      setSearchTerms(stm.data)
       // 501 = env vars missing. Anything else non-OK = configured but failing,
       // which must show the real message rather than "not set up yet".
       setNotConfigured(s.status === 501)
@@ -1143,8 +1156,71 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
         )}
       </div>
 
+      {/* Visitor-level funnel, from GA4 events. Sits ABOVE the SQL funnel
+          because it is the wider measurement: it includes people who never
+          created a database row. */}
       <div className="space-y-6">
-        <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Funnel (cart → checkout → purchase)</h3>
+        <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2"><Eye className="h-4 w-4" /> Visitor funnel (Google Analytics)</h3>
+        <p className="text-xs text-muted-foreground -mt-4">
+          Every visitor, including people who never signed in — so these are bigger than the
+          cart/order figures below, and the gap between the two is the point. This one answers
+          &ldquo;how many looked but never added to a cart&rdquo;; the one below answers &ldquo;what
+          actually reached the database&rdquo;. They are not meant to match.
+        </p>
+        {gaFunnel?.no_events ? (
+          <Card className="border-warning/20">
+            <CardContent className="pt-6 flex items-start gap-2 text-sm text-warning">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                No product or cart events have been received in this period. The storefront only
+                started sending them recently, and Google can take 24–48 hours to process them —
+                if this is still empty after a day, check the Analytics connection card above.
+              </span>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              {[
+                { label: 'Viewed a product', value: gaFunnel?.view_item ?? 0 },
+                { label: 'Added to cart', value: gaFunnel?.add_to_cart ?? 0, sub: stepRate(gaFunnel?.view_to_cart_rate) },
+                { label: 'Viewed cart', value: gaFunnel?.view_cart ?? 0 },
+                { label: 'Started checkout', value: gaFunnel?.begin_checkout ?? 0, sub: stepRate(gaFunnel?.cart_to_checkout_rate) },
+                { label: 'Purchased', value: gaFunnel?.purchase ?? 0, sub: stepRate(gaFunnel?.checkout_to_purchase_rate) },
+              ].map((t) => (
+                <Card key={t.label}>
+                  <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">{t.label}</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-2xl font-semibold tabular-nums">{Number(t.value).toLocaleString('en-IN')}</p>
+                    {t.sub && <p className="text-xs text-muted-foreground mt-0.5">{t.sub} of previous step</p>}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            {searchTerms?.dimension_missing ? (
+              <Card className="border-warning/20">
+                <CardContent className="pt-6 text-sm text-warning">
+                  On-site search terms are being collected but can&apos;t be broken out yet — register
+                  <span className="font-mono text-xs"> search_term </span>
+                  as an event-scoped Custom definition in Google Analytics Admin.
+                </CardContent>
+              </Card>
+            ) : searchTerms?.rows?.length ? (
+              <BreakdownRowsCard
+                title="What people searched for"
+                rows={searchTerms.rows}
+                labelKey="term"
+                valueKey="count"
+                valueLabel="Searches"
+              />
+            ) : null}
+          </>
+        )}
+      </div>
+
+      <div className="space-y-6">
+        <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2"><ShoppingCart className="h-4 w-4" /> Records (cart → checkout → purchase)</h3>
         <p className="text-xs text-muted-foreground -mt-4">
           Cart-onward only — the storefront doesn&apos;t yet send add-to-cart/checkout events to Google Analytics, so this is built from actual cart and order records, not site-wide traffic.
         </p>

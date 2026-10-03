@@ -8,6 +8,8 @@ export const metadata: Metadata = {
   robots: { index: false }, // query-string search results aren't durable, indexable pages
 };
 
+import { TrackSearchResults } from "@/components/TrackSearchResults";
+
 export default async function SearchPage({
   searchParams,
 }: {
@@ -27,6 +29,10 @@ export default async function SearchPage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
+      {/* Reports the term and how many products it matched -- a popular search
+          that returns nothing is a catalogue gap, which is invisible from
+          page-view data alone. */}
+      <TrackSearchResults term={query} resultsCount={total} />
       <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
         {query ? `Results for "${query}"` : "Search"}
       </h1>

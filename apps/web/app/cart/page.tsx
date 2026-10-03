@@ -5,6 +5,7 @@ import { getCustomerSession } from '@/lib/customer-session'
 import { buildConfigSummary } from '@db/shared'
 import { formatCurrency } from '@db/shared'
 import { CartItemRow } from '@/components/CartItemRow'
+import { TrackViewCart } from '@/components/TrackViewCart'
 
 export const dynamic = 'force-dynamic'
 
@@ -41,6 +42,7 @@ export default async function CartPage() {
     return {
       cartItemId: item.id,
       title,
+      skuId: item.sku_id,
       slug: product?.web_slug ?? null,
       price: product?.web_price ?? 0,
       quantity: item.quantity,
@@ -55,6 +57,17 @@ export default async function CartPage() {
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+      {/* Sold-out lines are priced at 0 in `rows`, so they contribute nothing
+          to GA4's cart value either -- the funnel's cart value stays comparable
+          with what the customer could actually have paid. */}
+      <TrackViewCart
+        items={rows.map((r) => ({
+          item_id: r.skuId,
+          item_name: r.title,
+          price: r.soldOut ? 0 : r.price,
+          quantity: r.quantity,
+        }))}
+      />
       <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">Your cart</h1>
 
       {rows.length === 0 ? (
