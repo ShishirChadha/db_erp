@@ -77,7 +77,13 @@ To stop it recurring, set the BIOS once while you have a monitor attached:
 **F10 at startup → Advanced → Power Management Options → After Power Loss =
 Power On**. Choose `Power On`, not `Previous State` — "previous state" was *off*
 in exactly this scenario, so it would not have helped. Test it by pulling the
-plug for ten seconds.
+plug for ten seconds; System Health reads the setting from the firmware, so it
+will confirm the change.
+
+This genuinely cannot be done over SSH. The setting is readable through the
+`hp-bioscfg` interface but this machine's firmware refuses all writes to it
+(`0x4 "Invalid command type"`), and System Health will keep raising it as an
+attention item until it is changed by hand. Details in `system-health.md`.
 
 **3. Has it lost both internet connections?** The box has two: ethernet (primary) and a WiFi dongle (backup). If the ethernet ISP fails, the watchdog moves traffic to WiFi within about two minutes. If *both* are down, nothing can reach it and nothing can be done remotely — the watchdog deliberately leaves routing alone rather than stranding the box.
 

@@ -342,6 +342,19 @@ function MonitoringInner() {
   // Surface an unplanned outage for a day after it happens. Without this, the
   // page goes fully green the moment the machine is back and the outage leaves
   // no trace on the thing you actually look at.
+  // This one is a standing configuration fault, not a reading that fluctuates:
+  // until it says "Power On", any mains failure long enough to outlast the UPS
+  // keeps the business offline until somebody physically reaches the office.
+  // It cannot be set from software -- this firmware rejects all writes through
+  // hp-bioscfg -- so the page's job is to keep asking until it is done.
+  const autoPowerOn = s?.bios_after_power_loss != null ? String(s.bios_after_power_loss) : null
+  if (autoPowerOn && autoPowerOn !== 'Power On') {
+    actions.push({
+      level: 'watch',
+      text: `The server will not switch itself back on after a power cut (BIOS "After Power Loss" is set to "${autoPowerOn}"). Until this is changed, an overnight outage keeps the ERP and website down until someone reaches the office. Fix it at the machine: F10 at startup → Advanced → Power Management Options → After Power Loss = Power On. This setting cannot be changed remotely — this model's firmware only allows reading it.`,
+    })
+  }
+
   const lastOutage = data?.power?.lastOutage || null
   const outageAgeH = lastOutage ? (Date.now() - new Date(lastOutage.booted_at).getTime()) / 3_600_000 : null
   if (lastOutage && outageAgeH !== null && outageAgeH < 24) {
@@ -486,10 +499,22 @@ function MonitoringInner() {
           hint="all causes, across the window"
           value={data?.power ? duration(data.power.downtimeSeconds) : '—'}
         />
+        {/* Read live from the firmware, so this confirms the fix actually took
+            rather than asking the owner to remember whether they did it. Only
+            "Power On" recovers unattended -- "Previous State" is a distinct
+            wrong answer, because after a mains failure the previous state was
+            off. */}
         <Row
           label="Auto power-on after a cut"
-          hint="a BIOS setting, not something software can report"
-          value={<span className="text-muted-foreground">Check in BIOS — see below</span>}
+          hint="read from the BIOS; only “Power On” recovers by itself"
+          value={
+            autoPowerOn
+              ? autoPowerOn === 'Power On'
+                ? 'Power On — recovers by itself'
+                : `${autoPowerOn} — needs changing in BIOS`
+              : '—'
+          }
+          tone={autoPowerOn && autoPowerOn !== 'Power On' ? 'bad' : undefined}
         />
 
         <div className="mt-3 overflow-x-auto rounded-md border">
@@ -547,7 +572,15 @@ function MonitoringInner() {
               <strong> off</strong> and waits for someone to press the button, which is why an overnight cut keeps
               the ERP and website down until someone reaches the office. Fix it once in the BIOS:
               <strong> F10 at startup → Advanced → Power Management Options → After Power Loss = Power On</strong>.
-              Then test it by pulling the plug for ten seconds.
+              Choose <em>Power On</em>, not <em>Previous State</em> — after a mains failure the previous state was
+              off, so that setting recovers no better than the default. Then test it by pulling the plug for ten
+              seconds; the row above reads the setting straight from the firmware, so it will confirm the change.
+            </p>
+            <p>
+              <strong>This cannot be changed from here.</strong> The setting is readable over SSH through the
+              <code> hp-bioscfg</code> interface, but this machine's 2016 firmware rejects every write to it
+              (<code>0x4 &quot;Invalid command type&quot;</code>) — HP did not implement BIOS writes on this
+              platform. It is a five-minute job at the machine and only needs doing once.
             </p>
             <p>
               Downtime is measured from the last line the machine managed to write to the moment it came back, so

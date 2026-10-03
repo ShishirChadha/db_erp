@@ -73,7 +73,11 @@ Pending updates are counted with `apt-get` in **simulate** mode, so collecting m
 
 The UPS covers brief dips. It does **not** cover an outage that outlasts its battery, and after that the firmware's default is to stay **off** until somebody presses the power button — so a night-time cut keeps the ERP and storefront down until someone reaches the office. This is what happened on 2026-10-02: power failed at 00:51 IST, the machine stayed off for 9h29m, and staff powered it on in the morning.
 
-The fix is a one-time BIOS change: **F10 at startup → Advanced → Power Management Options → After Power Loss = Power On**. `Power On`, not `Previous State` — the previous state was *off*, so that setting would not have helped. The page cannot read this setting (nothing in software can), so the "Auto power-on after a cut" row says to check it rather than pretending to know.
+The fix is a one-time BIOS change: **F10 at startup → Advanced → Power Management Options → After Power Loss = Power On**. `Power On`, not `Previous State` — the previous state was *off*, so that setting would not have helped.
+
+**The page reads this setting live from the firmware** and says so plainly: "Power On — recovers by itself", or the current value plus "needs changing in BIOS", which also raises an attention item. So it confirms the change actually took, rather than relying on anyone's memory of having done it. The collector reads it from `/sys/class/firmware-attributes/hp-bioscfg/attributes/After Power Loss/current_value` into `server_metrics.bios_after_power_loss`, and stores NULL if the interface is absent, so this survives a move to non-HP hardware.
+
+**It cannot be changed remotely, and this was tested rather than assumed.** The `hp-bioscfg` kernel interface is present and every BIOS attribute is *readable* over SSH, but this machine's 2016 firmware (ProDesk 400 G2 Mini, BIOS N23 v02.10) rejects every write with `0x4 "Invalid command type"` — HP did not implement the WMI BIOS-write path on this platform generation. This is a capability gap, not a permissions problem: no Setup Password is set (`is_enabled = 0`, and an auth failure reports differently), and writing an attribute's *own current value* back fails identically. Setting a BIOS Setup Password would not unlock it, and editing the NVRAM directly with `flashrom` risks bricking the server. **Do not spend time retrying this** — it is a five-minute job at the machine, needed once.
 
 **Availability is reported over "the last 30 days or as far back as the record goes, whichever is shorter", with the window length shown next to the percentage.** Dividing a month's worth of downtime by a month while only holding a few days of history would overstate availability several-fold, and an uptime figure that flatters itself is worse than none at all.
 
@@ -94,4 +98,5 @@ A dashboard whose job is telling you something is wrong cannot afford to render 
 
 - **No external alerting.** This page tells you something is wrong only when you look at it. An outage still goes unnoticed if nobody opens it. An external uptime monitor hitting `https://db.digitalbluez.com/auth/v1/health` is the missing piece.
 - **No Vercel or Cloudflare panels yet.** Both need read-only API tokens.
+- **The BIOS power-recovery setting can be read but not written.** See above; it needs a physical visit, once.
 - **Restart history is limited by journal retention.** Boots older than the journal's rotation window cannot be classified retrospectively; from now on each one is captured as it happens, so the record only gets better.
