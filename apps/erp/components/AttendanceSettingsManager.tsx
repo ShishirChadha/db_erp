@@ -7,7 +7,7 @@ import { ErrorBanner } from '@/components/ErrorBanner'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
-import { istToday } from '@/lib/attendance'
+import { istToday, formatMinutes } from '@/lib/attendance'
 import { Loader2, Trash2, Plus, AlertTriangle } from 'lucide-react'
 
 type Section = 'shifts' | 'roster' | 'networks' | 'holidays'
@@ -199,11 +199,23 @@ export default function AttendanceSettingsManager() {
       {/* ---------------- Shifts ---------------- */}
       {section === 'shifts' && (
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            A day counts as present at or above the full-day minutes, half-day between the two,
-            and absent below. Grace only decides the &quot;late&quot; flag — lateness in minutes is
-            recorded either way.
-          </p>
+          <div className="rounded-md border border-border p-3 text-xs text-muted-foreground space-y-1">
+            <p>
+              <span className="font-medium text-foreground">How a day is judged.</span> The two
+              &quot;needs&quot; figures are <em>worked minutes</em> — time actually between a punch-in
+              and a punch-out, so a lunch break does not count. With the defaults
+              (240 and 450 minutes, i.e. 4h and 7h 30m):
+            </p>
+            <ul className="list-disc pl-4 space-y-0.5">
+              <li>7h 30m or more worked → <span className="text-success">present</span></li>
+              <li>between 4h and 7h 30m → <span className="text-warning">half day</span></li>
+              <li>under 4h, or no punches at all → <span className="text-destructive">absent</span></li>
+            </ul>
+            <p>
+              &quot;Late after&quot; only decides whether the day is flagged late. How many minutes
+              late is recorded either way, and being late never changes present/half/absent.
+            </p>
+          </div>
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
@@ -211,9 +223,9 @@ export default function AttendanceSettingsManager() {
                   <th className="p-2 font-medium">Name</th>
                   <th className="p-2 font-medium">Start</th>
                   <th className="p-2 font-medium">End</th>
-                  <th className="p-2 font-medium text-right">Grace</th>
-                  <th className="p-2 font-medium text-right">Half day</th>
-                  <th className="p-2 font-medium text-right">Full day</th>
+                  <th className="p-2 font-medium text-right">Late after</th>
+                  <th className="p-2 font-medium text-right">Half day needs</th>
+                  <th className="p-2 font-medium text-right">Full day needs</th>
                   <th className="p-2 font-medium">Weekly off</th>
                   <th className="p-2 font-medium w-10" />
                 </tr>
@@ -225,8 +237,8 @@ export default function AttendanceSettingsManager() {
                     <td className="p-2 tabular-nums">{s.start_time.slice(0, 5)}</td>
                     <td className="p-2 tabular-nums">{s.end_time.slice(0, 5)}</td>
                     <td className="p-2 text-right tabular-nums">{s.grace_minutes}m</td>
-                    <td className="p-2 text-right tabular-nums">{s.half_day_min_minutes}m</td>
-                    <td className="p-2 text-right tabular-nums">{s.full_day_min_minutes}m</td>
+                    <td className="p-2 text-right tabular-nums">{formatMinutes(s.half_day_min_minutes)}</td>
+                    <td className="p-2 text-right tabular-nums">{formatMinutes(s.full_day_min_minutes)}</td>
                     <td className="p-2 text-xs">
                       {(s.weekly_off_days || []).map(n => DOW.find(d => d.n === n)?.label).join(', ') || '--'}
                     </td>
@@ -249,19 +261,58 @@ export default function AttendanceSettingsManager() {
 
           <div className="rounded-md border border-border p-3 space-y-2">
             <div className="text-sm font-medium">Add a shift</div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <Input className="h-8" placeholder="Name (e.g. General)" value={newShift.name}
-                onChange={e => setNewShift({ ...newShift, name: e.target.value })} />
-              <Input className="h-8" type="time" value={newShift.start_time}
-                onChange={e => setNewShift({ ...newShift, start_time: e.target.value })} />
-              <Input className="h-8" type="time" value={newShift.end_time}
-                onChange={e => setNewShift({ ...newShift, end_time: e.target.value })} />
-              <Input className="h-8" type="number" placeholder="Grace (min)" value={newShift.grace_minutes}
-                onChange={e => setNewShift({ ...newShift, grace_minutes: Number(e.target.value) })} />
-              <Input className="h-8" type="number" placeholder="Half-day min" value={newShift.half_day_min_minutes}
-                onChange={e => setNewShift({ ...newShift, half_day_min_minutes: Number(e.target.value) })} />
-              <Input className="h-8" type="number" placeholder="Full-day min" value={newShift.full_day_min_minutes}
-                onChange={e => setNewShift({ ...newShift, full_day_min_minutes: Number(e.target.value) })} />
+            {/* Every field gets a real label. These three are pre-filled with
+                sensible defaults, which meant a placeholder-only form showed
+                three unlabelled boxes reading 10 / 240 / 450 -- the numbers are
+                minutes, and nothing on screen said so. The live "= 7h 30m" hint
+                is there because nobody thinks about a working day in minutes. */}
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Shift name</label>
+                <Input className="h-8" placeholder="e.g. General" value={newShift.name}
+                  onChange={e => setNewShift({ ...newShift, name: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Starts at</label>
+                <Input className="h-8" type="time" value={newShift.start_time}
+                  onChange={e => setNewShift({ ...newShift, start_time: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Ends at</label>
+                <Input className="h-8" type="time" value={newShift.end_time}
+                  onChange={e => setNewShift({ ...newShift, end_time: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Late after (minutes)
+                </label>
+                <Input className="h-8" type="number" min={0} value={newShift.grace_minutes}
+                  onChange={e => setNewShift({ ...newShift, grace_minutes: Number(e.target.value) })} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  Grace period. Arriving within {newShift.grace_minutes} min of {newShift.start_time} is not
+                  flagged late.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Half day needs (minutes)
+                </label>
+                <Input className="h-8" type="number" min={1} value={newShift.half_day_min_minutes}
+                  onChange={e => setNewShift({ ...newShift, half_day_min_minutes: Number(e.target.value) })} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  = {formatMinutes(newShift.half_day_min_minutes)}. Below this counts as absent.
+                </p>
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">
+                  Full day needs (minutes)
+                </label>
+                <Input className="h-8" type="number" min={1} value={newShift.full_day_min_minutes}
+                  onChange={e => setNewShift({ ...newShift, full_day_min_minutes: Number(e.target.value) })} />
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  = {formatMinutes(newShift.full_day_min_minutes)}. At or above this counts as present.
+                </p>
+              </div>
             </div>
             <div>
               <div className="text-xs text-muted-foreground mb-1">Weekly off</div>
@@ -279,6 +330,32 @@ export default function AttendanceSettingsManager() {
       {/* ---------------- Roster ---------------- */}
       {section === 'roster' && (
         <div className="space-y-3">
+          {/* The "no login = cannot punch" rule is the one thing people trip
+              over when setting this up, so it is stated before the table
+              rather than as a footnote under it. */}
+          <div className="rounded-md border border-border p-3 text-xs text-muted-foreground space-y-1">
+            <p>
+              <span className="font-medium text-foreground">For someone to punch their own card,
+              they need two things:</span>
+            </p>
+            <ol className="list-decimal pl-4 space-y-0.5">
+              <li>
+                A <strong>login</strong> — created in Settings → <strong>Users &amp; Access</strong>.
+                They do not need any page permissions ticked; punching needs none.
+              </li>
+              <li>
+                A <strong>roster row here with that login selected</strong> in the Login column.
+              </li>
+            </ol>
+            <p>
+              Staff with <em>No login</em> still belong here — you mark them on the register
+              yourself, and they appear in reports like everyone else. They just cannot punch.
+            </p>
+            <p>
+              Adding someone here does <strong>not</strong> create a login, and does not touch the
+              &quot;Sold By&quot; name list used on sales.
+            </p>
+          </div>
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-sm">
               <thead className="bg-muted/50">
@@ -347,9 +424,7 @@ export default function AttendanceSettingsManager() {
             </table>
           </div>
           <p className="text-xs text-muted-foreground">
-            Leave &quot;Login&quot; as <em>No login</em> for staff without an account — they can still be marked
-            by you on the register, but cannot punch themselves. Removing someone keeps their
-            attendance history.
+            Removing someone keeps their attendance history, and frees their employee code for reuse.
           </p>
 
           <div className="rounded-md border border-border p-3 space-y-2">
