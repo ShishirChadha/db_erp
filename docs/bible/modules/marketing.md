@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/marketing/products/route.tsx
   - apps/erp/app/api/marketing/collage/route.tsx
   - apps/erp/app/api/marketing/card/route.tsx
-updated: 2026-09-16
+updated: 2026-10-03
 ---
 
 ## What this is
@@ -81,4 +81,19 @@ WhatsApp generation costs zero AI tokens and is never counted against it.
 and cross-sell/product-link content, but not WhatsApp or product cards),
 **inventory-sku** (the live-stock data everything here reads from),
 **settings-admin** (Settings → Marketing configures brand voice, default CTA,
-contact block, disclaimer, WhatsApp flavor lines, and the daily AI cap).
+contact block, disclaimer, WhatsApp flavor lines, and the daily AI cap),
+**attendance** (shares `festival_calendar` — see the cross-module warning below).
+
+## `festival_calendar` is now shared with Attendance (2026-10-03)
+
+The festival calendar gained an `is_business_holiday` column, which Attendance uses to
+mark shop closures. **Deleting or soft-deleting a festival row here therefore also
+removes it as a shop holiday**, and staff on that date will read as absent rather than
+on holiday.
+
+Nothing about Marketing's own behaviour changed: the flag defaults to `false` (most
+rows here are content-planning reference festivals the shop stays open on), the
+festival routes build explicit column lists and cannot clobber it, and closures are
+managed from Settings → Attendance & Staff, not from this tab. A non-festival closure
+(stock-take, painting) is added there as a row with `is_major = false`, so it stays out
+of this module's headline list.

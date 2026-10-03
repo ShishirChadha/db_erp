@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-09-16
+updated: 2026-10-03
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -109,3 +109,36 @@ is also no `middleware.ts`. The real boundary is `lib/auth/session.ts` +
 `lib/auth/redact.ts`, checked inside each route handler. Page-level guards
 (`RequireOwner`) are UX only, never the actual security boundary — see
 **roles-permissions**.
+
+## Attendance invariants (2026-10-03)
+
+- **`staff` is the roster and it is NOT the login list.** Most staff have no account;
+  `staff.profile_id` is NULL for them. `staff` is additive —
+  `custom_options.staff_names` (behind `sales.sold_by` and `expenses.paid_by_staff`) is
+  deliberately unchanged and was never migrated. `staff.legacy_staff_name` records a
+  mapping for a possible future consolidation and nothing reads it today.
+- **A "day" is the IST calendar day**, stamped onto `attendance_punches.work_date` by
+  trigger, never computed in application code and never from `current_date`. A
+  punch-out inherits its open punch-in's day, so a post-midnight punch-out closes the
+  previous evening. It cannot be a generated column — `AT TIME ZONE` is `STABLE`, not
+  `IMMUTABLE`.
+- **Punches are append-only.** A correction is a new row plus a void on the one it
+  replaces; rows are never edited or deleted. `attendance_days` is derived from the
+  punch log by `recompute_attendance_day()` — never write its derived columns from
+  application code, insert a punch instead. Same posture as `sale_payments` →
+  `sales.amount_paid`.
+- **`status_source` gates recomputation.** Status is only recalculated while it reads
+  `'derived'`, so a manual correction, approved leave, holiday or week-off is never
+  silently undone by a later punch or the nightly scan. The derived minute columns
+  refresh regardless.
+- **Late / early-exit / overtime are minute columns, not statuses** — "present but 40
+  minutes late" has to be representable.
+- **Overdue and missing-punch-out are derived, never stored.**
+  `missing_out_notified_at` is a cron dedup marker only. `scan_attendance_days()` never
+  writes a punch, the same way `scan_rental_cycles()` never writes a `sales` row.
+- **Office-IP enforcement fails OPEN** when switched on with no active range, so a
+  configuration slip cannot lock the shop out; and it is a deterrent, not a guarantee —
+  see **configure-office-punch-networks**.
+- **No payroll output.** This module records attendance; it does not compute money.
+
+See **attendance**.

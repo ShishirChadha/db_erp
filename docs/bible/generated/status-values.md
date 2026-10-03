@@ -12,7 +12,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | accessory_rma_events | status | accessory_rma_events_status_check | `CHECK ((status = ANY (ARRAY['initiated'::text, 'shipped'::text, 'vendor_accepted'::text, 'vendor_rejected'::text, 'replacement_received'::text, 'refund_received'::text, 'restocked'::text, 'scrapped'::text, 'closed'::text])))` |
 | activities | priority | activities_priority_check | `CHECK ((priority = ANY (ARRAY['low'::text, 'normal'::text, 'high'::text, 'urgent'::text])))` |
 | activities | related_type | activities_related_pair_check | `CHECK (((related_type IS NULL) = (related_id IS NULL)))` |
-| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text, 'recurring_expense'::text, 'marketing_asset'::text, 'rental_agreement'::text]))))` |
+| activities | related_type | activities_related_type_check | `CHECK (((related_type IS NULL) OR (related_type = ANY (ARRAY['customer'::text, 'sale'::text, 'purchase_order'::text, 'asset'::text, 'repair_job'::text, 'invoice'::text, 'vendor'::text, 'recurring_expense'::text, 'marketing_asset'::text, 'rental_agreement'::text, 'leave_request'::text]))))` |
 | activities | status | activities_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
 | asset_ledger | battery_health_percent | asset_ledger_battery_health_percent_check | `CHECK (((battery_health_percent IS NULL) OR ((battery_health_percent >= 0) AND (battery_health_percent <= 100))))` |
 | asset_ledger | estimated_backup_hours | asset_ledger_estimated_backup_hours_check | `CHECK (((estimated_backup_hours IS NULL) OR (estimated_backup_hours >= (0)::numeric)))` |
@@ -24,7 +24,20 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | asset_qc_checks | result | asset_qc_checks_result_check | `CHECK ((result = ANY (ARRAY['pass'::text, 'fail'::text, 'na'::text])))` |
 | asset_rma_events | direction | asset_rma_events_direction_check | `CHECK ((direction = ANY (ARRAY['to_vendor'::text, 'from_customer'::text])))` |
 | asset_rma_events | status | asset_rma_events_status_check | `CHECK ((status = ANY (ARRAY['initiated'::text, 'shipped'::text, 'vendor_accepted'::text, 'vendor_rejected'::text, 'replacement_received'::text, 'refund_received'::text, 'closed'::text])))` |
-| audit_log | action_type | audit_log_action_type_check | `CHECK ((action_type = ANY (ARRAY['create'::text, 'update'::text, 'status_change'::text, 'soft_delete'::text, 'restore'::text, 'hard_delete'::text, 'void'::text, 'login'::text, 'login_failed'::text, 'logout'::text])))` |
+| attendance_days | day_part | attendance_days_day_part_check | `CHECK ((day_part = ANY (ARRAY['full'::text, 'first_half'::text, 'second_half'::text])))` |
+| attendance_days | early_exit_minutes | attendance_days_early_exit_minutes_check | `CHECK ((early_exit_minutes >= 0))` |
+| attendance_days | late_minutes | attendance_days_late_minutes_check | `CHECK ((late_minutes >= 0))` |
+| attendance_days | status_source | attendance_days_manual_reason_check | `CHECK (((status_source <> 'manual'::text) OR ((override_reason IS NOT NULL) AND (length(btrim(override_reason)) > 0))))` |
+| attendance_days | overtime_minutes | attendance_days_overtime_minutes_check | `CHECK ((overtime_minutes >= 0))` |
+| attendance_days | status | attendance_days_status_check | `CHECK ((status = ANY (ARRAY['present'::text, 'half_day'::text, 'absent'::text, 'leave'::text, 'holiday'::text, 'week_off'::text, 'on_duty'::text])))` |
+| attendance_days | status_source | attendance_days_status_source_check | `CHECK ((status_source = ANY (ARRAY['derived'::text, 'manual'::text, 'leave'::text, 'holiday'::text, 'week_off'::text])))` |
+| attendance_days | worked_minutes | attendance_days_worked_minutes_check | `CHECK ((worked_minutes >= 0))` |
+| attendance_punches | ip_check | attendance_punches_ip_check_check | `CHECK ((ip_check = ANY (ARRAY['allowed'::text, 'exempt_supervisor'::text, 'not_enforced'::text])))` |
+| attendance_punches | punch_type | attendance_punches_punch_type_check | `CHECK ((punch_type = ANY (ARRAY['in'::text, 'out'::text])))` |
+| attendance_punches | source | attendance_punches_source_check | `CHECK ((source = ANY (ARRAY['self'::text, 'supervisor'::text, 'system'::text])))` |
+| attendance_punches | source | attendance_punches_supervisor_reason_check | `CHECK (((source <> 'supervisor'::text) OR ((reason IS NOT NULL) AND (length(btrim(reason)) > 0))))` |
+| attendance_punches | voided_at | attendance_punches_void_pair_check | `CHECK (((voided_at IS NULL) = (voided_by IS NULL)))` |
+| audit_log | action_type | audit_log_action_type_check | `CHECK ((action_type = ANY (ARRAY['create'::text, 'update'::text, 'status_change'::text, 'soft_delete'::text, 'restore'::text, 'hard_delete'::text, 'void'::text, 'login'::text, 'login_failed'::text, 'logout'::text, 'blocked'::text])))` |
 | audit_log | restore_status | audit_log_restore_status_check | `CHECK ((restore_status = ANY (ARRAY['not_applicable'::text, 'restorable'::text, 'restored'::text, 'restore_failed'::text])))` |
 | audit_log | severity | audit_log_severity_check | `CHECK ((severity = ANY (ARRAY['major'::text, 'minor'::text])))` |
 | backup_settings | day_of_week | backup_settings_day_of_week_check | `CHECK (((day_of_week >= 0) AND (day_of_week <= 6)))` |
@@ -66,6 +79,12 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | invoices | invoice_type | invoices_invoice_type_check | `CHECK ((invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])))` |
 | invoices | source | invoices_source_check | `CHECK ((source = ANY (ARRAY['system_issued'::text, 'imported_zoho'::text])))` |
 | kb_chapters | kind | kb_chapters_kind_check | `CHECK ((kind = ANY (ARRAY['module'::text, 'process'::text, 'rule'::text, 'generated'::text])))` |
+| leave_requests | to_date | leave_requests_date_order_check | `CHECK ((to_date >= from_date))` |
+| leave_requests | day_part | leave_requests_day_part_check | `CHECK ((day_part = ANY (ARRAY['full'::text, 'first_half'::text, 'second_half'::text])))` |
+| leave_requests | decided_at | leave_requests_decision_pair_check | `CHECK (((decided_at IS NULL) = (decided_by IS NULL)))` |
+| leave_requests | day_part | leave_requests_half_day_single_check | `CHECK (((day_part = 'full'::text) OR (from_date = to_date)))` |
+| leave_requests | leave_type | leave_requests_leave_type_check | `CHECK ((leave_type = ANY (ARRAY['casual'::text, 'sick'::text, 'unpaid'::text, 'comp_off'::text, 'other'::text])))` |
+| leave_requests | status | leave_requests_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text])))` |
 | marketing_assets | format | marketing_assets_format_check | `CHECK ((format = ANY (ARRAY['wa_text'::text, 'wa_square'::text, 'ig_portrait'::text, 'ig_story'::text, 'fb_link'::text, 'none'::text])))` |
 | marketing_assets | kind | marketing_assets_kind_check | `CHECK ((kind = ANY (ARRAY['single_product'::text, 'product_list'::text, 'educational'::text, 'offer'::text, 'testimonial'::text, 'blog'::text, 'newsletter'::text])))` |
 | marketing_assets | platform | marketing_assets_platform_check | `CHECK ((platform = ANY (ARRAY['whatsapp'::text, 'instagram'::text, 'facebook'::text, 'google_business'::text, 'blog'::text, 'email'::text])))` |
@@ -73,8 +92,8 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | marketing_settings | id | marketing_settings_id_check | `CHECK (id)` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
-| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text])))` |
-| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text]))` |
+| profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text])))` |
+| profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text]))` |
 | profiles | role | profiles_role_check | `CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'employee'::text])))` |
 | promotions | promo_type | promotions_check | `CHECK ((((promo_type = 'percent_off'::text) AND (discount_percent IS NOT NULL)) OR ((promo_type = 'flat_off'::text) AND (discount_flat IS NOT NULL)) OR ((promo_type = 'free_gift'::text) AND (free_gift_sku_id IS NOT NULL)) OR (promo_type = 'coupon_code'::text)))` |
 | promotions | ends_at | promotions_check1 | `CHECK ((ends_at > starts_at))` |
@@ -114,6 +133,12 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | sku_master | status | sku_master_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])))` |
 | sku_upgrade_rules | field_name | sku_upgrade_rules_field_name_check | `CHECK ((field_name = ANY (ARRAY['ram'::text, 'ssd'::text, 'warranty_months'::text])))` |
 | sku_upgrade_rules | price_delta | sku_upgrade_rules_price_delta_check | `CHECK ((price_delta >= (0)::numeric))` |
+| staff | weekly_off_days | staff_weekly_off_days_check | `CHECK (((weekly_off_days IS NULL) OR (weekly_off_days <@ ARRAY[(1)::smallint, (2)::smallint, (3)::smallint, (4)::smallint, (5)::smallint, (6)::smallint, (7)::smallint])))` |
+| staff_shifts | full_day_min_minutes | staff_shifts_day_thresholds_check | `CHECK ((full_day_min_minutes >= half_day_min_minutes))` |
+| staff_shifts | full_day_min_minutes | staff_shifts_full_day_min_minutes_check | `CHECK ((full_day_min_minutes > 0))` |
+| staff_shifts | grace_minutes | staff_shifts_grace_minutes_check | `CHECK (((grace_minutes >= 0) AND (grace_minutes <= 240)))` |
+| staff_shifts | half_day_min_minutes | staff_shifts_half_day_min_minutes_check | `CHECK ((half_day_min_minutes > 0))` |
+| staff_shifts | weekly_off_days | staff_shifts_weekly_off_days_check | `CHECK ((weekly_off_days <@ ARRAY[(1)::smallint, (2)::smallint, (3)::smallint, (4)::smallint, (5)::smallint, (6)::smallint, (7)::smallint]))` |
 | uploaded_documents | doc_kind | uploaded_documents_doc_kind_check | `CHECK ((doc_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
 | uploaded_documents | extraction_status | uploaded_documents_extraction_status_check | `CHECK ((extraction_status = ANY (ARRAY['pending'::text, 'probed'::text, 'parsed'::text, 'needs_review'::text, 'ai_pending_approval'::text, 'failed'::text, 'confirmed'::text])))` |
 | uploaded_documents | extraction_tier | uploaded_documents_extraction_tier_check | `CHECK ((extraction_tier = ANY (ARRAY['0_probe'::text, '1_template'::text, '2_ai'::text, '3_manual'::text])))` |

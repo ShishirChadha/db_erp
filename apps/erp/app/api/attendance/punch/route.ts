@@ -4,6 +4,7 @@ import { getSessionUser, canEditPage, isManagerOrAbove } from '@/lib/auth/sessio
 import { logAuditEvent } from '@/lib/audit-log'
 import { getMyStaffRow, getOpenPunch } from '@/lib/attendance-server'
 import { checkPunchNetwork, offNetworkMessage, getTrustedClientIp } from '@/lib/attendance-network'
+import { getClientIp } from '@/lib/auth/device-sessions'
 
 // Records a punch. Two distinct branches:
 //
@@ -73,7 +74,19 @@ export async function POST(req: NextRequest) {
         tableName: 'attendance_punches',
         recordLabel: `${staff.full_name} punch ${type} blocked (off-network)`,
         reason: verdict.reason,
-        metadata: { client_ip: verdict.ip, punch_type: type, staff_id: staff.id },
+        metadata: {
+          // The IP the decision was actually made on. NULL when the reason is
+          // 'no_ip' -- i.e. there was no proxy-set header to trust at all.
+          client_ip: verdict.ip,
+          // Best-effort, CLIENT-SETTABLE and therefore not trusted for the
+          // decision -- recorded anyway so a blocked attempt is still
+          // traceable when client_ip is null, which is the whole point of
+          // auditing something that wrote no row. Never treat this as proof of
+          // origin; see lib/attendance-network.ts.
+          observed_ip_untrusted: getClientIp(req),
+          punch_type: type,
+          staff_id: staff.id,
+        },
       })
       return NextResponse.json(
         { error: offNetworkMessage(verdict.reason), code: 'off_network' },

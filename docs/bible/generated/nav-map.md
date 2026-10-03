@@ -31,6 +31,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Finance > Bank Reconciliation | `/dashboard/recon/bank` |  | yes |
 | Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |
 | Activity Hub | `/dashboard/activities` | activities |  |
+| Attendance | `/dashboard/attendance` | attendance |  |
 | Marketing | `/dashboard/marketing` | marketing |  |
 | System Health | `/dashboard/monitoring` |  | yes |
 | Settings | `/dashboard/settings` |  |  |

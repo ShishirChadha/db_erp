@@ -33,6 +33,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Finance > Bank Reconciliation | owner-only | owner-only |
 | Finance > Recon Sessions | owner-only | owner-only |
 | Activity Hub | if granted `activities` | if granted `activities` |
+| Attendance | if granted `attendance` | if granted `attendance` |
 | Marketing | if granted `marketing` | if granted `marketing` |
 | System Health | owner-only | owner-only |
 | Settings | visible to all signed-in staff | visible to all signed-in staff |

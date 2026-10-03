@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/activities/**
   - apps/erp/lib/notifications.ts
   - apps/erp/lib/activities.ts
-updated: 2026-09-16
+updated: 2026-10-03
 ---
 
 ## `activities` is the single reusable task/collaboration model
@@ -53,7 +53,32 @@ Pending Tasks gains two derived sections, **Rentals Overdue** and **Rent Due to 
 computed live from agreement data — nothing about "overdue" or "due to bill" is stored.
 See **rentals**.
 
+## Attendance & leave (2026-10-03)
+
+`related_type` gained an eleventh value, **`leave_request`**. A leave request routes its
+approval through an ordinary `activities` row plus `activity_assignees` and
+`notifications` — no per-module task table and no per-module notifier — and needed **no
+new notification type**: the approver gets `task_assigned`, the requester gets
+`status_changed` on the decision, which is exactly what the existing cron scanners
+already emit.
+
+Two attendance-specific notes:
+
+- Assignees are inserted **directly**, not through `areValidUsers()`. That helper
+  requires `'activities'` in `allowed_pages`, which would reject a manager who approves
+  leave but was never granted the Activity Hub. `scan_recurring_expenses()` and
+  `scan_rental_cycles()` insert theirs directly for the same reason.
+- The nightly **missing punch-out** nudge leaves `related_type`/`related_id` NULL: it is
+  not about a leave request, and `activities_related_pair_check` forbids a type without
+  an id. Its deep link rides in `notifications.link` instead, rather than adding a
+  second `related_type` value for one reminder.
+
+Separately, `components/ActivityList.tsx` had been missing `rental_agreement` from its
+local `RelatedType` union since the Rentals module shipped, so rental-linked tasks
+rendered with no label. Fixed in the same pass. See **attendance**.
+
 ## Related
 
-**business-rules** (tasks never carry cost/vendor/margin), every other module
-(anything can spawn a task).
+**business-rules** (tasks never carry cost/vendor/margin), **attendance** (leave
+approval and the missing-punch-out nudge), every other module (anything can spawn a
+task).

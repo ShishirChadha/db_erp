@@ -1,7 +1,89 @@
 # Current Progress
 
-Last updated: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
+Last updated: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
 
+
+
+## Attendance & Leave — COMPLETE (2026-10-03)
+
+Full plan: `~/.claude/plans/i-need-to-add-encapsulated-emerson.md`.
+Decision record: `docs/decisions.md` (2026-10-03 × 8).
+Bible: `docs/bible/modules/attendance.md` + six process chapters
+(`punch-in-and-out`, `correct-someones-attendance`, `apply-for-leave`,
+`approve-or-reject-leave`, `set-up-shifts-work-week-and-holidays`,
+`configure-office-punch-networks`).
+
+Built because the ERP had no attendance concept at all — verified greenfield, zero
+schema or code hits for attendance/timesheet/shift/punch/leave/payroll. The nearest
+existing things were deliberately unusable as a roster: `profiles` *is* a login and
+most staff here have none, and `custom_options.staff_names` is free text with no FK.
+
+### Schema
+
+Six new tables, applied in four ordered files (`backups/20261005_attendance_*.sql`),
+each preceded by a fresh backup:
+
+- `staff` — the canonical roster, `profile_id` NULL for staff with no login. Additive;
+  `custom_options.staff_names` untouched and unmigrated.
+- `staff_shifts` — times, grace, half/full-day worked-minute thresholds, weekly offs.
+- `attendance_punches` — append-only event log; `work_date` stamped by trigger from
+  `Asia/Kolkata`; `client_ip`/`ip_check` for provenance; voided, never deleted.
+- `attendance_days` — derived daily summary, unique on `(staff_id, work_date)`;
+  `status_source` guards recomputation.
+- `leave_requests` — request→approve, linked to its `activities` row.
+- `attendance_networks` — owner-managed office-IP allowlist (`cidr` column).
+
+Plus `festival_calendar.is_business_holiday` (shared with Marketing), and these
+functions: `set_attendance_punch_work_date()`, `recompute_attendance_day()`,
+`sync_attendance_day()`, `attendance_month_summary()`, `scan_attendance_days()`,
+`decide_leave_request()`, `revoke_leave_from_days()`, `attendance_ip_allowed()`,
+`is_manager_or_above()`.
+
+Widened constraints: both page-key CHECKs (`attendance`),
+`activities_related_type_check` (`leave_request`), `audit_log_action_type_check`
+(`blocked`).
+
+### Key invariants
+
+- A "day" is the **IST** calendar day, stamped by trigger — never in app code, never
+  from `current_date`. A punch-out inherits its open punch-in's day.
+- Punches are append-only; a correction is a new row plus a void.
+- `status_source = 'derived'` is the only state in which status is recomputed.
+- Late/early-exit/overtime are **minute columns**, not statuses.
+- Punching your own card needs **no page key**; see-all is gated on **role**, not the key.
+- Office-IP enforcement **fails open** on an empty allowlist, exempts supervisors, and
+  is a deterrent rather than a guarantee.
+- No payroll or money output anywhere in this module.
+
+### Reminders
+
+`scan-attendance-days` at `15 22 * * *` UTC (03:45 IST) — appended to
+`migration/20260929/07_cron_jobs.sql`, the only copy of the schedules. Materializes
+yesterday's rows (week-off / holiday / absent) and raises one missing-punch-out task
+per open day, both idempotent. It never writes a punch, the same way
+`scan_rental_cycles()` never writes a `sales` row.
+
+### Verification
+
+`scripts/verify-attendance.mjs` (disposable, since deleted): **72 assertions, all
+passing**, against real HTTP endpoints with real signed-in owner/employee users —
+covering the IST timezone edge cases, the own-only boundary across seven read
+endpoints, see-all semantics, leave approval idempotency, override precedence, punch
+voiding, the cron's atomic claims, and office-IP enforcement including a spoofed
+`X-Forwarded-For`. Cleanup re-queried and independently confirmed from the database.
+
+Four real bugs were caught by it rather than by review: an ambiguous `profiles` embed
+(`staff` has two FKs to it), a missing `punch_pair_count` in the punch response, a
+**spoofable** `x-forwarded-for` used for the access decision, and a module-level cache
+whose cross-route invalidation could never work on Vercel. All fixed; see
+`docs/decisions.md`.
+
+### Not built
+
+Payroll/salary output, leave balances and accrual, the `on_duty` status UI, a morning
+"not punched in yet" nudge, biometric/geofenced punching, CSV export of the monthly
+grid. Whether `sales.sold_by` / `expenses.paid_by_staff` should eventually point at
+`staff.id` is deliberately left open.
 
 ## Laptop Rentals — COMPLETE (2026-09-16)
 

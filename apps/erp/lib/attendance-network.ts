@@ -63,6 +63,38 @@ async function getState(): Promise<{ enforced: boolean; activeCount: number }> {
   return { enforced: !!toggle, activeCount: count || 0 }
 }
 
+// Deliberately separate from getClientIp() in lib/auth/device-sessions.ts.
+//
+// That one takes the LEFTMOST x-forwarded-for entry, which is right for its job
+// (labelling a device session for display) but is the CLIENT-CONTROLLED end of
+// the chain: anyone can send `X-Forwarded-For: <office ip>`. Fine for a display
+// label; not fine for an access-control decision. Two functions, on purpose --
+// changing the old one would alter behaviour for its session-logging callers.
+//
+// So this trusts ONLY a header the client cannot forge, because the proxy
+// overwrites it:
+//
+//   x-vercel-forwarded-for         -- set by Vercel's edge on every request
+//   $ATTENDANCE_TRUSTED_IP_HEADER  -- escape hatch for a different proxy, which
+//                                     must be configured to overwrite it
+//
+// There is deliberately NO fallback to raw x-forwarded-for: a fallback is
+// exactly the hole, since it is reachable precisely when nothing is sanitising
+// the spoofable header either. With no trusted header the IP is unverifiable,
+// and checkPunchNetwork() refuses the punch rather than guessing -- which only
+// bites while enforcement is ON with at least one active range, so local
+// development is unaffected.
+export function getTrustedClientIp(req: NextRequest): string | null {
+  const custom = process.env.ATTENDANCE_TRUSTED_IP_HEADER
+  if (custom) {
+    const v = req.headers.get(custom)
+    if (v) return v.split(',')[0].trim()
+  }
+  const vercel = req.headers.get('x-vercel-forwarded-for')
+  if (vercel) return vercel.split(',')[0].trim()
+  return null
+}
+
 export type IpVerdict =
   | { ok: true; check: 'allowed' | 'not_enforced'; ip: string | null }
   | { ok: false; ip: string | null; reason: 'off_network' | 'no_ip' }

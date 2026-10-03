@@ -148,6 +148,12 @@
     "ownerOnly": false
   },
   {
+    "label": "Attendance",
+    "route": "/dashboard/attendance",
+    "pageKey": "attendance",
+    "ownerOnly": false
+  },
+  {
     "label": "Marketing",
     "route": "/dashboard/marketing",
     "pageKey": "marketing",

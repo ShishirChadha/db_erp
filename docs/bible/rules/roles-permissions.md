@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-10-01
+updated: 2026-10-03
 ---
 
 ## The three roles
@@ -105,3 +105,37 @@ Two consequences worth knowing:
   answers 401, and `api-client.ts` signs the user out. On a home connection
   this will eventually happen again. The proper fix is for routes to answer 503
   on a backend-unreachable error so the client retries instead of logging out.
+
+## Attendance (2026-10-03)
+
+New page key **`attendance`**, with both a view grant (`profiles.allowed_pages`) and an
+edit grant (`profile_page_actions`). It behaves unlike the other keys in two ways worth
+knowing.
+
+**Own-only is the default, and see-all is gated on ROLE, not on the key.** An employee
+holding the `attendance` view key sees only their own attendance, punches and leave —
+granting the key does not expose the team. Owners and managers see everyone, via
+`isManagerOrAbove`. The clamp is `resolveVisibleStaffIds()` in
+`lib/attendance-server.ts`, applied by every list and summary route; a `staff_id`
+naming someone else is ignored rather than rejected, so the endpoints cannot be used
+as an existence oracle.
+
+**Punching your own card deliberately needs NO page key.** `GET /api/attendance/me`
+and `POST /api/attendance/punch` (self branch) require only a valid session. Requiring
+the key first would be a setup trap: the owner adds a staff member, they log in, and
+Punch In silently 403s until someone remembers a checkbox. The authorization is
+structural instead — `getMyStaffRow()` resolves at most one roster row, the caller's
+own, so there is nothing else the endpoint could act on. This is the same reasoning
+that leaves Settings → Appearance and `/dashboard/help` key-free. Everything else in
+the module (the register, the monthly summary, anyone else's data) does require the key.
+
+Corrections and leave decisions require the edit grant **and** owner/manager role.
+Roster, shift, network and holiday changes are owner-only. Undoing an already-approved
+leave is owner-only, because attendance days have already been written.
+
+A separate RLS helper, `is_manager_or_above()`, was added for the own-only policies —
+`is_owner()` is too narrow (managers see the team) and `is_staff()` too broad (an
+employee is staff). Like the other two it stays callable by `authenticated`, since it
+is evaluated inside policy evaluation.
+
+See **attendance**.
