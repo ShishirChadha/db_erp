@@ -20,3 +20,11 @@ select cron.schedule('prune-cron-history',                '58 21 * * *',   $$sel
 -- from current_date -- at this hour those differ by a day, which would
 -- (re)materialize the wrong date every night. See its body for the full note.
 select cron.schedule('scan-attendance-days', '15 22 * * *', $$select public.scan_attendance_days();$$);
+
+-- Website uptime/latency probe for Reports > Website > Health. This job had no
+-- entry in cron.job despite report_website_health consuming its table: the
+-- table's newest row was 2026-09-27 and its oldest 2026-09-04, so it ran for
+-- about three weeks and then stopped, leaving the Health section quietly
+-- serving six-day-old data. Rescheduled 2026-10-03. Pruning is already handled
+-- (prune_cron_history covers website_health_checks).
+select cron.schedule('website-health-check', '*/10 * * * *', $$select public.run_website_health_check();$$);

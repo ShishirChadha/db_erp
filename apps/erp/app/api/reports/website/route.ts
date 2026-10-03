@@ -5,9 +5,10 @@
 // report_* RPC dispatcher.
 import { NextRequest, NextResponse } from 'next/server'
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
+import { AnalyticsAdminServiceClient } from '@google-analytics/admin'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
-const METRICS = ['summary', 'timeseries', 'top_pages', 'devices', 'demographics_age', 'demographics_gender', 'geo', 'traffic_source'] as const
+const METRICS = ['config', 'summary', 'timeseries', 'top_pages', 'devices', 'demographics_age', 'demographics_gender', 'geo', 'traffic_source'] as const
 type Metric = (typeof METRICS)[number]
 
 function getClient() {
@@ -15,6 +16,21 @@ function getClient() {
   const privateKey = process.env.GA4_PRIVATE_KEY
   if (!clientEmail || !privateKey) return null
   return new BetaAnalyticsDataClient({
+    credentials: { client_email: clientEmail, private_key: privateKey.replace(/\\n/g, '\n') },
+  })
+}
+
+// Separate client, only used by the `config` metric. The Data API cannot
+// enumerate a property's data streams, and the stream's measurement ID is the
+// one fact needed to prove "the site is firing at the property we are reading".
+// Optional on purpose: if the service account lacks Admin API access the card
+// still works on Data-API-only signals (see the `config` case), because the
+// all-time event count alone already diagnoses an empty property.
+function getAdminClient() {
+  const clientEmail = process.env.GA4_CLIENT_EMAIL
+  const privateKey = process.env.GA4_PRIVATE_KEY
+  if (!clientEmail || !privateKey) return null
+  return new AnalyticsAdminServiceClient({
     credentials: { client_email: clientEmail, private_key: privateKey.replace(/\\n/g, '\n') },
   })
 }
@@ -41,6 +57,88 @@ export async function GET(req: NextRequest) {
 
   try {
     switch (metric) {
+      // Health of the analytics pipe itself, deliberately NOT date-ranged.
+      //
+      // This exists because of a real failure: the storefront was firing at a
+      // measurement ID that did not belong to this property, so the property
+      // had never received a single event -- and every tile correctly rendered
+      // zero, which is indistinguishable from "a quiet week" until you go
+      // looking. Date-ranged metrics can never tell you that. An all-time
+      // event count of zero can, and so can a last-event date that has gone
+      // stale, which is what catches the same mistake if it recurs.
+      case 'config': {
+        const [allTime] = await client.runReport({
+          property,
+          dateRanges: [{ startDate: '2020-01-01', endDate: 'today' }],
+          metrics: [{ name: 'eventCount' }, { name: 'sessions' }],
+        })
+        const allTimeEvents = Number(allTime.rows?.[0]?.metricValues?.[0]?.value || 0)
+        const allTimeSessions = Number(allTime.rows?.[0]?.metricValues?.[1]?.value || 0)
+
+        // First/last day that actually carried an event. Cheap (one row each)
+        // and it is what turns "empty" into "empty since Tuesday".
+        let firstEventDate: string | null = null
+        let lastEventDate: string | null = null
+        if (allTimeEvents > 0) {
+          const [days] = await client.runReport({
+            property,
+            dateRanges: [{ startDate: '2020-01-01', endDate: 'today' }],
+            dimensions: [{ name: 'date' }],
+            metrics: [{ name: 'eventCount' }],
+            orderBys: [{ dimension: { dimensionName: 'date' } }],
+          })
+          const dated = (days.rows || []).filter((r) => Number(r.metricValues?.[0]?.value || 0) > 0)
+          firstEventDate = dated.length ? formatGaDate(dated[0].dimensionValues?.[0]?.value || '') : null
+          lastEventDate = dated.length ? formatGaDate(dated[dated.length - 1].dimensionValues?.[0]?.value || '') : null
+        }
+
+        // Realtime is the one signal with no processing delay, so it is how you
+        // confirm a fix in 30 seconds instead of waiting out GA4's 24-48h lag.
+        let realtimeActiveUsers: number | null = null
+        try {
+          const [rt] = await client.runRealtimeReport({ property, metrics: [{ name: 'activeUsers' }] })
+          realtimeActiveUsers = Number(rt.rows?.[0]?.metricValues?.[0]?.value || 0)
+        } catch {
+          realtimeActiveUsers = null
+        }
+
+        // Admin API: property display name + the measurement IDs of its web
+        // streams. Best-effort -- a 403 here must not break the card.
+        let propertyDisplayName: string | null = null
+        let measurementIds: string[] = []
+        let adminError: string | null = null
+        try {
+          const admin = getAdminClient()
+          if (admin) {
+            const [prop] = await admin.getProperty({ name: property })
+            propertyDisplayName = prop.displayName ?? null
+            const [streams] = await admin.listDataStreams({ parent: property })
+            measurementIds = (streams || [])
+              .map((st) => st.webStreamData?.measurementId)
+              .filter((id): id is string => !!id)
+          }
+        } catch (err: any) {
+          adminError = err?.message || 'Admin API request failed'
+        }
+
+        return NextResponse.json({
+          property_id: propertyId,
+          property_display_name: propertyDisplayName,
+          measurement_ids: measurementIds,
+          // What the storefront is configured to fire at, if it was shared with
+          // the ERP. Optional, and only ever used for comparison/display.
+          expected_measurement_id: process.env.WEB_GA_MEASUREMENT_ID || null,
+          all_time_event_count: allTimeEvents,
+          all_time_sessions: allTimeSessions,
+          first_event_date: firstEventDate,
+          last_event_date: lastEventDate,
+          realtime_active_users: realtimeActiveUsers,
+          service_account_email: process.env.GA4_CLIENT_EMAIL || null,
+          admin_error: adminError,
+          search_console_configured: !!process.env.GSC_SITE_URL,
+        })
+      }
+
       case 'summary': {
         const [resp] = await client.runReport({
           property,

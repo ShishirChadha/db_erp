@@ -22,7 +22,9 @@ import {
   toDateStr, monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod,
 } from '@/lib/reports'
 
-const COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-5)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-2)', 'var(--chart-4)']
+// One entry per series/slice. Indices 3 and 4 were both --chart-5, so two
+// adjacent pie slices rendered identically and read as one.
+const COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)', 'var(--chart-6)', 'var(--chart-7)', 'var(--chart-8)']
 
 function fmt(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
@@ -57,24 +59,36 @@ async function getReport<T = any>(metric: string, params: Record<string, string>
   return res.json()
 }
 
-async function getWebsiteReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<{ data: T | null; error: string | null }> {
+// Returns `status` as well as the body, because 501 and 502 mean completely
+// different things here and the UI used to conflate them: 501 is "the env
+// vars are not set", 502 is "they are set but the API call failed" (wrong
+// property, revoked access, quota). Rendering both as "not configured yet"
+// is what made a real, diagnosable error look like a feature nobody had
+// switched on.
+async function getWebsiteReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<{ data: T | null; error: string | null; status: number }> {
   const sp = new URLSearchParams({ metric, ...params })
   const res = await apiFetch(`/api/reports/website?${sp.toString()}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    return { data: null, error: body.error || 'Failed to load' }
+    return { data: null, error: body.error || 'Failed to load', status: res.status }
   }
-  return { data: await res.json(), error: null }
+  return { data: await res.json(), error: null, status: res.status }
 }
 
-async function getSearchConsoleReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<{ data: T | null; error: string | null }> {
+// Returns `status` as well as the body, because 501 and 502 mean completely
+// different things here and the UI used to conflate them: 501 is "the env
+// vars are not set", 502 is "they are set but the API call failed" (wrong
+// property, revoked access, quota). Rendering both as "not configured yet"
+// is what made a real, diagnosable error look like a feature nobody had
+// switched on.
+async function getSearchConsoleReport<T = any>(metric: string, params: Record<string, string> = {}): Promise<{ data: T | null; error: string | null; status: number }> {
   const sp = new URLSearchParams({ metric, ...params })
   const res = await apiFetch(`/api/reports/search-console?${sp.toString()}`)
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    return { data: null, error: body.error || 'Failed to load' }
+    return { data: null, error: body.error || 'Failed to load', status: res.status }
   }
-  return { data: await res.json(), error: null }
+  return { data: await res.json(), error: null, status: res.status }
 }
 
 export default function ReportsClient() {
@@ -750,6 +764,128 @@ function formatDuration(seconds: number): string {
   return `${m}m ${s}s`
 }
 
+// Health of the analytics pipe itself, shown above the numbers it feeds.
+//
+// Why this exists: the storefront spent weeks firing at a measurement ID that
+// did not belong to the property the ERP reads, so every tile here rendered a
+// perfectly plausible zero. Zero traffic and a broken pipe look identical on a
+// chart. The only signals that can tell them apart are all-time event count and
+// last-event date, which is what this reads -- and it states what to DO, not
+// just that something is off, following /dashboard/monitoring's rule that a
+// dashboard which only colours things red still leaves you guessing.
+function AnalyticsConnectionCard({
+  config, notConfigured, trafficError, gscNotConfigured, gscError,
+}: {
+  config: any
+  notConfigured: boolean
+  trafficError: string | null
+  gscNotConfigured: boolean
+  gscError: string | null
+}) {
+  const actions: { level: 'act' | 'watch'; text: string }[] = []
+
+  if (notConfigured) {
+    actions.push({ level: 'act', text: 'Google Analytics credentials are not set on this server (GA4_PROPERTY_ID, GA4_CLIENT_EMAIL, GA4_PRIVATE_KEY).' })
+  } else if (trafficError) {
+    actions.push({ level: 'act', text: `Google Analytics rejected the request: ${trafficError}` })
+  }
+
+  if (config) {
+    const expected: string | null = config.expected_measurement_id ?? null
+    const ids: string[] = config.measurement_ids ?? []
+
+    if (config.all_time_event_count === 0) {
+      actions.push({
+        level: 'act',
+        text:
+          `GA4 property ${config.property_id}${config.property_display_name ? ` (${config.property_display_name})` : ''} ` +
+          `has never received a single event. The storefront is almost certainly firing at a different property. ` +
+          `Open GA4 Admin → Data Streams, confirm the web stream's Measurement ID, and check it belongs to this property.`,
+      })
+    } else if (config.last_event_date) {
+      const days = Math.floor((Date.now() - new Date(config.last_event_date).getTime()) / 86_400_000)
+      if (days >= 2) {
+        actions.push({
+          level: 'act',
+          text: `GA4's last recorded event was ${days} days ago (${config.last_event_date}). Tracking has probably stopped — check that the storefront still loads gtag.js and that the measurement ID is intact.`,
+        })
+      }
+    }
+
+    // Pure format check, independent of any API. Cheap, and it is what would
+    // have caught the original truncated ID on day one.
+    for (const id of [expected, ...ids].filter(Boolean) as string[]) {
+      if (!/^G-[A-Z0-9]{10}$/.test(id)) {
+        actions.push({ level: 'act', text: `Measurement ID "${id}" is not the expected shape (G- followed by 10 characters), so hits will go nowhere.` })
+      }
+    }
+    if (expected && ids.length > 0 && !ids.includes(expected)) {
+      actions.push({
+        level: 'act',
+        text: `The storefront fires at ${expected}, but this property's streams are ${ids.join(', ')}. They do not match, so the ERP is reading the wrong property.`,
+      })
+    }
+    if (config.admin_error) {
+      actions.push({
+        level: 'watch',
+        text: `Could not read this property's data streams, so the measurement ID can't be cross-checked automatically: ${config.admin_error}`,
+      })
+    }
+  }
+
+  if (gscNotConfigured) {
+    actions.push({ level: 'watch', text: 'Search Console is not connected — set GSC_SITE_URL (exactly as the property is spelled there: "https://www.digitalbluez.com/" for a URL-prefix property, "sc-domain:digitalbluez.com" for a Domain property).' })
+  } else if (gscError) {
+    actions.push({ level: 'watch', text: `Search Console returned: ${gscError}` })
+  }
+
+  actions.sort((a, b) => (a.level === b.level ? 0 : a.level === 'act' ? -1 : 1))
+
+  const healthy = actions.length === 0
+
+  return (
+    <Card className={healthy ? 'border-success/20' : 'border-destructive/20'}>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-sm font-medium">Analytics connection</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {healthy ? (
+          <p className="text-success">Google Analytics is connected and receiving events.</p>
+        ) : (
+          <ul className="space-y-1.5">
+            {actions.map((a, i) => (
+              <li key={i} className={`flex items-start gap-2 ${a.level === 'act' ? 'text-destructive' : 'text-warning'}`}>
+                <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>{a.text}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {config && (
+          <div className="grid gap-x-6 gap-y-1 pt-2 text-xs text-muted-foreground sm:grid-cols-2">
+            <span>Property: <span className="font-mono">{config.property_id}</span>{config.property_display_name ? ` · ${config.property_display_name}` : ''}</span>
+            <span>Events all-time: <span className="tabular-nums">{Number(config.all_time_event_count ?? 0).toLocaleString('en-IN')}</span></span>
+            <span>Streams: <span className="font-mono">{(config.measurement_ids?.length ? config.measurement_ids.join(', ') : '—')}</span></span>
+            <span>Last event: {config.last_event_date ?? '—'}</span>
+            <span>Live right now: <span className="tabular-nums">{config.realtime_active_users ?? '—'}</span></span>
+            <span>Search Console: {config.search_console_configured ? 'connected' : 'not set'}</span>
+          </div>
+        )}
+
+        {/* Said explicitly because it is the most common false alarm after a
+            fix: realtime updates in seconds, but everything date-ranged on this
+            page comes from GA4's batch pipeline. */}
+        <p className="pt-1 text-xs text-muted-foreground">
+          &quot;Live right now&quot; updates within seconds. Every other figure on this page comes from
+          Google&apos;s daily processing and can lag 24–48 hours, so after fixing tracking expect the
+          tiles below to stay at zero for about a day.
+        </p>
+      </CardContent>
+    </Card>
+  )
+}
+
 function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
   const [summary, setSummary] = useState<any>(null)
   const [timeseries, setTimeseries] = useState<any[] | null>(null)
@@ -760,12 +896,15 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
   const [geo, setGeo] = useState<any[] | null>(null)
   const [trafficSource, setTrafficSource] = useState<any[] | null>(null)
   const [notConfigured, setNotConfigured] = useState(false)
+  const [trafficError, setTrafficError] = useState<string | null>(null)
+  const [gaConfig, setGaConfig] = useState<any>(null)
 
   const [gscSummary, setGscSummary] = useState<any>(null)
   const [gscTimeseries, setGscTimeseries] = useState<any[] | null>(null)
   const [gscTopQueries, setGscTopQueries] = useState<any[] | null>(null)
   const [gscTopPages, setGscTopPages] = useState<any[] | null>(null)
   const [gscNotConfigured, setGscNotConfigured] = useState(false)
+  const [gscError, setGscError] = useState<string | null>(null)
 
   const [funnel, setFunnel] = useState<any>(null)
   const [funnelSeries, setFunnelSeries] = useState<any[] | null>(null)
@@ -779,6 +918,7 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
     setLoading(true)
     const p = { from: period.from, to: period.to }
     Promise.all([
+      getWebsiteReport('config'),
       getWebsiteReport('summary', p),
       getWebsiteReport('timeseries', p),
       getWebsiteReport('top_pages', p),
@@ -794,8 +934,12 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
       getReport('web_funnel', p),
       getReport('web_funnel_timeseries', p),
       getReport('website_health', p),
-    ]).then(([s, t, tp, d, a, g, geoR, ts, gscS, gscT, gscQ, gscP, wf, wfs, wh]) => {
-      if (s.error) setNotConfigured(true)
+    ]).then(([cfg, s, t, tp, d, a, g, geoR, ts, gscS, gscT, gscQ, gscP, wf, wfs, wh]) => {
+      setGaConfig(cfg.data)
+      // 501 = env vars missing. Anything else non-OK = configured but failing,
+      // which must show the real message rather than "not set up yet".
+      setNotConfigured(s.status === 501)
+      setTrafficError(s.status !== 501 ? s.error : null)
       setSummary(s.data)
       setTimeseries(t.data)
       setTopPages(tp.data)
@@ -805,7 +949,8 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
       setGeo(geoR.data)
       setTrafficSource(ts.data)
 
-      if (gscS.error) setGscNotConfigured(true)
+      setGscNotConfigured(gscS.status === 501)
+      setGscError(gscS.status !== 501 ? gscS.error : null)
       setGscSummary(gscS.data)
       setGscTimeseries(gscT.data)
       setGscTopQueries(gscQ.data)
@@ -833,11 +978,30 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
     <div className="space-y-8">
       <div className="space-y-6">
         <h3 className="text-sm font-semibold text-muted-foreground flex items-center gap-2"><Globe className="h-4 w-4" /> Traffic (Google Analytics)</h3>
+
+        <AnalyticsConnectionCard
+          config={gaConfig}
+          notConfigured={notConfigured}
+          trafficError={trafficError}
+          gscNotConfigured={gscNotConfigured}
+          gscError={gscError}
+        />
+
         {notConfigured ? (
           <Card className="border-warning/20">
             <CardContent className="pt-6 flex items-start gap-2 text-sm text-warning">
               <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
               <span>Google Analytics isn&apos;t configured on this server yet — set GA4_PROPERTY_ID, GA4_CLIENT_EMAIL and GA4_PRIVATE_KEY.</span>
+            </CardContent>
+          </Card>
+        ) : trafficError ? (
+          <Card className="border-destructive/20">
+            <CardContent className="pt-6 flex items-start gap-2 text-sm text-destructive">
+              <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                Google Analytics is configured but the request failed:{' '}
+                <span className="font-mono text-xs">{trafficError}</span>
+              </span>
             </CardContent>
           </Card>
         ) : (
@@ -984,6 +1148,15 @@ function WebsiteTab({ period, active }: { period: Period; active: boolean }) {
         <p className="text-xs text-muted-foreground -mt-4">
           Cart-onward only — the storefront doesn&apos;t yet send add-to-cart/checkout events to Google Analytics, so this is built from actual cart and order records, not site-wide traffic.
         </p>
+        {/* An all-zero funnel is ambiguous in exactly the same way an all-zero
+            traffic chart is: it reads as "broken report" when it may simply be
+            "nothing has happened yet". Say which. */}
+        {funnel && (funnel.checkout_started ?? 0) === 0 && (funnel.purchased ?? funnel.purchased_orders ?? 0) === 0 && (
+          <p className="text-xs text-muted-foreground -mt-4">
+            These are all zero because no website order has been placed yet — this is the real figure,
+            not a reporting problem. Carts Started counts people who added something to a cart.
+          </p>
+        )}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <Card>
             <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Carts Started</CardTitle></CardHeader>

@@ -13,10 +13,12 @@ declare global {
   }
 }
 
-function gtag(...args: unknown[]) {
-  window.dataLayer = window.dataLayer || [];
-  window.dataLayer.push(args);
-}
+// GA4 measurement IDs are "G-" plus 10 alphanumerics. A truncated or mistyped
+// ID is silently fatal: gtag.js loads happily, every hit goes to a property
+// that does not exist, and the ERP's Reports > Website tab shows an empty
+// property forever with no indication of why. That is exactly what happened
+// here, so this warns the moment it is wrong in development.
+const GA_ID_SHAPE = /^G-[A-Z0-9]{10}$/;
 
 export function Analytics() {
   const [consent, setConsent] = useState<"accepted" | "declined" | null>(null);
@@ -29,7 +31,14 @@ export function Analytics() {
   const handleAccept = () => {
     localStorage.setItem(CONSENT_KEY, "accepted");
     setConsent("accepted");
-    gtag("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    // MUST be window.gtag -- the global that gtag.js installs from the inline
+    // script below, whose body is `dataLayer.push(arguments)`. A local helper
+    // doing `dataLayer.push(args)` pushes a real Array instead of an
+    // `arguments` object, and gtag.js only interprets arguments-shaped
+    // entries, so the consent grant was silently discarded and every visitor
+    // stayed in the cookieless/denied state even after clicking Accept. That
+    // is why demographics never populated. Do not reintroduce a local shim.
+    window.gtag?.("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
   };
 
   const handleDecline = () => {
@@ -39,12 +48,27 @@ export function Analytics() {
 
   if (!GA_MEASUREMENT_ID) return null;
 
+  if (process.env.NODE_ENV !== "production" && !GA_ID_SHAPE.test(GA_MEASUREMENT_ID)) {
+    console.warn(
+      `[analytics] NEXT_PUBLIC_GA_MEASUREMENT_ID "${GA_MEASUREMENT_ID}" does not look like a ` +
+        `GA4 measurement ID (expected "G-" + 10 alphanumerics). Hits will go nowhere. ` +
+        `Check GA4 Admin > Data Streams.`
+    );
+  }
+
   return (
     <>
       {/* Default consent state is denied until the visitor accepts -- GA4's
           Consent Mode still records anonymous/modeled traffic counts, but
           never sets ad/analytics cookies or attributes demographics without
-          an explicit accept. */}
+          an explicit accept.
+
+          The gtag/js load and the gtag('config') call below are DELIBERATELY
+          unconditional, i.e. advanced consent mode: gtag.js keeps sending
+          cookieless pings while consent is denied, which is what makes
+          traffic counts work at all for visitors who never touch the banner.
+          Do not gate them behind `consent === "accepted"` -- that turns this
+          into basic consent mode and throws away most of the traffic data. */}
       <Script id="ga-consent-default" strategy="beforeInteractive">
         {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}

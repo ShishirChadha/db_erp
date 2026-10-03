@@ -611,7 +611,7 @@ gained `attachments jsonb` (`[{key,name,size}]`, same shape as the existing
 `pinned`/`pinned_by`/`pinned_at`. New `activity_comment_reactions`
 (`comment_id`, `user_id`, `emoji`, `UNIQUE(comment_id,user_id,emoji)` — toggle
 on/off). `pg_cron` extension enabled; new `scan_activity_due_dates()`
-(SECURITY DEFINER plpgsql) scheduled every 15 minutes (`cron.schedule`),
+(SECURITY DEFINER plpgsql) scheduled `30 21 * * *` (once daily) (`cron.schedule`),
 inserting `due_soon` (due within 24h) / `overdue` notifications for a task's
 creator + all assignees, in-app only.
 
@@ -1514,7 +1514,7 @@ support for selling a physically-upgraded unit with cost tracking).
 - **Security fix first**: the pre-existing `asset_ledger`/`sku_master` RLS policies that granted access to *any* authenticated Supabase user (not just staff) were scoped down via a new `is_staff()` predicate, before customer accounts were built. Verified in both directions (a non-staff authenticated user is blocked; a real employee profile is completely unaffected).
 - **Customer accounts**: `customer_profiles` (linked 1:1 to a new row in the existing `customers` CRM table) + email/password auth (`POST /api/auth/signup`, `/login`, `/signup`, `/account`). Phone OTP deferred — needs an SMS-provider account (MSG91/Twilio) the owner hasn't set up yet.
 - **Cart**: `cart_items` table, RLS-protected customer-owned CRUD, written client-direct (`AddToCartButton`, `/cart` page with quantity controls).
-- **Reservation system** (the hardest part — preventing two buyers claiming the same one-of-a-kind unit): `orders`/`order_items`/`web_reservations` tables, a new `reserved_web` value on `asset_ledger.status`, and the `reserve_order_items` RPC — row-locks one sellable unit with `FOR UPDATE SKIP LOCKED` for serialized items, checks quantity minus active reservations for fungible ones, 15-minute TTL. `release-expired-web-reservations` `pg_cron` job (every 5 min) reverts abandoned reservations and marks the order `expired`.
+- **Reservation system** (the hardest part — preventing two buyers claiming the same one-of-a-kind unit): `orders`/`order_items`/`web_reservations` tables, a new `reserved_web` value on `asset_ledger.status`, and the `reserve_order_items` RPC — row-locks one sellable unit with `FOR UPDATE SKIP LOCKED` for serialized items, checks quantity minus active reservations for fungible ones, 15-minute TTL. `release-expired-web-reservations` `pg_cron` job (`7,37 * * * *` (twice an hour)) reverts abandoned reservations and marks the order `expired`.
 - **Checkout**: `/checkout` page + `POST /api/checkout/start` (re-prices server-side, never trusts the client cart; creates the order, reserves inventory, creates a Razorpay order). `lib/razorpay.ts` (REST API + HMAC signature verification, no SDK dependency needed).
 - **Payment confirmation**: `POST /api/webhooks/razorpay` (signature-verified, idempotent) is the source of truth, not the client-side callback — converts each order_item into a real `sales` row (`lib/order-to-sale.ts`) via the same rules as an in-store sale. `/order/[id]` (confirmation, polls while `pending_payment`) and `/account/orders` (history).
 - **`SELLABLE_STATUSES`/`financialYear`** extracted from `apps/erp/lib/sales-entry.ts` into `@db/shared` (re-exported from the same path, zero call-site changes) so both apps use identical definitions.

@@ -103,6 +103,10 @@ const JOB_INFO: Record<string, string> = {
     'The ERP’s own weekly backup snapshot, taken through the app. Separate from — and not a substitute for — the hourly server backups shown in the Backups card.',
   'prune-cron-history':
     'Housekeeping. Deletes old records of these jobs having run, which would otherwise grow by tens of thousands of rows a month on a self-hosted setup.',
+  'website-health-check':
+    'Fetches the public website every 10 minutes and records whether it answered and how fast, which is what Reports \u2192 Website \u2192 Health charts. This job had silently stopped running between 27 Sep and 3 Oct 2026, so that section was showing week-old data \u2014 if the Health card ever looks frozen again, check this job is still listed here.',
+  'scan-attendance-days':
+    'Fills in yesterday\u2019s attendance register (week off, shop holiday or absent) for anyone with no record, and raises a task if somebody punched in but never punched out. Runs at 22:15 UTC, which is 3:45am India time \u2014 after the Indian day has ended.',
 }
 
 // How each boot's *previous* shutdown is described. The distinction that
