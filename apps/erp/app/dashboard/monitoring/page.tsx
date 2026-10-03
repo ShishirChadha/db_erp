@@ -23,6 +23,15 @@ interface Endpoint {
   ok: boolean; status: number; latencyMs: number; error: string | null
 }
 
+interface BootEvent {
+  boot_id: string
+  booted_at: string
+  previous_last_seen_at: string | null
+  downtime_seconds: number | null
+  shutdown_kind: 'power_loss' | 'clean_reboot' | 'clean_shutdown' | 'crash' | 'unknown' | 'first_boot'
+  detail: string | null
+}
+
 interface Payload {
   generatedAt: string
   server: Server | null
@@ -32,6 +41,15 @@ interface Payload {
   history: Record<string, number | string | boolean | null>[]
   healthChecks: { checked_at: string; url: string; ok: boolean; status_code: number | null; latency_ms: number | null; error_message: string | null }[]
   endpoints: Endpoint[]
+  boots: BootEvent[]
+  power: {
+    lastOutage: BootEvent | null
+    unplannedCount: number
+    plannedCount: number
+    downtimeSeconds: number
+    windowDays: number
+    availability: number | null
+  }
   queryErrors?: string[]
   db: {
     database_bytes: number; connections: number; max_connections: number
@@ -85,6 +103,42 @@ const JOB_INFO: Record<string, string> = {
     'Housekeeping. Deletes old records of these jobs having run, which would otherwise grow by tens of thousands of rows a month on a self-hosted setup.',
 }
 
+// How each boot's *previous* shutdown is described. The distinction that
+// matters is planned vs not: a restart you chose is routine, a power loss is
+// the thing you want to see a count of.
+const SHUTDOWN_KINDS: Record<BootEvent['shutdown_kind'], { label: string; planned: boolean; blurb: string }> = {
+  power_loss: {
+    label: 'Power loss',
+    planned: false,
+    blurb: 'The machine lost power while running — the log stops mid-sentence with no shutdown sequence. Either the mains failed for longer than the UPS could hold, or the plug/cord was pulled.',
+  },
+  crash: {
+    label: 'Crash',
+    planned: false,
+    blurb: 'The kernel panicked. This is a software or hardware fault, not a power problem — worth investigating rather than just restarting.',
+  },
+  clean_reboot: {
+    label: 'Planned restart',
+    planned: true,
+    blurb: 'Somebody restarted it on purpose (a `reboot`, typically to finish a security update). Normal and expected.',
+  },
+  clean_shutdown: {
+    label: 'Planned shutdown',
+    planned: true,
+    blurb: 'It was shut down properly and later powered on again — e.g. to move it or change a cable. Nothing was at risk.',
+  },
+  unknown: {
+    label: 'Unknown',
+    planned: true,
+    blurb: 'The previous boot’s log is no longer kept, so how it ended cannot be established.',
+  },
+  first_boot: {
+    label: 'Earliest on record',
+    planned: true,
+    blurb: 'The oldest boot still in the log. Nothing is known about what came before it, so it is not counted as downtime.',
+  },
+}
+
 const REFRESH_MS = 30_000
 
 function bytes(n: number | null | undefined): string {
@@ -112,6 +166,13 @@ function ago(iso: string | null | undefined): string {
   return `${Math.floor(s / 86400)}d ago`
 }
 
+function when(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  return new Date(iso).toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit', hour12: true,
+  })
+}
+
 function Dot({ ok, warn }: { ok: boolean; warn?: boolean }) {
   const tone = warn ? 'bg-amber-500' : ok ? 'bg-emerald-500' : 'bg-destructive'
   return <span className={`inline-block h-2.5 w-2.5 rounded-full ${tone}`} aria-hidden />
@@ -132,7 +193,9 @@ function InfoHint({ text }: { text: string }) {
           <Info className="h-3.5 w-3.5" />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="max-w-xs text-xs leading-relaxed">
+      {/* whitespace-pre-line so a hint can carry a blank line between the
+          explanation and the specific detail recorded for that row. */}
+      <PopoverContent align="start" className="max-w-xs whitespace-pre-line text-xs leading-relaxed">
         {text}
       </PopoverContent>
     </Popover>
@@ -276,6 +339,17 @@ function MonitoringInner() {
   if (lvl.mem === 'act') actions.push({ level: 'act', text: 'Memory is nearly exhausted.' })
   if (lvl.load === 'act') actions.push({ level: 'act', text: 'CPU is saturated — work is queueing.' })
   if (secUpdates !== null && secUpdates > 0 && !rebootNeeded) actions.push({ level: 'watch', text: `${secUpdates} security update(s) pending. They install automatically; a restart is only needed if this page later asks for one.` })
+  // Surface an unplanned outage for a day after it happens. Without this, the
+  // page goes fully green the moment the machine is back and the outage leaves
+  // no trace on the thing you actually look at.
+  const lastOutage = data?.power?.lastOutage || null
+  const outageAgeH = lastOutage ? (Date.now() - new Date(lastOutage.booted_at).getTime()) / 3_600_000 : null
+  if (lastOutage && outageAgeH !== null && outageAgeH < 24) {
+    actions.push({
+      level: 'watch',
+      text: `The last restart was not planned — ${SHUTDOWN_KINDS[lastOutage.shutdown_kind].label.toLowerCase()} at ${when(lastOutage.previous_last_seen_at)}, down for ${duration(lastOutage.downtime_seconds)}. Everything is back. If this keeps happening, set the BIOS to power on by itself after a power cut (F10 → Advanced → Power Management Options → After Power Loss = Power On), so nobody has to be in the office to press the button.`,
+    })
+  }
   if (!rebootNeeded && upDays !== null && upDays > 90) actions.push({ level: 'watch', text: `Up ${Math.round(upDays)} days with no restart pending. Linux does not need routine reboots, but a planned one now and then proves it still boots cleanly.` })
 
   return (
@@ -375,6 +449,113 @@ function MonitoringInner() {
             </div>
           ))}
         </div>
+      </Card>
+
+      {/* Power and restarts. Recorded by the box itself at boot time, by
+          reading the PREVIOUS boot's log -- which is the only place the
+          difference between "we restarted it" and "the power died" exists. */}
+      <Card
+        title="Power & restarts"
+        info="Every time the server boots it looks back at the previous boot's log and works out how that one ended. A planned restart leaves a proper shutdown sequence in the log; a power cut just stops mid-line. That is how this table can tell the two apart, and how the downtime is measured — from the last thing the machine managed to write, to the moment it came back."
+        right={
+          data?.power?.availability != null ? (
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {data.power.availability.toFixed(2)}% up over {data.power.windowDays}d
+            </span>
+          ) : null
+        }
+      >
+        <Row
+          label="Current uptime"
+          hint="since the last boot"
+          value={s?.uptime_seconds != null ? `${duration(Number(s.uptime_seconds))} (since ${when(data?.boots?.[0]?.booted_at)})` : '—'}
+        />
+        <Row
+          label="Unplanned outages"
+          hint={`power losses or crashes in the last ${data?.power?.windowDays ?? 0} days`}
+          value={data?.power ? String(data.power.unplannedCount) : '—'}
+          tone={data?.power?.unplannedCount ? 'warn' : undefined}
+        />
+        <Row
+          label="Planned restarts"
+          hint="restarts and shutdowns you chose"
+          value={data?.power ? String(data.power.plannedCount) : '—'}
+        />
+        <Row
+          label="Total downtime"
+          hint="all causes, across the window"
+          value={data?.power ? duration(data.power.downtimeSeconds) : '—'}
+        />
+        <Row
+          label="Auto power-on after a cut"
+          hint="a BIOS setting, not something software can report"
+          value={<span className="text-muted-foreground">Check in BIOS — see below</span>}
+        />
+
+        <div className="mt-3 overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium">Came back</th>
+                <th className="px-3 py-2 text-left font-medium">How it went down</th>
+                <th className="px-3 py-2 text-left font-medium">Went down at</th>
+                <th className="px-3 py-2 text-right font-medium">Down for</th>
+              </tr>
+            </thead>
+            <tbody>
+              {(data?.boots || []).length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-3 py-4 text-center text-muted-foreground">
+                    No restarts recorded yet.
+                  </td>
+                </tr>
+              )}
+              {(data?.boots || []).map(b => {
+                const k = SHUTDOWN_KINDS[b.shutdown_kind] || SHUTDOWN_KINDS.unknown
+                return (
+                  <tr key={b.boot_id} className="border-t">
+                    <td className="whitespace-nowrap px-3 py-2 tabular-nums">{when(b.booted_at)}</td>
+                    <td className="px-3 py-2">
+                      <span className="flex items-center gap-1.5">
+                        <Dot ok={k.planned} warn={!k.planned} />
+                        <span className={k.planned ? '' : 'font-medium text-amber-600'}>{k.label}</span>
+                        <InfoHint text={b.detail ? `${k.blurb}\n\nRecorded: ${b.detail}` : k.blurb} />
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 tabular-nums text-muted-foreground">
+                      {when(b.previous_last_seen_at)}
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">
+                      {b.shutdown_kind === 'first_boot' ? '—' : duration(b.downtime_seconds)}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <details className="mt-3 border-t pt-3">
+          <summary className="cursor-pointer text-xs text-muted-foreground">Why a power cut keeps it off, and how to stop that</summary>
+          <div className="mt-2 space-y-1.5 text-xs text-muted-foreground">
+            <p>
+              The UPS holds the server through brief dips, but not through a long outage — once its battery is
+              exhausted the machine loses power like any other. That part is expected.
+            </p>
+            <p>
+              The problem is what happens when the power comes <em>back</em>. By default this machine stays
+              <strong> off</strong> and waits for someone to press the button, which is why an overnight cut keeps
+              the ERP and website down until someone reaches the office. Fix it once in the BIOS:
+              <strong> F10 at startup → Advanced → Power Management Options → After Power Loss = Power On</strong>.
+              Then test it by pulling the plug for ten seconds.
+            </p>
+            <p>
+              Downtime is measured from the last line the machine managed to write to the moment it came back, so
+              for a power loss it is accurate to within about a minute. Nothing is lost in the database either
+              way — Postgres is crash-safe, and the hourly backup runs right up to the moment power goes.
+            </p>
+          </div>
+        </details>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">

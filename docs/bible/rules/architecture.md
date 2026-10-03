@@ -108,6 +108,10 @@ Four systemd timers, all independent of the applications:
 | `isp-watchdog.timer` | 30 s | fails LAN over to WiFi when its ISP dies |
 | `unattended-upgrades` | daily | security patches; reboots stay manual |
 
+Plus one boot-time oneshot, `erp-boot-event.service`, which records each boot
+into `server_boot_events` and classifies how the *previous* boot ended. See
+"Power loss and unattended recovery" below.
+
 ### Internet failover
 
 Two independent connections: ethernet (`enp2s0`, primary) and a USB WiFi dongle (`wlx688fc90618e8`, backup). They are genuinely separate lines — different gateway MACs and different public IPs — despite both routers using `192.168.1.1`.
@@ -132,6 +136,34 @@ Retention 72 hourly → 30 daily → 12 monthly. Each dump is written to a `.par
 The ProDesk writes its own vitals into its own Postgres every minute; the ERP only reads them (`/dashboard/monitoring`). Nothing new listens on the box and there is no exporter to poll. When the machine is down there is nothing to write — **the age of the newest row is itself the alarm**. See `system-health.md`.
 
 **Known gap: there is no external alerting.** The page tells you something is wrong only when you look at it.
+
+### Power loss and unattended recovery
+
+The box is on a UPS, which covers brief dips but **not** a long outage — once the
+battery is exhausted the machine loses power like anything else. That part is
+accepted.
+
+The consequential part is what happens when power returns. Desktop firmware
+defaults to staying **off** after a power loss and waiting for a button press, so
+an overnight mains failure keeps the ERP and storefront down until somebody
+physically reaches the office. This happened on 2026-10-02: power failed at
+00:51 IST and the machine stayed off for 9h29m until staff arrived and powered it
+on. The BIOS setting (`Advanced → Power Management Options → After Power Loss`)
+must be set to **Power On** for unattended recovery to work at all; the UPS alone
+does not provide it.
+
+`erp-boot-event.service` records this. At each boot it reads the previous boot's
+journal and writes one `server_boot_events` row: boot id, boot time, the previous
+boot's last log entry, the downtime between them, and a classification. **The
+classification is the reason this is a separate table rather than something
+derived from `server_metrics`** — a gap in the metrics proves the machine was
+down, but can never say why, and "we restarted it for a kernel update" versus
+"the mains failed" are operationally opposite events that produce an identical
+gap. A planned shutdown leaves a systemd shutdown sequence in the log; a power
+cut leaves the log stopping mid-line, and **that absence is the evidence**.
+
+It is keyed on the kernel's boot id with `ON CONFLICT DO NOTHING`, so it is safe
+to re-run by hand and its first run backfills every boot the journal still holds.
 
 ---
 

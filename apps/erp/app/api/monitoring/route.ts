@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
-  const [latestRes, historyRes, healthRes] = await Promise.all([
+  const [latestRes, historyRes, healthRes, bootsRes] = await Promise.all([
     withRetry(() =>
       supabaseAdmin
         .from('server_metrics')
@@ -50,6 +50,17 @@ export async function GET(req: NextRequest) {
         .order('checked_at', { ascending: false })
         .limit(20)
     ),
+    // Power-outage / restart history. Written once per boot by
+    // erp-boot-event.service, which reads the PREVIOUS boot's journal to work
+    // out whether the machine was shut down on purpose or lost power -- a gap
+    // in server_metrics proves it was down but can never say why.
+    withRetry(() =>
+      supabaseAdmin
+        .from('server_boot_events')
+        .select('boot_id, booted_at, previous_last_seen_at, downtime_seconds, shutdown_kind, detail')
+        .order('booted_at', { ascending: false })
+        .limit(25)
+    ),
   ])
 
   const latest = latestRes.data as Record<string, unknown> | null
@@ -65,7 +76,11 @@ export async function GET(req: NextRequest) {
     latestRes.error ? `server_metrics: ${latestRes.error.message}` : null,
     historyRes.error ? `history: ${historyRes.error.message}` : null,
     healthRes.error ? `website_health_checks: ${healthRes.error.message}` : null,
+    bootsRes.error ? `server_boot_events: ${bootsRes.error.message}` : null,
   ].filter(Boolean) as string[]
+
+  const boots = (bootsRes.data || []) as BootEvent[]
+  const power = summarisePower(boots)
 
   const latestAgeSeconds = latest?.recorded_at
     ? Math.round((Date.now() - new Date(latest.recorded_at as string).getTime()) / 1000)
@@ -92,8 +107,68 @@ export async function GET(req: NextRequest) {
     healthChecks,
     endpoints,
     db: dbStats ?? null,
+    boots,
+    power,
     queryErrors,
   })
+}
+
+type BootEvent = {
+  boot_id: string
+  booted_at: string
+  previous_last_seen_at: string | null
+  downtime_seconds: number | null
+  shutdown_kind: string
+  detail: string | null
+}
+
+// Roll the boot log up into the few numbers worth putting on a card.
+//
+// The window is deliberately "the last 30 days OR as far back as the record
+// goes, whichever is shorter", and `windowDays` is reported alongside the
+// percentage. Dividing 30 days of downtime by 30 days when we only hold 4 days
+// of history would overstate availability roughly sevenfold -- an uptime figure
+// that flatters itself is worse than none at all.
+function summarisePower(boots: BootEvent[]) {
+  if (boots.length === 0) {
+    return { lastOutage: null, unplannedCount: 0, plannedCount: 0,
+             downtimeSeconds: 0, windowDays: 0, availability: null }
+  }
+
+  const now = Date.now()
+  const thirtyDaysAgo = now - 30 * 86400_000
+  const inWindow = boots.filter(b => new Date(b.booted_at).getTime() >= thirtyDaysAgo)
+
+  // The oldest boot we hold is the start of what we can actually speak to. Its
+  // own downtime is excluded from the total, because we have no idea what
+  // preceded it (shutdown_kind is 'first_boot' precisely for that reason).
+  const oldest = inWindow.length
+    ? Math.min(...inWindow.map(b => new Date(b.booted_at).getTime()))
+    : now
+  const windowStart = Math.max(oldest, thirtyDaysAgo)
+  const windowSeconds = Math.max(1, (now - windowStart) / 1000)
+
+  const measurable = inWindow.filter(
+    b => b.shutdown_kind !== 'first_boot' && b.downtime_seconds !== null
+  )
+  const downtimeSeconds = measurable.reduce((s, b) => s + (b.downtime_seconds || 0), 0)
+
+  const unplanned = measurable.filter(
+    b => b.shutdown_kind === 'power_loss' || b.shutdown_kind === 'crash'
+  )
+  const lastOutage = unplanned
+    .slice()
+    .sort((a, b) => new Date(b.booted_at).getTime() - new Date(a.booted_at).getTime())[0] || null
+
+  return {
+    lastOutage,
+    unplannedCount: unplanned.length,
+    plannedCount: measurable.length - unplanned.length,
+    downtimeSeconds,
+    windowDays: Math.round((now - windowStart) / 86400_000 * 10) / 10,
+    availability:
+      Math.round(Math.max(0, 1 - downtimeSeconds / windowSeconds) * 10000) / 100,
+  }
 }
 
 async function probeEndpoints() {

@@ -21,6 +21,11 @@ Open **System Health** (`/dashboard/monitoring`). It answers this in one glance.
 | "Some vitals could not be read" | The server is reachable but a query failed — read the message shown |
 | Endpoints red but server green | The box is healthy; Cloudflare or Vercel is the problem |
 
+Once it is back, **Power & restarts** on the same page says what actually
+happened — whether the last restart was planned or a power loss, when the machine
+went down, and for how long. It keeps a history, so a recurring evening outage
+becomes visible as a pattern instead of a series of unrelated surprises.
+
 If the ERP will not load at all, you cannot reach this page — assume the server and continue below.
 
 ---
@@ -59,6 +64,20 @@ ssh db_erp@100.74.71.92 'uptime'
 If this works, the box is alive and the problem is the tunnel or Cloudflare — skip to step 4.
 
 **2. Is it powered on?** Check the machine physically: power light, and that the UPS has power. This is the most common cause and the quickest to rule out.
+
+A specific case worth knowing, because it has already happened: **after a long
+power cut the machine does not turn itself back on.** The UPS covers brief dips
+but not an outage that outlasts its battery, and the firmware then stays off
+waiting for a button press. The symptom is total — Tailscale offline, SSH timing
+out, `db.digitalbluez.com` returning Cloudflare 530 — while the office internet
+is demonstrably fine. **Just press the power button**; everything else comes back
+on its own.
+
+To stop it recurring, set the BIOS once while you have a monitor attached:
+**F10 at startup → Advanced → Power Management Options → After Power Loss =
+Power On**. Choose `Power On`, not `Previous State` — "previous state" was *off*
+in exactly this scenario, so it would not have helped. Test it by pulling the
+plug for ten seconds.
 
 **3. Has it lost both internet connections?** The box has two: ethernet (primary) and a WiFi dongle (backup). If the ethernet ISP fails, the watchdog moves traffic to WiFi within about two minutes. If *both* are down, nothing can reach it and nothing can be done remotely — the watchdog deliberately leaves routing alone rather than stranding the box.
 

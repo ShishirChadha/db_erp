@@ -229,6 +229,41 @@ The link-down case is instant.
   serverStale after 180s -> "The server has stopped reporting"
 ```
 
+### Boot and outage classification
+
+```
+  BOOT
+  erp-boot-event.service (oneshot, After=docker.service)
+     |
+     | journalctl --list-boots -o json
+     v
+  for each boot still in the journal:
+     |
+     +-- read the PREVIOUS boot's journal
+     |      |
+     |      +-- "Kernel panic"                -> crash
+     |      +-- systemd-shutdown / Power-Off   -> clean_shutdown
+     |      +-- systemd-shutdown / Reboot      -> clean_reboot
+     |      +-- log just STOPS, no sequence    -> power_loss
+     |                                             ^
+     |                                             +-- absence of a shutdown
+     |                                                 sequence IS the evidence
+     |
+     +-- downtime = this boot's first entry - previous boot's last entry
+     |
+     v
+  INSERT server_boot_events ... ON CONFLICT (boot_id) DO NOTHING
+     ^
+     +-- idempotent, so the first run backfills history and a retry
+         (the DB is often not up yet at boot) cannot double-record
+
+  /api/monitoring rolls these up into: unplanned vs planned counts, total
+  downtime, and availability over "the last 30 days OR as far back as the
+  record goes, whichever is shorter" -- the window length is returned
+  alongside the percentage, because dividing 4 days of history by 30 days
+  would overstate availability sevenfold.
+```
+
 **The box pushes; the ERP never polls it.** Nothing new listens on the machine,
 and absence of data is itself the signal — a polling design would simply hang.
 

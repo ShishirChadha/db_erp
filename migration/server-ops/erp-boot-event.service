@@ -1,0 +1,20 @@
+[Unit]
+Description=Record this boot and classify how the previous one ended
+# Needs Docker (the database runs in it) and the journal. It does its own
+# retry loop for Postgres, so it only needs docker.service to have started,
+# not for the stack to be healthy.
+After=docker.service systemd-journald.service network-online.target
+Wants=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/erp-boot-event.py
+# The database can take a few minutes to come up after a cold boot.
+TimeoutStartSec=900
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
