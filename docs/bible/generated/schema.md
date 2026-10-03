@@ -693,7 +693,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## cart_items
 
-~0 rows (estimate)
+~2 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -703,6 +703,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | quantity | integer | no | `1` |  |  |
 | created_at | timestamp with time zone | no | `now()` |  |  |
 | selected_upgrades | jsonb | no | `'[]'::jsonb` |  |  |
+| updated_at | timestamp with time zone | no | `now()` |  | Last time this line was added to or had its quantity changed. created_at is first-add only, which made every cart-age/abandonment window wrong. |
 
 ## custom_options
 
@@ -1042,7 +1043,7 @@ Plain reference calendar of major/minor Indian festivals for the Marketing Studi
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~466 rows (estimate)
+~520 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1235,6 +1236,9 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 | paid_at | timestamp with time zone | yes |  |  |  |
 | discount_amount | numeric(10,2) | yes | `0` |  |  |
 | applied_promotion_ids | uuid[] | yes | `'{}'::uuid[]` |  |  |
+| cancel_reason | text | yes |  |  | Which failure produced status='cancelled'. Sold-out-at-checkout was previously unrecoverable: reserve_order_items returns reason:'sold_out' and the caller discarded it. |
+| conversion_error | text | yes |  |  | The webhook's conversion failure, persisted. Authoritative detection is still derived (status='paid' with an order_item lacking erp_sale_id) so it survives a lost log line; this column is the human-readable why. |
+| conversion_failed_at | timestamp with time zone | yes |  |  |  |
 
 ## po_counter
 
@@ -1862,7 +1866,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~1,979 rows (estimate)
+~2,227 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2195,6 +2199,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 | expires_at | timestamp with time zone | no |  |  |  |
 | released_at | timestamp with time zone | yes |  |  |  |
 | created_at | timestamp with time zone | no | `now()` |  |  |
+| release_reason | text | yes |  |  | Why released_at was set: converted (became a sale), expired (TTL swept by cron), or aborted_* (checkout failed synchronously). NULL while the hold is still active. |
 
 ## website_health_checks
 

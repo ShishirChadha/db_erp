@@ -7,6 +7,20 @@ import { resolveApplicablePromotions } from '@/lib/promotions'
 
 const RESERVATION_TTL_MINUTES = 15
 
+// Three different things produce status='cancelled', and they used to be
+// indistinguishable -- which meant "how often does something sell out at
+// checkout" was unanswerable. Each path now records its reason, and releases
+// the promotion redemptions it optimistically claimed: those rows are inserted
+// before payment, so leaving them behind on a cancelled attempt would count
+// redemptions that never converted.
+async function cancelOrder(
+  orderId: string,
+  reason: 'sold_out' | 'payment_init_failed' | 'reserve_error',
+) {
+  await supabaseAdmin.from('promotion_redemptions').delete().eq('order_id', orderId)
+  await supabaseAdmin.from('orders').update({ status: 'cancelled', cancel_reason: reason }).eq('id', orderId)
+}
+
 export async function POST(req: NextRequest) {
   const session = await getCustomerSession()
   if (!session) return NextResponse.json({ error: 'Please log in to check out.' }, { status: 401 })
@@ -166,7 +180,7 @@ export async function POST(req: NextRequest) {
     p_ttl_minutes: RESERVATION_TTL_MINUTES,
   })
   if (reserveErr) {
-    await supabaseAdmin.from('orders').update({ status: 'cancelled' }).eq('id', order.id)
+    await cancelOrder(order.id, 'reserve_error')
     return NextResponse.json({ error: reserveErr.message }, { status: 500 })
   }
 
@@ -181,7 +195,7 @@ export async function POST(req: NextRequest) {
   })
   if (realFailures.length > 0) {
     await releaseReservationsForOrder(order.id)
-    await supabaseAdmin.from('orders').update({ status: 'cancelled' }).eq('id', order.id)
+    await cancelOrder(order.id, 'sold_out')
     const failedSkuIds = orderItemRows
       .filter((_, i) => realFailures.some((f: any) => f.order_item_id === reservationResults![i].order_item_id))
       .map((r) => r.sku_id)
@@ -221,8 +235,8 @@ export async function POST(req: NextRequest) {
   try {
     razorpayOrder = await createRazorpayOrder(totalAmount, order.id)
   } catch (err: any) {
-    await releaseReservationsForOrder(order.id)
-    await supabaseAdmin.from('orders').update({ status: 'cancelled' }).eq('id', order.id)
+    await releaseReservationsForOrder(order.id, 'aborted_payment_init')
+    await cancelOrder(order.id, 'payment_init_failed')
     return NextResponse.json({ error: 'Could not initiate payment. Please try again.' }, { status: 502 })
   }
 

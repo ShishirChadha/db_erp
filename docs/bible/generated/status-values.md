@@ -91,6 +91,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | marketing_assets | status | marketing_assets_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'scheduled'::text, 'published'::text, 'archived'::text])))` |
 | marketing_settings | id | marketing_settings_id_check | `CHECK (id)` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
+| orders | cancel_reason | orders_cancel_reason_check | `CHECK (((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['sold_out'::text, 'payment_init_failed'::text, 'reserve_error'::text, 'customer_abandoned'::text]))))` |
 | orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
 | profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text])))` |
 | profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text]))` |
@@ -147,3 +148,4 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | vendor_correction_proposals | status | vendor_correction_proposals_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text])))` |
 | vendor_payments | amount | vendor_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
 | vendor_payments | payment_account | vendor_payments_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| web_reservations | release_reason | web_reservations_release_reason_check | `CHECK (((release_reason IS NULL) OR (release_reason = ANY (ARRAY['converted'::text, 'expired'::text, 'aborted_sold_out'::text, 'aborted_payment_init'::text]))))` |

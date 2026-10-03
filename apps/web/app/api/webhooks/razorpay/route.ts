@@ -49,6 +49,17 @@ export async function POST(req: NextRequest) {
       // Razorpay doesn't retry indefinitely; log loudly for manual
       // reconciliation rather than silently losing a paid order.
       console.error(`[razorpay webhook] order ${order.id} paid but conversion failed: ${result.error}`)
+
+      // Persisted as well as logged. The authoritative detector for "money
+      // taken, bookkeeping incomplete" stays derived (status='paid' with an
+      // order_item still lacking erp_sale_id) so it survives a lost log line;
+      // this column is the human-readable reason the ERP's Website Orders
+      // page shows next to that flag. A console line nobody reads is not a
+      // reconciliation process.
+      await supabaseAdmin
+        .from('orders')
+        .update({ conversion_error: result.error ?? 'unknown', conversion_failed_at: new Date().toISOString() })
+        .eq('id', order.id)
     }
   }
 

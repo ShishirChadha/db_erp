@@ -5,7 +5,13 @@ import { supabaseAdmin } from '@db/db/admin'
 // logic the expiry cron runs, just triggered synchronously instead of on a
 // timer, so the customer isn't left holding a phantom lock on items that
 // never made it into a real order.
-export async function releaseReservationsForOrder(orderId: string): Promise<void> {
+export async function releaseReservationsForOrder(
+  orderId: string,
+  // Why the hold ended. Stored on the reservation so the ERP can tell an
+  // abandoned payment apart from a sell-out apart from a converted sale --
+  // released_at alone cannot, since all three writers stamp it.
+  reason: 'aborted_sold_out' | 'aborted_payment_init' = 'aborted_sold_out',
+): Promise<void> {
   const { data: orderItems } = await supabaseAdmin.from('order_items').select('id').eq('order_id', orderId)
   const orderItemIds = (orderItems ?? []).map((i) => i.id)
   if (orderItemIds.length === 0) return
@@ -24,6 +30,9 @@ export async function releaseReservationsForOrder(orderId: string): Promise<void
         .eq('id', r.asset_id)
         .eq('status', 'reserved_web')
     }
-    await supabaseAdmin.from('web_reservations').update({ released_at: new Date().toISOString() }).eq('id', r.id)
+    await supabaseAdmin
+      .from('web_reservations')
+      .update({ released_at: new Date().toISOString(), release_reason: reason })
+      .eq('id', r.id)
   }
 }

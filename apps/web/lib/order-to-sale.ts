@@ -175,7 +175,7 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
       })
 
       await supabaseAdmin.from('order_items').update({ erp_sale_id: sale.id }).eq('id', item.id)
-      await supabaseAdmin.from('web_reservations').update({ released_at: now.toISOString() }).eq('id', reservation.id)
+      await supabaseAdmin.from('web_reservations').update({ released_at: now.toISOString(), release_reason: 'converted' }).eq('id', reservation.id)
 
       if (Array.isArray(item.selected_upgrades) && item.selected_upgrades.length > 0) {
         await fulfillSelectedUpgrades(item.selected_upgrades, asset.id, sale.id, asset.asset_number || asset.serial_number || asset.id)
@@ -197,11 +197,41 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
 
       await supabaseAdmin.from('order_items').update({ erp_sale_id: sale.id }).eq('id', item.id)
       if (reservation) {
-        await supabaseAdmin.from('web_reservations').update({ released_at: now.toISOString() }).eq('id', reservation.id)
+        await supabaseAdmin.from('web_reservations').update({ released_at: now.toISOString(), release_reason: 'converted' }).eq('id', reservation.id)
       }
     }
   }
 
   await supabaseAdmin.from('orders').update({ status: 'paid', paid_at: now.toISOString() }).eq('id', orderId)
+
+  // Clear the lines the customer actually bought out of their cart.
+  //
+  // Nothing used to do this -- the only delete in the whole app is a customer
+  // clicking remove -- so a purchased item sat in the cart forever, kept
+  // showing in the header badge, and made report_web_funnel count every past
+  // buyer as having an abandoned cart in perpetuity.
+  //
+  // Matched per (sku_id, selected_upgrades) rather than wiping the cart by
+  // customer, deliberately: the customer has a 15-minute payment window during
+  // which they may have added something else, and that must survive.
+  //
+  // Best-effort and last: a cart that fails to clear is cosmetic, and must
+  // never make a paid order look unconverted.
+  try {
+    for (const item of orderItems) {
+      // A promotional free gift was never in the cart (checkout adds it), so
+      // it simply matches nothing here -- no need to filter it out, and
+      // is_promotional_gift isn't selected above.
+      await supabaseAdmin
+        .from('cart_items')
+        .delete()
+        .eq('customer_id', order.customer_id)
+        .eq('sku_id', item.sku_id)
+        .eq('selected_upgrades', item.selected_upgrades ?? [])
+    }
+  } catch (err) {
+    console.error(`[order-to-sale] order ${orderId} converted but cart not cleared:`, err)
+  }
+
   return { ok: true }
 }
