@@ -47,6 +47,11 @@ interface Customer {
   social_following: string;
   is_deleted?: boolean;
   deleted_remarks?: string | null;
+  // Joined from customer_profiles -- present only when this person has a
+  // website login. Readable here because the 2026-10-03 migration added an
+  // is_staff() select policy to that table; before it, the join silently
+  // returned nothing and a web customer was indistinguishable from a walk-in.
+  customer_profiles?: { id: string; created_at: string }[] | null;
 }
 
 // One field in the detail pane's label/value grid -- keeps every row's spacing
@@ -89,6 +94,9 @@ function CustomerListItem({ customer, active, onOpen }: {
         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
           <StatusBadge tone={customer.type === "Business" ? "info" : "neutral"}>{customer.type || "—"}</StatusBadge>
           {customer.has_gst && <StatusBadge tone="success">GST</StatusBadge>}
+          {(customer.customer_profiles?.length ?? 0) > 0 && (
+            <StatusBadge tone="purple">Web account</StatusBadge>
+          )}
           {customer.is_deleted && <StatusBadge tone="danger">Deleted</StatusBadge>}
         </div>
       </div>
@@ -146,6 +154,11 @@ function CustomerDetailPane({ customer, onEdit, onDelete, onRestore, restoring, 
         <Field label="Address">{customer.address || "—"}</Field>
         <Field label="GST">{customer.has_gst ? (customer.gst_number || "Yes") : "No"}</Field>
         <Field label="Source">{customer.source || "—"}</Field>
+        <Field label="Website account">
+          {customer.customer_profiles?.length
+            ? `Yes — registered ${new Date(customer.customer_profiles[0].created_at).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", dateStyle: "medium" })}`
+            : "No"}
+        </Field>
         <Field label="Social Following">{customer.social_following || "—"}</Field>
         <Field label="Google Review">
           {customer.google_review ? (
@@ -175,6 +188,8 @@ function CustomersPage() {
 
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [nameFilter, setNameFilter] = useState<string>(""); // debounced
+  // "" = everyone, "web" = has a website login, "walkin" = does not.
+  const [webFilter, setWebFilter] = useState<"" | "web" | "walkin">("");
 
   // Both search boxes update their *Input state on every keystroke; the actual
   // fetch-driving state catches up 300ms after typing stops -- same debounce
@@ -201,7 +216,9 @@ function CustomersPage() {
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
-    let query = supabase.from("customers").select("*", { count: "exact" });
+    let query = supabase
+      .from("customers")
+      .select("*, customer_profiles(id, created_at)", { count: "exact" });
 
     if (showDeleted) query = query.eq("is_deleted", true);
     else query = query.eq("is_deleted", false);
@@ -224,6 +241,15 @@ function CustomersPage() {
     if (typeFilter && typeFilter !== "all") query = query.eq("type", typeFilter);
     if (nameFilter) query = query.ilike("customer_name", `%${nameFilter}%`);
 
+    // An embedded table can be turned into a filter with !inner (has one) or
+    // by testing the embedded id for null (has none) -- the select string has
+    // to change, so it is rebuilt rather than chained.
+    if (webFilter === "web") {
+      query = query.not("customer_profiles", "is", null);
+    } else if (webFilter === "walkin") {
+      query = query.is("customer_profiles", null);
+    }
+
     query = query.order(sortField, { ascending: sortOrder === "asc" });
     query = query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
 
@@ -242,7 +268,7 @@ function CustomersPage() {
       setActiveCustomerId((prev) => (prev && rows.some((c) => c.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
-  }, [showDeleted, searchTerm, typeFilter, nameFilter, sortField, sortOrder, page, PAGE_SIZE, supabase]);
+  }, [showDeleted, searchTerm, typeFilter, nameFilter, webFilter, sortField, sortOrder, page, PAGE_SIZE, supabase]);
 
   // Any filter change invalidates the current page's meaning -- reset to page 1.
   // Done during render (React's supported "adjust state while rendering"
@@ -252,7 +278,7 @@ function CustomersPage() {
   // the page-reset effect ran and changed `page` -- two requests per filter
   // change, and on a slow connection the first (stale) response could land
   // last and overwrite the correct rows.
-  const filterKey = JSON.stringify([showDeleted, searchTerm, typeFilter, nameFilter]);
+  const filterKey = JSON.stringify([showDeleted, searchTerm, typeFilter, nameFilter, webFilter]);
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey);
@@ -331,6 +357,18 @@ function CustomersPage() {
         <div className="w-64">
           <Label>Name contains</Label>
           <Input placeholder="Search name" value={nameFilterInput} onChange={(e) => setNameFilterInput(e.target.value)} />
+        </div>
+        <div>
+          <Label>Website account</Label>
+          <select
+            value={webFilter}
+            onChange={(e) => setWebFilter(e.target.value as "" | "web" | "walkin")}
+            className="h-8 w-full rounded-md border border-input bg-background px-2 text-sm"
+          >
+            <option value="">Everyone</option>
+            <option value="web">Has a website account</option>
+            <option value="walkin">Walk-in only</option>
+          </select>
         </div>
 
         <div className="w-48">

@@ -115,6 +115,12 @@ export const menuGroups = [
       // names/buying cost with competitor prices in one response with no safe
       // employee-facing subset, unlike every other page-keyed area.
       { key: 'pricing', href: '/dashboard/pricing', label: 'Price Cockpit', ownerOnly: true },
+      // Owner-only for the same reason as Price Cockpit: the page is revenue,
+      // customer addresses and payment identifiers, with no partial view worth
+      // granting. Deliberately NOT gated on the existing 'website' key -- that
+      // one means "may publish SKUs and upload photos", and widening it would
+      // hand order and revenue visibility to anyone given photo rights.
+      { key: 'web_orders', href: '/dashboard/web-orders', label: 'Website Orders', ownerOnly: true },
     ],
   },
   {

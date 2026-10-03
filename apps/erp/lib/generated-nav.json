@@ -104,6 +104,11 @@
     "ownerOnly": true
   },
   {
+    "label": "Sales > Website Orders",
+    "route": "/dashboard/web-orders",
+    "ownerOnly": true
+  },
+  {
     "label": "Contacts > Customers",
     "route": "/dashboard/customers",
     "pageKey": "customers",

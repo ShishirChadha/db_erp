@@ -139,6 +139,15 @@ export const LEAVE_STATUS_TONES: Record<string, Tone> = {
   pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'neutral',
 }
 
+// orders.status (website orders)
+export const ORDER_STATUS_TONES: Record<string, Tone> = {
+  pending_payment: 'warning',
+  paid: 'success',
+  cancelled: 'danger',
+  // Not a failure -- a hold that lapsed because nobody paid in 15 minutes.
+  expired: 'neutral',
+}
+
 /** Looks up a status string in the given map, falling back to a neutral tone for any unmapped value rather than throwing. */
 export function toneFor(map: Record<string, Tone>, status: string | null | undefined): Tone {
   if (!status) return fallbackTone()

@@ -25,6 +25,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Sales > Invoices | if granted `invoices` | if granted `invoices` |
 | Sales > Quotations | if granted `quotations` | if granted `quotations` |
 | Sales > Price Cockpit | owner-only | owner-only |
+| Sales > Website Orders | owner-only | owner-only |
 | Contacts > Customers | if granted `customers` | if granted `customers` |
 | Contacts > Vendors | owner-only | owner-only |
 | Finance > Expenses | if granted `expenses` | if granted `expenses` |

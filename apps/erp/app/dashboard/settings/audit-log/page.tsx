@@ -61,7 +61,7 @@ const ACTION_LABELS: Record<string, string> = {
 const MODULE_OPTIONS = [
   'sales', 'stock', 'purchase_orders', 'sku_master', 'repair_jobs', 'replacement_jobs',
   'rma', 'customers', 'vendors', 'invoices', 'activities', 'settings', 'auth',
-  'attendance',
+  'attendance', 'web_orders',
 ]
 const ACTION_OPTIONS = Object.keys(ACTION_LABELS)
 

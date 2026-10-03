@@ -1280,7 +1280,7 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 
 ## profiles
 
-~0 rows (estimate)
+~6 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2089,7 +2089,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~37 rows (estimate)
+~40 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
