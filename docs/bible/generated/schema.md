@@ -356,6 +356,7 @@ Live schema snapshot -- 97 tables. Regenerate with `npm run bible:generate`.
 | included_accessories | text | yes |  |  |  |
 | current_sku_id | uuid | yes |  | FK -> sku_master.id | Optional override of this unit's effective spec, distinct from sku_id (the as-purchased/as-received spec, set at intake/PO time and never overwritten again). NULL means no override -- current spec equals purchased spec. Set only via SKU reassignment (Change SKU) when a unit is physically modified after purchase, so the original purchase record stays historically accurate. |
 | sold_recorded_at | timestamp with time zone | yes |  |  | When this unit was recorded as sold (wall-clock). Trigger-maintained; use for "most recently sold" ordering. sold_at is the user-chosen sale DATE and is not unique within a day. |
+| updated_at | timestamp with time zone | no | `now()` |  |  |
 
 ## asset_qc_checks
 
@@ -1756,7 +1757,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~1,429 rows (estimate)
+~1,753 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1791,6 +1792,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 | reboot_required_pkgs | text | yes |  |  |  |
 | pending_updates | integer | yes |  |  |  |
 | pending_security_updates | integer | yes |  |  |  |
+| bios_after_power_loss | text | yes |  |  | BIOS "After Power Loss" value read from hp-bioscfg. "Power On" is the only value that recovers the machine unattended after a mains failure. |
 
 ## sku_category_templates
 

@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
   // SearchableItemSelect, pending-tasks) keep today's exact asset_number-ascending
   // order, unchanged. Whitelisted to real, single-column, always-populated fields;
   // sku_code isn't here because it's derived/joined, not reliably orderable.
-  const SORTABLE_FIELDS = new Set(['asset_number', 'status', 'created_at', 'sold_at'])
+  const SORTABLE_FIELDS = new Set(['asset_number', 'status', 'created_at', 'sold_at', 'updated_at'])
   const sortParam = searchParams.get('sort')
   const sortField = sortParam && SORTABLE_FIELDS.has(sortParam) ? sortParam : 'asset_number'
   const sortAscending = searchParams.get('order') !== 'desc'
@@ -111,6 +111,7 @@ export async function GET(req: NextRequest) {
       received_at,
       sold_at,
       created_at,
+      updated_at,
       po_id,
       po_item_id,
       sku_id,
@@ -402,6 +403,7 @@ export async function GET(req: NextRequest) {
       received_at: asset.received_at,
       sold_at: asset.sold_at,
       created_at: asset.created_at,
+      updated_at: asset.updated_at,
       po_id: asset.po_id,
       sku_id: asset.sku_id,
       sku_code: sku?.full_sku_code || '',

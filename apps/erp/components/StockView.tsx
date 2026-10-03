@@ -43,6 +43,7 @@ interface AssetRow {
   qc_status: string
   sold_at: string | null
   created_at?: string | null
+  updated_at?: string | null
   po_id: string | null
   sku_id?: string
   sku_code: string
@@ -136,7 +137,7 @@ const MONTH_OPTIONS = [
 ]
 
 type Tab = 'current' | 'sold' | 'accessories' | 'sold_accessories'
-type SortField = 'asset_number' | 'status' | 'sold_at' | 'created_at'
+type SortField = 'asset_number' | 'status' | 'sold_at' | 'created_at' | 'updated_at'
 type SortOrder = 'asc' | 'desc'
 
 // "Last entry on top" by default -- most-recently-added unit for Current, most-
@@ -964,6 +965,12 @@ export default function StockView({
               </button>
               <button type="button" onClick={() => toggleSort(tab === 'sold' ? 'sold_at' : 'created_at')} className="hover:text-foreground">
                 {tab === 'sold' ? 'Sold' : 'Entry'} Date{sortIndicator(tab === 'sold' ? 'sold_at' : 'created_at')}
+              </button>
+              {/* Last-touched timestamp -- e.g. a customer return flips a sold unit
+                  back to qc_pending, which Entry Date (created_at, the original
+                  intake date) never reflects. This sort surfaces it. */}
+              <button type="button" onClick={() => toggleSort('updated_at')} className="hover:text-foreground">
+                Modified{sortIndicator('updated_at')}
               </button>
               <button type="button" onClick={() => toggleSort('status')} className="hover:text-foreground">
                 Status{sortIndicator('status')}
