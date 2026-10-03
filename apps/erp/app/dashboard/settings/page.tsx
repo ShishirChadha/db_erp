@@ -17,6 +17,7 @@ const DropdownOptionsManager = dynamic(() => import('@/components/DropdownOption
 const SkuCategoryTemplatesManager = dynamic(() => import('@/components/SkuCategoryTemplatesManager'), { ssr: false })
 const SacCodesManager = dynamic(() => import('@/components/SacCodesManager'), { ssr: false })
 const UserManager = dynamic(() => import('@/components/UserManager'), { ssr: false })
+const AttendanceSettingsManager = dynamic(() => import('@/components/AttendanceSettingsManager'), { ssr: false })
 const ActiveSessionsManager = dynamic(() => import('@/components/ActiveSessionsManager'), { ssr: false })
 const BusinessProfileManager = dynamic(() => import('@/components/BusinessProfileManager'), { ssr: false })
 const TagsManager = dynamic(() => import('@/components/TagsManager'), { ssr: false })
@@ -64,6 +65,7 @@ const CATEGORIES = [
   { key: 'users', label: 'Users & Access', ownerOnly: true },
   { key: 'active_sessions', label: 'Active Devices', ownerOnly: true },
   { key: 'activity_tags', label: 'Activity Tags', ownerOnly: true },
+  { key: 'attendance', label: 'Attendance & Staff', ownerOnly: true },
   { key: 'website_admin', label: 'Website Admin', ownerOnly: true },
   { key: 'field_redaction', label: 'Field Redaction', ownerOnly: true },
   { key: 'digests', label: 'Digests', ownerOnly: true },
@@ -283,6 +285,7 @@ function SettingsPage() {
           {category === 'marketing' && <MarketingSettingsManager />}
           {category === 'backup' && <BackupPageGuarded />}
           {category === 'list_page_size' && <ListPageSizeManager />}
+        {category === 'attendance' && <AttendanceSettingsManager />}
         </div>
       </div>
     </div>

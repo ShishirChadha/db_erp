@@ -56,6 +56,14 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
   ]},
   { label: 'Activity Hub', keys: [{ key: 'activities', label: 'Activity Hub' }] },
   { label: 'Marketing', keys: [{ key: 'marketing', label: 'Marketing Content Studio' }] },
+  // Labelled "whole team" because this grant is precisely what turns the
+  // module's own-only default into see-all: without it a staff member can
+  // still punch their own card and see their own record (no page key is
+  // required for that -- see app/api/attendance/me/route.ts), and with it they
+  // can see everyone's. Note the see-all step itself is role-gated
+  // (isManagerOrAbove), so for an employee this key unlocks the page, not the
+  // whole team's data.
+  { label: 'Team', keys: [{ key: 'attendance', label: 'Attendance & Leave (whole team)' }] },
 ]
 
 // Dashboard/Pending Tasks/Reports are view-only nav/landing pages -- no "Can edit"
@@ -64,7 +72,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
   'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing', 'rentals',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance',
 ]
 
 function generatePassword() {

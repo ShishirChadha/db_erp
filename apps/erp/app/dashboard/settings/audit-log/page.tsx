@@ -55,11 +55,13 @@ const ACTION_LABELS: Record<string, string> = {
   login: 'Signed in',
   login_failed: 'Sign-in failed',
   logout: 'Signed out',
+  blocked: 'Blocked',
 }
 
 const MODULE_OPTIONS = [
   'sales', 'stock', 'purchase_orders', 'sku_master', 'repair_jobs', 'replacement_jobs',
   'rma', 'customers', 'vendors', 'invoices', 'activities', 'settings', 'auth',
+  'attendance',
 ]
 const ACTION_OPTIONS = Object.keys(ACTION_LABELS)
 

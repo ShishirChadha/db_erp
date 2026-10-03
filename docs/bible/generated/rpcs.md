@@ -33,8 +33,8 @@
 | `report_data_health` | — | jsonb |  |
 | `report_expense_timeseries` | p_from date, p_to date, p_grain text DEFAULT 'day'::text, p_include_financials boolean DEFAULT false | jsonb |  |
 | `report_expense_timeseries` | p_from date, p_to date, p_grain text DEFAULT 'day'::text | jsonb |  |
-| `report_expenses` | p_from date, p_to date, p_include_financials boolean DEFAULT false | jsonb |  |
 | `report_expenses` | p_from date, p_to date | jsonb |  |
+| `report_expenses` | p_from date, p_to date, p_include_financials boolean DEFAULT false | jsonb |  |
 | `report_fy` | d date | text |  |
 | `report_gst_summary` | p_from date, p_to date | jsonb |  |
 | `report_inventory` | p_include_financials boolean DEFAULT false | jsonb |  |

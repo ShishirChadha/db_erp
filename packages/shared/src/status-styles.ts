@@ -123,6 +123,22 @@ function fallbackTone(): Tone {
   return 'neutral'
 }
 
+// attendance_days.status
+export const ATTENDANCE_STATUS_TONES: Record<string, Tone> = {
+  present: 'success',
+  on_duty: 'info',
+  half_day: 'warning',
+  absent: 'danger',
+  leave: 'purple',
+  holiday: 'neutral',
+  week_off: 'neutral',
+}
+
+// leave_requests.status
+export const LEAVE_STATUS_TONES: Record<string, Tone> = {
+  pending: 'warning', approved: 'success', rejected: 'danger', cancelled: 'neutral',
+}
+
 /** Looks up a status string in the given map, falling back to a neutral tone for any unmapped value rather than throwing. */
 export function toneFor(map: Record<string, Tone>, status: string | null | undefined): Tone {
   if (!status) return fallbackTone()

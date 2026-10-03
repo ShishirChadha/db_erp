@@ -19,6 +19,7 @@ const FALLBACK_ORDER: { key: string; path: string }[] = [
   { key: 'activities', path: '/dashboard/activities' },
   { key: 'sales', path: '/dashboard/sales' },
   { key: 'stock', path: '/dashboard/stock' },
+  { key: 'attendance', path: '/dashboard/attendance' },
 ]
 
 // Page-level guard for pages gated by a specific page-key in profiles.allowed_pages

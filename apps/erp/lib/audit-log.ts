@@ -17,6 +17,7 @@ export type AuditActionType =
   | 'login'
   | 'login_failed'
   | 'logout'
+  | 'blocked'
 
 export type AuditSeverity = 'major' | 'minor'
 
@@ -31,6 +32,10 @@ export const SEVERITY_BY_ACTION: Record<AuditActionType, AuditSeverity> = {
   restore: 'major',
   hard_delete: 'major',
   void: 'major',
+  // An action refused by policy -- today, a self-punch from outside the office
+  // IP allowlist (no attendance_punches row is written, so the audit row is the
+  // only trace). Minor, matching login_failed: it is an attempt, not a change.
+  blocked: 'minor',
 }
 
 export interface AuditLogInput {

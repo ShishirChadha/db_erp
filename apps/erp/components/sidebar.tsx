@@ -17,6 +17,7 @@ import {
   Barcode,
   Settings,
   CalendarDays,
+  CalendarCheck,
   ChevronDown,
   PackagePlus,
   Wrench,
@@ -32,6 +33,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { apiFetch } from '@/lib/api-client'
 import NotificationBell from '@/components/NotificationBell'
 import { useNavSearch } from '@/components/NavSearch'
+import { PunchWidget } from '@/components/PunchWidget'
 import { useNavPrefs } from '@/lib/useNavPrefs'
 
 // ---------- Menu structure with categories ----------
@@ -149,6 +151,17 @@ export const menuGroups = [
     icon: CalendarDays,
     href: '/dashboard/activities',
     pageKey: 'activities',
+  },
+  // One page like Activity Hub, so a top-level entry rather than a group.
+  // Note the page key gates seeing the REGISTER; punching your own card needs
+  // no key at all (app/api/attendance/me/route.ts explains why), so a staff
+  // member with no nav entry here can still punch from the mobile top bar.
+  {
+    key: 'attendance',
+    label: 'Attendance',
+    icon: CalendarCheck,
+    href: '/dashboard/attendance',
+    pageKey: 'attendance',
   },
   {
     key: 'marketing',
@@ -513,13 +526,21 @@ export default function Sidebar() {
           </div>
           <span className="font-semibold text-sidebar-foreground text-sm">DigitalBluez ERP</span>
         </Link>
-        <button onClick={toggleMobile}>
-          {mobileOpen ? (
-            <X className="h-5 w-5 text-sidebar-foreground/70" />
-          ) : (
-            <Menu className="h-5 w-5 text-sidebar-foreground/70" />
-          )}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Punch in/out from any dashboard page on a phone -- this bar is the
+              only element present on every one of them, which is what makes
+              punching a single tap from wherever the user already is. Renders
+              null for anyone without a staff roster row, so it costs nothing
+              for owner-only logins. */}
+          <PunchWidget compact />
+          <button onClick={toggleMobile}>
+            {mobileOpen ? (
+              <X className="h-5 w-5 text-sidebar-foreground/70" />
+            ) : (
+              <Menu className="h-5 w-5 text-sidebar-foreground/70" />
+            )}
+          </button>
+        </div>
       </div>
 
       {/* Mobile drawer */}

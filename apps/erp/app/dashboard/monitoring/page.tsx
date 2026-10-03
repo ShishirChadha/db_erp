@@ -57,6 +57,8 @@ interface Payload {
     largest_tables: { table_name: string; total_bytes: number; row_estimate: number }[]
     cron_jobs: { jobname: string; schedule: string; active: boolean }[]
   } | null
+  moduleBreakdown: { module: string; app: 'erp' | 'website' | 'mixed'; bytes: number; rows: number; tableCount: number }[]
+  appBreakdown: { erp: { bytes: number; rows: number }; website: { bytes: number; rows: number } } | null
 }
 
 // Plain-language descriptions, keyed by the real table and job names. Shown
@@ -727,6 +729,46 @@ function MonitoringInner() {
                       </td>
                       <td className="py-1 font-mono text-xs text-muted-foreground">{j.schedule}</td>
                       <td className="py-1 text-right"><span className="inline-flex items-center gap-1.5"><Dot ok={j.active} />{j.active ? 'on' : 'off'}</span></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {data?.db && data.appBreakdown && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Card
+            title="Database size — ERP vs Website"
+            info="Every table attributed to either the ERP (purchasing, inventory, sales, repairs, activities, and the rest of the internal app) or the public website (orders, cart, customer accounts, promotions, product images). Total database size is shown on the Supabase stack card above; this splits that same total by which app actually owns the data."
+          >
+            <Row label="Total database" value={bytes(data.db.database_bytes)} />
+            <div className="mt-2 border-t pt-2">
+              <Row label="ERP" value={<span>{bytes(data.appBreakdown.erp.bytes)} <span className="text-xs text-muted-foreground">· {data.appBreakdown.erp.rows.toLocaleString()} rows</span></span>} />
+              <Row label="Website" value={<span>{bytes(data.appBreakdown.website.bytes)} <span className="text-xs text-muted-foreground">· {data.appBreakdown.website.rows.toLocaleString()} rows</span></span>} />
+            </div>
+          </Card>
+
+          <Card
+            title="Size by feature"
+            info={`Every table grouped by which feature/module it belongs to, for deciding what's actually worth keeping -- a module with a lot of size or rows for how little it's used is a candidate to simplify or retire. "Rows" is a rough usage proxy from Postgres' own housekeeping stats, not a real usage/traffic count -- this page deliberately doesn't add request-tracking to the app itself just to produce one. Row estimates can lag slightly between maintenance runs.`}
+          >
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="py-1 font-medium">Feature</th><th className="py-1 text-right font-medium">Rows</th><th className="py-1 text-right font-medium">Size</th></tr></thead>
+                <tbody>
+                  {data.moduleBreakdown.map(m => (
+                    <tr key={m.module} className="border-b last:border-0">
+                      <td className="py-1">
+                        <span className="inline-flex items-center gap-1.5">
+                          {m.module}
+                          <span className="rounded bg-muted px-1 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">{m.app}</span>
+                        </span>
+                      </td>
+                      <td className="py-1 text-right tabular-nums">{m.rows.toLocaleString()}</td>
+                      <td className="py-1 text-right tabular-nums">{bytes(m.bytes)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -174,7 +174,7 @@ Live schema snapshot -- 97 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~113 rows (estimate)
+~117 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -311,7 +311,7 @@ Live schema snapshot -- 97 tables. Regenerate with `npm run bible:generate`.
 
 ## asset_ledger
 
-~1,197 rows (estimate)
+~1,198 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1757,7 +1757,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~1,753 rows (estimate)
+~1,979 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1935,7 +1935,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## user_sessions
 
-~34 rows (estimate)
+~37 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

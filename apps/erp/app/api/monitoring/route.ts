@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { withRetry } from '@/lib/db-retry'
+import { rollupByApp, rollupByModule, type TableSize } from '@/lib/monitoring-modules'
 
 // System Health feed for /dashboard/monitoring.
 //
@@ -94,8 +95,16 @@ export async function GET(req: NextRequest) {
   // Database size and the heaviest tables, straight from Postgres.
   const dbRes = await withRetry(() => supabaseAdmin.rpc('monitoring_db_stats'))
     .catch((e: unknown) => ({ data: null, error: { message: e instanceof Error ? e.message : 'rpc failed' } }))
-  const dbStats = dbRes.data
+  const dbStats = dbRes.data as Record<string, unknown> | null
   if (dbRes.error) queryErrors.push(`monitoring_db_stats: ${dbRes.error.message}`)
+
+  // Size-by-feature / size-by-app -- pure aggregation over `all_tables`
+  // (already fetched above, no extra query), so pruning decisions ("this
+  // module is big but barely used -- drop it?") have real numbers behind
+  // them without adding any request-tracking overhead to the app itself.
+  const allTables = (dbStats?.all_tables as TableSize[] | undefined) || []
+  const moduleBreakdown = allTables.length ? rollupByModule(allTables) : []
+  const appBreakdown = allTables.length ? rollupByApp(allTables) : null
 
   return NextResponse.json({
     generatedAt: new Date().toISOString(),
@@ -107,6 +116,8 @@ export async function GET(req: NextRequest) {
     healthChecks,
     endpoints,
     db: dbStats ?? null,
+    moduleBreakdown,
+    appBreakdown,
     boots,
     power,
     queryErrors,
