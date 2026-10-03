@@ -5,8 +5,10 @@ import { apiFetch } from '@/lib/api-client'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { useRememberedDefault } from '@/lib/useRememberedDefault'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 
 export type SalesDocType = 'quotation' | 'proforma'
 
@@ -41,6 +43,12 @@ export function DocumentFormFields({
 }) {
   const [skuSearch, setSkuSearch] = useState('')
   const [skuResults, setSkuResults] = useState<any[]>([])
+  // Scoped per entity -- Digitalbluez/Techtenth/Cash are run as separate
+  // businesses with their own notes/terms wording, so switching the Entity
+  // dropdown swaps in that entity's own remembered default instead of reusing
+  // whichever entity was last saved.
+  const notesDefault = useRememberedDefault(`salesdoc-notes-default-${entityKey}`, notes, setNotes)
+  const termsDefault = useRememberedDefault(`salesdoc-terms-default-${entityKey}`, terms, setTerms)
 
   useEffect(() => {
     if (!skuSearch.trim()) { setSkuResults([]); return }
@@ -122,31 +130,45 @@ export function DocumentFormFields({
           )}
         </div>
 
+        {/* Stacked rows instead of a wide table -- a 5-column table (description +
+            qty/rate/GST% + remove) doesn't fit inside this dialog's width on a
+            laptop screen, let alone mobile, and was forcing a horizontal
+            scrollbar just to edit a price. Each line now wraps naturally. */}
         {items.length > 0 && (
-          <table className="w-full text-xs mt-2">
-            <thead>
-              <tr className="text-left text-muted-foreground">
-                <th className="pb-1">Description</th>
-                <th className="pb-1 w-16">Qty</th>
-                <th className="pb-1 w-24">Rate</th>
-                <th className="pb-1 w-16">GST%</th>
-                <th className="pb-1 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((it, idx) => (
-                <tr key={idx} className="border-t">
-                  <td className="py-1 pr-2">
-                    <input value={it.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} className="border p-1 w-full rounded" placeholder="Description" />
-                  </td>
-                  <td className="py-1 pr-2"><input type="number" value={it.quantity} onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
-                  <td className="py-1 pr-2"><input type="number" value={it.rate} onChange={(e) => updateItem(idx, 'rate', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
-                  <td className="py-1 pr-2"><input type="number" value={it.gst_rate} onChange={(e) => updateItem(idx, 'gst_rate', Number(e.target.value))} className="border p-1 w-full rounded" /></td>
-                  <td className="py-1"><button onClick={() => removeItem(idx)} className="text-destructive">✕</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className="mt-2 space-y-2">
+            {items.map((it, idx) => (
+              <div key={idx} className="border rounded p-2 space-y-1.5">
+                <div className="flex items-start gap-2">
+                  {/* rows=3 by default, auto-growing with content -- a single-line
+                      input was too cramped for anything beyond a short SKU name. */}
+                  <textarea
+                    value={it.description}
+                    onChange={(e) => updateItem(idx, 'description', e.target.value)}
+                    onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` }}
+                    rows={3}
+                    className="border p-1.5 flex-1 min-w-0 rounded text-sm resize-y"
+                    placeholder="Description"
+                  />
+                  <button type="button" onClick={() => removeItem(idx)} className="text-destructive text-sm px-1 shrink-0" title="Remove line">✕</button>
+                </div>
+                <div className="flex flex-wrap items-end gap-2 text-xs">
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-muted-foreground">Qty</span>
+                    <input type="number" value={it.quantity} onChange={(e) => updateItem(idx, 'quantity', Number(e.target.value))} className="border p-1 rounded w-16" />
+                  </label>
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-muted-foreground">Rate</span>
+                    <input type="number" value={it.rate} onChange={(e) => updateItem(idx, 'rate', Number(e.target.value))} className="border p-1 rounded w-24" />
+                  </label>
+                  <label className="flex flex-col gap-0.5">
+                    <span className="text-muted-foreground">GST%</span>
+                    <input type="number" value={it.gst_rate} onChange={(e) => updateItem(idx, 'gst_rate', Number(e.target.value))} className="border p-1 rounded w-16" />
+                  </label>
+                  <span className="ml-auto font-medium tabular-nums">₹{(it.quantity * it.rate).toFixed(2)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
         )}
 
         <div className="text-right text-sm pt-2 border-t">
@@ -160,10 +182,18 @@ export function DocumentFormFields({
         <div>
           <label className="block text-sm font-medium mb-1">Notes</label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="border p-2 w-full rounded text-sm" rows={2} />
+          <div className="flex items-center gap-1.5 mt-1">
+            <Checkbox id="notes-remember" checked={notesDefault.remember} onCheckedChange={(v) => notesDefault.toggle(!!v)} />
+            <label htmlFor="notes-remember" className="text-xs text-muted-foreground cursor-pointer">Use this as the default next time</label>
+          </div>
         </div>
         <div>
           <label className="block text-sm font-medium mb-1">Terms & Conditions</label>
           <textarea value={terms} onChange={(e) => setTerms(e.target.value)} className="border p-2 w-full rounded text-sm" rows={2} />
+          <div className="flex items-center gap-1.5 mt-1">
+            <Checkbox id="terms-remember" checked={termsDefault.remember} onCheckedChange={(v) => termsDefault.toggle(!!v)} />
+            <label htmlFor="terms-remember" className="text-xs text-muted-foreground cursor-pointer">Use this as the default next time</label>
+          </div>
         </div>
       </div>
     </div>

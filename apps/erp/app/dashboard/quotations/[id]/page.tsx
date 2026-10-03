@@ -17,8 +17,16 @@ function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`
 }
 
-function ViewSalesDocumentPage() {
-  const { id } = useParams()
+// `docId`/`embedded` let this exact component be reused inline inside the
+// Quotations/Proforma list page's detail pane instead of duplicating this
+// rendering logic a second time -- embedded mode fetches by the given id
+// instead of a route param, drops the standalone-page chrome (Back button,
+// outer max-width), and reports back through `onUpdated` after every mutating
+// action so the list pane's own status badge stays in sync. Matches
+// ViewInvoicePage's embedded convention exactly.
+export function ViewSalesDocumentPage({ docId, embedded, onUpdated }: { docId?: string; embedded?: boolean; onUpdated?: () => void } = {}) {
+  const params = useParams()
+  const id = docId ?? (params.id as string)
   const router = useRouter()
   const [doc, setDoc] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -27,10 +35,11 @@ function ViewSalesDocumentPage() {
 
   const fetchDoc = useCallback(async () => {
     const res = await apiFetch(`/api/sales-documents/${id}`)
-    if (!res.ok) { router.push('/dashboard/quotations'); return }
+    if (!res.ok) { if (!embedded) router.push('/dashboard/quotations'); return }
     setDoc(await res.json())
     setLoading(false)
-  }, [id, router])
+    onUpdated?.()
+  }, [id, router, embedded, onUpdated])
 
   useEffect(() => { fetchDoc() }, [fetchDoc])
 
@@ -82,12 +91,14 @@ function ViewSalesDocumentPage() {
   const docLabel = doc.doc_type === 'quotation' ? 'Quotation' : 'Proforma Invoice'
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6">
+    <div className={embedded ? "space-y-6" : "max-w-5xl mx-auto space-y-6"}>
       {/* ---------- Toolbar ---------- */}
       <div className="flex flex-wrap justify-between items-center gap-2">
-        <Button variant="ghost" onClick={() => router.push('/dashboard/quotations')}>
-          <ArrowLeft className="mr-2 h-4 w-4" /> Back
-        </Button>
+        {embedded ? <span /> : (
+          <Button variant="ghost" onClick={() => router.back()}>
+            <ArrowLeft className="mr-2 h-4 w-4" /> Back
+          </Button>
+        )}
         <div className="flex flex-wrap gap-2">
           {canEditContent && (
             <Button variant="outline" onClick={() => setEditing(true)} disabled={busy}>

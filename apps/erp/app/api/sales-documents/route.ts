@@ -14,6 +14,10 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const docType = searchParams.get('doc_type')
   const showDeleted = searchParams.get('show_deleted') === 'true'
+  const status = searchParams.get('status')
+  const dateFrom = searchParams.get('date_from')
+  const dateTo = searchParams.get('date_to')
+  const search = searchParams.get('search')?.trim() || ''
 
   const pagination = parsePagination(searchParams)
   let query = supabaseAdmin
@@ -24,6 +28,27 @@ export async function GET(req: NextRequest) {
 
   if (docType) query = query.eq('doc_type', docType)
   if (!showDeleted) query = query.eq('is_deleted', false)
+  if (status) query = query.eq('status', status)
+  if (dateFrom) query = query.gte('document_date', dateFrom)
+  if (dateTo) query = query.lte('document_date', dateTo)
+
+  if (search) {
+    // Commas/parens would otherwise break postgrest's or() filter-string syntax below.
+    const safe = search.replace(/[(),]/g, ' ').trim()
+    const orParts = [`document_number.ilike.%${safe}%`, `customer_name.ilike.%${safe}%`]
+    const amount = Number(safe)
+    if (safe !== '' && !Number.isNaN(amount)) {
+      // Whole-rupee match (ignores paise) -- lets "15000" find a 15000.50 total.
+      orParts.push(`and(grand_total.gte.${amount},grand_total.lt.${amount + 1})`)
+    }
+    const { data: itemMatches } = await withRetry(() =>
+      supabaseAdmin.from('sales_document_items').select('sales_document_id').ilike('description', `%${safe}%`)
+    )
+    const descIds = [...new Set((itemMatches || []).map((r: any) => r.sales_document_id))]
+    if (descIds.length > 0) orParts.push(`id.in.(${descIds.join(',')})`)
+    query = query.or(orParts.join(','))
+  }
+
   if (pagination) query = query.range(pagination.from, pagination.to)
 
   const { data, error, count } = await withRetry(() => query)

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import Link from 'next/link'
 import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
@@ -11,10 +10,13 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { DocumentFormFields, ENTITY_LABELS, SalesDocType, SalesDocLineItem } from '@/components/SalesDocumentForm'
+import { DocumentFormFields, SalesDocType, SalesDocLineItem } from '@/components/SalesDocumentForm'
+import { ViewSalesDocumentPage } from './[id]/page'
 import { cn } from '@/lib/utils'
 
 interface DocSummary {
@@ -98,51 +100,24 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
   )
 }
 
-// One field in the detail pane's label/value grid -- matches Sales Ledger's Field
-// helper so this pane reads consistently with the reference master-detail page.
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="py-2.5 border-b border-border grid grid-cols-3 gap-2 text-sm">
-      <span className="text-muted-foreground">{label}</span>
-      <span className="col-span-2">{children}</span>
-    </div>
-  )
-}
-
-// Right-pane detail view -- a summary of the document (customer, entity, dates,
-// total, conversion progress) with a link through to the full record page for
-// everything interactive (status transitions, PDF, email, edit, line items) --
-// that page already owns those actions and isn't worth duplicating here.
-function DocDetailPane({ doc, docType, onBack }: { doc: DocSummary; docType: SalesDocType; onBack: () => void }) {
-  const totalItems = doc.sales_document_items.length
-  const convertedItems = doc.sales_document_items.filter((i) => i.converted).length
-
+// Right-pane detail view -- the full document (customer, line items with
+// per-line convert-to-sale, totals, notes/terms, and its own Edit/Mark Sent/
+// Accept/Reject/Void/Preview/Download/Email/Print toolbar) embedded inline via
+// its own `embedded` mode instead of behind a link-out, matching how Invoices'
+// list page embeds ViewInvoicePage -- everything is readable/actionable
+// without leaving this pane. `key={docId}` forces a clean remount per
+// selection, and `onUpdated` keeps the list pane's own status badge in sync
+// after a status change or edit.
+function DocDetailPane({ docId, onBack, onUpdated }: { docId: string; onBack: () => void; onUpdated: () => void }) {
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
-        <div className="min-w-0">
-          <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
-            <ArrowLeft className="size-4" /> Back to list
-          </button>
-          <h2 className="text-lg font-semibold text-foreground truncate">{doc.customer_name || '—'}</h2>
-          <p className="text-sm text-muted-foreground mt-0.5 font-mono">{doc.document_number}</p>
-        </div>
-        <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-          <span className="text-xl font-semibold tabular-nums text-foreground">₹{Number(doc.grand_total).toFixed(2)}</span>
-          <StatusBadge tone={toneFor(SALES_DOCUMENT_STATUS_TONES, doc.status)}>{doc.status}</StatusBadge>
-        </div>
+      <div className="p-4 pb-0">
+        <button type="button" onClick={onBack} className="md:hidden mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground">
+          <ArrowLeft className="size-4" /> Back to list
+        </button>
       </div>
-
-      <div className="flex-1 overflow-y-auto p-4">
-        <Field label="Date">{doc.document_date}</Field>
-        {docType === 'quotation' && <Field label="Valid Until">{doc.valid_until || '—'}</Field>}
-        <Field label="Entity">{ENTITY_LABELS[doc.entity_key]}</Field>
-        <Field label="Conversion">{convertedItems}/{totalItems} line{totalItems === 1 ? '' : 's'} converted to a sale</Field>
-        <div className="pt-4">
-          <Link href={`/dashboard/quotations/${doc.id}`} className="text-primary underline text-sm">
-            Open full document →
-          </Link>
-        </div>
+      <div className="flex-1 overflow-y-auto p-4 pt-2">
+        <ViewSalesDocumentPage key={docId} docId={docId} embedded onUpdated={onUpdated} />
       </div>
     </div>
   )
@@ -175,9 +150,28 @@ function DocListItem({ doc, active, onOpen }: { doc: DocSummary; active: boolean
   )
 }
 
+const DOC_TYPE_STORAGE_KEY = 'quotations-doc-type'
+
 // ---------- Main page ----------
 function QuotationsPage() {
-  const [docType, setDocType] = useState<SalesDocType>('quotation')
+  // Persisted so the Quotations/Proforma tab survives a round trip through the
+  // full document page -- that page's Back button remounts this one (Next.js
+  // doesn't preserve component state across App Router navigation), so without
+  // this it always reset to the Quotations tab even when you'd opened a
+  // Proforma Invoice.
+  const [docType, setDocType] = useState<SalesDocType>(() => {
+    if (typeof window === 'undefined') return 'quotation'
+    try {
+      const stored = window.localStorage.getItem(DOC_TYPE_STORAGE_KEY)
+      return stored === 'proforma' ? 'proforma' : 'quotation'
+    } catch {
+      return 'quotation'
+    }
+  })
+  const selectDocType = (t: SalesDocType) => {
+    setDocType(t)
+    try { window.localStorage.setItem(DOC_TYPE_STORAGE_KEY, t) } catch { /* ignore */ }
+  }
   const [docs, setDocs] = useState<DocSummary[]>([])
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(1)
@@ -187,9 +181,30 @@ function QuotationsPage() {
   const isDesktop = useIsDesktopViewport()
   const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('quotations-list-pane-width')
 
+  const [statusFilter, setStatusFilter] = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  // searchInput updates on every keystroke; search catches up 300ms after typing
+  // stops and is what actually drives fetchDocs -- same debounce pattern as
+  // StockView/Sales Ledger/Purchase Orders.
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch] = useState('')
+  useEffect(() => {
+    const timer = setTimeout(() => setSearch(searchInput), 300)
+    return () => clearTimeout(timer)
+  }, [searchInput])
+
   const fetchDocs = useCallback(async () => {
     setLoading(true)
-    const res = await apiFetch(`/api/sales-documents?doc_type=${docType}&page=${page}&limit=${PAGE_SIZE}`)
+    const params = new URLSearchParams()
+    params.set('doc_type', docType)
+    params.set('page', String(page))
+    params.set('limit', String(PAGE_SIZE))
+    if (statusFilter) params.set('status', statusFilter)
+    if (dateFrom) params.set('date_from', dateFrom)
+    if (dateTo) params.set('date_to', dateTo)
+    if (search) params.set('search', search)
+    const res = await apiFetch(`/api/sales-documents?${params.toString()}`)
     if (res.ok) {
       const json = await res.json()
       const data: DocSummary[] = json.data || []
@@ -203,12 +218,12 @@ function QuotationsPage() {
       setActiveDocId(null)
     }
     setLoading(false)
-  }, [docType, page, PAGE_SIZE])
+  }, [docType, page, PAGE_SIZE, statusFilter, dateFrom, dateTo, search])
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
-  // Switching between Quotations/Proforma tabs invalidates the current page's meaning.
-  useEffect(() => { setPage(1) }, [docType])
+  // Switching tabs or any filter invalidates the current page's meaning.
+  useEffect(() => { setPage(1) }, [docType, statusFilter, dateFrom, dateTo, search])
 
   const activeDoc = useMemo(() => docs.find((d) => d.id === activeDocId) ?? null, [docs, activeDocId])
 
@@ -227,11 +242,43 @@ function QuotationsPage() {
             Quotations &amp; Proforma Invoices
           </h1>
           <div className="flex border rounded overflow-hidden shrink-0 w-fit">
-            <button onClick={() => setDocType('quotation')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'quotation' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Quotations</button>
-            <button onClick={() => setDocType('proforma')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
+            <button onClick={() => selectDocType('quotation')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'quotation' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Quotations</button>
+            <button onClick={() => selectDocType('proforma')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
           </div>
         </div>
         <CreateDocumentDialog docType={docType} onCreated={fetchDocs} />
+      </div>
+
+      <div className="flex flex-wrap gap-2 mb-2 items-center">
+        <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
+          <SelectTrigger className="w-auto"><SelectValue placeholder="All Statuses" /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Statuses</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="accepted">Accepted</SelectItem>
+            <SelectItem value="rejected">Rejected</SelectItem>
+            <SelectItem value="expired">Expired</SelectItem>
+            <SelectItem value="void">Void</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-auto" title="From date" />
+        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-auto" title="To date" />
+        <Input
+          type="text"
+          placeholder="Search client, document #, item, or amount..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="w-64"
+        />
+        {(statusFilter || dateFrom || dateTo || search || searchInput) && (
+          <button
+            onClick={() => { setStatusFilter(''); setDateFrom(''); setDateTo(''); setSearch(''); setSearchInput('') }}
+            className="text-sm text-muted-foreground underline self-center"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {loading && docs.length === 0 ? (
@@ -275,7 +322,7 @@ function QuotationsPage() {
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeDoc && 'hidden md:flex md:items-center md:justify-center')}>
             {activeDoc ? (
-              <DocDetailPane doc={activeDoc} docType={docType} onBack={() => setActiveDocId(null)} />
+              <DocDetailPane docId={activeDoc.id} onBack={() => setActiveDocId(null)} onUpdated={fetchDocs} />
             ) : (
               <p className="text-sm text-muted-foreground">Select a document to view details.</p>
             )}

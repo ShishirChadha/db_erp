@@ -23,6 +23,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -42,6 +43,7 @@ import { SearchableCustomerSelect } from "./SearchableCustomerSelect";
 import { SearchableItemSelect } from "./SearchableItemSelect";
 import { calculateGST } from "@/lib/gstCalculation";
 import { invoiceSchema, InvoiceFormData, InvoiceItemFormData } from "@/lib/schemas/invoiceSchema";
+import { useRememberedDefault } from "@/lib/useRememberedDefault";
 
 interface InvoiceFormProps {
   initialData?: InvoiceFormData;
@@ -85,6 +87,12 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
   const watchedItems = watch("items");
   const watchedCustomerGst = watch("customer_gst");
   const watchedPlaceOfSupply = watch("place_of_supply");
+  // Keyed by entity for parity with the Quotation/Proforma form -- invoices are
+  // Digitalbluez-only today (no entity picker on this form yet), so this
+  // currently resolves to a single default, but is already scoped correctly
+  // for whenever Techtenth/Cash invoicing ships.
+  const notesDefault = useRememberedDefault("invoice-notes-default-digitalbluez", watch("notes") || "", (v) => setValue("notes", v));
+  const termsDefault = useRememberedDefault("invoice-terms-default-digitalbluez", watch("terms_conditions") || "", (v) => setValue("terms_conditions", v));
 
   useEffect(() => {
     if (invoiceNumber && !initialData?.invoice_number) {
@@ -274,75 +282,80 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
           <h3 className="font-semibold">Line Items</h3>
           <SearchableItemSelect onSelect={addItem} />
         </div>
-        <div className="overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Description</TableHead>
-                <TableHead>HSN</TableHead>
-                <TableHead>Qty</TableHead>
-                <TableHead>Rate</TableHead>
-                <TableHead>GST%</TableHead>
-                <TableHead>Tax Type</TableHead>
-                <TableHead>Amount</TableHead>
-                <TableHead></TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {fields.map((field, index) => (
-                <TableRow key={field.id}>
-                  <TableCell>
-                    <Input {...register(`items.${index}.description`)} />
-                  </TableCell>
-                  <TableCell>
-                    <Input {...register(`items.${index}.hsn_code`)} />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.quantity`, { valueAsNumber: true })}
-                      onChange={() => updateItemGST(index)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.rate`, { valueAsNumber: true })}
-                      onChange={() => updateItemGST(index)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Input
-                      type="number"
-                      step="0.01"
-                      {...register(`items.${index}.gst_rate`, { valueAsNumber: true })}
-                      onChange={() => updateItemGST(index)}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <Select
-                      value={watch(`items.${index}.gst_type`)}
-                      onValueChange={() => updateItemGST(index)}
-                    >
-                      <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="IGST">IGST</SelectItem>
-                        <SelectItem value="CGST_SGST">CGST+SGST</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="text-right">₹{watch(`items.${index}.amount`)?.toFixed(2) || 0}</TableCell>
-                  <TableCell>
-                    <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        {/* Stacked cards instead of an 8-column table -- Description/HSN/Qty/Rate/
+            GST%/Tax Type/Amount/remove never fit without a horizontal scrollbar on
+            a laptop screen, let alone mobile. Each line now wraps naturally. */}
+        <div className="space-y-3">
+          {fields.map((field, index) => (
+            <div key={field.id} className="border rounded-lg p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <Label className="text-xs text-muted-foreground">Description</Label>
+                  {/* rows=3 by default, auto-growing with content -- a single-line
+                      input was too cramped for anything beyond a short SKU name. */}
+                  <Textarea
+                    {...register(`items.${index}.description`)}
+                    rows={3}
+                    className="resize-y"
+                    onInput={(e) => { const el = e.currentTarget; el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px` }}
+                  />
+                </div>
+                <Button type="button" variant="ghost" size="icon" onClick={() => remove(index)} className="mt-5 shrink-0">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="w-28">
+                  <Label className="text-xs text-muted-foreground">HSN</Label>
+                  <Input {...register(`items.${index}.hsn_code`)} />
+                </div>
+                <div className="w-20">
+                  <Label className="text-xs text-muted-foreground">Qty</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...register(`items.${index}.quantity`, { valueAsNumber: true })}
+                    onChange={() => updateItemGST(index)}
+                  />
+                </div>
+                <div className="w-24">
+                  <Label className="text-xs text-muted-foreground">Rate</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...register(`items.${index}.rate`, { valueAsNumber: true })}
+                    onChange={() => updateItemGST(index)}
+                  />
+                </div>
+                <div className="w-20">
+                  <Label className="text-xs text-muted-foreground">GST%</Label>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    {...register(`items.${index}.gst_rate`, { valueAsNumber: true })}
+                    onChange={() => updateItemGST(index)}
+                  />
+                </div>
+                <div className="w-36">
+                  <Label className="text-xs text-muted-foreground">Tax Type</Label>
+                  <Select
+                    value={watch(`items.${index}.gst_type`)}
+                    onValueChange={() => updateItemGST(index)}
+                  >
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="IGST">IGST</SelectItem>
+                      <SelectItem value="CGST_SGST">CGST+SGST</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="ml-auto text-right">
+                  <Label className="text-xs text-muted-foreground block">Amount</Label>
+                  <span className="font-medium tabular-nums">₹{watch(`items.${index}.amount`)?.toFixed(2) || 0}</span>
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
         <div className="flex flex-col items-end space-y-2">
           <div className="w-64 space-y-1">
@@ -357,10 +370,18 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
         <div>
           <Label htmlFor="notes">Notes</Label>
           <Textarea id="notes" {...register("notes")} />
+          <div className="flex items-center gap-1.5 mt-1">
+            <Checkbox id="notes-remember" checked={notesDefault.remember} onCheckedChange={(v) => notesDefault.toggle(!!v)} />
+            <Label htmlFor="notes-remember" className="text-xs text-muted-foreground font-normal cursor-pointer">Use this as the default next time</Label>
+          </div>
         </div>
         <div>
           <Label htmlFor="terms_conditions">Terms & Conditions</Label>
           <Textarea id="terms_conditions" {...register("terms_conditions")} />
+          <div className="flex items-center gap-1.5 mt-1">
+            <Checkbox id="terms-remember" checked={termsDefault.remember} onCheckedChange={(v) => termsDefault.toggle(!!v)} />
+            <Label htmlFor="terms-remember" className="text-xs text-muted-foreground font-normal cursor-pointer">Use this as the default next time</Label>
+          </div>
         </div>
       </div>
       <div>

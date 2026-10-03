@@ -106,8 +106,18 @@ function InvoiceDetailPane({ inv, onDelete, onBack }: {
 function InvoicesPage() {
   const [invoices, setInvoices] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  // searchInput updates on every keystroke; searchTerm catches up 300ms after
+  // typing stops and is what actually drives fetchInvoices -- same debounce
+  // pattern as StockView/Sales Ledger/Purchase Orders.
+  const [searchInput, setSearchInput] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
+  useEffect(() => {
+    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [showDeleted, setShowDeleted] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
@@ -131,14 +141,26 @@ function InvoicesPage() {
     }
 
     if (searchTerm) {
-      query = query.or(
-        `invoice_number.ilike.%${searchTerm}%,` +
-        `customer_name.ilike.%${searchTerm}%`
+      // Commas/parens would otherwise break postgrest's or() filter-string syntax below.
+      const safe = searchTerm.replace(/[(),]/g, " ").trim();
+      const orParts = [`invoice_number.ilike.%${safe}%`, `customer_name.ilike.%${safe}%`];
+      const amount = Number(safe);
+      if (safe !== "" && !Number.isNaN(amount)) {
+        // Whole-rupee match (ignores paise) -- lets "15000" find a 15000.50 total.
+        orParts.push(`and(grand_total.gte.${amount},grand_total.lt.${amount + 1})`);
+      }
+      const { data: itemMatches } = await withRetry(() =>
+        supabase.from("invoice_items").select("invoice_id").ilike("description", `%${safe}%`)
       );
+      const descIds = [...new Set((itemMatches || []).map((r: any) => r.invoice_id))];
+      if (descIds.length > 0) orParts.push(`id.in.(${descIds.join(",")})`);
+      query = query.or(orParts.join(","));
     }
     if (statusFilter && statusFilter !== "all") {
       query = query.eq("status", statusFilter);
     }
+    if (dateFrom) query = query.gte("invoice_date", dateFrom);
+    if (dateTo) query = query.lte("invoice_date", dateTo);
 
     query = query.order("invoice_date", { ascending: false, nullsFirst: false });
     query = query.order("created_at", { ascending: false });
@@ -156,7 +178,7 @@ function InvoicesPage() {
       setActiveInvoiceId((prev) => (prev && rows.some((r: any) => r.id === prev)) ? prev : (isDesktop ? (rows[0]?.id ?? null) : null));
     }
     setLoading(false);
-  }, [searchTerm, statusFilter, showDeleted, page, PAGE_SIZE, supabase]);
+  }, [searchTerm, statusFilter, dateFrom, dateTo, showDeleted, page, PAGE_SIZE, supabase]);
 
   // Any filter change invalidates the current page's meaning -- reset to page 1
   // during render (React's supported "adjust state while rendering" pattern),
@@ -164,7 +186,7 @@ function InvoicesPage() {
   // fetch effect twice per filter change (once with the new filter but the
   // stale page, again once the reset effect changed `page`), and on a slow
   // connection the stale response could land last and overwrite correct rows.
-  const filterKey = JSON.stringify([searchTerm, statusFilter, showDeleted]);
+  const filterKey = JSON.stringify([searchTerm, statusFilter, dateFrom, dateTo, showDeleted]);
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey);
@@ -212,32 +234,42 @@ function InvoicesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-4 items-end mb-4">
-        <div className="flex-1">
-          <Input
-            placeholder="Search by invoice number or customer..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-        <div className="w-48">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All</SelectItem>
-              <SelectItem value="draft">Draft</SelectItem>
-              <SelectItem value="pending_approval">Pending Approval</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="paid">Paid</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="flex flex-wrap gap-2 items-center mb-4">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-auto">
+            <SelectValue placeholder="All Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Status</SelectItem>
+            <SelectItem value="draft">Draft</SelectItem>
+            <SelectItem value="pending_approval">Pending Approval</SelectItem>
+            <SelectItem value="approved">Approved</SelectItem>
+            <SelectItem value="sent">Sent</SelectItem>
+            <SelectItem value="paid">Paid</SelectItem>
+            <SelectItem value="overdue">Overdue</SelectItem>
+            <SelectItem value="void">Void</SelectItem>
+          </SelectContent>
+        </Select>
+        <Input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} className="w-auto" title="From date" />
+        <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} className="w-auto" title="To date" />
+        <Input
+          placeholder="Search client, invoice #, item, or amount..."
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          className="w-64"
+        />
         <div className="flex items-center space-x-2">
           <Checkbox id="showDeleted" checked={showDeleted} onCheckedChange={(v) => setShowDeleted(!!v)} />
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
+        {(statusFilter !== "all" || dateFrom || dateTo || searchInput) && (
+          <button
+            onClick={() => { setStatusFilter("all"); setDateFrom(""); setDateTo(""); setSearchInput(""); setSearchTerm(""); }}
+            className="text-sm text-muted-foreground underline self-center"
+          >
+            Clear filters
+          </button>
+        )}
       </div>
 
       {loading && invoices.length === 0 ? (
