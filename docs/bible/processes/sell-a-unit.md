@@ -10,7 +10,7 @@ sources:
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/sales-entry.ts
   - apps/erp/app/dashboard/entry/sell/page.tsx
-updated: 2026-09-15
+updated: 2026-10-05
 ---
 
 ## What this is
@@ -65,3 +65,11 @@ the moment it's submitted.
 - **"The unit isn't showing in search."** — Check its status isn't already `sold`,
   `reserved_web`, or QC-failed/scrapped; Live Stock and the main ERP Stock page
   deliberately show non-overlapping sets filtered by `asset_ledger.source`.
+
+## If the period is locked
+
+A sale dated inside a locked period is refused with `period_locked`. A locked
+period has normally been filed, so adding a sale to it would change a return
+already sent to the portal. Either record it in an open period, or ask the
+owner to reopen a window for that date — which is logged with a reason. See
+**finance-gst-reports**.

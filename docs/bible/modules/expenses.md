@@ -19,7 +19,7 @@ sources:
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/lib/owner-only-expense-types.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-10-01
+updated: 2026-10-05
 ---
 
 ## What this covers
@@ -238,3 +238,27 @@ possible to submit an expense the server was always going to reject — and the
 dialog replaced the server's explanation with a generic "Failed to add
 expense." All three are now marked in both the add and edit dialogs, and the
 error shown is the server's own, naming the field that is missing.
+
+## GST treatment on an expense
+
+Owner-only fields, because tax treatment is not operational data.
+`supply_type` says how GST arises:
+
+- `forward` — the vendor charged it, normal case.
+- `rcm_import_services` — an imported service we self-assess. Foreign
+  advertising and cloud bills (Google, Meta, AWS) are the common case and the
+  one most often missed entirely.
+- `rcm_domestic` — s.9(3) reverse charge we owe: GTA freight, legal services,
+  security, commercial rent from an unregistered landlord.
+- `none` — outside GST.
+
+`gst_amount` is **derived** from `gst_percentage` and the amount rather than
+typed, so it cannot disagree with the rate. A reverse-charge expense starts
+`itc_status = 'pending'`: the liability reaches GSTR-3B 3.1(d) on its own, but
+the matching credit only reaches 4A once it is marked claimed, so the GST page
+raises `rcm_credit_unclaimed` until then. Paying the liability without taking
+the credit is a pure loss.
+
+Note s.9(4) — buying from an unregistered domestic supplier — does **not**
+apply here: it needs both a notified class of person and notified goods, and
+computers are on neither list. See **finance-gst-reports**.

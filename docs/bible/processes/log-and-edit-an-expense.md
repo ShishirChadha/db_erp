@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/ExpenseAttachmentsField.tsx
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-10-01
+updated: 2026-10-05
 ---
 
 ## What this is

@@ -16,7 +16,7 @@ sources:
   - apps/erp/app/api/recon-sessions/**
   - apps/erp/app/api/purchase-orders/[id]/payments/**
   - apps/erp/app/dashboard/recon/**
-updated: 2026-09-01
+updated: 2026-10-05
 ---
 
 ## What this covers
@@ -135,3 +135,13 @@ the recurring-rules table the watch above now reads), **business-rules**
 (every recon page and route is owner-only),
 **finance-gst-reports** (GSTR-2B-vs-purchase-invoice matching is the highest-
 value reconciliation not yet built).
+
+## GST reconciliation shares this pattern
+
+Two further sources reconcile the same way — a Zoho invoice register (outward)
+and a GSTR-2B download (inward) — through `gst_recon_imports` +
+`gst_recon_lines`, with deterministic matchers in `lib/recon/gst-zoho-matcher.ts`
+and `lib/recon/gst-2b-matcher.ts` carrying explicit tolerance constants, exactly
+as the bank matchers do. They live on the GST page rather than here because the
+question they answer is "is the return complete", not "does the bank agree".
+See **finance-gst-reports**.

@@ -13,7 +13,7 @@ sources:
   - apps/erp/app/api/sales-documents/route.ts
   - apps/erp/app/api/sales-documents/[id]/route.ts
   - apps/erp/app/api/sales-entry/route.ts
-updated: 2026-09-16
+updated: 2026-10-05
 ---
 
 ## What this is
