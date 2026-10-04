@@ -4,6 +4,8 @@ import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { createBrowserSupabaseClient } from '@db/db/browser'
+import { mergeGuestCartIfAny } from '@/lib/guest-cart'
+
 
 function LoginFormInner() {
   const router = useRouter()
@@ -22,6 +24,11 @@ function LoginFormInner() {
       const { error: signInErr } = await supabase.auth.signInWithPassword({ email, password })
       if (signInErr) throw signInErr
 
+      // Carry an anonymous visitor's cart into their account before
+      // navigating. Awaited deliberately: the helper clears localStorage
+      // only after a 2xx, and doing that before the route change is what
+      // keeps a second merge from firing on the next page.
+      await mergeGuestCartIfAny()
       router.push(searchParams.get('next') || '/account')
       router.refresh()
     } catch (err: any) {

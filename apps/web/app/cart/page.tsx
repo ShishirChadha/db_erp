@@ -6,12 +6,24 @@ import { buildConfigSummary } from '@db/shared'
 import { formatCurrency } from '@db/shared'
 import { CartItemRow } from '@/components/CartItemRow'
 import { TrackViewCart } from '@/components/TrackViewCart'
+import { GuestCart } from '@/components/GuestCart'
 
 export const dynamic = 'force-dynamic'
 
 export default async function CartPage() {
   const session = await getCustomerSession()
-  if (!session) redirect('/login?next=/cart')
+
+  // Not signed in: show the local guest cart rather than bouncing to /login.
+  // The account is only needed at checkout, where the order and the stock hold
+  // have to belong to someone.
+  if (!session) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">Your cart</h1>
+        <GuestCart />
+      </main>
+    )
+  }
 
   const supabase = await createServerSupabaseClient()
   const { data: cartItems } = await supabase

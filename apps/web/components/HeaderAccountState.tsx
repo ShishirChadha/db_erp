@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { useCustomerSession } from './CustomerSessionProvider'
+import { guestCartCount } from '@/lib/guest-cart'
 
 interface HeaderState {
   loggedIn: boolean
@@ -31,8 +32,20 @@ export function HeaderAccountState() {
   useEffect(() => {
     if (!sessionReady) return
     if (!sessionLoggedIn) {
-      setState(INITIAL)
-      return
+      // Anonymous visitors now have a real cart (localStorage), so the badge
+      // has to reflect it -- otherwise someone adds three items and the header
+      // still reads empty. The round trip is still skipped, which is what keeps
+      // the layout statically cacheable; this reads local state only.
+      const sync = () => setState({ ...INITIAL, cartCount: guestCartCount() })
+      sync()
+      window.addEventListener('db-guest-cart-changed', sync)
+      // 'storage' fires only in OTHER tabs, so both listeners are needed to
+      // keep two open tabs agreeing.
+      window.addEventListener('storage', sync)
+      return () => {
+        window.removeEventListener('db-guest-cart-changed', sync)
+        window.removeEventListener('storage', sync)
+      }
     }
     let cancelled = false
     fetch('/api/account/header-state')

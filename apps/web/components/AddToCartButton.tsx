@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createBrowserSupabaseClient } from '@db/db/browser'
 import { sortSelectedUpgrades, type SelectedUpgrade } from '@/lib/upgrades'
 import { track, type GaItem } from '@/lib/analytics'
+import { addToGuestCart } from '@/lib/guest-cart'
 
 export function AddToCartButton({
   skuId,
@@ -24,20 +25,46 @@ export function AddToCartButton({
   const router = useRouter()
   const [pending, setPending] = useState(false)
   const [added, setAdded] = useState(false)
+  // Guest carts are capped (see lib/guest-cart.ts) -- say so rather than
+  // silently dropping the item.
+  const [full, setFull] = useState<'cart_full' | 'line_full' | null>(null)
 
   const handleClick = async () => {
+    setFull(null)
     setPending(true)
     try {
       const supabase = createBrowserSupabaseClient()
       const {
         data: { user },
       } = await supabase.auth.getUser()
+      const upgrades = sortSelectedUpgrades(selectedUpgrades)
+
+      // Not signed in: keep the item in a local guest cart instead of bouncing
+      // them to /login. Requiring an account before you can even put something
+      // in a basket is the kind of friction that loses the sale outright -- the
+      // account is only genuinely needed at checkout, where the order and the
+      // stock reservation have to belong to someone.
+      //
+      // The guest cart is merged into the real one by mergeGuestCartIfAny() on
+      // the login transition.
       if (!user) {
-        router.push(`/login?next=${encodeURIComponent(window.location.pathname)}`)
+        const result = addToGuestCart(skuId, upgrades)
+        if (result !== 'added') {
+          setFull(result)
+          return
+        }
+        if (item) {
+          const upgradeDelta = upgrades.reduce((sum, u) => sum + (u.price_delta ?? 0), 0)
+          const priced = { ...item, price: item.price + upgradeDelta }
+          track({
+            name: 'add_to_cart',
+            params: { currency: 'INR', value: priced.price * priced.quantity, items: [priced] },
+          })
+        }
+        setAdded(true)
+        setTimeout(() => setAdded(false), 2000)
         return
       }
-
-      const upgrades = sortSelectedUpgrades(selectedUpgrades)
 
       // Must also match on selected_upgrades -- two cart lines for the same
       // SKU with different upgrade choices are distinct lines, not the same
@@ -77,15 +104,24 @@ export function AddToCartButton({
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleClick}
-      disabled={disabled || pending}
-      className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition-opacity disabled:opacity-50 ${
-        added ? 'bg-emerald-600 text-white' : 'bg-brand-orange text-white hover:opacity-90'
-      }`}
-    >
-      {disabled ? 'Sold out' : added ? 'Added to cart' : pending ? 'Adding…' : 'Add to cart'}
-    </button>
+    <div>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={disabled || pending}
+        className={`w-full rounded-full px-4 py-3 text-sm font-semibold transition-opacity disabled:opacity-50 ${
+          added ? 'bg-emerald-600 text-white' : 'bg-brand-orange text-white hover:opacity-90'
+        }`}
+      >
+        {disabled ? 'Sold out' : added ? 'Added to cart' : pending ? 'Adding…' : 'Add to cart'}
+      </button>
+      {full && (
+        <p className="mt-2 text-xs text-red-600">
+          {full === 'line_full'
+            ? 'That is the most you can add of this item.'
+            : 'Your cart is full. Please check out or remove something first.'}
+        </p>
+      )}
+    </div>
   )
 }
