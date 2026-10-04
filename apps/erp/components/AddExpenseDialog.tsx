@@ -42,6 +42,9 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
     description: "",
     type: "",
     payment_account: "",
+    supply_type: "",
+    gst_percentage: "",
+    vendor_gstin: "",
     from_location: "",
     to_location: "",
     amount: null as number | null,
@@ -84,6 +87,9 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
         to_location: showLocationFields ? formData.to_location : "",
         vendor_id: showVendorField ? formData.vendor_id : "",
         payment_account: showPaidFromField ? formData.payment_account : "",
+        supply_type: formData.supply_type || null,
+        gst_percentage: formData.gst_percentage === "" ? null : Number(formData.gst_percentage),
+        vendor_gstin: formData.vendor_gstin || null,
         attachments,
       }),
     });
@@ -102,6 +108,9 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
         description: "",
         type: "",
         payment_account: "",
+        supply_type: "",
+        gst_percentage: "",
+        vendor_gstin: "",
         from_location: "",
         to_location: "",
         amount: null,
@@ -165,6 +174,61 @@ export default function AddExpenseDialog({ onAdd }: { onAdd: () => void }) {
               </>
             )}
             <div><Label>Amount *</Label><Input type="number" step="0.01" required value={formData.amount ?? ""} onChange={(e) => handleChange("amount", e.target.value === "" ? null : parseFloat(e.target.value))} /></div>
+            {isOwner && (
+              <div className="col-span-2 grid grid-cols-2 gap-3 rounded-md border p-3">
+                <div className="col-span-2">
+                  <Label>GST treatment</Label>
+                  <Select
+                    value={formData.supply_type || "none"}
+                    onValueChange={(val) => handleChange("supply_type", val === "none" ? "" : val)}
+                  >
+                    <SelectTrigger><SelectValue placeholder="Outside GST" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Outside GST — no tax either way</SelectItem>
+                      <SelectItem value="forward">Vendor charged GST (normal)</SelectItem>
+                      <SelectItem value="rcm_import_services">Imported service — reverse charge (Google / Meta / AWS)</SelectItem>
+                      <SelectItem value="rcm_domestic">Domestic reverse charge (freight, legal, security, rent)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  {(formData.supply_type === "rcm_import_services" || formData.supply_type === "rcm_domestic") && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      You owe this tax yourself and can usually claim it back. It appears in GSTR-3B 3.1(d)
+                      with the credit in 4A, and starts as an unclaimed credit on the GST page.
+                    </p>
+                  )}
+                  {formData.supply_type === "rcm_import_services" && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Foreign advertising and cloud bills are the common case, and the one most often missed.
+                    </p>
+                  )}
+                </div>
+                {formData.supply_type && formData.supply_type !== "none" && (
+                  <>
+                    <div>
+                      <Label>GST %</Label>
+                      <Input
+                        type="number" step="0.01" placeholder="18"
+                        value={formData.gst_percentage}
+                        onChange={(e) => handleChange("gst_percentage", e.target.value)}
+                      />
+                      {formData.gst_percentage !== "" && formData.amount ? (
+                        <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+                          Tax: ₹{((Number(formData.amount) * Number(formData.gst_percentage)) / 100).toFixed(2)}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div>
+                      <Label>Vendor GSTIN</Label>
+                      <Input
+                        placeholder="optional"
+                        value={formData.vendor_gstin}
+                        onChange={(e) => handleChange("vendor_gstin", e.target.value.toUpperCase())}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
             {showVendorField && (
               <div className="col-span-2">
                 <Label>Vendor</Label>

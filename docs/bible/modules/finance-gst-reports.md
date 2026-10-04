@@ -22,6 +22,7 @@ sources:
   - apps/erp/lib/recon/gst-zoho-matcher.ts
   - apps/erp/lib/recon/gst-2b-matcher.ts
   - apps/erp/lib/period-lock.ts
+  - apps/erp/app/api/credit-notes/route.ts
 updated: 2026-10-05
 ---
 
@@ -283,6 +284,36 @@ Enforced so far on the three writes that change a return: new sale
 (`/api/sales-entry`), void, and invoice finalize. `lib/period-lock.ts` fails
 open on an infrastructure error, because a lock is a bookkeeping guard and the
 role checks are what actually protect the data.
+
+## Credit notes
+
+`invoices.invoice_type = 'credit_note'`, with its own number series
+(`business_profiles.credit_note_prefix`, default `CN`) because a credit note is
+a separate document nature in Table 13 — doc_num **5**, not 1 — and sharing the
+invoice series would corrupt both ranges.
+
+**Amounts are stored positive, exactly like an invoice.** This is the part most
+easily got wrong. The portal wants positive values in `cdnr` and derives the
+reduction itself, while Table 12, 3B 3.1(a)/3.2 and books-vs-return must be
+**net**. So `v_gst_outward_lines` carries a `sign` (+1 invoice, −1 credit note)
+and `txval_signed`/`camt_signed`/`samt_signed`/`iamt_signed`: netting consumers
+read the signed columns, the CDNR section reads the raw ones. Storing negatives
+instead would invert the cdnr output and understate the credit. A consumer that
+forgets this does not fail loudly — it reports the credit note as *additional*
+supply, which is how 3B initially over-reported by the credit amount before
+being fixed.
+
+One credit note per invoice (`credit_note_of_invoice_id`, 409 on a second).
+A partial reversal is a smaller credit note, not a second one — two would
+double-reduce the supply. On a partial, tax is re-derived from the credited
+quantity rather than copied, so it cannot carry the full invoice's tax. The
+number is minted only after every line validates, so a bad request never burns
+a real credit-note number — the same rule the invoice path follows.
+
+Owner-only, and it respects the period lock: issuing one into a locked period
+is refused. This is the correct remedy for an invoiced sale that has to be
+undone — voiding the sale alone leaves the invoice standing, which is exactly
+what `/api/sales/[id]/void` warns about.
 
 ## Related
 

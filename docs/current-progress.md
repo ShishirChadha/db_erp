@@ -1706,3 +1706,49 @@ through to `itc_status`.
 - Credit notes, GSTR-1A, amendments (B2BA/CDNRA), IMS action queue: still deferred.
 - Period lock is enforced on 3 write paths, not every module.
 
+---
+
+## GST module — credit notes and series handling (2026-10-05)
+
+**Series handling is now prefix-aware.** Digitalbluez is configured with
+`invoice_prefix = 'DB'` while every existing invoice is Zoho's `DBI` series, so once the
+ERP issues its own, two series coexist in one financial year. That is legal (Rule 46 wants
+each series consecutive and unique within the year, not a single series) but it broke gap
+detection, which treated all numeric suffixes as one sequence — `DBI…00751` followed by
+`DB…00681` read as a 70-number gap plus a duplicate. `v_gst_invoice_series` now carries a
+`series_key` (uppercased, punctuation stripped) so gaps are found within each series and
+Table 13 reports one row per series. The normalisation also keeps the mistyped
+`DBI2026/27--00705` inside its real series instead of inventing a second one.
+
+Note there is **no collision** with prefix `DB`: `DB2026/27-00681` and `DBI2026/27-00681`
+are different strings and the unique constraint is on the whole number, so the counter at
+680 is fine as-is. Confirmed with the owner that `DB` stays.
+
+**Credit notes built.** Own `CN` series, Table 9B CDNR/CDNUR in both the CSV and the portal
+JSON, Table 13 doc_num 5, owner-only, period-lock aware, one per invoice, partial supported
+with tax re-derived from the credited quantity. An "Issue credit note" action sits on the
+invoice detail page.
+
+**Expenses can now carry GST treatment** — `supply_type` (none / forward / rcm_domestic /
+rcm_import_services) with the tax derived from the rate rather than typed, owner-only in
+the Add Expense dialog. This is what will capture the import-of-services reverse charge on
+foreign advertising when that spend starts; the owner confirmed there is none today. A new
+`rcm_credit_unclaimed` warning flags reverse-charge credit recorded but never claimed,
+since the liability reaches 3B 3.1(d) automatically while the credit only reaches 4A once
+marked.
+
+**Filing & locks now has a UI** — the APIs existed but were unreachable. Record a filing
+with an ARN, snapshot on export, set per-module locks, and reopen a window with a reason.
+
+**Exception rows deep-link** to the offending record (invoices to their detail page;
+sales/customers/SKUs to their list page, since only invoices have a detail route).
+
+### Bug found and fixed during verification
+`gst_r3b_summary` and `gst_books_vs_return` were summing the UNSIGNED columns after credit
+notes joined the view, so a credit note **increased** reported outward supply instead of
+reducing it — 3.1(a) went up by the credit amount. Both now use the signed columns, and
+3B additionally reports `credit_notes_netted` so the reduction is visible rather than
+merely baked in. Verified: a ₹23,677.97 credit note moves 3.1(a) from ₹10,50,297.21 to
+₹10,26,619.24 and IGST from ₹31,289.49 to ₹27,027.46, with CGST/SGST untouched because that
+invoice was inter-state.
+

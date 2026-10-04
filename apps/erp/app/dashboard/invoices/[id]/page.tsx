@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 import { useRole } from "@/lib/auth/useRole";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
+import { SimpleModal } from "@/components/SimpleModal";
 
 function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`;
@@ -41,6 +42,28 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
   const [ewayNumber, setEwayNumber] = useState("");
   const [ewayDate, setEwayDate] = useState("");
   const [ewayErr, setEwayErr] = useState("");
+  const [creditingNote, setCreditingNote] = useState(false);
+  const [creditReason, setCreditReason] = useState("");
+  const [creditErr, setCreditErr] = useState("");
+  const [creditBusy, setCreditBusy] = useState(false);
+
+  // Issuing a credit note is the correct way to undo an invoiced sale -- voiding
+  // the sale alone leaves the invoice standing, which is why the void route
+  // warns that the two will then disagree.
+  const issueCreditNote = async () => {
+    if (!creditReason.trim()) { setCreditErr("A reason is required."); return; }
+    setCreditBusy(true); setCreditErr("");
+    try {
+      const res = await apiFetch("/api/credit-notes", {
+        method: "POST",
+        body: JSON.stringify({ invoice_id: id, reason: creditReason.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setCreditErr(data?.error || "Could not issue the credit note."); return; }
+      setCreditingNote(false); setCreditReason("");
+      router.push(`/dashboard/invoices/${data.credit_note.id}`);
+    } finally { setCreditBusy(false); }
+  };
 
   const fetchInvoice = async () => {
     const { data: invoiceData, error: invoiceError } = await supabase
@@ -173,8 +196,55 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
           <Button variant="outline" onClick={() => window.print()}>
             <Printer className="mr-2 h-4 w-4" /> Print
           </Button>
+          {isOwner && invoice?.invoice_type !== "credit_note" && (
+            <Button variant="outline" onClick={() => setCreditingNote(true)}>
+              Issue credit note
+            </Button>
+          )}
         </div>
       </div>
+
+      {invoice?.invoice_type === "credit_note" && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
+          <span className="font-medium">This is a credit note.</span>{" "}
+          It reverses an earlier invoice and appears in GSTR-1 Table 9B, reducing the
+          reported supply for its period.
+          {invoice.credit_note_reason && (
+            <span className="block text-muted-foreground mt-1">Reason: {invoice.credit_note_reason}</span>
+          )}
+        </div>
+      )}
+
+      {creditingNote && (
+        <SimpleModal
+          isOpen={creditingNote}
+          title="Issue a credit note"
+          onClose={() => setCreditingNote(false)}
+          // A typed reason shouldn't vanish on a stray click outside the dialog.
+          closeOnBackdropClick={false}
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              This reverses <span className="font-medium">{invoice?.invoice_number}</span> in full and
+              gets its own number in the credit-note series. It reduces the taxable value and tax
+              reported for the period it is dated in, and appears in GSTR-1 Table 9B.
+            </p>
+            {creditErr && <p className="text-sm text-destructive">{creditErr}</p>}
+            <div>
+              <label className="text-sm font-medium block mb-1">Reason *</label>
+              <Input
+                value={creditReason}
+                onChange={(e) => setCreditReason(e.target.value)}
+                placeholder="e.g. goods returned, billed in error"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setCreditingNote(false)} disabled={creditBusy}>Cancel</Button>
+              <Button onClick={issueCreditNote} loading={creditBusy}>Issue credit note</Button>
+            </div>
+          </div>
+        </SimpleModal>
+      )}
 
       {/* ---------- Document sheet ---------- */}
       <div className="border rounded-xl bg-card shadow-sm overflow-hidden">

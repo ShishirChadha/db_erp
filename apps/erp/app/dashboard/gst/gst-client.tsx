@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -252,6 +253,7 @@ export default function GstClient() {
               <TabsTrigger value="r3b">GSTR-3B</TabsTrigger>
               <TabsTrigger value="dashboard">All periods</TabsTrigger>
               <TabsTrigger value="uploads">Match uploads</TabsTrigger>
+              <TabsTrigger value="filing">Filing &amp; locks</TabsTrigger>
             </TabsList>
 
             <TabsContent value="validation">
@@ -294,6 +296,17 @@ export default function GstClient() {
               <MatchUploads entity={entity} from={period.from} to={period.to} />
             </TabsContent>
 
+            <TabsContent value="filing">
+              <FilingAndLocks
+                entity={entity}
+                from={period.from}
+                to={period.to}
+                periodLabel={period.label}
+                blockers={blockers}
+                onChanged={load}
+              />
+            </TabsContent>
+
             <TabsContent value="papers">
               <WorkingPapers
                 papers={papers}
@@ -308,6 +321,23 @@ export default function GstClient() {
       )}
     </div>
   )
+}
+
+/**
+ * Where a finding can be opened. Only invoices have a detail route today, so
+ * everything else links to its list page -- which is still better than a label
+ * you have to go and search for by hand. Deliberately returns null rather than
+ * a dead link where there is nothing useful to open.
+ */
+function recordHref(r: ExceptionRow): string | null {
+  if (!r.record_id) return null
+  switch (r.record_type) {
+    case 'invoice': return `/dashboard/invoices/${r.record_id}`
+    case 'sale': return '/dashboard/sales'
+    case 'customer': return '/dashboard/customers'
+    case 'sku': return '/dashboard/sku-master'
+    default: return null
+  }
 }
 
 function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
@@ -342,7 +372,15 @@ function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
                 <Badge variant={r.severity === 'blocker' ? 'destructive' : 'secondary'}>{r.severity}</Badge>
               </td>
               <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">{r.check_code}</td>
-              <td className="px-3 py-2">{r.record_label || '—'}</td>
+              <td className="px-3 py-2">
+                {(() => {
+                  const href = recordHref(r)
+                  const label = r.record_label || '—'
+                  return href
+                    ? <a href={href} className="underline underline-offset-2 hover:text-foreground">{label}</a>
+                    : label
+                })()}
+              </td>
               <td className="px-3 py-2 text-muted-foreground">{r.detail}</td>
             </tr>
           ))}
@@ -354,6 +392,7 @@ function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
 
 const PAPER_SOURCE: Record<GstSectionKey, 'sections' | 'hsn' | 'docs'> = {
   b2b: 'sections', b2cl: 'sections', b2cs: 'sections',
+  cdnr: 'sections', cdnur: 'sections',
   hsn_b2b: 'hsn', hsn_b2c: 'hsn', docs: 'docs',
 }
 
@@ -1066,6 +1105,242 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
           })}
         </div>
       )}
+    </div>
+  )
+}
+
+const LOCK_MODULES = [
+  { key: 'sales', label: 'Sales — invoices, sales, payments' },
+  { key: 'purchases', label: 'Purchases — POs, bills, vendor payments' },
+  { key: 'banking', label: 'Banking — transactions, transfers' },
+  { key: 'accounts', label: 'Accounts — journals, tax entries' },
+]
+
+function FilingAndLocks({
+  entity, from, to, periodLabel, blockers, onChanged,
+}: {
+  entity: string; from: string; to: string; periodLabel: string
+  blockers: number; onChanged: () => void
+}) {
+  const [filings, setFilings] = useState<any[]>([])
+  const [locks, setLocks] = useState<any[]>([])
+  const [arn, setArn] = useState('')
+  const [returnType, setReturnType] = useState('gstr1')
+  const [lockModule, setLockModule] = useState('sales')
+  const [lockThrough, setLockThrough] = useState(to)
+  const [lockReason, setLockReason] = useState('')
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const refresh = useCallback(async () => {
+    const [f, l] = await Promise.all([
+      apiFetch(`/api/gst/filings?entity=${encodeURIComponent(entity)}`),
+      apiFetch('/api/gst/period-locks'),
+    ])
+    if (f.ok) setFilings(await f.json())
+    if (l.ok) setLocks(await l.json())
+  }, [entity])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const record = async (status: string, force = false) => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const r = await apiFetch('/api/gst/filings', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity_key: entity, return_type: returnType,
+          period_start: from, period_end: to,
+          status, arn: arn || null, force,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) { setErr(d?.error || 'Failed'); return }
+      setMsg(status === 'filed'
+        ? `Recorded ${returnType.toUpperCase()} for ${periodLabel} as filed.`
+        : `Snapshot captured for ${periodLabel}.`)
+      setArn('')
+      await refresh(); onChanged()
+    } finally { setBusy(false) }
+  }
+
+  const setLock = async () => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const r = await apiFetch('/api/gst/period-locks', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity_key: entity, module: lockModule,
+          locked_through_date: lockThrough, reason: lockReason || null,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) { setErr(d?.error || 'Failed'); return }
+      setMsg(`${lockModule} locked through ${lockThrough}.`)
+      setLockReason(''); await refresh()
+    } finally { setBusy(false) }
+  }
+
+  const unlock = async (id: string) => {
+    const reason = window.prompt('Why are you reopening this period? This is recorded.')
+    if (!reason?.trim()) return
+    const l = locks.find((x) => x.id === id)
+    const r = await apiFetch('/api/gst/period-locks', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        id, unlock_from: from, unlock_to: to, unlock_reason: reason.trim(),
+      }),
+    })
+    if (r.ok) { setMsg(`Reopened ${l?.module} for ${periodLabel}.`); refresh() }
+    else setErr((await r.json())?.error || 'Failed')
+  }
+
+  const relock = async (id: string) => {
+    const r = await apiFetch('/api/gst/period-locks', { method: 'PATCH', body: JSON.stringify({ id }) })
+    if (r.ok) { setMsg('Window closed again.'); refresh() }
+  }
+
+  return (
+    <div className="space-y-5">
+      {err && <ErrorBanner message={err} />}
+      {msg && <p className="text-sm text-success">{msg}</p>}
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Record a filing — {periodLabel}</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            This records what you filed; it does not file anything at the portal. The point is the frozen
+            snapshot of the figures — without it, an edit made after filing is undetectable.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Return</label>
+              <Select value={returnType} onValueChange={setReturnType}>
+                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="gstr1">GSTR-1</SelectItem>
+                  <SelectItem value="gstr3b">GSTR-3B</SelectItem>
+                  <SelectItem value="gstr1a">GSTR-1A</SelectItem>
+                  <SelectItem value="gstr9">GSTR-9</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">ARN (from the portal)</label>
+              <Input value={arn} onChange={(e) => setArn(e.target.value)} placeholder="optional" className="w-[220px]" />
+            </div>
+            <Button variant="outline" disabled={busy} onClick={() => record('exported')}>Snapshot as exported</Button>
+            <Button disabled={busy} onClick={() => record('filed')}>Mark filed</Button>
+          </div>
+          {blockers > 0 && (
+            <p className="text-xs text-destructive">
+              {blockers} blocker{blockers === 1 ? '' : 's'} outstanding — marking this period filed will be
+              refused. Clear the Validation tab first.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+
+      {filings.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium mb-2">Recorded filings</h3>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Period</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Return</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">ARN</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Filed</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Snapshot</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filings.map((f) => (
+                  <tr key={f.id} className="border-t">
+                    <td className="px-3 py-2 whitespace-nowrap">{f.period_start}</td>
+                    <td className="px-3 py-2 uppercase text-xs font-mono">{f.return_type}</td>
+                    <td className="px-3 py-2"><Badge variant={f.status === 'filed' ? 'secondary' : 'outline'}>{f.status}</Badge></td>
+                    <td className="px-3 py-2 font-mono text-xs">{f.arn || '—'}</td>
+                    <td className="px-3 py-2 text-muted-foreground text-xs">
+                      {f.filed_at ? new Date(f.filed_at).toLocaleDateString('en-IN') : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{f.snapshot ? 'captured' : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      <Card>
+        <CardHeader className="pb-2"><CardTitle className="text-base">Period locks</CardTitle></CardHeader>
+        <CardContent className="space-y-3">
+          <p className="text-xs text-muted-foreground">
+            Blocks writes by <span className="font-medium">transaction date</span>, not entry date — that is what
+            stops a back-dated row landing in a period you have already filed. Drafts stay editable. Currently
+            enforced on new sales, voids and invoice finalise.
+          </p>
+          <div className="flex flex-wrap items-end gap-2">
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Module</label>
+              <Select value={lockModule} onValueChange={setLockModule}>
+                <SelectTrigger className="w-[260px]"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {LOCK_MODULES.map((m) => <SelectItem key={m.key} value={m.key}>{m.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Lock through</label>
+              <Input type="date" value={lockThrough} onChange={(e) => setLockThrough(e.target.value)} className="w-[160px]" />
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Reason</label>
+              <Input value={lockReason} onChange={(e) => setLockReason(e.target.value)} placeholder="e.g. GSTR-1 filed" className="w-[220px]" />
+            </div>
+            <Button disabled={busy} onClick={setLock}>Lock</Button>
+          </div>
+
+          {locks.length > 0 && (
+            <div className="overflow-x-auto rounded-md border">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Module</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Locked through</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Reason</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Open window</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {locks.map((l) => (
+                    <tr key={l.id} className="border-t">
+                      <td className="px-3 py-2">{l.module}</td>
+                      <td className="px-3 py-2 whitespace-nowrap">{l.locked_through_date}</td>
+                      <td className="px-3 py-2 text-muted-foreground text-xs">{l.reason || '—'}</td>
+                      <td className="px-3 py-2 text-xs">
+                        {l.unlock_from
+                          ? <span className="text-warning">{l.unlock_from} → {l.unlock_to}: {l.unlock_reason}</span>
+                          : <span className="text-muted-foreground">none</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        {l.unlock_from
+                          ? <Button size="sm" variant="ghost" onClick={() => relock(l.id)}>Close window</Button>
+                          : <Button size="sm" variant="outline" onClick={() => unlock(l.id)}>Reopen {periodLabel}</Button>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   )
 }

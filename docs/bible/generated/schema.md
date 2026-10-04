@@ -694,6 +694,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | invoicing_mode | text | no | `'erp'::text` |  |  |
 | upi_id | text | yes |  |  | UPI payment ID shown on invoices/quotations/proformas alongside the QR code. |
 | qr_code_url | text | yes |  |  | Storage key (purchase-files bucket) for this entity's payment QR code image, shown on invoices/quotations/proformas. |
+| credit_note_prefix | text | yes | `'CN'::text` |  | Prefix for the credit-note number series. Separate from invoice_prefix because a credit note is its own document nature in GSTR-1 Table 13 and needs its own consecutive range. |
 
 ## cart_items
 
@@ -1128,6 +1129,8 @@ One uploaded reconciliation source: a Zoho invoice register (outward, checks not
 | imported_at | timestamp with time zone | yes |  |  |  |
 | eway_bill_number | text | yes |  |  |  |
 | eway_bill_date | date | yes |  |  |  |
+| credit_note_of_invoice_id | uuid | yes |  | FK -> invoices.id | The invoice this credit note reverses. GSTR-1 does not carry it (the reference was removed from cdnr in 2018) but it prevents double-crediting and makes the audit trail legible. |
+| credit_note_reason | text | yes |  |  |  |
 
 ## kb_chapter_sections
 

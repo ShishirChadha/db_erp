@@ -14,7 +14,7 @@ import Papa from 'papaparse'
  * comma would silently corrupt the file.
  */
 
-export type GstSectionKey = 'b2b' | 'b2cl' | 'b2cs' | 'hsn_b2b' | 'hsn_b2c' | 'docs'
+export type GstSectionKey = 'b2b' | 'b2cl' | 'b2cs' | 'cdnr' | 'cdnur' | 'hsn_b2b' | 'hsn_b2c' | 'docs'
 
 /** Reconciliation worksheets -- not GSTR-1 sections, so kept separate. */
 export type GstWorksheetKey = 'uninvoiced' | 'gaps'
@@ -91,6 +91,45 @@ export const GST_SECTIONS: Record<GstSectionKey, SectionSpec> = {
       'Integrated Tax Amount': n2(r.iamt),
       'Central Tax Amount': n2(r.camt),
       'State/UT Tax Amount': n2(r.samt),
+    })),
+  },
+  cdnr: {
+    label: 'Credit notes — registered recipients (Table 9B)',
+    filename: 'cdnr',
+    rows: (p) => (p?.cdnr ?? []).map((r: any) => ({
+      'GSTIN/UIN of Recipient': r.ctin,
+      'Receiver Name': r.receiver_name,
+      'Note/Refund Voucher Number': r.nt_num,
+      'Note/Refund Voucher date': csvDate(r.nt_dt),
+      'Document Type': r.ntty === 'D' ? 'D' : 'C',
+      'Place Of Supply': r.pos,
+      'Note/Refund Voucher Value': n2(r.val),
+      'Applicable % of Tax Rate': '',
+      'Rate': n2(r.rt),
+      'Taxable Value': n2(r.txval),
+      'Integrated Tax Amount': n2(r.iamt),
+      'Central Tax Amount': n2(r.camt),
+      'State/UT Tax Amount': n2(r.samt),
+      'Cess Amount': n2(r.csamt),
+      'Pre GST': 'N',
+    })),
+  },
+  cdnur: {
+    label: 'Credit notes — unregistered (Table 9B)',
+    filename: 'cdnur',
+    rows: (p) => (p?.cdnur ?? []).map((r: any) => ({
+      'UR Type': r.typ,
+      'Note/Refund Voucher Number': r.nt_num,
+      'Note/Refund Voucher date': csvDate(r.nt_dt),
+      'Document Type': r.ntty === 'D' ? 'D' : 'C',
+      'Place Of Supply': r.pos,
+      'Note/Refund Voucher Value': n2(r.val),
+      'Applicable % of Tax Rate': '',
+      'Rate': n2(r.rt),
+      'Taxable Value': n2(r.txval),
+      'Integrated Tax Amount': n2(r.iamt),
+      'Cess Amount': n2(r.csamt),
+      'Pre GST': 'N',
     })),
   },
   hsn_b2b: {
@@ -193,7 +232,8 @@ export function sectionCsv(key: GstSectionKey, payload: any): string {
   // section was considered and is genuinely nil rather than omitted by mistake.
   if (rows.length === 0) {
     const sample = GST_SECTIONS[key].rows({
-      b2b: [{}], b2cl: [{}], b2cs: [{}], hsn_b2b: [{}], hsn_b2c: [{}], doc_det: [{}],
+      b2b: [{}], b2cl: [{}], b2cs: [{}], cdnr: [{}], cdnur: [{}],
+      hsn_b2b: [{}], hsn_b2c: [{}], doc_det: [{}],
     })
     return Papa.unparse({ fields: Object.keys(sample[0] ?? {}), data: [] })
   }
@@ -320,6 +360,56 @@ export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
       sply_ty: r.sply_ty, typ: r.typ || 'OE', pos: r.pos, rt: Number(r.rt),
       txval: r2(r.txval), iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
     }))
+  }
+
+  // cdnr: grouped by recipient GSTIN, notes under `nt` (not `inv`). The
+  // original-invoice reference was removed from this section in a 2018 schema
+  // revision, so notes stand alone here.
+  const cdnrRows: any[] = input.sections?.cdnr ?? []
+  if (cdnrRows.length) {
+    const byCtin = new Map<string, Map<string, any>>()
+    for (const r of cdnrRows) {
+      if (!byCtin.has(r.ctin)) byCtin.set(r.ctin, new Map())
+      const notes = byCtin.get(r.ctin)!
+      if (!notes.has(r.nt_num)) {
+        notes.set(r.nt_num, {
+          ntty: r.ntty || 'C', nt_num: r.nt_num, nt_dt: jsonDate(r.nt_dt),
+          pos: r.pos, rchrg: r.rchrg || 'N', inv_typ: r.inv_typ || 'R',
+          val: r2(r.val), itms: [],
+        })
+      }
+      const note = notes.get(r.nt_num)!
+      note.itms.push({
+        num: note.itms.length + 1,
+        itm_det: {
+          rt: Number(r.rt), txval: r2(r.txval),
+          iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
+        },
+      })
+    }
+    out.cdnr = [...byCtin.entries()].map(([ctin, notes]) => ({ ctin, nt: [...notes.values()] }))
+  }
+
+  // cdnur: flat, with a `typ` discriminator and no recipient grouping.
+  const cdnurRows: any[] = input.sections?.cdnur ?? []
+  if (cdnurRows.length) {
+    const byNum = new Map<string, any>()
+    for (const r of cdnurRows) {
+      if (!byNum.has(r.nt_num)) {
+        byNum.set(r.nt_num, {
+          typ: r.typ || 'B2CL', ntty: r.ntty || 'C',
+          nt_num: r.nt_num, nt_dt: jsonDate(r.nt_dt),
+          pos: r.pos, val: r2(r.val), itms: [],
+        })
+      }
+      const note = byNum.get(r.nt_num)!
+      note.itms.push({
+        num: note.itms.length + 1,
+        // Inter-state by definition in this section, so IGST only.
+        itm_det: { rt: Number(r.rt), txval: r2(r.txval), iamt: r2(r.iamt), csamt: r2(r.csamt) },
+      })
+    }
+    out.cdnur = [...byNum.values()]
   }
 
   // Table 12, split b2b/b2c -- the shape required from the May 2025 period.

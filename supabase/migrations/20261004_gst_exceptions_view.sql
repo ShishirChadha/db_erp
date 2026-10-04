@@ -18,18 +18,24 @@ series as (select * from v_gst_invoice_series),
 -- Gaps are attributed to the month of the preceding invoice: the number was
 -- consumed during that billing period, whether it was cancelled or never
 -- mirrored in from Zoho.
+-- Gaps are found WITHIN each series, not across all invoices. Once the ERP
+-- starts issuing its own series alongside Zoho's, treating every suffix as one
+-- sequence would invent a gap of seventy numbers plus a duplicate.
 series_gaps as (
-  select g.entity_key, g.missing_seq,
+  select g.entity_key, g.series_key, g.missing_seq,
          (select max(s2.period_month) from series s2
-           where s2.entity_key = g.entity_key and s2.seq < g.missing_seq) as period_month
+           where s2.entity_key = g.entity_key and s2.series_key = g.series_key
+             and s2.seq < g.missing_seq) as period_month
   from (
-    select s.entity_key,
+    select s.entity_key, s.series_key,
            generate_series(min(s.seq), max(s.seq)) as missing_seq
     from series s where s.seq is not null
-    group by s.entity_key
+    group by s.entity_key, s.series_key
   ) g
   where not exists (
-    select 1 from series s3 where s3.entity_key = g.entity_key and s3.seq = g.missing_seq
+    select 1 from series s3
+    where s3.entity_key = g.entity_key and s3.series_key = g.series_key
+      and s3.seq = g.missing_seq
   )
 )
 
@@ -37,8 +43,8 @@ series_gaps as (
 select e.key as entity_key, g.period_month, 'doc_series_gap' as check_code,
        'blocker' as severity, 'document_summary' as check_group,
        'series' as record_type, null::uuid as record_id,
-       g.missing_seq::text as record_label,
-       'Invoice number ' || g.missing_seq || ' is missing from the series. Table 13 needs every number accounted for as either issued or cancelled -- this is either a cancelled invoice or one never recorded in the ERP.' as detail
+       (g.series_key || g.missing_seq) as record_label,
+       'Invoice number ' || g.series_key || g.missing_seq || ' is missing from the series. Table 13 needs every number accounted for as either issued or cancelled -- this is either a cancelled invoice or one never recorded in the ERP.' as detail
 from series_gaps g join entities e on e.key = g.entity_key
 where e.is_gst_registered
 
@@ -47,23 +53,24 @@ select i.entity_key, i.period_month, 'invoice_number_too_long', 'blocker', 'docu
        'invoice', i.id, i.invoice_number,
        'Invoice number is ' || length(i.invoice_number) || ' characters. The GST portal rejects anything over 16.'
 from v_gst_invoice_series i join entities e on e.key = i.entity_key
-where e.is_gst_registered and length(i.invoice_number) > 16
+where e.is_gst_registered and not i.cancelled and length(i.invoice_number) > 16
 
 union all
 select i.entity_key, i.period_month, 'invoice_number_bad_chars', 'blocker', 'document_summary',
        'invoice', i.id, i.invoice_number,
        'Invoice number contains characters the GST portal disallows. Only letters, digits, / and - are permitted.'
 from v_gst_invoice_series i join entities e on e.key = i.entity_key
-where e.is_gst_registered and i.invoice_number ~ '[^A-Za-z0-9/-]'
+where e.is_gst_registered and not i.cancelled and i.invoice_number ~ '[^A-Za-z0-9/-]'
 
 union all
 select i.entity_key, i.period_month, 'duplicate_invoice_number', 'blocker', 'document_summary',
        'invoice', i.id, i.invoice_number,
        'This invoice number appears more than once for this entity.'
 from v_gst_invoice_series i join entities e on e.key = i.entity_key
-where e.is_gst_registered
+where e.is_gst_registered and not i.cancelled
   and exists (select 1 from v_gst_invoice_series d
-               where d.entity_key = i.entity_key and d.invoice_number = i.invoice_number and d.id <> i.id)
+               where d.entity_key = i.entity_key and d.invoice_number = i.invoice_number
+                 and d.id <> i.id and not d.cancelled)
 
 -- ========================= TRANSACTIONS =========================
 -- Completeness: a taxed sale with no invoice cannot appear in GSTR-1 at all.
@@ -274,7 +281,26 @@ from invoice_items li
   join sku_master s on s.id = li.sku_id
 where li.sku_id is not null and nullif(trim(coalesce(li.hsn_code,'')),'') is not null
 group by li.sku_id, s.full_sku_code, s.sku_description
-having count(distinct li.hsn_code) > 1;
+having count(distinct li.hsn_code) > 1
+
+union all
+-- Reverse-charge credit recorded but never claimed. A reverse-charge expense
+-- creates a liability AND an entitlement; paying the one without taking the
+-- other is a pure loss, and nothing else would point at it -- the liability
+-- reaches 3B 3.1(d) automatically, while the credit only reaches 4A once it is
+-- marked claimed.
+select
+  coalesce(e.entity_key, 'digitalbluez'),
+  date_trunc('month', e.expense_date)::date,
+  'rcm_credit_unclaimed', 'warning', 'transactions',
+  'expense', e.id, left(coalesce(e.description, 'Expense'), 60),
+  'Reverse charge of ' || to_char(coalesce(e.gst_amount, 0), 'FM999999990.00') ||
+  ' is recorded as owed but not claimed back. The liability lands in 3B 3.1(d) either way; the matching credit only reaches 4A once it is marked claimed.'
+from expenses e
+where coalesce(e.is_deleted, false) = false
+  and e.supply_type in ('rcm_domestic', 'rcm_import_services')
+  and coalesce(e.gst_amount, 0) > 0
+  and coalesce(e.itc_status, 'pending') = 'pending';
 
 comment on view public.v_gst_exceptions is
   'Live GST pre-flight validation, one row per problem. Blockers must be cleared before a return is generated; warnings are advisory. Never stored -- a fixed record simply stops appearing.';

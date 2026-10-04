@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const { expense_date, description, type, from_location, to_location, amount, remarks, payment_account, vendor_id, attachments, paid_by_staff } = body
+  const { supply_type, gst_percentage, vendor_gstin } = body
 
   // Name the field(s) actually missing. The previous message listed all three
   // regardless of which was blank, so a user who left only Description empty
@@ -101,6 +102,16 @@ export async function POST(req: NextRequest) {
   // columns used everywhere else (Digitalbluez -> digitalbluez).
   const entityKey = payment_account ? payment_account.toLowerCase() : null
 
+  const SUPPLY_TYPES = ['none', 'forward', 'rcm_domestic', 'rcm_import_services']
+  const isRcm = supply_type === 'rcm_domestic' || supply_type === 'rcm_import_services'
+  const gstPercentage =
+    gst_percentage === undefined || gst_percentage === null || gst_percentage === ''
+      ? null : Number(gst_percentage)
+  const gstAmount =
+    gstPercentage && Number(amount)
+      ? Math.round(Number(amount) * gstPercentage) / 100
+      : null
+
   const { data, error } = await supabaseAdmin
     .from('expenses')
     .insert({
@@ -119,6 +130,20 @@ export async function POST(req: NextRequest) {
       source: body.source === 'bank_recon' ? 'bank_recon' : 'manual',
       attachments: Array.isArray(attachments) ? attachments : [],
       paid_by_staff: paid_by_staff || null,
+      // GST treatment of the expense. Only meaningful for an owner, and only
+      // where tax actually arises. 'rcm_import_services' is the one that
+      // matters most: a foreign advertising or cloud invoice is an import of
+      // service, which carries a reverse-charge liability in GSTR-3B 3.1(d)
+      // with the credit in 4A -- and before this there was nowhere to record it.
+      supply_type: SUPPLY_TYPES.includes(supply_type) ? supply_type : null,
+      gst_percentage: gstPercentage,
+      // Reverse charge is self-assessed on the expense amount, so the tax is
+      // derived here rather than entered -- it cannot disagree with the rate.
+      gst_amount: gstAmount,
+      vendor_gstin: vendor_gstin ? String(vendor_gstin).trim().toUpperCase() : null,
+      // A reverse-charge liability is only worth recording if the matching
+      // credit is tracked too, so it starts as an outstanding claim.
+      itc_status: isRcm ? 'pending' : null,
     })
     .select()
     .single()
