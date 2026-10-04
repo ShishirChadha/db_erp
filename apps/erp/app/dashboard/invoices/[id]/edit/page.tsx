@@ -124,6 +124,10 @@ function EditInvoicePage() {
         initialData={formData}
         onSubmit={handleSubmit}
         isSubmitting={isSubmitting}
+        // An issued invoice's entity is a historical fact: its number came out
+        // of that entity's series, so it is shown but not changeable here.
+        entityKey={invoice.entity_key || "digitalbluez"}
+        lockEntity
       />
     </div>
   );

@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/invoice-finalize.ts
   - apps/erp/components/AttachInvoiceFileDialog.tsx
   - apps/erp/app/api/invoices/[id]/attachments/route.ts
-updated: 2026-09-16
+updated: 2026-10-04
 ---
 
 ## What this is
@@ -114,3 +114,12 @@ never silently drops an earlier file.
   Don't; Import Invoice never links to or finalizes a `sales` row, so that
   sale would keep showing as unfinalized in the owner's invoicing queue. Use
   Record Zoho Invoice # instead so the sale gets marked done.
+
+## Once it is issued
+
+The invoice becomes part of that month's GSTR-1 the moment it exists — the return
+reads `invoices`/`invoice_items` directly and does not care whether the number was
+minted here or recorded from Zoho. Check **GST Returns** (`/dashboard/gst`) before
+filing: it validates the period and will refuse to generate while any blocker stands.
+A sale left un-invoiced is the one failure that under-reports silently rather than
+being rejected. See **finance-gst-reports**.

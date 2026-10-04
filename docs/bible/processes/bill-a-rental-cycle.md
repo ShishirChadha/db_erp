@@ -9,7 +9,7 @@ keywords: [rent charge, bill rent, rent bill banana, kiraya lena, monthly rent i
 sources:
   - apps/erp/app/api/rentals/[id]/charges/route.ts
   - apps/erp/lib/rentals.ts
-updated: 2026-09-16
+updated: 2026-10-04
 ---
 
 ## What this is

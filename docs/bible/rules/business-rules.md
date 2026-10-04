@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 ## Entries are immediately real — there is no owner-approval gate

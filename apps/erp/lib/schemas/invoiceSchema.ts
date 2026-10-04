@@ -10,7 +10,10 @@ export const invoiceItemSchema = z.object({
   quantity: z.number().min(0.01, 'Quantity must be greater than 0'),
   rate: z.number().min(0, 'Rate must be greater than or equal to 0'),
   gst_rate: z.number().min(0).max(100),
-  gst_type: z.enum(['IGST', 'CGST_SGST']),
+  // Nullable: a non-GST entity (Techtenth/Cash) issues a Bill of Supply, which
+  // has no tax split at all. Matches invoice_items.gst_type being nullable in
+  // the schema, and the same null that classifyGst() returns for those entities.
+  gst_type: z.enum(['IGST', 'CGST_SGST']).nullable().optional(),
   amount: z.number(),
   cgst_amount: z.number().optional(),
   sgst_amount: z.number().optional(),

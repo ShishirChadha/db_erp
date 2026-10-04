@@ -44,17 +44,50 @@ import { SearchableItemSelect } from "./SearchableItemSelect";
 import { calculateGST } from "@/lib/gstCalculation";
 import { invoiceSchema, InvoiceFormData, InvoiceItemFormData } from "@/lib/schemas/invoiceSchema";
 import { useRememberedDefault } from "@/lib/useRememberedDefault";
+import { apiFetch } from "@/lib/api-client";
+
+interface BusinessProfileOption {
+  key: string;
+  legal_name: string;
+  state_code: string | null;
+  is_gst_registered: boolean;
+}
 
 interface InvoiceFormProps {
   initialData?: InvoiceFormData;
   onSubmit: (data: InvoiceFormData) => Promise<void>;
   invoiceNumber?: string;
   isSubmitting?: boolean;
+  /**
+   * Which business entity is issuing. Controlled by the parent page because the
+   * page is what mints the entity's own number series -- the form must never be
+   * able to drift from the series the number came out of.
+   */
+  entityKey?: string;
+  onEntityKeyChange?: (key: string) => void;
+  /** Locked on edit: an issued invoice's entity is a historical fact. */
+  lockEntity?: boolean;
 }
 
-export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting }: InvoiceFormProps) {
+export function InvoiceForm({
+  initialData,
+  onSubmit,
+  invoiceNumber,
+  isSubmitting,
+  entityKey = "digitalbluez",
+  onEntityKeyChange,
+  lockEntity,
+}: InvoiceFormProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [entities, setEntities] = useState<BusinessProfileOption[]>([]);
+
+  useEffect(() => {
+    apiFetch("/api/business-profiles")
+      .then((res) => res.json())
+      .then((data) => setEntities(Array.isArray(data) ? data : []))
+      .catch(() => setEntities([]));
+  }, []);
 
   const {
     register,
@@ -122,10 +155,31 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
     return () => subscription.unsubscribe();
   }, [watch, setValue]);
 
-  // Digitalbluez is the only fully-configured GST entity today (state code
-  // '09', UP). TODO(Phase 1 follow-up): add an entity picker to this form so
-  // Techtenth/Cash invoices resolve their own (non-GST) profile instead.
-  const ENTITY_STATE_CODE = "09";
+  // The issuing entity drives both the tax split and whether tax applies at
+  // all -- resolved from business_profiles rather than hardcoded, so a
+  // non-UP customer gets IGST and a non-GST entity (Techtenth/Cash) gets a
+  // Bill of Supply. Until the profiles load we fall back to the entity's key
+  // being unresolvable, which yields no tax rather than a wrong tax.
+  const selectedEntity = entities.find((e) => e.key === entityKey);
+  const entityStateCode = selectedEntity?.state_code || "";
+  const isGstRegistered = selectedEntity?.is_gst_registered ?? false;
+
+  /**
+   * Place-of-supply precedence, deliberately identical to classifyGst() in
+   * lib/invoice-finalize.ts so a manually-built invoice and a finalized sale
+   * can never disagree about the same customer:
+   *   explicit Place of Supply field -> customer GSTIN prefix -> entity's own state.
+   *
+   * The explicit field used to be collected and then ignored, which silently
+   * produced the wrong CGST/SGST-vs-IGST split whenever someone set it.
+   */
+  const resolvePlaceOfSupply = () => {
+    const explicit = watchedPlaceOfSupply?.trim();
+    if (explicit) return explicit.slice(0, 2);
+    const fromGstin = watchedCustomerGst?.trim();
+    if (fromGstin) return fromGstin.slice(0, 2);
+    return entityStateCode;
+  };
 
   const updateItemGST = (index: number) => {
     const item = watchedItems[index];
@@ -133,18 +187,9 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
     const quantity = item.quantity || 0;
     const rate = item.rate || 0;
     const amount = quantity * rate;
-    // Place-of-supply state code: derived from the customer's GSTIN (first two
-    // digits) for B2B; defaults to the entity's own state (intra-state) for
-    // B2C/individual customers with no GSTIN on file.
-    const placeOfSupplyStateCode = watchedCustomerGst?.trim()
-      ? watchedCustomerGst.trim().slice(0, 2)
-      : ENTITY_STATE_CODE;
-    const gstResult = calculateGST(
-      amount,
-      item.gst_rate || 18,
-      placeOfSupplyStateCode,
-      ENTITY_STATE_CODE
-    );
+    const gstResult = isGstRegistered
+      ? calculateGST(amount, item.gst_rate || 18, resolvePlaceOfSupply(), entityStateCode)
+      : { gstType: null, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalGst: 0 };
     setValue(`items.${index}.gst_type`, gstResult.gstType);
     setValue(`items.${index}.cgst_amount`, gstResult.cgstAmount);
     setValue(`items.${index}.sgst_amount`, gstResult.sgstAmount);
@@ -156,15 +201,9 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
     if (!item) return;
     const quantity = 1;
     const amount = quantity * item.price;
-    const placeOfSupplyStateCode = watchedCustomerGst?.trim()
-      ? watchedCustomerGst.trim().slice(0, 2)
-      : ENTITY_STATE_CODE;
-    const gstResult = calculateGST(
-      amount,
-      item.gst_rate || 18,
-      placeOfSupplyStateCode,
-      ENTITY_STATE_CODE
-    );
+    const gstResult = isGstRegistered
+      ? calculateGST(amount, item.gst_rate || 18, resolvePlaceOfSupply(), entityStateCode)
+      : { gstType: null, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalGst: 0 };
     const newItem: InvoiceItemFormData = {
       item_type: item.type,
       asset_id: item.type === "asset" ? item.id : null,
@@ -192,6 +231,43 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
       <input type="hidden" {...register("subject")} />
 
       <div className="grid grid-cols-2 gap-4">
+        <div className="col-span-2">
+          <Label htmlFor="entity_key">Issuing Entity</Label>
+          <Select
+            value={entityKey}
+            onValueChange={(key) => {
+              onEntityKeyChange?.(key);
+              // The tax split depends on the entity's own state and whether it
+              // is GST-registered, so every existing line has to be recomputed.
+              watchedItems?.forEach((_, idx) => updateItemGST(idx));
+            }}
+            disabled={lockEntity || entities.length === 0}
+          >
+            <SelectTrigger id="entity_key">
+              <SelectValue placeholder="Loading entities…" />
+            </SelectTrigger>
+            <SelectContent>
+              {entities.map((e) => (
+                <SelectItem key={e.key} value={e.key}>
+                  {e.legal_name}
+                  {e.is_gst_registered
+                    ? ` — GST ${e.state_code ?? "?"}`
+                    : " — not GST registered"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {lockEntity && (
+            <p className="text-xs text-muted-foreground mt-1">
+              The issuing entity of an already-numbered invoice can&apos;t be changed.
+            </p>
+          )}
+          {!isGstRegistered && entities.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              This entity isn&apos;t GST registered — the document is a Bill of Supply and carries no tax.
+            </p>
+          )}
+        </div>
         <div>
           <Label htmlFor="invoice_number">Invoice Number</Label>
           {/* Server-assigned via next_document_number() at save time -- never
@@ -222,10 +298,18 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
         </div>
         <div>
           <Label htmlFor="place_of_supply">Place of Supply</Label>
-          <Input id="place_of_supply" {...register("place_of_supply")} onChange={(e) => {
-            setValue("place_of_supply", e.target.value);
-            watchedItems?.forEach((_, idx) => updateItemGST(idx));
-          }} />
+          <Input
+            id="place_of_supply"
+            placeholder={entityStateCode ? `Defaults to ${entityStateCode}` : "2-digit state code"}
+            {...register("place_of_supply")}
+            onChange={(e) => {
+              setValue("place_of_supply", e.target.value);
+              watchedItems?.forEach((_, idx) => updateItemGST(idx));
+            }}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            2-digit state code. Leave blank to take it from the customer&apos;s GSTIN, else the entity&apos;s own state.
+          </p>
         </div>
       </div>
 
@@ -338,16 +422,23 @@ export function InvoiceForm({ initialData, onSubmit, invoiceNumber, isSubmitting
                 </div>
                 <div className="w-36">
                   <Label className="text-xs text-muted-foreground">Tax Type</Label>
-                  <Select
-                    value={watch(`items.${index}.gst_type`)}
-                    onValueChange={() => updateItemGST(index)}
-                  >
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="IGST">IGST</SelectItem>
-                      <SelectItem value="CGST_SGST">CGST+SGST</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  {/* Derived, never chosen: intra-state supply is CGST+SGST and
+                      inter-state is IGST, decided by place of supply against the
+                      entity's own state. This was previously a dropdown whose
+                      onValueChange discarded the selection, so it looked
+                      editable while always recomputing -- shown read-only now. */}
+                  <Input
+                    readOnly
+                    disabled
+                    className="bg-muted text-muted-foreground"
+                    value={
+                      watch(`items.${index}.gst_type`) === "CGST_SGST"
+                        ? "CGST + SGST"
+                        : watch(`items.${index}.gst_type`) === "IGST"
+                          ? "IGST"
+                          : "No tax"
+                    }
+                  />
                 </div>
                 <div className="ml-auto text-right">
                   <Label className="text-xs text-muted-foreground block">Amount</Label>

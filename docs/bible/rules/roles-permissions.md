@@ -9,7 +9,7 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-10-03
+updated: 2026-10-04
 ---
 
 ## The three roles
@@ -45,6 +45,12 @@ grantable `pageKey` like the rest of Finance — every one of them is cost/
 vendor-bearing (an uploaded vendor invoice's cost lines, a bank transaction's
 counterpart) — and every API route underneath them checks `isOwner()` directly
 regardless of the nav gate. See **reconciliation** for the module itself.
+
+**GST Returns** (`/dashboard/gst`) takes the same posture and for the same
+reason: a return exposes the entity's full turnover, and the purchase side it
+will grow into is cost- and vendor-bearing throughout. `ownerOnly: true` at the
+nav level, and every metric on `/api/gst/returns` returns a hard 403 to a
+non-owner — the page guard is UX only. See **finance-gst-reports**.
 
 ## Field redaction is a third, independent axis
 

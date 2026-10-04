@@ -132,6 +132,11 @@
     "ownerOnly": false
   },
   {
+    "label": "Finance > GST Returns",
+    "route": "/dashboard/gst",
+    "ownerOnly": true
+  },
+  {
     "label": "Finance > Vendor Reconciliation",
     "route": "/dashboard/recon/vendors",
     "ownerOnly": true

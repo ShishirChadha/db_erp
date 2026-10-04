@@ -28,6 +28,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Contacts > Vendors | `/dashboard/vendors` |  | yes |
 | Finance > Expenses | `/dashboard/expenses` | expenses |  |
 | Finance > Reports | `/dashboard/reports` | reports |  |
+| Finance > GST Returns | `/dashboard/gst` |  | yes |
 | Finance > Vendor Reconciliation | `/dashboard/recon/vendors` |  | yes |
 | Finance > Bank Reconciliation | `/dashboard/recon/bank` |  | yes |
 | Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |

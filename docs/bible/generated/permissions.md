@@ -30,6 +30,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Contacts > Vendors | owner-only | owner-only |
 | Finance > Expenses | if granted `expenses` | if granted `expenses` |
 | Finance > Reports | if granted `reports` | if granted `reports` |
+| Finance > GST Returns | owner-only | owner-only |
 | Finance > Vendor Reconciliation | owner-only | owner-only |
 | Finance > Bank Reconciliation | owner-only | owner-only |
 | Finance > Recon Sessions | owner-only | owner-only |

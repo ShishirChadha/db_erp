@@ -819,3 +819,45 @@ Two things learned while building it, both caught by the verification script rat
 1. **The IP source must be a header the client cannot forge.** `getClientIp()` in `lib/auth/device-sessions.ts` takes the leftmost `x-forwarded-for` entry — correct for labelling a device session, but client-settable, and a test sending `X-Forwarded-For: <allowlisted ip>` punched in successfully. `getTrustedClientIp()` was therefore written as a *separate* function that reads only `x-vercel-forwarded-for` (which Vercel's edge overwrites) or a header named by `ATTENDANCE_TRUSTED_IP_HEADER`, with **no fallback** to the spoofable one — a fallback is reachable exactly when nothing is sanitising the header either. With no trusted header the IP is unverifiable and the punch is refused rather than guessed.
 2. **A module-level TTL cache was wrong here.** The obvious optimisation (the `redact.ts` idiom: cache the toggle, invalidate on write) is broken for this check, because module state is per-instance — the `invalidate()` in `/api/settings/attendance-networks` can never reach the copy loaded by `/api/attendance/punch` (separate serverless functions on Vercel, separate bundles under Turbopack in dev). Turning enforcement on appeared to do nothing until the TTL lapsed. The cache was removed: punching happens a few dozen times a day across the whole shop, so two trivial queries are far cheaper than a security setting that is silently not in effect.
 Impact: the limits are stated plainly to the owner in the Settings help text and in `docs/bible/processes/configure-office-punch-networks.md`, rather than implying the rule is unbreakable. It reliably stops casual off-site punching; it is not proof of physical presence and should not be treated as such in a dispute.
+
+---
+
+**GST returns (GSTR-1/3B): the ERP generates and validates, it does not file.** (2026-10-04)
+Why: GSTN issues returns APIs only to empanelled GSPs — there is no direct-taxpayer channel, the commercial minimums are far above this business's volume, and a per-taxpayer OTP to the owner's own registered mobile rules out unattended filing anyway. BUSY ships to tens of thousands of Indian SMBs on exactly the generate-and-upload model, so that is what we copied. "Mark as filed" stays a purely local state transition, as it is in Zoho (whose own docs confirm unfiling in the product does not unfile on the portal).
+Impact: no GSP contract, no API credentials, no OTP session management. `/dashboard/gst` (owner-only) + `GET /api/gst/returns` with metrics `entities`/`readiness`/`exceptions`/`r1_sections`/`r1_hsn`/`r1_docs`. Output is one CSV per GSTR-1 section via `lib/gst-returns.ts`, reusing `papaparse` (already a dependency) — `lib/tsv.ts` was unusable because it states outright that it implements no quoting, and a customer name containing a comma would have silently corrupted the file.
+
+---
+
+**Validation happens before export, not after, and blockers hard-gate generation.** (2026-10-04)
+Why: Zoho discovers GSTN schema failures *after* you push, in a "Failed Transactions" tab. BUSY validates first, and its own courseware warns that unchecked JSON gets rejected at the portal. BUSY's model is strictly better because the portal rejects a whole upload on a schema violation, and — worse — an incomplete return does not fail at all, it silently under-reports.
+Impact: `v_gst_exceptions`, a live view (derived, never stored, same principle as `/dashboard/pending-tasks` — a fixed record simply stops appearing, so there is no status to drift). 18 checks grouped BUSY-style into Transactions / HSN Summary / Document Summary, split `blocker`/`warning`, with `gst_return_readiness()` returning `can_generate = false` while any blocker stands. On the owner's instruction the module refuses to generate for a period it cannot fully account for, rather than emitting a partial return.
+
+---
+
+**Rental SAC corrected from 997313 to 997315.** (2026-10-04)
+Why: 997313 is "leasing or rental services concerning **construction machinery** and equipment"; computers are 997315. Verified against the official Scheme of Classification of Services (annexed to Notification 11/2017-CTR, Group 99731), not a secondary source. The rate is 18% either way, so no tax was ever misstated.
+Impact: corrected in `lib/rentals.ts`, `lib/invoice-finalize.ts`, `NewRentalDialog.tsx`, `CLAUDE.md`, `docs/project-context.md` and the rentals/sales-invoicing chapters. **Zero live exposure** — verified against production that no rental invoice line exists, no invoice line anywhere carried 997313, and the `sac_codes` row was already 997315; only the code-level fallback constant and the UI label were wrong. The earlier entries describing 997313 are left as the historical record.
+
+---
+
+**HSN is resolved at report time with a fallback, never backfilled onto filed invoice lines.** (2026-10-04)
+Why: `sku_master.hsn_code` was unset on most SKUs, so Table 12 reported about a quarter of the taxable value while Tables 4/5/7 reported all of it — exactly the mismatch the portal now cross-validates (Table 12 auto-validation, Phase 3, from the May 2025 return period). Rewriting `invoice_items.hsn_code` would have edited documents for periods already filed from Zoho.
+Impact: 228 `sku_master` rows backfilled from `sku_category_templates.default_hsn_code` (the same default `resolveOrCreateSku()` already applies to new SKUs); SERVICE excluded, since those carry a SAC. `v_gst_outward_lines` then resolves line → SKU → SAC in precedence order, which took September's Table 12 from ₹2,66,940 to ₹10,47,162 against sections of ₹10,50,297. The residual is 14 lines with no resolvable code at all, surfaced as the `invoice_line_hsn_unresolvable` blocker. Notably the historical `repair` lines carry neither `sku_id` nor `accessory_id`, so there is no record to correct — a SAC for them has to be chosen deliberately, and is **not** hardcoded here precisely because 997313 was.
+
+---
+
+**B2CL classification is date-aware.** (2026-10-04)
+Why: the B2CL threshold rose to ₹1,00,000 from the August 2024 return period (Notification 12/2024-CT); it was ₹2,50,000 before. A historical period has to be classified by the rule in force at the time, not today's.
+Impact: the `gstr1_section` CASE in `v_gst_outward_lines` switches on `invoice_date >= '2024-08-01'`. Same reasoning drives Table 12 emitting `hsn_b2b`/`hsn_b2c` separately (the post-May-2025 shape) rather than the legacy single list, and the CSV using `dd-mmm-yyyy` where the portal JSON will use `DD-MM-YYYY` — two transports, two formats, deliberately not one shared formatter.
+
+---
+
+**GSTR-3B is output-side only until purchase-tax capture exists.** (2026-10-04)
+Why: 3B's outward tables have been hard-locked and auto-populated from GSTR-1 since the July 2025 period, so ERP figures can only ever be a reconciliation against what the portal fills in — never an authoritative input. Table 4 (ITC) auto-populates from GSTR-2B, so the ERP's value there is reconciling our purchase register against 2B, not computing ITC. And that is impossible today: `purchase_orders` has no vendor invoice number or date (the vendor's invoice date, not `po_date`, is the ITC period and the 2B match key), PO lines have no intra/inter split or HSN, purchase `invoices` rows carry three totals and no `entity_key`, `vendors` has no `state_code`, and `expenses` has no GST columns at all.
+Impact: shipping GSTR-1 plus an output-tax figure, with ITC still coming from the CA, rather than a 3B that looks authoritative and is not. Also flagged for the owner: `expenses` having no GST columns means the **import-of-services reverse charge** on foreign advertising (Google/Meta/AWS) is currently uncaptured — a common SMB blind spot, and distinct from s.9(4), which does *not* apply to computers bought from unregistered sellers (it requires both a notified class of person and notified goods; computers are on neither list).
+
+---
+
+**Margin scheme (Rule 32(5)) considered and declined — 18% on full sale price.** (2026-10-04)
+Why: owner's decision. Recording it because it is the largest single GST lever available to a refurbished-goods dealer and will come up again. CBIC's own flyer confirms refurbishment cost sits *inside* the taxable margin rather than being deducted from it, so the margin is strictly `sell − buy`; even so, on a ₹20,000 buy / ₹30,000 sell with ₹3,000 of parts it is roughly ₹3,000 less GST per unit. Two points make it a CA question rather than a feature flag: whether ITC on *other* business inputs survives (the Deccan Wheels AAR says no, without reasoning; Lakshmikumaran & Sridharan flag it as unresolved), and whether Table 12 should carry the margin or the full value, which is undocumented. It also changes the customer-facing document, since the buyer gets no ITC.
+Impact: none in code — the per-unit cost basis needed for it already exists on `asset_ledger`, so this stays available if the owner revisits it with their CA.

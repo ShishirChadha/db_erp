@@ -86,7 +86,7 @@ still out rather than charging the full agreement rent.
 ## GST on rent
 
 Renting goods is a supply of **service** under GST, so a rental invoice line carries
-**SAC 997313**, not a goods HSN. GST applies exactly when the agreement's
+**SAC 997315**, not a goods HSN. GST applies exactly when the agreement's
 `payment_account` resolves to a GST-registered entity (Digitalbluez today) via
 `resolveEntityKey()` / `business_profiles.is_gst_registered` — never hardcoded to an
 account name. Cash and Techtenth rentals are untaxed even if a GST % is set.

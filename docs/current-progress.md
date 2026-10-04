@@ -1547,3 +1547,73 @@ Razorpay test-mode keys are live and the full checkout → payment → ERP-sale 
 - Whether/when to "connect the strings" between Live Stock (employee_intake) and the main ERP Stock (legacy/PO) — explicitly deferred by the user until their manual reconciliation of old data is done.
 - Whether the invoice-number unique-constraint fix (Part 4) is still needed depends on whether the bulk historical-purchase-import work happens at all.
 - Whether/when to schedule the atomic PO-submit RPC (deferred structural fix for asset-number drift).
+
+---
+
+# GST returns module (2026-10-04)
+
+## Built and verified
+- **Phase 0 corrections.** Complete 38-code GST state list + `isValidGstinChecksum()`/
+  `validateGstin()` (mod-36) in `packages/shared/src/gstStateCodes.ts`, property-tested
+  4000/4000 on random GSTINs and against the business's own. Rental SAC `997313` → `997315`
+  (zero live exposure — no rental invoice exists). `InvoiceForm.tsx` entity picker replacing
+  the hardcoded `09`, which also fixed `place_of_supply` being collected and then **ignored**
+  by the tax calculation, and a Tax Type dropdown that discarded whatever was selected (now
+  read-only, since it is always derived). `report_gst_summary` was summing tax unfiltered
+  while filtering taxable value to `sale_type='GST'`. `renderInvoicePdf.ts`'s dead
+  `cgst_total` branch now sums real per-head tax from `invoice_items`.
+- **Validation (Phase 1).** `v_gst_exceptions`, 18 live checks, BUSY-style grouping,
+  blocker/warning; `gstin_is_valid()` in SQL mirroring the TS implementation;
+  `gst_return_readiness()` returning counts, completeness and `can_generate`.
+- **GSTR-1 working papers (Phase 2).** `v_gst_outward_lines` (section routing with the
+  date-aware B2CL threshold, HSN resolved line → SKU → SAC), `gst_r1_sections`,
+  `gst_r1_hsn_summary` (`hsn_b2b`/`hsn_b2c`), `gst_r1_docs_issued` (Table 13 generated, not
+  typed). CSV per section via `lib/gst-returns.ts` with the portal's own column headers.
+- **Surface.** `/dashboard/gst` (owner-only) with readiness tiles, a blocked-period banner,
+  validation tabs and a working-papers tab carrying a live Table-12-vs-Tables-4/5/7
+  reconciliation. `GET /api/gst/returns`, six metrics, hard 403 for non-owners.
+- **Verification.** Two disposable scripts, 60 assertions total, all passing: 401
+  unauthenticated / 403 employee / 200 owner on every metric, input validation, section
+  totals reconciling to the books to the paisa (₹10,50,297.21), b2cl carrying no CGST/SGST,
+  intra-state CGST == SGST, HSN descriptions within the portal's 30 chars, CSV quoting a
+  comma in a customer name, empty sections still emitting headers. Both scripts created and
+  then deleted their own auth users, re-querying afterwards to prove cleanup.
+  `npm run build` green for both apps; `npx tsc --noEmit` clean.
+
+## The blocking issue — not a code problem
+**The ERP's invoice mirror effectively begins August 2026.** Invoiced/uninvoiced Digitalbluez
+sales by month: Apr 0/36, May 1/48, Jun 1/40, Jul 9/50, Aug 63/11, Sep 44/27, Oct 0/4. All 60
+recorded invoices are `imported_zoho`, numbered 684–751, dated 2026-07-24 → 2026-09-29;
+nothing below 684 exists anywhere. April–July was invoiced and filed from Zoho but never
+mirrored in, and September is still slipping. **223 sales carrying ₹4,99,386 of GST have no
+linked invoice.** No period before August 2026 can produce a return until that is entered.
+
+## What validation found on live data (226 blockers)
+`gst_sale_not_invoiced` 209 · `invoice_line_hsn_unresolvable` 14 · `doc_series_gap` 9
+(685, 689–691, 717, 724–725, 727, 732, plus 681–683 below the series min) ·
+`zero_gst_on_gst_entity` 5 (₹1,33,600 taxable, no tax) · `tax_computation_mismatch` 1
+(`DBI2026/27-00688` implies 8.26%) · `invoice_number_too_long` 1 (`DBI2026/27--00705`, a
+double hyphen making it 17 chars against the portal's hard 16) · `gstin_has_whitespace` 1 ·
+`missing_hsn` 1. Warnings: `customer_missing_state` 200, `eway_bill_missing` 10.
+
+## Not started
+- **GSTR-1 portal JSON** (Phase 4). The aggregation is already format-agnostic, so this is
+  the nesting plus envelope/filename rules. Note summary sections (`hsn`/`nil`/`at`/`txpd`)
+  are **replace-on-upload**, so a partial re-export silently wipes the rest.
+- **`gst_filings` + period lock** (Phase 4). Lock by *transaction* date, not entry date —
+  that is what blocks back-dated inserts; per-module, drafts still editable, partial unlock
+  requiring a logged reason, and deliberately decoupled from filing status as Zoho does.
+- **Purchase-side capture / ITC** (Phase 3) — see the 2026-10-04 decision entry for the full
+  list of missing columns.
+- **Credit notes** — `invoices.invoice_type` already permits `'credit_note'` with no code
+  behind it. `voided_sale_with_live_invoice` currently reports 0, so there is no live
+  backlog forcing it yet.
+- Deep-linking exception rows to the offending record (currently label-only), and
+  classifying the 57 ACC/OTHER SKUs with no category-default HSN.
+
+## Open questions for the owner
+1. The April–July mirror backlog: enter it, or treat August 2026 as the ERP's GST start date?
+2. The 5 zero-GST invoices — genuinely exempt, or underpaid output tax?
+3. The 3 historical repair lines need a SAC chosen deliberately (computer repair is normally
+   998713, but that wants CA confirmation — 997313 was wrong for rentals for the same reason).
+4. Paying for Google/Meta/AWS advertising? That is an uncaptured import-of-services RCM.

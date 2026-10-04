@@ -734,7 +734,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## customers
 
-~286 rows (estimate)
+~288 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -761,6 +761,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | pincode | text | yes |  |  |  |
 | alt_email | text | yes |  |  |  |
 | contact_person | text | yes |  |  |  |
+| gst_treatment | text | yes |  |  | GSTR-1 section routing. Registered -> B2B (Table 4); unregistered/consumer -> B2CL or B2CS by value and inter/intra state; overseas -> exports. Explicit rather than derived from gst_number, because a null GSTIN cannot distinguish an unregistered business from a consumer. |
 
 ## digest_channel_config
 
@@ -1866,7 +1867,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~2,227 rows (estimate)
+~3,160 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1935,7 +1936,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## sku_master
 
-~352 rows (estimate)
+~353 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

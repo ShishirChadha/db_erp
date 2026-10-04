@@ -11,21 +11,20 @@ import { ArrowLeft } from "lucide-react";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 
-// Digitalbluez is the only fully-configured GST entity today.
-// TODO(Phase 1 follow-up): let the user pick Techtenth/Cash once the
-// Business Profiles Settings UI exists.
-const ENTITY_KEY = "digitalbluez";
-
 function NewInvoicePage() {
   const router = useRouter();
   const supabase = createClient();
+  // Which entity issues this invoice. Owned here rather than inside the form
+  // because the number series is per-entity -- mintInvoiceNumber() and the
+  // entity_key written to the row have to come from the same choice.
+  const [entityKey, setEntityKey] = useState("digitalbluez");
 
   const { run: handleSubmit, pending: isSubmitting } = useAsyncAction(async (data: any) => {
     try {
       // Mint the real number atomically, at the moment of save -- never
       // pre-fetched, never client-editable, never uniqueness-checked because
       // the atomic RPC guarantees uniqueness by construction.
-      const finalInvoiceNumber = await mintInvoiceNumber(ENTITY_KEY);
+      const finalInvoiceNumber = await mintInvoiceNumber(entityKey);
 
       const { items, ...invoiceData } = data;
 
@@ -36,7 +35,7 @@ function NewInvoicePage() {
           {
             ...invoiceData,
             invoice_number: finalInvoiceNumber,
-            entity_key: ENTITY_KEY,
+            entity_key: entityKey,
             created_by: (await supabase.auth.getUser()).data.user?.id,
           },
         ])
@@ -76,6 +75,8 @@ function NewInvoicePage() {
       <InvoiceForm
         onSubmit={handleSubmit}
         isSubmitting={isSubmitting}
+        entityKey={entityKey}
+        onEntityKeyChange={setEntityKey}
       />
     </div>
   );

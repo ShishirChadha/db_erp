@@ -418,7 +418,7 @@ exactly the repair-job precedent, which is why `sale_payments`, the
 work on it unchanged. A rent charge leaves `asset_ledger_id` NULL (otherwise the rented
 unit reads as sold and its full purchase cost is charged as COGS against one month's
 rent); a rent-to-own **buyout** sets it and stays an ordinary unit sale with real COGS.
-Rental invoice lines are `item_type='rental'` carrying **SAC 997313**, since leasing
+Rental invoice lines are `item_type='rental'` carrying **SAC 997315**, since leasing
 goods is a supply of service.
 
 Stock arithmetic: handover `adjustment −1`, return `adjustment +1` (net zero round

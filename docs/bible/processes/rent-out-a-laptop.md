@@ -10,7 +10,7 @@ sources:
   - apps/erp/app/api/rentals/route.ts
   - apps/erp/components/NewRentalDialog.tsx
   - apps/erp/lib/rentals.ts
-updated: 2026-09-16
+updated: 2026-10-04
 ---
 
 ## What this is

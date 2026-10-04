@@ -3,8 +3,8 @@ slug: finance-gst-reports
 title: Finance, GST & Reports
 kind: module
 audience: [owner, manager]
-routes: [/dashboard/expenses, /dashboard/reports]
-keywords: [revenue, report, gst, finance, kpi, receivables, margin, expense, financial year, fy]
+routes: [/dashboard/expenses, /dashboard/reports, /dashboard/gst]
+keywords: [revenue, report, gst, finance, kpi, receivables, margin, expense, financial year, fy, gstr1, gstr-1, gstr3b, gstr-3b, return, filing, hsn, b2b, b2cs, place of supply, gst return bharna]
 sources:
   - apps/erp/app/api/reports/route.ts
   - apps/erp/app/api/reports/website/route.ts
@@ -12,7 +12,11 @@ sources:
   - apps/erp/lib/reports.ts
   - apps/erp/lib/gstCalculation.ts
   - apps/erp/app/dashboard/reports/reports-client.tsx
-updated: 2026-09-16
+  - apps/erp/app/api/gst/returns/route.ts
+  - apps/erp/app/dashboard/gst/gst-client.tsx
+  - apps/erp/lib/gst-returns.ts
+  - packages/shared/src/gstStateCodes.ts
+updated: 2026-10-04
 ---
 
 ## The single reporting dispatcher
@@ -135,6 +139,87 @@ cost is never counted as the cost of one month's rent. A rent-to-own buyout stay
 units on rent, overdue count, rent billed/collected/outstanding, and `deposits_held`.
 Deposits are reported apart from every revenue figure because a held deposit is a
 liability, not income. See **rentals**.
+
+## GST returns (GSTR-1 / GSTR-3B)
+
+`/dashboard/gst` is a separate workspace from the Reports page's GST tab. Reports
+answers "what did we collect"; this answers "can we file". **Owner-only**, and
+`/api/gst/returns` enforces that server-side on every metric — the page guard is
+UX only.
+
+**Only a GST-registered entity has a return.** The entity list comes from
+`business_profiles.is_gst_registered`, never from matching an entity name, so
+Digitalbluez is the only one today. Asking for Techtenth or Cash returns
+`not_registered` rather than an empty return.
+
+**The return is keyed on `invoices.invoice_date`**, which is the legally correct
+date and also sidesteps the `sale_date` vs `effective_sale_date` drift that
+affects the rest of reporting. The completeness check, which looks at sales with
+*no* invoice, uses `effective_sale_date` instead.
+
+### Validation comes before export, not after
+
+`v_gst_exceptions` is a live view — derived, never stored, the same principle as
+`/dashboard/pending-tasks`. A fixed record simply stops appearing; there is no
+status to go stale. Rows are grouped Transactions / HSN Summary / Document
+Summary, and split `blocker` vs `warning`. **Blockers set `can_generate = false`**
+for the period, because the portal rejects a whole upload on a schema violation
+and an incomplete return silently under-reports.
+
+Checks worth knowing about:
+- `gst_sale_not_invoiced` — a taxed sale with no invoice is absent from the
+  return entirely. This is the one failure mode that under-reports rather than
+  being rejected.
+- `doc_series_gap` — gaps in the invoice number series. Table 13 needs every
+  number explained as issued or cancelled, so a gap is either a cancellation or
+  an invoice never recorded.
+- `invoice_line_hsn_unresolvable` — a line with no HSN on itself, its SKU, or a
+  linked SAC. These drop out of Table 12 while still counting in Tables 4/5/7,
+  which is exactly the mismatch the portal cross-validates.
+- `tax_computation_mismatch`, `wrong_tax_type`, `zero_gst_on_gst_entity` — tax
+  arithmetic and head selection against place of supply.
+
+`gstin_is_valid()` in SQL mirrors `isValidGstinChecksum()` in `@db/shared`
+(mod-36 check digit). Keep the two in step. Both prove a GSTIN is *well-formed*,
+never that it is registered or active — only the taxpayer lookup in `/api/gst`
+speaks to that.
+
+### HSN resolution has a deliberate fallback
+
+`v_gst_outward_lines` resolves a line's HSN in precedence order: the invoice
+line's own code, then the SKU's current `hsn_code`, then the SKU's SAC. The
+fallback exists because most historical lines were written before HSN was
+captured; without it Table 12 reported about a quarter of the taxable value
+while Tables 4/5/7 reported all of it. **Nothing is rewritten on the stored
+invoice** — a filed line's own code stays authoritative and this resolves only
+at report time.
+
+### Section routing
+
+`gstr1_section` on `v_gst_outward_lines`: a recipient GSTIN makes it `b2b`
+regardless of value; otherwise inter-state above the threshold is `b2cl` and
+everything else consolidates into `b2cs`. **The B2CL threshold is date-aware** —
+₹1,00,000 from the August 2024 return period (Notification 12/2024-CT), ₹2,50,000
+before — because a historical period has to be classified by the rule in force
+then.
+
+### What the ERP does and does not do
+
+It **generates files; it does not file.** GSTN issues returns APIs only to
+empanelled GSPs, with no direct-taxpayer channel and a per-taxpayer OTP that
+rules out unattended filing, so the owner uploads at gst.gov.in. Output is one
+CSV per section via `lib/gst-returns.ts`, with column headers matching the
+portal's offline-tool templates and **`dd-mmm-yyyy` dates — which those
+templates require and which is deliberately not the `DD-MM-YYYY` the portal
+JSON uses.** Two transports, two formats; don't share a formatter.
+
+**GSTR-3B is output-side only for now.** Its outward tables have been
+hard-locked and auto-populated from GSTR-1 since the July 2025 period, so the
+ERP's figures are for reconciliation, never as an authoritative input. Table 4
+(ITC) needs purchase-side capture that does not exist yet — vendor invoice
+number/date, an intra/inter split on PO lines, and GST columns on `expenses` —
+so ITC still comes from the CA.
+
 
 ## Related
 

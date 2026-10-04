@@ -200,7 +200,7 @@ export function NewRentalDialog({ onClose, onCreated }: { onClose: () => void; o
             </div>
             {isGstEntity && (
               <div>
-                <label className="text-xs font-medium text-gray-600 block mb-1">GST % (SAC 997313)</label>
+                <label className="text-xs font-medium text-gray-600 block mb-1">GST % (SAC 997315)</label>
                 <Input type="number" value={gstPercentage} onChange={(e) => setGstPercentage(e.target.value)} />
               </div>
             )}

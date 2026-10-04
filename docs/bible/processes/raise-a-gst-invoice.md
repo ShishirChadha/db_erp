@@ -9,7 +9,7 @@ keywords: [invoice, gst invoice, raise invoice, generate invoice, billing, tax i
 sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-09-15
+updated: 2026-10-04
 ---
 
 ## What this is

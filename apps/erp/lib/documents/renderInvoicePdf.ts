@@ -264,13 +264,28 @@ export async function renderInvoicePdf(invoiceId: string): Promise<RenderedInvoi
   // can run long enough to trigger a page break (see ensureRoom below), and
   // doing the right column afterward would draw it onto whatever page jsPDF's
   // cursor happened to be on by then instead of staying with the item table.
+  // Tax heads are summed from the line items. There are no cgst_total/
+  // sgst_total/igst_total columns on `invoices` -- an earlier version branched
+  // on them, which (under a select('*')) made them permanently undefined and
+  // always printed a single lumped "Total GST" row. A tax invoice has to show
+  // the heads separately, so they are derived here instead.
+  const taxHeads = (lineItems as any[]).reduce(
+    (acc, it) => ({
+      cgst: acc.cgst + Number(it.cgst_amount || 0),
+      sgst: acc.sgst + Number(it.sgst_amount || 0),
+      igst: acc.igst + Number(it.igst_amount || 0),
+    }),
+    { cgst: 0, sgst: 0, igst: 0 }
+  )
   const totalsRows: [string, string][] = [['Sub Total', money(invoice.subtotal)]]
   if (isGst) {
-    if (invoice.cgst_total !== undefined || invoice.sgst_total !== undefined) {
-      if (Number(invoice.cgst_total) > 0) totalsRows.push(['CGST', money(invoice.cgst_total)])
-      if (Number(invoice.sgst_total) > 0) totalsRows.push(['SGST', money(invoice.sgst_total)])
-      if (Number(invoice.igst_total) > 0) totalsRows.push(['IGST', money(invoice.igst_total)])
-    } else {
+    if (taxHeads.cgst > 0) totalsRows.push(['CGST', money(taxHeads.cgst)])
+    if (taxHeads.sgst > 0) totalsRows.push(['SGST', money(taxHeads.sgst)])
+    if (taxHeads.igst > 0) totalsRows.push(['IGST', money(taxHeads.igst)])
+    // Falls back to the stored header total when no line carries a split --
+    // true of the older imported invoices, which would otherwise show no tax
+    // line at all despite a non-zero total_gst.
+    if (taxHeads.cgst + taxHeads.sgst + taxHeads.igst === 0 && Number(invoice.total_gst || 0) > 0) {
       totalsRows.push(['Total GST', money(invoice.total_gst)])
     }
   }

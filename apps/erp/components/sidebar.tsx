@@ -142,6 +142,10 @@ export const menuGroups = [
     children: [
       { key: 'expenses', href: '/dashboard/expenses', label: 'Expenses', pageKey: 'expenses' },
       { key: 'reports', href: '/dashboard/reports', label: 'Reports', pageKey: 'reports' },
+      // A GST return exposes full turnover plus the cost-bearing purchase side,
+      // so ownerOnly rather than a grantable pageKey -- same posture as the
+      // reconciliation pages below.
+      { key: 'gst_returns', href: '/dashboard/gst', label: 'GST Returns', ownerOnly: true },
       // Reconciliation pages are always cost/vendor-bearing (an uploaded vendor
       // invoice, bank transaction contents) -- ownerOnly rather than a pageKey
       // grant, same posture as Vendors/RMA/Quotations, not the broader

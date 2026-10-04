@@ -22,9 +22,12 @@ export const RENTAL_ITEM_STATUSES = ['on_rent', 'returned', 'bought_out', 'lost_
 export const BILLING_INTERVALS = ['one_time', 'monthly', 'quarterly'] as const
 export const PAYMENT_ACCOUNTS = ['Digitalbluez', 'Techtenth', 'Cash'] as const
 
-// Leasing goods is a supply of SERVICE under GST (SAC 997313) at the rate of the
-// underlying goods -- 18% for computers.
-export const RENTAL_SAC_CODE = '997313'
+// Leasing goods is a supply of SERVICE under GST, at the rate of the underlying
+// goods -- 18% for computers. The code is 997315 ("leasing or rental services
+// concerning computers"); 997313, used here until 2026-10, is *construction
+// machinery* and was simply the wrong entry in Group 99731. See the official
+// Scheme of Classification of Services, annexed to Notification 11/2017-CTR.
+export const RENTAL_SAC_CODE = '997315'
 
 export async function generateRentalAgreementNumber(): Promise<string> {
   const { data, error } = await supabaseAdmin.rpc('generate_rental_agreement_number')

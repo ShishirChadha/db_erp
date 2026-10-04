@@ -1,10 +1,11 @@
 import { supabaseAdmin } from './supabase/service'
 import { resolveEffectiveSkuId } from './effective-sku'
 
-// Leasing of computers is SAC 997313 (a supply of SERVICE, not goods). Declared here
+// Leasing of computers is SAC 997315 (a supply of SERVICE, not goods). Declared here
 // rather than imported from lib/rentals.ts, which imports resolveEntityKey from this
-// file -- pulling it across would make the two modules circular.
-const RENTAL_SAC_CODE = '997313'
+// file -- pulling it across would make the two modules circular. Keep this value in
+// sync with lib/rentals.ts's exported copy.
+const RENTAL_SAC_CODE = '997315'
 
 // Maps sales.payment_account ('Digitalbluez'/'Techtenth'/'Cash') to the
 // business_profiles.key that should issue the invoice. This is the same
@@ -165,7 +166,7 @@ export async function resolveSaleItemDescriptor(sale: any): Promise<{
       description: sale.asset_description
         || `Laptop rental — ${agreement?.agreement_number || sale.rental_agreement_id}${period}`,
       // Renting goods is a supply of SERVICE under GST, so the line carries a SAC
-      // code (997313, leasing of computers), not a goods HSN.
+      // code (997315, leasing of computers), not a goods HSN.
       hsn_code: RENTAL_SAC_CODE,
       quantity: 1,
     }

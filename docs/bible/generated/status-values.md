@@ -58,6 +58,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | business_profiles | key | business_profiles_key_check | `CHECK ((key = ANY (ARRAY['digitalbluez'::text, 'techtenth'::text, 'cash'::text])))` |
 | cart_items | quantity | cart_items_quantity_check | `CHECK ((quantity > 0))` |
 | customer_profiles | tier | customer_profiles_tier_check | `CHECK ((tier = ANY (ARRAY['standard'::text, 'vip'::text, 'wholesale'::text])))` |
+| customers | gst_treatment | customers_gst_treatment_check | `CHECK (((gst_treatment IS NULL) OR (gst_treatment = ANY (ARRAY['registered_regular'::text, 'registered_composition'::text, 'unregistered_business'::text, 'consumer'::text, 'overseas'::text]))))` |
 | customers | social_following | customers_social_following_check | `CHECK ((social_following = ANY (ARRAY['FB'::text, 'Insta'::text, 'Both'::text, 'None'::text])))` |
 | customers | type | customers_type_check | `CHECK ((type = ANY (ARRAY['Business'::text, 'Individual'::text])))` |
 | digest_channel_config | id | digest_channel_config_singleton | `CHECK ((id = true))` |
