@@ -14,6 +14,7 @@ import { ErrorBanner } from '@/components/ErrorBanner'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import {
   GST_SECTIONS, sectionCsv, gstCsvFilename, downloadCsv, type GstSectionKey,
+  GST_WORKSHEETS, worksheetCsv, worksheetFilename, type GstWorksheetKey,
 } from '@/lib/gst-returns'
 
 interface EntityOption {
@@ -71,6 +72,7 @@ export default function GstClient() {
   const [readiness, setReadiness] = useState<any>(null)
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([])
   const [papers, setPapers] = useState<{ sections: any; hsn: any; docs: any } | null>(null)
+  const [completeness2, setCompleteness2] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -94,18 +96,20 @@ export default function GstClient() {
     setError('')
     try {
       const qs = `entity=${encodeURIComponent(entity)}&from=${period.from}&to=${period.to}`
-      const [rRes, eRes, sRes, hRes, dRes] = await Promise.all([
+      const [rRes, eRes, sRes, hRes, dRes, cRes] = await Promise.all([
         apiFetch(`/api/gst/returns?metric=readiness&${qs}`),
         apiFetch(`/api/gst/returns?metric=exceptions&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_sections&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_hsn&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_docs&${qs}`),
+        apiFetch(`/api/gst/returns?metric=completeness&${qs}`),
       ])
       if (!rRes.ok) throw new Error((await rRes.json())?.error || 'Failed to load readiness')
       if (!eRes.ok) throw new Error((await eRes.json())?.error || 'Failed to load exceptions')
       setReadiness(await rRes.json())
       const ex = await eRes.json()
       setExceptions(Array.isArray(ex) ? ex : (ex?.data ?? []))
+      setCompleteness2(cRes.ok ? await cRes.json() : null)
       setPapers({
         sections: sRes.ok ? await sRes.json() : null,
         hsn: hRes.ok ? await hRes.json() : null,
@@ -232,6 +236,9 @@ export default function GstClient() {
                 Validation{blockers + warnings > 0 ? ` (${blockers + warnings})` : ''}
               </TabsTrigger>
               <TabsTrigger value="papers">GSTR-1 working papers</TabsTrigger>
+              <TabsTrigger value="reconcile">
+                Reconcile{completeness2?.uninvoiced_count ? ` (${completeness2.uninvoiced_count})` : ''}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="validation">
@@ -252,6 +259,14 @@ export default function GstClient() {
                   </TabsContent>
                 ))}
               </Tabs>
+            </TabsContent>
+
+            <TabsContent value="reconcile">
+              <Reconcile
+                data={completeness2}
+                gstin={readiness?.entity?.gstin ?? null}
+                from={period.from}
+              />
             </TabsContent>
 
             <TabsContent value="papers">
@@ -422,6 +437,127 @@ function WorkingPapers({
         Column headers match the GST portal&apos;s offline-tool templates, and dates are dd-mmm-yyyy as those
         templates require. Nothing is filed from here — upload at gst.gov.in, or hand these to your CA.
       </p>
+    </div>
+  )
+}
+
+/**
+ * The two "something is missing" problems, which are different in kind from the
+ * rest of validation: a wrong value gets rejected at the portal, but a missing
+ * invoice just quietly under-reports. Both have to be reconciled against
+ * whatever system actually issued the invoices, so this exists to be exported
+ * and worked through offline rather than fixed in the app.
+ */
+function Reconcile({ data, gstin, from }: { data: any; gstin: string | null; from: string }) {
+  if (!data) return <p className="text-sm text-muted-foreground">Nothing to reconcile for this period.</p>
+
+  const sales: any[] = data.uninvoiced_sales ?? []
+  const gaps: any[] = data.series_gaps ?? []
+  const clean = sales.length === 0 && gaps.length === 0
+
+  const dl = (k: GstWorksheetKey) =>
+    downloadCsv(worksheetFilename(k, gstin, from), worksheetCsv(k, data))
+
+  if (clean) {
+    return (
+      <Card className="border-success/30">
+        <CardContent className="pt-6 text-sm">
+          <p className="font-medium text-success">Nothing missing.</p>
+          <p className="text-muted-foreground mt-1">
+            Every taxed sale in this period has an invoice, and the number series has no gaps.
+          </p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-destructive/40">
+        <CardContent className="pt-6 text-sm flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="font-medium text-destructive">
+              {sales.length} sale{sales.length === 1 ? '' : 's'} with no invoice
+              {gaps.length > 0 && `, and ${gaps.length} missing invoice number${gaps.length === 1 ? '' : 's'}`}
+            </p>
+            <p className="text-muted-foreground mt-1 tabular-nums">
+              {formatCurrency(data.uninvoiced_taxable ?? 0)} taxable ·{' '}
+              {formatCurrency(data.uninvoiced_tax ?? 0)} GST absent from this return
+            </p>
+            <p className="text-muted-foreground mt-1">
+              Download these, fill in the invoice number against each row from Zoho, then record them
+              in the ERP. A missing invoice is the one failure that under-reports silently instead of
+              being rejected at the portal.
+            </p>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {sales.length > 0 && <Button onClick={() => dl('uninvoiced')}>Sales worksheet</Button>}
+            {gaps.length > 0 && <Button variant="outline" onClick={() => dl('gaps')}>Gaps worksheet</Button>}
+          </div>
+        </CardContent>
+      </Card>
+
+      {gaps.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium mb-2">Missing invoice numbers</h3>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Missing</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Comes after</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Comes before</th>
+                </tr>
+              </thead>
+              <tbody>
+                {gaps.map((g) => (
+                  <tr key={g.missing_number} className="border-t">
+                    <td className="px-3 py-2 font-mono tabular-nums">{g.missing_number}</td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {g.previous_invoice} ({g.previous_date})
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {g.next_invoice} ({g.next_date})
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {sales.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium mb-2">Sales with no invoice</h3>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Customer</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Asset / Serial</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Taxable</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">GST</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sales.map((r) => (
+                  <tr key={r.sale_id} className="border-t">
+                    <td className="px-3 py-2 whitespace-nowrap">{r.sale_date}</td>
+                    <td className="px-3 py-2">{r.customer_name || '—'}</td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.identifier || '—'}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.taxable_value)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.gst)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

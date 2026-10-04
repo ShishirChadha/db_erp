@@ -12,7 +12,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 
-const METRICS = ['readiness', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs'] as const
+const METRICS = ['readiness', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs', 'completeness'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -50,6 +50,7 @@ export async function GET(req: NextRequest) {
       r1_sections: 'gst_r1_sections',
       r1_hsn: 'gst_r1_hsn_summary',
       r1_docs: 'gst_r1_docs_issued',
+      completeness: 'gst_completeness_worksheet',
     }
     if (RPC_BY_METRIC[metric]) {
       const { data, error } = await supabaseAdmin.rpc(RPC_BY_METRIC[metric], {

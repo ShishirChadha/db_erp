@@ -1617,3 +1617,48 @@ double hyphen making it 17 chars against the portal's hard 16) · `gstin_has_whi
 3. The 3 historical repair lines need a SAC chosen deliberately (computer repair is normally
    998713, but that wants CA confirmation — 997313 was wrong for rentals for the same reason).
 4. Paying for Google/Meta/AWS advertising? That is an uncaptured import-of-services RCM.
+
+---
+
+## September 2026 filing push (2026-10-04)
+
+Priority shifted to getting **September** filed from the ERP; April–July stays a later
+backlog.
+
+**Cleared (34 blockers → 30):**
+- `gstin_has_whitespace` — SCHRODINGERS' GSTIN was stored as `' 09AECFS4362M1ZK'`, 16 chars
+  with a leading space against the portal's strict 15. Trimmed; it passes the check digit.
+- `missing_hsn` — `SKU-OTH-AIO-4CR-0471IN-001` (HP all-in-one, filed under OTHER which has
+  no template default) set to `84714190`, which is precisely "ADP machines comprising in the
+  same housing at least a CPU and an I/O unit".
+- `invoice_line_hsn_unresolvable` ×2 — WiFi dongle SKU set to `85176290`, and
+  `v_gst_outward_lines` gained a final service-SAC fallback so the 3 historical repair lines
+  (which carry neither `sku_id` nor `accessory_id`) resolve to **998713**. That code was
+  already a row in `sac_codes`, so this reads the business's own classification rather than
+  inventing one. Owner confirmed both.
+
+**Table 12 now ties exactly to Tables 4/5/7: ₹10,50,297.21 on both sides**, which is the
+cross-check the portal runs. It was ₹2,66,940 vs ₹10,50,297 before the HSN work.
+
+**Remaining 30 blockers, both needing a Zoho lookup rather than code:**
+- `gst_sale_not_invoiced` 26 — ₹2,25,181.36 taxable, ₹40,532.64 GST. Verified these are not
+  mis-links: **every September invoice is already linked to a sale**, and most of these
+  customers have no September invoice at all.
+- `doc_series_gap` 4 — 724, 725 (between DBI-00723 of 09-05 and DBI-00726 of 09-07), 727
+  (between 00726 of 09-07 and 00728 of 09-08), 732 (between 00731 of 09-10 and 00733 of 09-14).
+
+Built `gst_completeness_worksheet()` + a **Reconcile** tab with two CSV worksheets — the
+uninvoiced sales with a blank "Zoho Invoice Number" column to fill in, and the gaps bracketed
+by the invoice either side so they are findable. Generated for September into `~/Downloads`.
+
+**Three obstacles to the ERP *issuing* invoices, found while checking whether it could:**
+1. `digitalbluez.invoicing_mode = 'external'` — generation returns 409 by design.
+2. **`invoice_prefix` is `DB`, not `DBI`.** With format `{prefix}{fy}-{seq:5}` the ERP would
+   mint `DB2026/27-00681` — a *different series* from the existing `DBI2026/27-…`. Confirmed
+   against `next_document_number`'s body. This defeats the continue-Zoho's-series design and
+   would only surface at cutover. **Not yet fixed** — it is a cutover decision, not a bug to
+   silently patch.
+3. Counter is at **680** while Zoho has used **684–751**, so minting would yield 681/682/683
+   then collide at 684, enforced by `invoices_invoice_number_key`. Needs the forward-only
+   `set-invoice-counter` route before any ERP-issued invoice.
+

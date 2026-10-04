@@ -7,14 +7,12 @@
 
 begin;
 
--- Dropped rather than replaced because a column is added mid-list, which
--- CREATE OR REPLACE VIEW cannot do. Plain DROP (never CASCADE) so this fails
--- loudly if anything has come to depend on it rather than silently removing it.
--- The gst_r1_* functions resolve this view by name at runtime, so they are
--- unaffected.
-drop view if exists public.v_gst_outward_lines;
-
-create view public.v_gst_outward_lines as
+-- Replaced in place, not dropped: v_gst_exceptions reads from this view, so a
+-- DROP would need CASCADE and would take the exceptions view with it. CREATE OR
+-- REPLACE is safe here because the column list is unchanged -- if a future
+-- change needs to add or reorder a column, drop both views and recreate them in
+-- order rather than reaching for CASCADE.
+create or replace view public.v_gst_outward_lines as
 with ent as (
   select key, state_code, gstin, is_gst_registered from business_profiles
 )
@@ -50,10 +48,20 @@ select
   --      which is exactly the mismatch the portal now cross-validates;
   --   3. the SKU's SAC, for services (Table 12 takes SAC under HSN prefix 99).
   -- Nothing is rewritten on the stored invoice; this resolves at report time.
+  --   4. for a service line that reaches no SKU at all, the business's own
+  --      registered SAC for that service. The historical repair lines carry
+  --      neither sku_id nor accessory_id (they predate repair charges being
+  --      SKU-backed), so nothing above can resolve them. Both codes below are
+  --      already rows in sac_codes -- this reads the business's own
+  --      classification rather than inventing one.
   coalesce(
     nullif(trim(coalesce(li.hsn_code, '')), ''),
     nullif(trim(coalesce(sk.hsn_code, '')), ''),
-    nullif(trim(coalesce(sac.code, '')), '')
+    nullif(trim(coalesce(sac.code, '')), ''),
+    case li.item_type
+      when 'repair' then (select code from sac_codes where code = '998713' and is_active limit 1)
+      when 'rental' then (select code from sac_codes where code = '997315' and is_active limit 1)
+    end
   )                                          as hsn_code,
   (nullif(trim(coalesce(li.hsn_code, '')), '') is null
    and nullif(trim(coalesce(sk.hsn_code, '')), '') is not null) as hsn_from_sku_fallback,
