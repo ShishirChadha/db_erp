@@ -1662,3 +1662,47 @@ by the invoice either side so they are findable. Generated for September into `~
    then collide at 684, enforced by `invoices_invoice_number_key`. Needs the forward-only
    `set-invoice-counter` route before any ERP-issued invoice.
 
+---
+
+## GST module completed (2026-10-05)
+
+All phases built. `npm run build` green; `apps/erp` + `packages/shared` typecheck clean.
+
+**Phase 2 completed** — `gst_r3b_summary` (tables 3.1, 3.2, 4), `gst_books_vs_return`,
+`gst_returns_dashboard` with due dates and the three-year filing bar, plus a GSTR-3B tab,
+an All-periods tab and a books-vs-return panel.
+
+**Phase 3 (purchase/ITC)** — `vendors.state_code`; `purchase_orders.vendor_invoice_number`
+/`vendor_invoice_date`/`place_of_supply`; per-line CGST/SGST/IGST on `purchase_order_items`
+(798 backfilled); `itc_status` + `itc_claimed_period` (BUSY's model); `entity_key` on 16
+purchase invoices; GST columns + `supply_type` on `expenses`, which is where the
+import-of-services RCM exposure lives. Only 7 tax-bearing lines lack a vendor state, so the
+intra/inter split is well grounded.
+
+**Phase 4** — `gst_filings` with a frozen snapshot (filing a blocked period is refused);
+`period_locks` keyed on transaction date, per-module, reason-required partial unlock,
+enforced on new sale / void / finalize; GSTR-1 portal JSON from the same aggregation as the
+CSVs.
+
+**Upload reconciliation (owner request)** — `gst_recon_imports` + `gst_recon_lines`, a Zoho
+CSV matcher and a GSTR-2B JSON matcher, with four buckets and stored resolutions that write
+through to `itc_status`.
+
+### Bugs found and fixed during verification
+- New tables' user FKs resolved bare `users(id)` to **`public.users`**, which exists but is
+  **empty and unreferenced** — every other table targets `auth.users`. Any insert carrying a
+  real user id failed. Repointed.
+- The bucket-count trigger was `FOR EACH STATEMENT`, where PL/pgSQL leaves `NEW`/`OLD` null,
+  so it silently updated nothing and every import reported `row_count = 0`. Now `FOR EACH ROW`.
+- The three new routes returned 403 for an absent session instead of 401.
+- `audit_log.actor_id` FK-pins a user, so a verification script that hits auditing endpoints
+  must delete its audit rows before its users. One leaked user from an earlier run was found
+  and removed; `auth.users` is back to its original 120.
+
+### Still open
+- September: 26 uninvoiced sales + 4 series gaps, pending the owner's Zoho check.
+- `digitalbluez.invoice_prefix` is `DB`, not `DBI` — the ERP would mint a different series.
+  Left as a cutover decision.
+- Credit notes, GSTR-1A, amendments (B2BA/CDNRA), IMS action queue: still deferred.
+- Period lock is enforced on 3 write paths, not every module.
+

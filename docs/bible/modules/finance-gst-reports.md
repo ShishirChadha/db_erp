@@ -16,7 +16,13 @@ sources:
   - apps/erp/app/dashboard/gst/gst-client.tsx
   - apps/erp/lib/gst-returns.ts
   - packages/shared/src/gstStateCodes.ts
-updated: 2026-10-04
+  - apps/erp/app/api/gst/recon/route.ts
+  - apps/erp/app/api/gst/filings/route.ts
+  - apps/erp/app/api/gst/period-locks/route.ts
+  - apps/erp/lib/recon/gst-zoho-matcher.ts
+  - apps/erp/lib/recon/gst-2b-matcher.ts
+  - apps/erp/lib/period-lock.ts
+updated: 2026-10-05
 ---
 
 ## The single reporting dispatcher
@@ -220,6 +226,63 @@ ERP's figures are for reconciliation, never as an authoritative input. Table 4
 number/date, an intra/inter split on PO lines, and GST columns on `expenses` —
 so ITC still comes from the CA.
 
+
+## Upload-driven reconciliation
+
+Two sources, one shape, because a Zoho invoice register and a GSTR-2B download
+are both "a list of documents each with a number, date, counterparty GSTIN,
+taxable value and tax". They share `gst_recon_imports` + `gst_recon_lines`;
+what differs is the match key, which lives in the matchers. Built on the
+existing bank-recon pattern (`recon_sessions`/`bank_statements` plus
+deterministic matchers in `lib/recon` with explicit tolerance constants)
+rather than a second reconciliation concept.
+
+**Zoho register (outward).** Answers: is anything we invoiced missing from what
+GSTR-1 would report? That is the failure that matters most, because a missing
+invoice is not rejected at the portal — it silently under-reports. Match key is
+the document number, normalised by uppercasing and stripping every
+non-alphanumeric. That is not tidiness: this data holds `DBI2026/27--00705`
+with a double hyphen alongside correctly formed siblings, and a plain
+`upper(trim())` would read it as a different invoice. The trailing sequence is
+a secondary key, for when prefixes are formatted differently between systems.
+
+**GSTR-2B (inward).** Match key is (supplier GSTIN, document number, date within
+5 days) with a ₹2 tolerance — Zoho's implied key, stated explicitly with BUSY's
+knobs instead of hidden. Only the B2B section is read; credit notes and
+amendments are deliberately skipped because they net *against* credit, and
+getting that wrong overstates ITC, which is the direction that attracts a
+Rule 88D intimation.
+
+The two "missing" buckets are opposite kinds of money:
+- `missing_in_erp` — a supplier filed it and we never booked the purchase.
+  Credit we are entitled to and not taking.
+- `missing_in_source` — we hold a taxed purchase the supplier has not filed.
+  Claiming that is what Rule 88D / DRC-01C polices.
+
+Resolutions are **stored, not recomputed**, so next month starts from a known
+baseline. An `itc_claimed`/`itc_ineligible` decision writes through to
+`purchase_order_items.itc_status`, which is what makes it reach 3B Table 4 —
+otherwise the reconciliation would change nothing.
+
+## Filing state and the period lock
+
+`gst_filings` records one row per entity x return type x period. **"filed" is a
+local state transition only** — nothing here files at the portal, and clearing
+it does not unfile there. The value is the frozen `snapshot`: without it an edit
+made after filing is undetectable, and an amendment has nothing to diff against.
+Marking a period filed while blockers stand is **refused**, not warned about.
+
+`period_locks` blocks writes **by transaction date, not entry date**. That
+distinction is the whole feature: entry-date locking still lets someone insert a
+row dated inside a filed period. Per-module, and a partial unlock must carry a
+reason (enforced in the database as well as the API). Deliberately decoupled
+from filing status, as Zoho keeps transaction locking separate from its return
+workflow — a filed period only *suggests* locking.
+
+Enforced so far on the three writes that change a return: new sale
+(`/api/sales-entry`), void, and invoice finalize. `lib/period-lock.ts` fails
+open on an infrastructure error, because a lock is a bookkeeping guard and the
+role checks are what actually protect the data.
 
 ## Related
 

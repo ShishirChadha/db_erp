@@ -70,10 +70,21 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | document_sends | document_type | document_sends_document_type_check | `CHECK ((document_type = ANY (ARRAY['invoice'::text, 'sales_document'::text])))` |
 | document_sends | status | document_sends_status_check | `CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text])))` |
 | expense_reimbursements | payment_account | expense_reimbursements_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
+| expenses | itc_status | expenses_itc_status_check | `CHECK (((itc_status IS NULL) OR (itc_status = ANY (ARRAY['pending'::text, 'claimed'::text, 'ineligible'::text, 'reversed'::text]))))` |
 | expenses | payment_account | expenses_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | expenses | reimbursement_status | expenses_reimbursement_status_check | `CHECK ((reimbursement_status = ANY (ARRAY['not_applicable'::text, 'pending'::text, 'partial'::text, 'reimbursed'::text])))` |
 | expenses | source | expenses_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'bank_recon'::text])))` |
+| expenses | supply_type | expenses_supply_type_check | `CHECK (((supply_type IS NULL) OR (supply_type = ANY (ARRAY['none'::text, 'forward'::text, 'rcm_domestic'::text, 'rcm_import_services'::text]))))` |
 | extraction_templates | template_kind | extraction_templates_template_kind_check | `CHECK ((template_kind = ANY (ARRAY['vendor_invoice'::text, 'bank_statement'::text])))` |
+| gst_filings | period_end | gst_filings_period_check | `CHECK ((period_end >= period_start))` |
+| gst_filings | return_type | gst_filings_return_type_check | `CHECK ((return_type = ANY (ARRAY['gstr1'::text, 'gstr3b'::text, 'gstr1a'::text, 'gstr9'::text])))` |
+| gst_filings | status | gst_filings_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'exported'::text, 'filed'::text])))` |
+| gst_recon_imports | kind | gst_recon_imports_kind_check | `CHECK ((kind = ANY (ARRAY['zoho_invoices'::text, 'gstr2b'::text])))` |
+| gst_recon_imports | period_end | gst_recon_imports_period_check | `CHECK ((period_end >= period_start))` |
+| gst_recon_imports | status | gst_recon_imports_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'completed'::text])))` |
+| gst_recon_lines | match_status | gst_recon_lines_match_status_check | `CHECK ((match_status = ANY (ARRAY['matched'::text, 'value_mismatch'::text, 'missing_in_erp'::text, 'missing_in_source'::text])))` |
+| gst_recon_lines | matched_type | gst_recon_lines_matched_type_check | `CHECK (((matched_type IS NULL) OR (matched_type = ANY (ARRAY['invoice'::text, 'purchase_order'::text, 'purchase_order_item'::text]))))` |
+| gst_recon_lines | resolution | gst_recon_lines_resolution_check | `CHECK (((resolution IS NULL) OR (resolution = ANY (ARRAY['accepted'::text, 'entered_in_erp'::text, 'ignored'::text, 'chase_supplier'::text, 'itc_claimed'::text, 'itc_ineligible'::text]))))` |
 | homepage_banners | theme | homepage_banners_theme_check | `CHECK ((theme = ANY (ARRAY['default'::text, 'diwali'::text, 'christmas'::text, 'sale'::text, 'custom'::text])))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
 | invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text, 'rental'::text])))` |
@@ -94,6 +105,9 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | cancel_reason | orders_cancel_reason_check | `CHECK (((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['sold_out'::text, 'payment_init_failed'::text, 'reserve_error'::text, 'customer_abandoned'::text]))))` |
 | orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
+| period_locks | module | period_locks_module_check | `CHECK ((module = ANY (ARRAY['sales'::text, 'purchases'::text, 'banking'::text, 'accounts'::text])))` |
+| period_locks | unlock_from | period_locks_unlock_reason_check | `CHECK (((unlock_from IS NULL) OR (NULLIF(TRIM(BOTH FROM COALESCE(unlock_reason, ''::text)), ''::text) IS NOT NULL)))` |
+| period_locks | unlock_from | period_locks_unlock_window_check | `CHECK ((((unlock_from IS NULL) AND (unlock_to IS NULL)) OR ((unlock_from IS NOT NULL) AND (unlock_to IS NOT NULL) AND (unlock_to >= unlock_from))))` |
 | profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text])))` |
 | profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text]))` |
 | profiles | role | profiles_role_check | `CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'employee'::text])))` |
@@ -102,6 +116,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | promotions | promo_type | promotions_promo_type_check | `CHECK ((promo_type = ANY (ARRAY['percent_off'::text, 'flat_off'::text, 'free_gift'::text, 'coupon_code'::text])))` |
 | promotions | scope_type | promotions_scope_type_check | `CHECK ((scope_type = ANY (ARRAY['product'::text, 'brand'::text, 'category'::text, 'sitewide'::text])))` |
 | purchase_files | file_type | purchase_files_file_type_check | `CHECK ((file_type = ANY (ARRAY['invoice'::text, 'eway_bill'::text, 'receipt'::text, 'other'::text])))` |
+| purchase_order_items | itc_status | poi_itc_status_check | `CHECK (((itc_status IS NULL) OR (itc_status = ANY (ARRAY['pending'::text, 'claimed'::text, 'ineligible'::text, 'reversed'::text]))))` |
 | purchase_order_items | quantity | purchase_order_items_quantity_check | `CHECK ((quantity > 0))` |
 | purchase_orders | payment_status | purchase_orders_payment_status_check | `CHECK ((payment_status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text])))` |
 | purchase_orders | po_status | purchase_orders_po_status_check | `CHECK ((po_status = ANY (ARRAY['draft'::text, 'submitted'::text, 'partially_received'::text, 'received'::text, 'invoiced'::text, 'cancelled'::text])))` |

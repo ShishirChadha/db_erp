@@ -15,13 +15,13 @@ create table if not exists gst_filings (
   status text not null default 'draft',
   arn text,
   filed_at timestamptz,
-  filed_by uuid references users(id),
+  filed_by uuid references auth.users(id),
   -- Frozen figures as filed. Never recomputed; that is what makes later drift
   -- visible rather than silently absorbed.
   snapshot jsonb,
   notes text,
   created_at timestamptz not null default now(),
-  created_by uuid references users(id),
+  created_by uuid references auth.users(id),
   updated_at timestamptz not null default now(),
   constraint gst_filings_return_type_check
     check (return_type in ('gstr1','gstr3b','gstr1a','gstr9')),
@@ -54,13 +54,13 @@ create table if not exists period_locks (
   module text not null,
   locked_through_date date not null,
   reason text,
-  locked_by uuid references users(id),
+  locked_by uuid references auth.users(id),
   locked_at timestamptz not null default now(),
   -- A partial unlock carves a window back out of the lock, and must say why.
   unlock_from date,
   unlock_to date,
   unlock_reason text,
-  unlocked_by uuid references users(id),
+  unlocked_by uuid references auth.users(id),
   unlocked_at timestamptz,
   constraint period_locks_module_check
     check (module in ('sales','purchases','banking','accounts')),

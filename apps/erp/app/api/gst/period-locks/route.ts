@@ -15,6 +15,7 @@ const MODULES = ['sales', 'purchases', 'banking', 'accounts']
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   const { data, error } = await supabaseAdmin.from('period_locks').select('*').order('module')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -23,6 +24,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
@@ -68,6 +70,7 @@ export async function POST(req: NextRequest) {
 // a closed period.
 export async function PATCH(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json().catch(() => null)

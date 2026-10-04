@@ -251,6 +251,7 @@ export default function GstClient() {
               </TabsTrigger>
               <TabsTrigger value="r3b">GSTR-3B</TabsTrigger>
               <TabsTrigger value="dashboard">All periods</TabsTrigger>
+              <TabsTrigger value="uploads">Match uploads</TabsTrigger>
             </TabsList>
 
             <TabsContent value="validation">
@@ -287,6 +288,10 @@ export default function GstClient() {
 
             <TabsContent value="dashboard">
               <PeriodsTable data={dash} />
+            </TabsContent>
+
+            <TabsContent value="uploads">
+              <MatchUploads entity={entity} from={period.from} to={period.to} />
             </TabsContent>
 
             <TabsContent value="papers">
@@ -835,6 +840,232 @@ function PeriodsTable({ data }: { data: any }) {
         A return cannot be filed more than three years past its due date — enforced on the portal since
         1 October 2025, with no late fee or appeal that reopens it, and the liability survives.
       </p>
+    </div>
+  )
+}
+
+const UPLOAD_KINDS = [
+  {
+    kind: 'zoho_invoices' as const,
+    label: 'Zoho invoice register',
+    accept: '.csv,text/csv',
+    blurb: 'Export your invoice list from Zoho as CSV. Checks that nothing you invoiced is missing from what the ERP would report in GSTR-1 — the failure that under-reports silently instead of being rejected.',
+  },
+  {
+    kind: 'gstr2b' as const,
+    label: 'GSTR-2B (portal JSON)',
+    accept: '.json,application/json',
+    blurb: 'Download GSTR-2B for the period from the GST portal in JSON form. Checks your purchase register against what suppliers actually filed — both credit you are owed and are not taking, and credit 2B does not support.',
+  },
+]
+
+const BUCKETS: { key: string; label: string; tone: 'ok' | 'warn' | 'bad' }[] = [
+  { key: 'missing_in_erp', label: 'In the upload, not in the ERP', tone: 'bad' },
+  { key: 'missing_in_source', label: 'In the ERP, not in the upload', tone: 'bad' },
+  { key: 'value_mismatch', label: 'Found, figures differ', tone: 'warn' },
+  { key: 'matched', label: 'Matched', tone: 'ok' },
+]
+
+function MatchUploads({ entity, from, to }: { entity: string; from: string; to: string }) {
+  const [imports, setImports] = useState<any[]>([])
+  const [active, setActive] = useState<any>(null)
+  const [lines, setLines] = useState<any[]>([])
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [err, setErr] = useState('')
+
+  const loadImports = useCallback(async () => {
+    const r = await apiFetch(`/api/gst/recon?entity=${encodeURIComponent(entity)}`)
+    if (r.ok) setImports(await r.json())
+  }, [entity])
+
+  useEffect(() => { loadImports() }, [loadImports])
+
+  const openImport = async (id: string) => {
+    setErr(''); setMsg('')
+    const r = await apiFetch(`/api/gst/recon?import_id=${id}`)
+    if (!r.ok) { setErr('Could not load that reconciliation.'); return }
+    const d = await r.json()
+    setActive(d.import); setLines(d.lines ?? [])
+  }
+
+  const upload = async (kind: string, file: File) => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const content = await file.text()
+      const r = await apiFetch('/api/gst/recon', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity_key: entity, kind, period_start: from, period_end: to,
+          content, source_filename: file.name,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) {
+        setErr(d?.error || 'Upload failed')
+        return
+      }
+      setMsg(`Read ${d.rows} rows from ${file.name}.`)
+      await loadImports()
+      await openImport(d.import.id)
+    } catch (e: any) {
+      setErr(e?.message || 'Upload failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const resolve = async (lineId: string, resolution: string) => {
+    const r = await apiFetch('/api/gst/recon', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: lineId, resolution }),
+    })
+    if (r.ok && active) openImport(active.id)
+  }
+
+  return (
+    <div className="space-y-4">
+      {err && <ErrorBanner message={err} />}
+      {msg && <p className="text-sm text-success">{msg}</p>}
+
+      <div className="grid gap-4 md:grid-cols-2">
+        {UPLOAD_KINDS.map((k) => (
+          <Card key={k.kind}>
+            <CardHeader className="pb-2"><CardTitle className="text-base">{k.label}</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">{k.blurb}</p>
+              <input
+                type="file"
+                accept={k.accept}
+                disabled={busy}
+                className="block w-full text-sm file:mr-3 file:rounded-md file:border file:border-input file:bg-background file:px-3 file:py-1.5 file:text-sm"
+                onChange={(e) => {
+                  const f = e.target.files?.[0]
+                  if (f) upload(k.kind, f)
+                  e.target.value = ''
+                }}
+              />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {imports.length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium mb-2">Previous uploads</h3>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Period</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Source</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">File</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Rows</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Matched</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Problems</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {imports.map((i) => {
+                  const problems = i.mismatch_count + i.missing_in_erp_count + i.missing_in_source_count
+                  return (
+                    <tr key={i.id} className="border-t">
+                      <td className="px-3 py-2 whitespace-nowrap">{i.period_start}</td>
+                      <td className="px-3 py-2">{i.kind === 'gstr2b' ? 'GSTR-2B' : 'Zoho'}</td>
+                      <td className="px-3 py-2 text-muted-foreground text-xs">{i.source_filename || '—'}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">{i.row_count}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-success">{i.matched_count}</td>
+                      <td className="px-3 py-2 text-right tabular-nums">
+                        {problems > 0 ? <span className="text-destructive">{problems}</span> : <span className="text-success">0</span>}
+                      </td>
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="outline" size="sm" onClick={() => openImport(i.id)}>Open</Button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {active && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium">
+            {active.kind === 'gstr2b' ? 'GSTR-2B' : 'Zoho'} · {active.period_start}
+            {active.notes && <span className="ml-2 text-xs text-warning">{active.notes}</span>}
+          </h3>
+          {BUCKETS.map((b) => {
+            const rows = lines.filter((l) => l.match_status === b.key)
+            if (rows.length === 0) return null
+            return (
+              <div key={b.key}>
+                <p className={`text-xs font-medium mb-1 ${b.tone === 'bad' ? 'text-destructive' : b.tone === 'warn' ? 'text-warning' : 'text-success'}`}>
+                  {b.label} — {rows.length}
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Document</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Counterparty</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Taxable</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Tax</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Difference</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Decision</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.slice(0, 60).map((l) => (
+                        <tr key={l.id} className="border-t align-top">
+                          <td className="px-3 py-2 whitespace-nowrap">{l.doc_date || '—'}</td>
+                          <td className="px-3 py-2 font-mono text-xs">{l.doc_number || '—'}</td>
+                          <td className="px-3 py-2">
+                            {l.counterparty_name || '—'}
+                            {l.counterparty_gstin && <span className="block text-xs text-muted-foreground font-mono">{l.counterparty_gstin}</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(l.taxable_value)}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            {formatCurrency((Number(l.cgst) || 0) + (Number(l.sgst) || 0) + (Number(l.igst) || 0))}
+                          </td>
+                          <td className="px-3 py-2 text-xs text-muted-foreground max-w-[22rem]">
+                            {l.diff ? Object.entries(l.diff).map(([k, v]: any) => (
+                              <span key={k} className="block">
+                                {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
+                              </span>
+                            )) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            {l.resolution
+                              ? <Badge variant="secondary">{l.resolution.replace(/_/g, ' ')}</Badge>
+                              : (
+                                <div className="flex gap-1 justify-end">
+                                  {active.kind === 'gstr2b' && l.match_status === 'missing_in_source' && (
+                                    <Button size="sm" variant="outline" onClick={() => resolve(l.id, 'chase_supplier')}>Chase</Button>
+                                  )}
+                                  {active.kind === 'gstr2b' && l.match_status === 'matched' && (
+                                    <Button size="sm" variant="outline" onClick={() => resolve(l.id, 'itc_claimed')}>Claim ITC</Button>
+                                  )}
+                                  <Button size="sm" variant="ghost" onClick={() => resolve(l.id, 'ignored')}>Ignore</Button>
+                                </div>
+                              )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {rows.length > 60 && (
+                  <p className="text-xs text-muted-foreground mt-1">Showing 60 of {rows.length}.</p>
+                )}
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
