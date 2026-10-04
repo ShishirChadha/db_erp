@@ -15,6 +15,7 @@ import { EmptyTableRow } from '@/components/EmptyTableRow'
 import {
   GST_SECTIONS, sectionCsv, gstCsvFilename, downloadCsv, type GstSectionKey,
   GST_WORKSHEETS, worksheetCsv, worksheetFilename, type GstWorksheetKey,
+  buildGstr1Json, gstr1JsonFilename, downloadJson,
 } from '@/lib/gst-returns'
 
 interface EntityOption {
@@ -73,6 +74,9 @@ export default function GstClient() {
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([])
   const [papers, setPapers] = useState<{ sections: any; hsn: any; docs: any } | null>(null)
   const [completeness2, setCompleteness2] = useState<any>(null)
+  const [r3b, setR3b] = useState<any>(null)
+  const [recon, setRecon] = useState<any>(null)
+  const [dash, setDash] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
@@ -96,20 +100,26 @@ export default function GstClient() {
     setError('')
     try {
       const qs = `entity=${encodeURIComponent(entity)}&from=${period.from}&to=${period.to}`
-      const [rRes, eRes, sRes, hRes, dRes, cRes] = await Promise.all([
+      const [rRes, eRes, sRes, hRes, dRes, cRes, bRes, vRes, dashRes] = await Promise.all([
         apiFetch(`/api/gst/returns?metric=readiness&${qs}`),
         apiFetch(`/api/gst/returns?metric=exceptions&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_sections&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_hsn&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_docs&${qs}`),
         apiFetch(`/api/gst/returns?metric=completeness&${qs}`),
-      ])
+        apiFetch(`/api/gst/returns?metric=r3b&${qs}`),
+        apiFetch(`/api/gst/returns?metric=books_vs_return&${qs}`),
+        apiFetch(`/api/gst/returns?metric=dashboard&entity=${encodeURIComponent(entity)}&months=12`),
+      ]) as any
       if (!rRes.ok) throw new Error((await rRes.json())?.error || 'Failed to load readiness')
       if (!eRes.ok) throw new Error((await eRes.json())?.error || 'Failed to load exceptions')
       setReadiness(await rRes.json())
       const ex = await eRes.json()
       setExceptions(Array.isArray(ex) ? ex : (ex?.data ?? []))
       setCompleteness2(cRes.ok ? await cRes.json() : null)
+      setR3b(bRes.ok ? await bRes.json() : null)
+      setRecon(vRes.ok ? await vRes.json() : null)
+      setDash(dashRes.ok ? await dashRes.json() : null)
       setPapers({
         sections: sRes.ok ? await sRes.json() : null,
         hsn: hRes.ok ? await hRes.json() : null,
@@ -239,6 +249,8 @@ export default function GstClient() {
               <TabsTrigger value="reconcile">
                 Reconcile{completeness2?.uninvoiced_count ? ` (${completeness2.uninvoiced_count})` : ''}
               </TabsTrigger>
+              <TabsTrigger value="r3b">GSTR-3B</TabsTrigger>
+              <TabsTrigger value="dashboard">All periods</TabsTrigger>
             </TabsList>
 
             <TabsContent value="validation">
@@ -269,12 +281,21 @@ export default function GstClient() {
               />
             </TabsContent>
 
+            <TabsContent value="r3b">
+              <Gstr3b data={r3b} recon={recon} />
+            </TabsContent>
+
+            <TabsContent value="dashboard">
+              <PeriodsTable data={dash} />
+            </TabsContent>
+
             <TabsContent value="papers">
               <WorkingPapers
                 papers={papers}
                 gstin={readiness?.entity?.gstin ?? null}
                 from={period.from}
                 blockers={blockers}
+                recon={recon}
               />
             </TabsContent>
           </Tabs>
@@ -332,12 +353,13 @@ const PAPER_SOURCE: Record<GstSectionKey, 'sections' | 'hsn' | 'docs'> = {
 }
 
 function WorkingPapers({
-  papers, gstin, from, blockers,
+  papers, gstin, from, blockers, recon,
 }: {
   papers: { sections: any; hsn: any; docs: any } | null
   gstin: string | null
   from: string
   blockers: number
+  recon?: any
 }) {
   if (!papers) return <p className="text-sm text-muted-foreground">No working papers for this period.</p>
 
@@ -398,7 +420,21 @@ function WorkingPapers({
               </p>
             )}
           </div>
-          <Button onClick={downloadAll}>Download all sections</Button>
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={downloadAll}>All sections (CSV)</Button>
+            <Button
+              disabled={!gstin}
+              onClick={() => downloadJson(
+                gstr1JsonFilename(gstin!, from),
+                buildGstr1Json({
+                  gstin: gstin!, periodFrom: from,
+                  sections: papers.sections, hsn: papers.hsn, docs: papers.docs,
+                })
+              )}
+            >
+              Portal JSON
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -558,6 +594,247 @@ function Reconcile({ data, gstin, from }: { data: any; gstin: string | null; fro
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function TaxRow({ label, v }: { label: string; v: any }) {
+  return (
+    <tr className="border-t">
+      <td className="px-3 py-2">{label}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.taxable_value ?? 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.cgst ?? 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.sgst ?? 0)}</td>
+      <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.igst ?? v?.tax ?? 0)}</td>
+    </tr>
+  )
+}
+
+function Gstr3b({ data, recon }: { data: any; recon: any }) {
+  if (!data || data.error) return <p className="text-sm text-muted-foreground">No 3B figures for this period.</p>
+  if (data.not_registered) {
+    return <Card><CardContent className="pt-6 text-sm text-muted-foreground">
+      This entity isn&apos;t GST registered, so it has no return.
+    </CardContent></Card>
+  }
+
+  const t31 = data.table_3_1 ?? {}
+  const itc = data.table_4_itc ?? {}
+  const sum = (o: any) => (Number(o?.cgst ?? 0) + Number(o?.sgst ?? 0) + Number(o?.igst ?? 0))
+
+  return (
+    <div className="space-y-4">
+      <Card className="border-warning/30">
+        <CardContent className="pt-6 text-sm">
+          <p className="font-medium">These are figures to key in and check against the portal — not to file from.</p>
+          <p className="text-muted-foreground mt-1">{data.caveat}</p>
+        </CardContent>
+      </Card>
+
+      <div>
+        <h3 className="text-sm font-medium mb-2">Table 3.1 — Outward supplies and inward reverse charge</h3>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Nature of supply</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Taxable value</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">CGST</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">SGST</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">IGST</th>
+              </tr>
+            </thead>
+            <tbody>
+              <TaxRow label="(a) Outward taxable (other than zero-rated, nil, exempt)" v={t31.a_outward_taxable} />
+              <TaxRow label="(b) Outward zero-rated" v={t31.b_zero_rated} />
+              <TaxRow label="(c) Other outward — nil-rated, exempt" v={t31.c_nil_exempt} />
+              <TaxRow label="(d) Inward liable to reverse charge" v={t31.d_inward_reverse_charge} />
+              <TaxRow label="(e) Non-GST outward" v={t31.e_non_gst_outward} />
+            </tbody>
+          </table>
+        </div>
+        {Number(t31.d_inward_reverse_charge?.import_of_services_taxable ?? 0) === 0 && (
+          <p className="text-xs text-muted-foreground mt-2">
+            Nothing is recorded under reverse charge. If you pay for foreign advertising or cloud services
+            (Google, Meta, AWS), that is an import of service and carries an RCM liability here —
+            tag those expenses so they appear.
+          </p>
+        )}
+      </div>
+
+      <div>
+        <h3 className="text-sm font-medium mb-2">Table 4 — Input tax credit</h3>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Row</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">CGST</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">SGST</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">IGST</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ['4(A) ITC available — all other', itc['4A_all_other_itc']],
+                ['4(B) ITC reversed', itc['4B_reversed']],
+                ['4(D) Ineligible', itc['4D_ineligible']],
+                ['Not yet claimed (pending)', itc['pending_not_yet_claimed']],
+              ].map(([label, v]: any) => (
+                <tr key={label} className="border-t">
+                  <td className="px-3 py-2">{label}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.cgst ?? 0)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.sgst ?? 0)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(v?.igst ?? 0)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-medium">{formatCurrency(sum(v))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          Computed from ITC tagging in this ERP. The portal fills Table 4 from GSTR-2B instead, so these will
+          not agree until the purchase register has been reconciled against 2B.
+        </p>
+      </div>
+
+      {(data.table_3_2_interstate_unregistered ?? []).length > 0 && (
+        <div>
+          <h3 className="text-sm font-medium mb-2">Table 3.2 — Inter-state supplies to unregistered persons</h3>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Place of supply</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Taxable value</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">IGST</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.table_3_2_interstate_unregistered.map((r: any) => (
+                  <tr key={r.pos} className="border-t">
+                    <td className="px-3 py-2">{r.pos}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.taxable_value)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.igst)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {recon && <BooksVsReturn recon={recon} />}
+    </div>
+  )
+}
+
+function BooksVsReturn({ recon }: { recon: any }) {
+  const tdiff = Number(recon.taxable_difference ?? 0)
+  const t12diff = Number(recon.table_12_difference ?? 0)
+  return (
+    <div>
+      <h3 className="text-sm font-medium mb-2">Books vs return</h3>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Source</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Taxable value</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Tax</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t">
+              <td className="px-3 py-2">Sales ledger ({recon.books?.sales ?? 0} taxed sales)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(recon.books?.taxable_value)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(recon.books?.tax)}</td>
+            </tr>
+            <tr className="border-t">
+              <td className="px-3 py-2">GSTR-1 ({recon.return?.invoices ?? 0} invoices)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(recon.return?.taxable_value)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(recon.return?.tax)}</td>
+            </tr>
+            <tr className="border-t bg-muted/40">
+              <td className="px-3 py-2 font-medium">Difference</td>
+              <td className={`px-3 py-2 text-right tabular-nums font-medium ${Math.abs(tdiff) > 1 ? 'text-destructive' : 'text-success'}`}>
+                {formatCurrency(tdiff)}
+              </td>
+              <td className="px-3 py-2 text-right tabular-nums font-medium">
+                {formatCurrency(recon.tax_difference)}
+              </td>
+            </tr>
+            <tr className="border-t">
+              <td className="px-3 py-2">Table 12 (HSN summary)</td>
+              <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(recon.table_12_taxable_value)}</td>
+              <td className={`px-3 py-2 text-right tabular-nums ${Math.abs(t12diff) > 1 ? 'text-destructive' : 'text-success'}`}>
+                {Math.abs(t12diff) > 1 ? `off by ${formatCurrency(t12diff)}` : 'ties'}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground mt-2">{recon.note}</p>
+    </div>
+  )
+}
+
+function PeriodsTable({ data }: { data: any }) {
+  const rows: any[] = data?.rows ?? []
+  if (rows.length === 0) return <p className="text-sm text-muted-foreground">No periods.</p>
+  return (
+    <div className="space-y-3">
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Period</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Return</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Due</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Blockers</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">ARN</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Barred in</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const overdue = Number(r.days_overdue ?? 0) > 0 && r.status !== 'filed'
+              const barSoon = Number(r.days_until_barred ?? 9999) < 180
+              return (
+                <tr key={`${r.period_start}-${r.return_type}`} className="border-t">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    {new Date(r.period_start).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}
+                  </td>
+                  <td className="px-3 py-2 uppercase text-xs font-mono">{r.return_type}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant={r.status === 'filed' ? 'secondary' : overdue ? 'destructive' : 'outline'}>
+                      {r.status.replace('_', ' ')}
+                    </Badge>
+                  </td>
+                  <td className={`px-3 py-2 whitespace-nowrap ${overdue ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {r.due_date}{overdue ? ` (${r.days_overdue}d late)` : ''}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {Number(r.blockers) > 0
+                      ? <span className="text-destructive">{r.blockers}</span>
+                      : <span className="text-success">0</span>}
+                  </td>
+                  <td className="px-3 py-2 font-mono text-xs">{r.arn || '—'}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${barSoon ? 'text-destructive' : 'text-muted-foreground'}`}>
+                    {Number(r.days_until_barred) > 0 ? `${r.days_until_barred}d` : 'barred'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        A return cannot be filed more than three years past its due date — enforced on the portal since
+        1 October 2025, with no late fee or appeal that reopens it, and the liability survives.
+      </p>
     </div>
   )
 }

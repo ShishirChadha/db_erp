@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { checkPeriodLock, periodLockedResponse } from '@/lib/period-lock'
 import { mintSalesInvoiceNumber } from '@/lib/sales-entry'
 import { resolveEntityKey, getInvoicingMode, createInvoiceFromSales } from '@/lib/invoice-finalize'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -27,6 +28,11 @@ export async function POST(
   if (sale.finalized) return NextResponse.json({ error: 'This sale already has an invoice.' }, { status: 400 })
 
   const entityKey = resolveEntityKey(sale.payment_account)
+
+  // Issuing an invoice into a locked period adds a document to a return that
+  // has already been filed.
+  const lock = await checkPeriodLock('sales', sale.effective_sale_date || sale.sale_date, sale.payment_account)
+  if (lock.locked) return NextResponse.json(periodLockedResponse(lock), { status: 409 })
 
   // Zoho transition: while this entity is in 'external' mode the invoice is still issued
   // in Zoho -- the ERP must not mint its own number. Record the Zoho number instead.

@@ -12,7 +12,8 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 
-const METRICS = ['readiness', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs', 'completeness'] as const
+const METRICS = ['readiness', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs',
+  'completeness', 'r3b', 'books_vs_return', 'dashboard'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -42,6 +43,18 @@ export async function GET(req: NextRequest) {
     const from = sp.get('from')
     const to = sp.get('to')
     if (!entity) return NextResponse.json({ error: 'entity is required' }, { status: 400 })
+
+    // The dashboard spans many periods, so it takes a month count rather than
+    // a from/to range.
+    if (metric === 'dashboard') {
+      const months = Math.min(Math.max(parseInt(sp.get('months') || '12', 10) || 12, 1), 36)
+      const { data, error } = await supabaseAdmin.rpc('gst_returns_dashboard', {
+        p_entity_key: entity, p_months: months,
+      })
+      if (error) throw error
+      return NextResponse.json(data)
+    }
+
     if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
 
     // Each working-paper metric is one RPC; the aggregation never happens here.
@@ -51,6 +64,8 @@ export async function GET(req: NextRequest) {
       r1_hsn: 'gst_r1_hsn_summary',
       r1_docs: 'gst_r1_docs_issued',
       completeness: 'gst_completeness_worksheet',
+      r3b: 'gst_r3b_summary',
+      books_vs_return: 'gst_books_vs_return',
     }
     if (RPC_BY_METRIC[metric]) {
       const { data, error } = await supabaseAdmin.rpc(RPC_BY_METRIC[metric], {

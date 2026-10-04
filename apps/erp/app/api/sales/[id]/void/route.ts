@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { checkPeriodLock, periodLockedResponse } from '@/lib/period-lock'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
@@ -28,6 +29,12 @@ export async function POST(
   const { data: existing } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
   if (!existing) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
   if (existing.is_deleted) return NextResponse.json({ error: 'This sale is already voided.' }, { status: 400 })
+
+  // Voiding a sale inside a locked period retracts a supply that has already
+  // been reported. The correct remedy there is a credit note in an open period,
+  // not an edit to history.
+  const lock = await checkPeriodLock('sales', existing.effective_sale_date || existing.sale_date, existing.payment_account)
+  if (lock.locked) return NextResponse.json(periodLockedResponse(lock), { status: 409 })
 
   if (existing.finalized && !body.confirm_despite_invoice) {
     return NextResponse.json({

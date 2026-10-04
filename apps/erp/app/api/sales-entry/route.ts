@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess } from '@/lib/auth/session'
+import { checkPeriodLock, periodLockedResponse } from '@/lib/period-lock'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
 import { CartItemInput, BaseSaleFields, PaymentLeg, ProcessedSaleRow, validateCartItems, processSingleSaleItem, allocatePaymentLegs } from '@/lib/sales-cart'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -113,6 +114,12 @@ export async function POST(req: NextRequest) {
   if (sale_date && !/^\d{4}-\d{2}-\d{2}$/.test(sale_date)) {
     return NextResponse.json({ error: 'sale_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
+
+  // A sale dated into a filed-and-locked period would change a return that has
+  // already gone to the portal. Checked on the sale DATE, not today's date,
+  // which is what makes this catch a back-dated entry at all.
+  const lock = await checkPeriodLock('sales', sale_date || new Date().toISOString().slice(0, 10), payment_account)
+  if (lock.locked) return NextResponse.json(periodLockedResponse(lock), { status: 409 })
   for (const item of items) {
     if (!item.asset_ledger_id && !item.accessory_id) {
       return NextResponse.json({ error: 'Every item needs either asset_ledger_id or accessory_id.' }, { status: 400 })

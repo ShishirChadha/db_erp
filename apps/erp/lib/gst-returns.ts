@@ -220,3 +220,156 @@ export function downloadCsv(filename: string, csv: string) {
   a.remove()
   URL.revokeObjectURL(url)
 }
+
+// ---------------------------------------------------------------------------
+// GSTR-1 portal JSON.
+//
+// Built from the SAME aggregation the CSVs use -- the RPC returns flat rows and
+// this nests them into the portal's grouped shape, so the two transports can
+// never disagree about a figure.
+//
+// Dates here are DD-MM-YYYY. The CSV templates want dd-mmm-yyyy. That is not an
+// inconsistency to tidy up: they are two different specifications, which is why
+// csvDate() and jsonDate() are separate and neither is reused for the other.
+// ---------------------------------------------------------------------------
+
+/** DD-MM-YYYY, as the portal JSON requires. */
+export function jsonDate(value: string | null | undefined): string {
+  if (!value) return ''
+  const m = String(value).match(/^(\d{2})-(\d{2})-(\d{4})$/)
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`
+  const d = new Date(value)
+  if (Number.isNaN(d.getTime())) return String(value)
+  const p = (n: number) => String(n).padStart(2, '0')
+  return `${p(d.getDate())}-${p(d.getMonth() + 1)}-${d.getFullYear()}`
+}
+
+const r2 = (v: any) => Math.round((Number(v) || 0) * 100) / 100
+
+export interface Gstr1JsonInput {
+  gstin: string
+  /** Period start, ISO (YYYY-MM-DD). Converted to the portal's MMYYYY. */
+  periodFrom: string
+  /** Aggregate turnover of the preceding financial year. */
+  grossTurnover?: number
+  /** Turnover of the current financial year to date. */
+  currentTurnover?: number
+  sections: any
+  hsn: any
+  docs: any
+}
+
+export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
+  const [y, m] = input.periodFrom.split('-')
+  const out: Record<string, any> = {
+    gstin: input.gstin,
+    fp: `${m}${y}`,
+  }
+  if (input.grossTurnover != null) out.gt = r2(input.grossTurnover)
+  if (input.currentTurnover != null) out.cur_gt = r2(input.currentTurnover)
+
+  // b2b: grouped by recipient GSTIN, then by invoice, then items by rate.
+  const b2bRows: any[] = input.sections?.b2b ?? []
+  if (b2bRows.length) {
+    const byCtin = new Map<string, Map<string, any>>()
+    for (const r of b2bRows) {
+      if (!byCtin.has(r.ctin)) byCtin.set(r.ctin, new Map())
+      const invs = byCtin.get(r.ctin)!
+      if (!invs.has(r.inum)) {
+        invs.set(r.inum, {
+          inum: r.inum, idt: jsonDate(r.idt), val: r2(r.val), pos: r.pos,
+          rchrg: r.rchrg || 'N', inv_typ: r.inv_typ || 'R', itms: [],
+        })
+      }
+      const inv = invs.get(r.inum)!
+      inv.itms.push({
+        num: inv.itms.length + 1,
+        itm_det: {
+          rt: Number(r.rt), txval: r2(r.txval),
+          iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
+        },
+      })
+    }
+    out.b2b = [...byCtin.entries()].map(([ctin, invs]) => ({ ctin, inv: [...invs.values()] }))
+  }
+
+  // b2cl: grouped by place of supply (there is no recipient GSTIN).
+  const b2clRows: any[] = input.sections?.b2cl ?? []
+  if (b2clRows.length) {
+    const byPos = new Map<string, Map<string, any>>()
+    for (const r of b2clRows) {
+      if (!byPos.has(r.pos)) byPos.set(r.pos, new Map())
+      const invs = byPos.get(r.pos)!
+      if (!invs.has(r.inum)) {
+        invs.set(r.inum, { inum: r.inum, idt: jsonDate(r.idt), val: r2(r.val), itms: [] })
+      }
+      const inv = invs.get(r.inum)!
+      inv.itms.push({
+        num: inv.itms.length + 1,
+        // Inter-state by definition, so IGST only -- never camt/samt here.
+        itm_det: { rt: Number(r.rt), txval: r2(r.txval), iamt: r2(r.iamt), csamt: r2(r.csamt) },
+      })
+    }
+    out.b2cl = [...byPos.entries()].map(([pos, invs]) => ({ pos, inv: [...invs.values()] }))
+  }
+
+  // b2cs: already fully consolidated, no invoice detail and no itms wrapper.
+  const b2csRows: any[] = input.sections?.b2cs ?? []
+  if (b2csRows.length) {
+    out.b2cs = b2csRows.map((r) => ({
+      sply_ty: r.sply_ty, typ: r.typ || 'OE', pos: r.pos, rt: Number(r.rt),
+      txval: r2(r.txval), iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
+    }))
+  }
+
+  // Table 12, split b2b/b2c -- the shape required from the May 2025 period.
+  const hsnB2b: any[] = input.hsn?.hsn_b2b ?? []
+  const hsnB2c: any[] = input.hsn?.hsn_b2c ?? []
+  if (hsnB2b.length || hsnB2c.length) {
+    const map = (rows: any[]) => rows.map((r, i) => ({
+      num: i + 1, hsn_sc: String(r.hsn_sc), desc: String(r.descr ?? '').slice(0, 30),
+      uqc: r.uqc, qty: r2(r.qty), rt: Number(r.rt), txval: r2(r.txval),
+      iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
+    }))
+    out.hsn = {}
+    if (hsnB2b.length) out.hsn.hsn_b2b = map(hsnB2b)
+    if (hsnB2c.length) out.hsn.hsn_b2c = map(hsnB2c)
+  }
+
+  // Table 13.
+  const docRows: any[] = input.docs?.doc_det ?? []
+  if (docRows.length) {
+    out.doc_issue = {
+      doc_det: docRows.map((r) => ({
+        doc_num: r.doc_num,
+        docs: [{
+          num: 1, from: String(r.from), to: String(r.to),
+          totnum: Number(r.totnum), cancel: Number(r.cancel), net_issue: Number(r.net_issue),
+        }],
+      })),
+    }
+  }
+
+  return out
+}
+
+/**
+ * The portal's own filename convention, including GSTN's typo ("retruns").
+ * Reproduced verbatim because that is what their tool emits and expects.
+ */
+export function gstr1JsonFilename(gstin: string, periodFrom: string): string {
+  const [y, m] = periodFrom.split('-')
+  return `retruns_${m}${y}_Returns_${gstin}_offline.json`
+}
+
+export function downloadJson(filename: string, payload: unknown) {
+  const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  URL.revokeObjectURL(url)
+}
