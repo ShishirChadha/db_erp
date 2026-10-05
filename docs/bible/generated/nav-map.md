@@ -35,6 +35,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Finance > Recon Sessions | `/dashboard/recon/sessions` |  | yes |
 | Activity Hub | `/dashboard/activities` | activities |  |
 | Attendance | `/dashboard/attendance` | attendance |  |
+| Leads | `/dashboard/leads` | leads |  |
 | Marketing | `/dashboard/marketing` | marketing |  |
 | System Health | `/dashboard/monitoring` |  | yes |
 | Settings | `/dashboard/settings` |  |  |

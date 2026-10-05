@@ -27,7 +27,7 @@ import {
   Star,
   Megaphone,
   Home,
-  HelpCircle, Activity } from 'lucide-react'
+  HelpCircle, Activity, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -36,6 +36,7 @@ import NotificationBell from '@/components/NotificationBell'
 import { useNavSearch } from '@/components/NavSearch'
 import { PunchWidget } from '@/components/PunchWidget'
 import { useNavPrefs } from '@/lib/useNavPrefs'
+import { applyItemParentOverrides } from '@/lib/nav-tree'
 
 // ---------- Menu structure with categories ----------
 // ownerOnly: hidden from the sidebar entirely for the 'employee' role. This is nav
@@ -185,6 +186,13 @@ export const menuGroups = [
     pageKey: 'attendance',
   },
   {
+    key: 'leads',
+    label: 'Leads',
+    icon: Phone,
+    href: '/dashboard/leads',
+    pageKey: 'leads',
+  },
+  {
     key: 'marketing',
     label: 'Marketing',
     icon: Megaphone,
@@ -246,7 +254,7 @@ function SidebarContent({
   // compares against just the path portion of a child's href.
   const childPath = (href: string) => href.split('?')[0]
 
-  const { hiddenItems, pinnedItems, groupOrder, togglePinned } = useNavPrefs()
+  const { hiddenItems, pinnedItems, groupOrder, itemParents, togglePinned } = useNavPrefs()
   const { open: openSearch } = useNavSearch()
 
   const roleFilteredGroups = useMemo(
@@ -262,12 +270,20 @@ function SidebarContent({
     [isOwner, allowedPages]
   )
 
+  // Personal "move this item under a different group" preference (Settings ->
+  // My Navigation's drag-and-drop), applied after role-filtering so an item a
+  // role can't see stays unreachable regardless of where it's been dragged.
+  const reparentedGroups = useMemo(
+    () => applyItemParentOverrides(roleFilteredGroups, itemParents),
+    [roleFilteredGroups, itemParents]
+  )
+
   // Personal display preferences layer on top of the role filter above -- never a
   // substitute for it. Hiding/reordering only ever touches what this user could
   // already see; a hidden item stays reachable via ⌘K search and "Reset to default"
   // in Settings → My Navigation.
   const visibleGroups = useMemo(() => {
-    const withHidden = roleFilteredGroups
+    const withHidden = reparentedGroups
       .filter(g => !hiddenItems.includes(g.key))
       .map(g => 'children' in g && g.children
         ? { ...g, children: g.children.filter((c: any) => !hiddenItems.includes(c.key)) }
@@ -278,7 +294,7 @@ function SidebarContent({
     if (!groupOrder.length) return withHidden
     const order = new Map(groupOrder.map((key, i) => [key, i]))
     return [...withHidden].sort((a, b) => (order.get(a.key) ?? 999) - (order.get(b.key) ?? 999))
-  }, [roleFilteredGroups, hiddenItems, groupOrder])
+  }, [reparentedGroups, hiddenItems, groupOrder])
 
   // Flat "Favorites" list of pinned leaf items, shown above every group.
   const favoriteItems = useMemo(() => {
@@ -293,11 +309,14 @@ function SidebarContent({
     return pinnedItems.map(key => flat.find(f => f.key === key)).filter((f): f is typeof flat[number] => !!f)
   }, [roleFilteredGroups, pinnedItems])
 
-  // State for each group (key = item key) whether it's open
+  // State for each group (key = item key) whether it's open. Built off
+  // visibleGroups (not the raw menuGroups) so a reparented item (e.g.
+  // "Attendance" moved under "Settings") still auto-expands its new group
+  // when its page is open, not just its original one.
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() => {
     // Initialize: open the group if it contains the current path
     const initial: Record<string, boolean> = {}
-    menuGroups.forEach(group => {
+    visibleGroups.forEach(group => {
       if (group.children) {
         initial[group.key] = group.children.some(child => pathname.startsWith(childPath(child.href)))
       }
@@ -309,7 +328,7 @@ function SidebarContent({
   useEffect(() => {
     setOpenGroups(prev => {
       const next = { ...prev }
-      menuGroups.forEach(group => {
+      visibleGroups.forEach(group => {
         if (group.children) {
           const isActive = group.children.some(child => pathname.startsWith(childPath(child.href)))
           if (isActive) next[group.key] = true
@@ -317,7 +336,7 @@ function SidebarContent({
       })
       return next
     })
-  }, [pathname])
+  }, [pathname, visibleGroups])
 
   const toggleGroup = (key: string) => {
     setOpenGroups(prev => ({ ...prev, [key]: !prev[key] }))

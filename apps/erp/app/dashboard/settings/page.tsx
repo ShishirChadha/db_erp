@@ -233,7 +233,12 @@ function AssetNumberingSection() {
 
 function SettingsPage() {
   const { isOwner, loading } = useRole()
-  const visibleCategories = CATEGORIES.filter(cat => isOwner || !cat.ownerOnly)
+  // Sorted A-Z for the tab list -- CATEGORIES above stays in its own
+  // (unsorted) order since that's a more readable grouping to read as code.
+  const visibleCategories = CATEGORIES
+    .filter(cat => isOwner || !cat.ownerOnly)
+    .slice()
+    .sort((a, b) => a.label.localeCompare(b.label))
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('appearance')
 
   // A non-owner never had a valid activeCategory beyond the 3 self-service tabs

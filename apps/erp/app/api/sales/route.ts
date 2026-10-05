@@ -25,6 +25,22 @@ export async function GET(req: NextRequest) {
   const paymentStatusNe = searchParams.get('payment_status_ne')
   const receivedInto = searchParams.get('received_into')
   const search = searchParams.get('search')
+  // Exact pin to one customer -- from the search-suggestion dropdown (click a
+  // suggested sale to see everything for that customer, not just whatever still
+  // matches the typed text). Takes priority over `search` when both are present.
+  const customerId = searchParams.get('customer_id')
+  // 'YYYY-MM' -- translated into an inclusive effective_sale_date range below, the
+  // same column the ledger already sorts/displays by (so "September" means every
+  // sale that visually shows as September, including a replacement's original date).
+  const month = searchParams.get('month')
+  let monthStart: string | null = null
+  let monthEnd: string | null = null
+  if (month && /^\d{4}-\d{2}$/.test(month)) {
+    const [y, m] = month.split('-').map(Number)
+    monthStart = `${month}-01`
+    const lastDay = new Date(y, m, 0).getDate()
+    monthEnd = `${month}-${String(lastDay).padStart(2, '0')}`
+  }
   const finalized = searchParams.get('finalized') // optional 'true'/'false' -- e.g. "Awaiting Invoice" filter
   const sortKey = searchParams.get('sort')
   const sortDir = searchParams.get('dir') === 'desc' ? -1 : 1
@@ -41,7 +57,7 @@ export async function GET(req: NextRequest) {
   // matching customer_ids up front and OR-ing them in makes search resilient to
   // that drift -- a search still finds every sale for a matching customer even if
   // that particular sale's own snapshot text doesn't contain the search term.
-  const searchCustomerIds = search
+  const searchCustomerIds = search && !customerId
     ? (await withRetry(() =>
         supabaseAdmin
           .from('customers')
@@ -116,7 +132,9 @@ export async function GET(req: NextRequest) {
         if (paymentStatus) q = q.eq('payment_status', paymentStatus)
         if (paymentStatusNe) q = q.neq('payment_status', paymentStatusNe)
         if (receivedInto) q = q.eq('payment_account', receivedInto)
-        if (search) q = q.or(searchFilter)
+        if (customerId) q = q.eq('customer_id', customerId)
+        if (monthStart && monthEnd) q = q.gte('effective_sale_date', monthStart).lte('effective_sale_date', monthEnd)
+        if (search && !customerId) q = q.or(searchFilter)
         return extra(q)
       }
       return withRetry(build)
@@ -137,7 +155,10 @@ export async function GET(req: NextRequest) {
           p_payment_status: paymentStatus || null,
           p_payment_status_ne: paymentStatusNe || null,
           p_payment_account: receivedInto || null,
-          p_search: search || null,
+          p_search: customerId ? null : (search || null),
+          p_customer_id: customerId || null,
+          p_date_from: monthStart,
+          p_date_to: monthEnd,
         })
       ),
     ])
@@ -193,7 +214,12 @@ export async function GET(req: NextRequest) {
   if (receivedInto) query = query.eq('payment_account', receivedInto)
   if (finalized === 'true') query = query.eq('finalized', true)
   if (finalized === 'false') query = query.eq('finalized', false)
-  if (search) {
+  if (customerId) query = query.eq('customer_id', customerId)
+  if (monthStart && monthEnd) query = query.gte('effective_sale_date', monthStart).lte('effective_sale_date', monthEnd)
+  // An exact customer pin takes priority over free-text search -- the suggestion
+  // dropdown clears searchInput when a suggestion is clicked, but guard here too
+  // in case both ever arrive together.
+  if (search && !customerId) {
     query = query.or(searchFilter)
   }
   if (paginateInSql && pagination) {

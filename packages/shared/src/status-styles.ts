@@ -148,6 +148,24 @@ export const ORDER_STATUS_TONES: Record<string, Tone> = {
   expired: 'neutral',
 }
 
+// leads.status -- values are custom_options category 'lead_status', keyed here
+// by label text (not a fixed enum) since the owner can rename/add values.
+export const LEAD_STATUS_TONES: Record<string, Tone> = {
+  'New': 'neutral',
+  'Contacted': 'info',
+  'Follow-up Scheduled': 'warning',
+  'Interested': 'purple',
+  'Converted': 'success',
+  'Not Interested': 'neutral',
+  'Dead': 'danger',
+}
+
+// lead_sets.status
+export const LEAD_SET_STATUS_TONES: Record<string, Tone> = {
+  active: 'success',
+  archived: 'neutral',
+}
+
 /** Looks up a status string in the given map, falling back to a neutral tone for any unmapped value rather than throwing. */
 export function toneFor(map: Record<string, Tone>, status: string | null | undefined): Tone {
   if (!status) return fallbackTone()

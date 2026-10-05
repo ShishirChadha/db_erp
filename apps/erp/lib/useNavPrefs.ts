@@ -42,16 +42,34 @@ export function useNavPrefs() {
 
   const setGroupOrder = useCallback((order: string[]) => save({ groupOrder: order }), [save])
 
-  const reset = useCallback(() => save({ hiddenItems: [], pinnedItems: [], groupOrder: [] }), [save])
+  // parentKey is either another top-level entry's key (nest under it) or
+  // NAV_TOP_LEVEL to stand alone -- see lib/nav-tree.ts for how this is
+  // actually applied to the menu tree.
+  const setItemParent = useCallback((itemKey: string, parentKey: string) => {
+    const next = { ...(prefs.itemParents || {}) }
+    next[itemKey] = parentKey
+    save({ itemParents: next })
+  }, [prefs.itemParents, save])
+
+  const clearItemParent = useCallback((itemKey: string) => {
+    const next = { ...(prefs.itemParents || {}) }
+    delete next[itemKey]
+    save({ itemParents: next })
+  }, [prefs.itemParents, save])
+
+  const reset = useCallback(() => save({ hiddenItems: [], pinnedItems: [], groupOrder: [], itemParents: {} }), [save])
 
   return {
     prefs,
     hiddenItems: prefs.hiddenItems || [],
     pinnedItems: prefs.pinnedItems || [],
     groupOrder: prefs.groupOrder || [],
+    itemParents: prefs.itemParents || {},
     toggleHidden,
     togglePinned,
     setGroupOrder,
+    setItemParent,
+    clearItemParent,
     reset,
   }
 }

@@ -10,6 +10,10 @@ export interface UiPreferences {
   hiddenItems?: string[]
   pinnedItems?: string[]
   groupOrder?: string[]
+  // Maps an item's key to the key of the top-level entry it should now nest
+  // under, or to NAV_TOP_LEVEL ('__top__') to stand alone at the top level --
+  // see lib/nav-tree.ts for how this is applied.
+  itemParents?: Record<string, string>
 }
 
 // Matches lib/auth/session.ts's RoleSnapshot -- dashboard/layout.tsx already

@@ -24,7 +24,7 @@ type Status = 'pending' | 'in_progress' | 'done' | 'cancelled';
 // ACTIVITY_RELATED_TYPES in lib/activities.ts. 'rental_agreement' was missing
 // here since the Rentals module shipped, which left rental-linked tasks
 // rendering with no label at all -- added back alongside 'leave_request'.
-type RelatedType = 'customer' | 'sale' | 'purchase_order' | 'asset' | 'repair_job' | 'invoice' | 'vendor' | 'recurring_expense' | 'marketing_asset' | 'rental_agreement' | 'leave_request';
+type RelatedType = 'customer' | 'sale' | 'purchase_order' | 'asset' | 'repair_job' | 'invoice' | 'vendor' | 'recurring_expense' | 'marketing_asset' | 'rental_agreement' | 'leave_request' | 'lead';
 
 interface Activity {
   id: string;
@@ -87,13 +87,13 @@ const RELATED_TYPE_LABELS: Record<RelatedType, string> = {
   customer: 'Customer', sale: 'Sale', purchase_order: 'Purchase Order',
   asset: 'Asset', repair_job: 'Repair Job', invoice: 'Invoice', vendor: 'Vendor',
   recurring_expense: 'Recurring Expense', marketing_asset: 'Marketing Content',
-  rental_agreement: 'Rental Agreement', leave_request: 'Leave Request',
+  rental_agreement: 'Rental Agreement', leave_request: 'Leave Request', lead: 'Lead',
 };
 // Only record types with a real detail route get a clickable deep link; the rest show as plain text.
 const RELATED_TYPE_LINK_BASE: Partial<Record<RelatedType, string>> = {
   asset: '/dashboard/stock', purchase_order: '/dashboard/purchase-orders', invoice: '/dashboard/invoices',
   marketing_asset: '/dashboard/marketing', rental_agreement: '/dashboard/rentals',
-  leave_request: '/dashboard/attendance',
+  leave_request: '/dashboard/attendance', lead: '/dashboard/leads',
 };
 
 const PRIORITY_STYLES: Record<Priority, string> = {

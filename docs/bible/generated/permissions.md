@@ -37,6 +37,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Finance > Recon Sessions | owner-only | owner-only |
 | Activity Hub | if granted `activities` | if granted `activities` |
 | Attendance | if granted `attendance` | if granted `attendance` |
+| Leads | if granted `leads` | if granted `leads` |
 | Marketing | if granted `marketing` | if granted `marketing` |
 | System Health | owner-only | owner-only |
 | Settings | visible to all signed-in staff | visible to all signed-in staff |

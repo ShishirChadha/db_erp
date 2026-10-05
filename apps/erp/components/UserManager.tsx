@@ -45,6 +45,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
     { key: 'quotations', label: 'Quotations' },
   ]},
   { label: 'Contacts', keys: [{ key: 'customers', label: 'Customers' }] },
+  { label: 'Leads', keys: [{ key: 'leads', label: 'Lead Sets (sales pitch / calling lists)' }] },
   // For a non-owner grant, this key only unlocks the "From Customer" side of the
   // RMA page (post-sale returns) -- the "To Vendor" side stays owner-only
   // server-side (see app/api/rma/route.ts) regardless of this checkbox. Labeled
@@ -72,7 +73,7 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
   'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads',
 ]
 
 function generatePassword() {

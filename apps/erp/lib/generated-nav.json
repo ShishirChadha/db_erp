@@ -169,6 +169,12 @@
     "ownerOnly": false
   },
   {
+    "label": "Leads",
+    "route": "/dashboard/leads",
+    "pageKey": "leads",
+    "ownerOnly": false
+  },
+  {
     "label": "Marketing",
     "route": "/dashboard/marketing",
     "pageKey": "marketing",

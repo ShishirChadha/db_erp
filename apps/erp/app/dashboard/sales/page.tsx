@@ -515,6 +515,14 @@ function SalesLedgerPage() {
   }, [searchInput]);
   const [paymentFilter, setPaymentFilter] = useState("");
   const [receivedIntoFilter, setReceivedIntoFilter] = useState("");
+  // Pinning a customer (via the search-suggestion dropdown below) swaps free-text
+  // search for an exact customer_id filter -- that's what guarantees EVERY sale for
+  // that customer shows, latest first, rather than only whatever still matches the
+  // typed text (Zoho's "click a suggested invoice -> see this customer's history").
+  const [customerFilter, setCustomerFilter] = useState<{ id: string; name: string } | null>(null);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  // 'YYYY-MM', native <input type="month">.
+  const [monthFilter, setMonthFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchErr, setBatchErr] = useState("");
@@ -535,12 +543,14 @@ function SalesLedgerPage() {
 
   const buildFilterParams = useCallback((includeFinalized: boolean) => {
     const params = new URLSearchParams();
-    if (search) params.set("search", search);
+    if (customerFilter) params.set("customer_id", customerFilter.id);
+    else if (search) params.set("search", search);
     if (paymentFilter) params.set("payment_status", paymentFilter);
     if (receivedIntoFilter) params.set("received_into", receivedIntoFilter);
+    if (monthFilter) params.set("month", monthFilter);
     if (includeFinalized && awaitingInvoiceOnly) params.set("finalized", "false");
     return params;
-  }, [search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly]);
+  }, [search, customerFilter, paymentFilter, receivedIntoFilter, monthFilter, awaitingInvoiceOnly]);
 
   const fetchSales = useCallback(async () => {
     setLoading(true);
@@ -586,7 +596,7 @@ function SalesLedgerPage() {
   // fetchSales twice per filter change (once with the new filter but the
   // stale page, again once the reset effect changed `page`), and on a slow
   // connection the stale response could land last and overwrite correct rows.
-  const filterKey = JSON.stringify([search, paymentFilter, receivedIntoFilter, awaitingInvoiceOnly, showVoided, pageSize]);
+  const filterKey = JSON.stringify([search, customerFilter?.id, paymentFilter, receivedIntoFilter, monthFilter, awaitingInvoiceOnly, showVoided, pageSize]);
   const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
   if (filterKey !== prevFilterKey) {
     setPrevFilterKey(filterKey);
@@ -685,12 +695,53 @@ function SalesLedgerPage() {
       />
 
       <div className="flex gap-2 flex-wrap items-center mb-2">
-        <Input
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          placeholder="Search customer, asset, serial, invoice, amount..."
-          className="flex-1 min-w-[180px]"
-        />
+        <div className="relative flex-1 min-w-[180px]">
+          {customerFilter ? (
+            <div className="h-8 flex items-center gap-1.5 px-3 border rounded-md bg-muted text-sm">
+              <span className="truncate">Customer: <span className="font-medium">{customerFilter.name}</span></span>
+              <button type="button" onClick={() => setCustomerFilter(null)} className="text-muted-foreground hover:text-foreground ml-auto">
+                <X className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <>
+              <Input
+                value={searchInput}
+                onChange={(e) => setSearchInput(e.target.value)}
+                onFocus={() => setShowSuggestions(true)}
+                // Delay so a suggestion's onClick fires before the dropdown unmounts.
+                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+                placeholder="Search customer, asset, serial, invoice, amount..."
+                className="w-full"
+              />
+              {showSuggestions && searchInput.trim() && (() => {
+                const suggestions = sales.filter((s) => s.customer_id).slice(0, 8);
+                return suggestions.length > 0 ? (
+                  <div className="absolute z-20 top-full left-0 mt-1 w-full max-w-md bg-card border rounded-md shadow-lg max-h-72 overflow-y-auto">
+                    {suggestions.map((s) => (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => {
+                          setCustomerFilter({ id: s.customer_id!, name: s.customer_name || "Unknown customer" });
+                          setSearchInput("");
+                          setShowSuggestions(false);
+                        }}
+                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b border-border last:border-0 flex items-baseline justify-between gap-2"
+                      >
+                        <span className="truncate">
+                          <span className="font-medium">{s.customer_name || "—"}</span>
+                          <span className="text-muted-foreground"> · {(s.original_sold_date || s.sale_date)?.slice(0, 10)}</span>
+                        </span>
+                        <span className="tabular-nums shrink-0">₹{s.sale_total?.toFixed(2)}</span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null;
+              })()}
+            </>
+          )}
+        </div>
         <Select value={paymentFilter || "all"} onValueChange={(v) => setPaymentFilter(v === "all" ? "" : v)}>
           <SelectTrigger className="w-auto"><SelectValue placeholder="All Payment Statuses" /></SelectTrigger>
           <SelectContent>
@@ -709,6 +760,20 @@ function SalesLedgerPage() {
             ))}
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-1">
+          <Input
+            type="month"
+            value={monthFilter}
+            onChange={(e) => setMonthFilter(e.target.value)}
+            className="h-8 w-auto"
+            title="Filter by month"
+          />
+          {monthFilter && (
+            <button type="button" onClick={() => setMonthFilter("")} title="Clear month filter" className="text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         <Select value={String(pageSize)} onValueChange={(v) => setPageSize(Number(v))}>
           <SelectTrigger className="w-auto"><SelectValue /></SelectTrigger>
           <SelectContent>

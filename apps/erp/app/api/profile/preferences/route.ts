@@ -16,7 +16,7 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   }
 
-  const ALLOWED_KEYS = ['theme', 'hiddenItems', 'pinnedItems', 'groupOrder']
+  const ALLOWED_KEYS = ['theme', 'hiddenItems', 'pinnedItems', 'groupOrder', 'itemParents']
   const patch: Record<string, unknown> = {}
   for (const key of ALLOWED_KEYS) {
     if (key in body) patch[key] = body[key]
