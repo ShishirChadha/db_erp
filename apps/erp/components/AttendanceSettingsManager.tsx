@@ -40,7 +40,7 @@ interface StaffMember {
 }
 interface Network { id: string; label: string; cidr: string; is_active: boolean; notes: string | null }
 interface Holiday { id: string; name: string; festival_date: string; is_major: boolean; is_business_holiday: boolean }
-interface AppUser { id: string; full_name: string | null; username: string | null; employee_id?: string | null }
+interface AppUser { id: string; full_name: string | null; username: string | null; employee_id?: string | null; is_active?: boolean }
 
 function WeeklyOffPicker({ value, onChange, allowInherit }: {
   value: number[] | null; onChange: (v: number[] | null) => void; allowInherit?: boolean
@@ -381,7 +381,11 @@ export default function AttendanceSettingsManager() {
                         onChange={e => mutate(`/api/staff/${s.id}`, 'PATCH', { profile_id: e.target.value || null })}
                       >
                         <option value="">No login</option>
-                        {users.map(u => (
+                        {/* Deactivated logins are excluded -- same precedent as the
+                            shift select below (shifts.filter(is_active)). A roster row
+                            already pointing at one keeps working (the FK value itself
+                            is untouched), it just can't be picked for a NEW mapping. */}
+                        {users.filter(u => u.is_active !== false).map(u => (
                           <option key={u.id} value={u.id}>{u.full_name || u.username || u.id.slice(0, 8)}</option>
                         ))}
                       </select>
@@ -439,7 +443,7 @@ export default function AttendanceSettingsManager() {
               <select className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                 value={newStaff.profile_id} onChange={e => setNewStaff({ ...newStaff, profile_id: e.target.value })}>
                 <option value="">No login</option>
-                {users.map(u => <option key={u.id} value={u.id}>{u.full_name || u.username || u.id.slice(0, 8)}</option>)}
+                {users.filter(u => u.is_active !== false).map(u => <option key={u.id} value={u.id}>{u.full_name || u.username || u.id.slice(0, 8)}</option>)}
               </select>
               <select className="h-8 rounded-md border border-input bg-background px-2 text-sm"
                 value={newStaff.default_shift_id} onChange={e => setNewStaff({ ...newStaff, default_shift_id: e.target.value })}>
