@@ -73,3 +73,12 @@ period has normally been filed, so adding a sale to it would change a return
 already sent to the portal. Either record it in an open period, or ask the
 owner to reopen a window for that date — which is logged with a reason. See
 **finance-gst-reports**.
+
+## Marking a sale as never going to be invoiced
+
+A checkbox at entry flags a sale that will never produce a tax invoice -- a
+sample, gift, warranty replacement, or demo/internal-use unit. This is not a
+way to skip tax for free: a gift or sample still owes nothing in output tax,
+but s.17(5)(h) blocks the input credit on it, so the credit originally claimed
+on that unit has to be reversed, and the owner reviews every exclusion before
+the GST period is filed. See **finance-gst-reports**.

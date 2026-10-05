@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/sales-entry.ts
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-10-01
+updated: 2026-10-05
 ---
 
 ## What this covers
