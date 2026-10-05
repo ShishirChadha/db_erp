@@ -65,6 +65,11 @@ converting a whole document at once. The list page shows a running
 "N / M converted" count so partially-converted documents are visible at a
 glance.
 
+Since the handoff lands in the normal Sell flow, a converted line can also be
+marked as a GST exclusion (sample/gift/etc.) there like any other sale — see
+**finance-gst-reports** — though that would be unusual for a line that came
+from a priced quotation.
+
 ## Editing constraints
 
 Customer/entity/line items can only be edited while the document is still
