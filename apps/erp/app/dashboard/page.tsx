@@ -6,6 +6,7 @@ import { getLayoutSessionUser } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod } from '@/lib/reports'
 import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
+import { PunchWidget } from '@/components/PunchWidget'
 
 const SALES_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories', 'Repair', 'Rental']
 const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
@@ -116,6 +117,16 @@ async function DashboardPageContent({ preset }: { preset: string }) {
 
   return (
     <div>
+      {/* Punch in/out on a desktop.
+          The mobile top bar carries this on every page, but that bar is
+          md:hidden -- so without this card a staff member on a laptop who does
+          NOT have the attendance page grant had no way to punch at all, since
+          the only other surface is the Attendance page itself. Renders null for
+          anyone with no staff roster row, so it costs nothing for the rest. */}
+      <div className="mb-6 hidden md:block">
+        <PunchWidget className="sm:max-w-md" />
+      </div>
+
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-foreground">Dashboard</h1>
