@@ -4,38 +4,25 @@ import { useRole } from '@/lib/auth/useRole'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
-// Priority order of pages to fall back to when the current page is denied and
-// the default fallback ('/dashboard') isn't safe -- specifically, when 'dashboard'
-// is itself the page being gated, redirecting there would loop forever.
-const FALLBACK_ORDER: { key: string; path: string }[] = [
-  { key: 'new_entry', path: '/dashboard/entry' },
-  { key: 'accessories', path: '/dashboard/accessories' },
-  { key: 'repair_jobs', path: '/dashboard/repair-jobs' },
-  { key: 'replacement_jobs', path: '/dashboard/replacement-jobs' },
-  { key: 'live_stock', path: '/dashboard/live-stock' },
-  { key: 'sku_master', path: '/dashboard/sku-master' },
-  { key: 'invoices', path: '/dashboard/invoices' },
-  { key: 'customers', path: '/dashboard/customers' },
-  { key: 'activities', path: '/dashboard/activities' },
-  { key: 'sales', path: '/dashboard/sales' },
-  { key: 'stock', path: '/dashboard/stock' },
-  { key: 'attendance', path: '/dashboard/attendance' },
-]
-
 // Page-level guard for pages gated by a specific page-key in profiles.allowed_pages
 // (owners always pass). This is UX polish, not the real security boundary -- the API
 // routes these pages call enforce the same page-access check server-side, same
 // pattern as components/RequireOwner.tsx.
 export default function RequirePageAccess({ pageKey, children }: { pageKey: string | string[]; children: React.ReactNode }) {
-  const { loading, hasPageAccess, allowedPages } = useRole()
+  const { loading, hasPageAccess } = useRole()
   const allowed = hasPageAccess(pageKey)
   const router = useRouter()
 
   const keys = Array.isArray(pageKey) ? pageKey : [pageKey]
   const isDashboardCheck = keys.includes('dashboard')
-  const fallbackPath = isDashboardCheck
-    ? FALLBACK_ORDER.find(p => allowedPages.includes(p.key))?.path ?? null
-    : '/dashboard'
+  // 'dashboard' (the KPI overview) is gated because the owner does not want
+  // every employee seeing business numbers -- so its own fallback can't be
+  // '/dashboard' (infinite loop) or one of the other business pages (an
+  // employee with a narrow grant set used to land on an arbitrary one of
+  // those, which read as "there's no home for me here"). /dashboard/home has
+  // no pageKey at all -- every signed-in profile passes it -- so it is always
+  // a safe, universal landing spot regardless of allowed_pages.
+  const fallbackPath = isDashboardCheck ? '/dashboard/home' : '/dashboard'
 
   useEffect(() => {
     if (!loading && !allowed && fallbackPath) {

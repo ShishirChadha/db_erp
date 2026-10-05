@@ -1,5 +1,10 @@
 [
   {
+    "label": "Home",
+    "route": "/dashboard/home",
+    "ownerOnly": false
+  },
+  {
     "label": "Dashboard",
     "route": "/dashboard",
     "pageKey": "dashboard",

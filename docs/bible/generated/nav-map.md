@@ -5,6 +5,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 
 | Label | Route | Page key | Owner only? |
 |---|---|---|---|
+| Home | `/dashboard/home` |  |  |
 | Dashboard | `/dashboard` | dashboard |  |
 | Pending Tasks | `/dashboard/pending-tasks` | pending_tasks |  |
 | New Entry | `/dashboard/entry` | new_entry |  |

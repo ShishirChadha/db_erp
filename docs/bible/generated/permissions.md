@@ -7,6 +7,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 
 | Page | Manager | Employee |
 |---|---|---|
+| Home | visible to all signed-in staff | visible to all signed-in staff |
 | Dashboard | if granted `dashboard` | if granted `dashboard` |
 | Pending Tasks | if granted `pending_tasks` | if granted `pending_tasks` |
 | New Entry | if granted `new_entry` | if granted `new_entry` |

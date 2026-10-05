@@ -26,6 +26,7 @@ import {
   Search,
   Star,
   Megaphone,
+  Home,
   HelpCircle, Activity } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/auth/useRole'
@@ -49,6 +50,16 @@ import { useNavPrefs } from '@/lib/useNavPrefs'
 // (hidden/pinned/order) key off, so relabeling a group here never orphans a
 // user's saved preference.
 export const menuGroups = [
+  {
+    key: 'home',
+    label: 'Home',
+    icon: Home,
+    href: '/dashboard/home',
+    // No pageKey -- the universal landing page every signed-in profile can
+    // reach with zero grants (punching, own details, owner's broadcasts).
+    // This is also RequirePageAccess's fallback when 'dashboard' is denied,
+    // so it must stay nav-visible to everyone regardless of allowed_pages.
+  },
   {
     key: 'dashboard',
     label: 'Dashboard',
