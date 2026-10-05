@@ -9,7 +9,9 @@ sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/auth/redact.ts
   - apps/erp/components/sidebar.tsx
-updated: 2026-10-04
+  - apps/erp/components/RequirePageAccess.tsx
+  - apps/erp/app/dashboard/home/page.tsx
+updated: 2026-10-05
 ---
 
 ## The three roles
@@ -145,3 +147,24 @@ employee is staff). Like the other two it stays callable by `authenticated`, sin
 is evaluated inside policy evaluation.
 
 See **attendance**.
+
+## Home (2026-10-05)
+
+**`/dashboard/home` is the one page in this app with no `pageKey` at all** —
+not "a key everyone happens to have," genuinely ungated, same reasoning as
+`/dashboard/help` and the attendance self-punch endpoints. It exists because
+`/dashboard` (the KPI overview) stays gated behind the `dashboard` key, since
+the owner doesn't want every employee seeing business numbers — which left
+staff with narrow grants landing nowhere coherent. Home is that landing spot:
+the punch widget, the signed-in staff member's own roster details, and
+owner-published broadcasts (`business_updates`, owner-only to post via
+`POST /api/business-updates`, readable by anyone signed in via `GET` with no
+page-key check — same posture as `GET /api/attendance/me`).
+
+`RequirePageAccess`'s fallback when the `dashboard` key itself is denied is
+now always `/dashboard/home`, replacing a former priority list of other
+business pages — landing an employee on an arbitrary granted page read as
+"there's no home for me here." Because of this fallback role, Home's sidebar
+entry must stay visible to every role regardless of `allowed_pages` — hiding
+it would break the one safe redirect target `RequirePageAccess` has for a
+denied `dashboard` check.
