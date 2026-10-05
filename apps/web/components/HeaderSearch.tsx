@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
 import Link from 'next/link'
@@ -27,6 +28,15 @@ const LIMIT = 6
 // `public_products` client-direct with the anon key (same precedent as cart
 // mutations elsewhere in this app -- no new API route needed for a plain
 // public read), debounced so it doesn't fire a query per keystroke.
+//
+// Below `md:`, the inline box+dropdown used to be squeezed into whatever
+// space was left over next to the logo and account icons -- too small to
+// type into, and the suggestion dropdown (pinned to that same narrow box)
+// was effectively unusable. Below `md:` this instead renders a search icon
+// that opens a full-width overlay panel (same portal/scroll-lock technique
+// as MobileNav, for the same reason: SiteHeader's `backdrop-blur` creates a
+// CSS containing block that would otherwise clip a `fixed` panel to the
+// header's own ~70px height).
 export function HeaderSearch() {
   const router = useRouter()
   const [query, setQuery] = useState('')
@@ -34,7 +44,12 @@ export function HeaderSearch() {
   const [open, setOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [activeIndex, setActiveIndex] = useState(-1)
+  const [mobileOpen, setMobileOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
+  const mobileInputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     const term = query.trim()
@@ -70,14 +85,36 @@ export function HeaderSearch() {
     return () => document.removeEventListener('mousedown', handleClick)
   }, [])
 
+  // Mobile overlay: lock background scroll while open, autofocus the input,
+  // and let Escape close it -- matching MobileNav's drawer exactly.
+  useEffect(() => {
+    if (!mobileOpen) return
+    mobileInputRef.current?.focus()
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      document.removeEventListener('keydown', handleKey)
+    }
+  }, [mobileOpen])
+
+  const closeAll = () => {
+    setOpen(false)
+    setMobileOpen(false)
+  }
+
   const goToProduct = (slug: string | null) => {
     if (!slug) return
-    setOpen(false)
+    closeAll()
     router.push(`/product/${slug}`)
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!open || results.length === 0) return
+    if (results.length === 0) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActiveIndex((i) => (i + 1) % results.length)
@@ -92,64 +129,122 @@ export function HeaderSearch() {
     }
   }
 
-  return (
-    <div ref={containerRef} className="relative ml-auto w-full max-w-xs">
-      <form action="/search" className="flex w-full items-center">
-        <input
-          type="search"
-          name="q"
-          value={query}
-          onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
-          onFocus={() => setOpen(true)}
-          onKeyDown={handleKeyDown}
-          autoComplete="off"
-          placeholder="Search laptops, brands..."
-          className="w-full rounded-full border border-input bg-background px-3.5 py-1.5 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30"
-        />
-      </form>
-
-      {open && query.trim().length >= 2 && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-96 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
-          {loading && (
-            <p className="p-3 text-sm text-muted-foreground">Searching…</p>
-          )}
-          {!loading && results.length === 0 && (
-            <p className="p-3 text-sm text-muted-foreground">No products matched &ldquo;{query}&rdquo;.</p>
-          )}
-          {!loading && results.map((r, i) => {
-            const title = r.web_title || [r.brand, r.model_name].filter(Boolean).join(' ')
-            return (
-              <Link
-                key={r.id}
-                href={r.web_slug ? `/product/${r.web_slug}` : '#'}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors ${
-                  i === activeIndex ? 'bg-secondary' : 'hover:bg-secondary/60'
-                }`}
-              >
-                <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted">
-                  {r.primary_image_path && (
-                    <Image src={productImageUrl(r.primary_image_path)} alt="" fill sizes="40px" className="object-cover" />
-                  )}
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium text-foreground">{title}</span>
-                  <span className="block text-xs text-muted-foreground">{formatCurrency(r.web_price)}</span>
-                </span>
-              </Link>
-            )
-          })}
-          {!loading && results.length > 0 && (
-            <Link
-              href={`/search?q=${encodeURIComponent(query)}`}
-              onClick={() => setOpen(false)}
-              className="block border-t border-border px-3 py-2 text-center text-xs font-medium text-brand-blue hover:underline"
-            >
-              See all results for &ldquo;{query}&rdquo;
-            </Link>
-          )}
-        </div>
+  const suggestions = (
+    <>
+      {loading && <p className="p-3 text-sm text-muted-foreground">Searching…</p>}
+      {!loading && results.length === 0 && (
+        <p className="p-3 text-sm text-muted-foreground">No products matched &ldquo;{query}&rdquo;.</p>
       )}
-    </div>
+      {!loading && results.map((r, i) => {
+        const title = r.web_title || [r.brand, r.model_name].filter(Boolean).join(' ')
+        return (
+          <Link
+            key={r.id}
+            href={r.web_slug ? `/product/${r.web_slug}` : '#'}
+            onClick={closeAll}
+            className={`flex items-center gap-3 px-3 py-2 text-sm transition-colors ${
+              i === activeIndex ? 'bg-secondary' : 'hover:bg-secondary/60'
+            }`}
+          >
+            <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted">
+              {r.primary_image_path && (
+                <Image src={productImageUrl(r.primary_image_path)} alt="" fill sizes="40px" className="object-cover" />
+              )}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium text-foreground">{title}</span>
+              <span className="block text-xs text-muted-foreground">{formatCurrency(r.web_price)}</span>
+            </span>
+          </Link>
+        )
+      })}
+      {!loading && results.length > 0 && (
+        <Link
+          href={`/search?q=${encodeURIComponent(query)}`}
+          onClick={closeAll}
+          className="block border-t border-border px-3 py-2 text-center text-xs font-medium text-brand-blue hover:underline"
+        >
+          See all results for &ldquo;{query}&rdquo;
+        </Link>
+      )}
+    </>
+  )
+
+  return (
+    <>
+      {/* Desktop/tablet: inline box with the dropdown anchored directly under it. */}
+      <div ref={containerRef} className="relative ml-auto hidden w-full max-w-xs md:block">
+        <form action="/search" className="flex w-full items-center">
+          <input
+            type="search"
+            name="q"
+            value={query}
+            onChange={(e) => { setQuery(e.target.value); setOpen(true) }}
+            onFocus={() => setOpen(true)}
+            onKeyDown={handleKeyDown}
+            autoComplete="off"
+            placeholder="Search laptops, brands..."
+            className="w-full rounded-full border border-input bg-background px-3.5 py-1.5 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30"
+          />
+        </form>
+
+        {open && query.trim().length >= 2 && (
+          <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-96 overflow-y-auto rounded-xl border border-border bg-card shadow-lg">
+            {suggestions}
+          </div>
+        )}
+      </div>
+
+      {/* Mobile: icon that opens a full-viewport-width overlay, so the input
+          and its suggestions are never squeezed into leftover header space. */}
+      <button
+        type="button"
+        onClick={() => setMobileOpen(true)}
+        aria-label="Search"
+        className="ml-auto flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-foreground transition-colors hover:bg-secondary/60 md:hidden"
+      >
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="h-5 w-5">
+          <circle cx="11" cy="11" r="7" />
+          <path d="m21 21-4.35-4.35" />
+        </svg>
+      </button>
+
+      {mobileOpen && mounted && createPortal(
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button
+            type="button"
+            aria-label="Close search"
+            onClick={() => setMobileOpen(false)}
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+          />
+          <div className="absolute inset-x-0 top-0 flex max-h-[85vh] flex-col overflow-hidden border-b border-border bg-card shadow-lg">
+            <form action="/search" className="flex items-center gap-2 border-b border-border p-3">
+              <input
+                ref={mobileInputRef}
+                type="search"
+                name="q"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                autoComplete="off"
+                placeholder="Search laptops, brands..."
+                className="w-full rounded-full border border-input bg-background px-3.5 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30"
+              />
+              <button
+                type="button"
+                onClick={() => setMobileOpen(false)}
+                className="shrink-0 text-sm font-medium text-muted-foreground"
+              >
+                Cancel
+              </button>
+            </form>
+            <div className="overflow-y-auto">
+              {query.trim().length >= 2 && suggestions}
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
   )
 }
