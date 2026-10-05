@@ -1,7 +1,6 @@
 'use client'
 
 import { useRole } from '@/lib/auth/useRole'
-import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 // Page-level guard for owner-only screens (vendors, PO/PI, reports, settings, expenses).
@@ -9,13 +8,14 @@ import { useEffect } from 'react'
 // enforces the same owner check server-side regardless of what renders here.
 export default function RequireOwner({ children }: { children: React.ReactNode }) {
   const { role, loading, isOwner } = useRole()
-  const router = useRouter()
 
+  // Hard navigation, not next/navigation's router.replace -- see the comment
+  // in RequirePageAccess.tsx on the same pattern for why.
   useEffect(() => {
     if (!loading && !isOwner) {
-      router.replace('/dashboard')
+      window.location.replace('/dashboard')
     }
-  }, [loading, isOwner, router])
+  }, [loading, isOwner])
 
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading...</div>

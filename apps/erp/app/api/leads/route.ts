@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { withRetry } from '@/lib/db-retry'
-import { getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
+import { logAuditEvent } from '@/lib/audit-log'
+import { DEFAULT_LEAD_STATUS, getLeadSetOrNull, isCurrentHolderOrManager, findDuplicatePhones } from '@/lib/leads'
 
 const SELECT = `
   id, set_id, name, phone, email, address, external_identifier, status,
@@ -106,4 +107,61 @@ export async function GET(req: NextRequest) {
 
   if (pagination) return NextResponse.json({ data: enriched, total: count || 0 })
   return NextResponse.json(enriched)
+}
+
+// ---------- POST: add one lead to an existing Set ----------
+// The common real case is a referral -- an existing lead/customer mentions
+// someone else worth pitching mid-call -- so this needs to be fast to use
+// from inside the detail view, not just a bulk CSV. Same "only the current
+// holder (or manager/owner) may write" rule as every other mutation here.
+export async function POST(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const body = await req.json().catch(() => null)
+  if (!body) return NextResponse.json({ error: 'Invalid body.' }, { status: 400 })
+
+  const { set_id, name, phone, email, address, external_identifier } = body
+  if (!set_id) return NextResponse.json({ error: 'set_id is required.' }, { status: 400 })
+  if (!name || !String(name).trim()) return NextResponse.json({ error: 'Name is required.' }, { status: 400 })
+
+  const set = await getLeadSetOrNull(set_id)
+  if (!set) return NextResponse.json({ error: 'Set not found.' }, { status: 404 })
+  if (!isCurrentHolderOrManager(sessionUser, set)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const trimmedPhone = phone ? String(phone).trim() : null
+  let duplicateWarning: any = null
+  if (trimmedPhone) {
+    const dupes = await findDuplicatePhones([trimmedPhone])
+    const hits = dupes.get(trimmedPhone) || []
+    if (hits.length > 0) duplicateWarning = { phone: trimmedPhone, existing_in: hits }
+  }
+
+  const { data: lead, error } = await supabaseAdmin
+    .from('leads')
+    .insert({
+      set_id,
+      name: String(name).trim(),
+      phone: trimmedPhone,
+      email: email ? String(email).trim() : null,
+      address: address ? String(address).trim() : null,
+      external_identifier: external_identifier ? String(external_identifier).trim() : null,
+      status: DEFAULT_LEAD_STATUS,
+      created_by: sessionUser.id,
+    })
+    .select('id, set_id, name, phone, email, address, external_identifier, status, converted_customer_id, activity_id, created_at, updated_at')
+    .single()
+  if (error || !lead) return NextResponse.json({ error: error?.message || 'Failed to add lead.' }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create', module: 'leads', tableName: 'leads', recordId: lead.id, recordLabel: lead.name,
+    metadata: { set_id },
+  })
+
+  return NextResponse.json(
+    { success: true, lead: { ...lead, follow_up_date: null, last_note: null, last_note_at: null }, duplicate_warning: duplicateWarning },
+    { status: 201 }
+  )
 }

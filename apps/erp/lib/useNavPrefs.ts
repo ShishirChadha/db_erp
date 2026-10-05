@@ -6,6 +6,16 @@ import { apiFetch } from '@/lib/api-client'
 
 export const MAX_PINNED_ITEMS = 6
 
+// Stable fallbacks -- `prefs.hiddenItems || []` etc. below must never mint a
+// fresh [] / {} literal on every render: sidebar.tsx's effect depends on a
+// value derived from these (visibleGroups), and a new reference each render
+// re-fires that effect every render forever ("Maximum update depth exceeded"),
+// which only ever showed up for an account with no saved prefs yet -- i.e.
+// every default employee login -- since an account that already has a real
+// stored array/object there never hit the `|| fallback` branch at all.
+const EMPTY_ARRAY: readonly string[] = []
+const EMPTY_PARENTS: Readonly<Record<string, string>> = {}
+
 // Personal sidebar customization (hide/pin/reorder) -- a display-layer preference
 // only, never a substitute for canSee()'s role-based filtering in sidebar.tsx. A
 // hidden-but-still-allowed item stays reachable via ⌘K search and "Reset to default".

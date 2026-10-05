@@ -210,6 +210,68 @@ function LeadRow({
   )
 }
 
+function AddLeadModal({ setId, onClose, onAdded }: { setId: string; onClose: () => void; onAdded: (lead: Lead) => void }) {
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [address, setAddress] = useState('')
+  const [identifier, setIdentifier] = useState('')
+
+  // The common real case this exists for: an existing lead refers someone else
+  // mid-call -- that referral is a brand new lead worth tracking in the same
+  // Set, and typing one contact shouldn't require a CSV round-trip.
+  const { run: submit, pending } = useAsyncAction(async () => {
+    if (!name.trim()) return
+    const res = await apiFetch('/api/leads', {
+      method: 'POST',
+      body: JSON.stringify({
+        set_id: setId, name: name.trim(),
+        phone: phone.trim() || undefined, email: email.trim() || undefined,
+        address: address.trim() || undefined, external_identifier: identifier.trim() || undefined,
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) {
+      if (json.duplicate_warning) toast.warning('Added -- note: this phone number already appears in another set.')
+      else toast.success('Lead added.')
+      onAdded(json.lead)
+    } else {
+      toast.error(json.error || 'Failed to add lead.')
+    }
+  })
+
+  return (
+    <SimpleModal isOpen onClose={onClose} title="Add Lead">
+      <div className="space-y-3">
+        <div>
+          <Label className="text-xs">Name *</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" placeholder="e.g. referred by an existing lead" />
+        </div>
+        <div>
+          <Label className="text-xs">Phone</Label>
+          <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs">Email</Label>
+          <Input value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs">Address</Label>
+          <Input value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1" />
+        </div>
+        <div>
+          <Label className="text-xs">Identifier (optional)</Label>
+          <Input value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="mt-1" />
+        </div>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit()} disabled={!name.trim()} loading={pending}>Add</Button>
+        </div>
+      </div>
+    </SimpleModal>
+  )
+}
+
 function LeadDetailModal({ lead, onClose, onUpdated }: { lead: Lead; onClose: () => void; onUpdated: (patch: Partial<Lead>) => void }) {
   const [comments, setComments] = useState<{ id: string; author_name: string; body: string; created_at: string }[]>([])
   const [loadingThread, setLoadingThread] = useState(true)
@@ -277,11 +339,27 @@ function LeadDetailModal({ lead, onClose, onUpdated }: { lead: Lead; onClose: ()
           <div className="col-span-2"><span className="text-muted-foreground">Identifier:</span> {lead.external_identifier || '-'}</div>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          {!lead.converted_customer_id && (
-            <Button size="sm" variant="outline" onClick={() => convert()} loading={converting}>Convert to Customer</Button>
+        <div className="rounded-md border p-3 space-y-2 bg-muted/20">
+          <h3 className="text-sm font-medium flex items-center gap-1"><History className="h-4 w-4" /> Remarks</h3>
+          <div className="flex gap-2">
+            <Input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Add a remark (e.g. what was discussed on the call)..." />
+            <Button onClick={() => addNote()} disabled={!noteText.trim()} loading={addingNote}>Add</Button>
+          </div>
+          {loadingThread ? (
+            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+          ) : comments.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No remarks yet -- the first one starts this lead's history.</p>
+          ) : (
+            <div className="space-y-2 max-h-60 overflow-y-auto border rounded-md p-2 bg-background">
+              {comments.map((c) => (
+                <div key={c.id} className="text-sm">
+                  <span className="font-medium">{c.author_name}</span>{' '}
+                  <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
+                  <div>{c.body}</div>
+                </div>
+              ))}
+            </div>
           )}
-          {lead.converted_customer_id && <Badge>Converted to customer</Badge>}
         </div>
 
         <div className="flex items-center gap-2">
@@ -298,27 +376,11 @@ function LeadDetailModal({ lead, onClose, onUpdated }: { lead: Lead; onClose: ()
           )}
         </div>
 
-        <div>
-          <h3 className="text-sm font-medium mb-2 flex items-center gap-1"><History className="h-4 w-4" /> Call history</h3>
-          {loadingThread ? (
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-          ) : comments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No calls logged yet -- the first note starts the history.</p>
-          ) : (
-            <div className="space-y-2 max-h-60 overflow-y-auto border rounded-md p-2">
-              {comments.map((c) => (
-                <div key={c.id} className="text-sm">
-                  <span className="font-medium">{c.author_name}</span>{' '}
-                  <span className="text-xs text-muted-foreground">{new Date(c.created_at).toLocaleString()}</span>
-                  <div>{c.body}</div>
-                </div>
-              ))}
-            </div>
+        <div className="flex items-center gap-2 flex-wrap">
+          {!lead.converted_customer_id && (
+            <Button size="sm" variant="outline" onClick={() => convert()} loading={converting}>Convert to Customer</Button>
           )}
-          <div className="flex gap-2 mt-2">
-            <Input value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="Log a call or note..." />
-            <Button onClick={() => addNote()} disabled={!noteText.trim()} loading={addingNote}>Add</Button>
-          </div>
+          {lead.converted_customer_id && <Badge>Converted to customer</Badge>}
         </div>
       </div>
     </SimpleModal>
@@ -597,6 +659,7 @@ function LeadsPageInner() {
   useEffect(() => { loadLeads() }, [loadLeads])
 
   const [detailLead, setDetailLead] = useState<Lead | null>(null)
+  const [showAddLead, setShowAddLead] = useState(false)
   useEffect(() => {
     if (openLeadId && leads.length > 0) setDetailLead(leads.find((l) => l.id === openLeadId) || null)
   }, [openLeadId, leads])
@@ -617,21 +680,24 @@ function LeadsPageInner() {
           </div>
         )}
 
-        <div className="flex flex-wrap gap-2 items-end">
-          <Input value={leadSearch} onChange={(e) => setLeadSearch(e.target.value)} placeholder="Search name, phone, email, identifier..." className="w-64" />
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All statuses</SelectItem>
-              {statusOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={followupFilter} onValueChange={setFollowupFilter}>
-            <SelectTrigger className="h-9 w-[200px]"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {FOLLOWUP_FILTER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap gap-2 items-end justify-between">
+          <div className="flex flex-wrap gap-2 items-end">
+            <Input value={leadSearch} onChange={(e) => setLeadSearch(e.target.value)} placeholder="Search name, phone, email, identifier..." className="w-64" />
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All statuses</SelectItem>
+                {statusOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+              </SelectContent>
+            </Select>
+            <Select value={followupFilter} onValueChange={setFollowupFilter}>
+              <SelectTrigger className="h-9 w-[200px]"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {FOLLOWUP_FILTER_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          <Button size="sm" onClick={() => setShowAddLead(true)}><Plus className="h-4 w-4 mr-1" /> Add Lead</Button>
         </div>
 
         {loadingLeads ? (
@@ -675,6 +741,17 @@ function LeadsPageInner() {
             onUpdated={(patch) => {
               setLeads((prev) => prev.map((x) => x.id === detailLead.id ? { ...x, ...patch } : x))
               setDetailLead((prev) => prev ? { ...prev, ...patch } : prev)
+            }}
+          />
+        )}
+        {showAddLead && (
+          <AddLeadModal
+            setId={activeSetId}
+            onClose={() => setShowAddLead(false)}
+            onAdded={(lead) => {
+              setShowAddLead(false)
+              setLeads((prev) => [lead, ...prev])
+              setTotal((prev) => prev + 1)
             }}
           />
         )}

@@ -1,7 +1,6 @@
 'use client'
 
 import { useRole } from '@/lib/auth/useRole'
-import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
 
 // Page-level guard for pages gated by a specific page-key in profiles.allowed_pages
@@ -11,7 +10,6 @@ import { useEffect } from 'react'
 export default function RequirePageAccess({ pageKey, children }: { pageKey: string | string[]; children: React.ReactNode }) {
   const { loading, hasPageAccess } = useRole()
   const allowed = hasPageAccess(pageKey)
-  const router = useRouter()
 
   const keys = Array.isArray(pageKey) ? pageKey : [pageKey]
   const isDashboardCheck = keys.includes('dashboard')
@@ -24,11 +22,17 @@ export default function RequirePageAccess({ pageKey, children }: { pageKey: stri
   // a safe, universal landing spot regardless of allowed_pages.
   const fallbackPath = isDashboardCheck ? '/dashboard/home' : '/dashboard'
 
+  // A hard navigation (not next/navigation's router.replace) -- the RSC fetch
+  // behind a client-side replace() has been observed to get net::ERR_ABORTED
+  // on this Next.js version for a redirect fired from an effect on first
+  // mount, leaving this component stuck rendering "Redirecting..." forever
+  // with no console error (the failure is a silently-dropped background
+  // fetch, not a thrown exception). window.location.replace always lands.
   useEffect(() => {
     if (!loading && !allowed && fallbackPath) {
-      router.replace(fallbackPath)
+      window.location.replace(fallbackPath)
     }
-  }, [loading, allowed, fallbackPath, router])
+  }, [loading, allowed, fallbackPath])
 
   if (loading) {
     return <div className="p-4 text-sm text-muted-foreground">Loading...</div>
