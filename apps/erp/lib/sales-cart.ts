@@ -32,6 +32,15 @@ export type BaseSaleFields = {
   // replacement's own sale_date is (correctly) today. See migration
   // add_sales_original_sold_date for why sale_date itself is never touched instead.
   original_sold_date?: string | null
+  // Marks a sale that will never produce a tax invoice -- sample, gift,
+  // warranty replacement, demo unit, other. See CLAUDE.md / the GST module
+  // chapter: a gift/sample is not simply outside GST, s.17(5)(h) blocks the
+  // input credit on it, which is why this is surfaced for owner review rather
+  // than silently dropping the sale from the tax base.
+  gst_exclusion_reason?: string | null
+  gst_exclusion_note?: string | null
+  gst_excluded_by?: string | null
+  gst_excluded_at?: string | null
 }
 
 export type ProcessedSaleRow = {

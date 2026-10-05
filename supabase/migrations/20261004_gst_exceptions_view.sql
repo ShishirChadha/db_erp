@@ -75,14 +75,24 @@ where e.is_gst_registered and not i.cancelled
 -- ========================= TRANSACTIONS =========================
 -- Completeness: a taxed sale with no invoice cannot appear in GSTR-1 at all.
 union all
-select s.entity_key, date_trunc('month', s.effective_sale_date)::date, 'gst_sale_not_invoiced', 'blocker', 'transactions',
+-- A WARNING, not a blocker. Invoices are issued in Zoho, not here, so a sale
+-- with no invoice_id measures this system's recording backlog rather than a tax
+-- gap -- and under the business's process a sale is deliberately left
+-- uninvoiced until payment is secured. What actually gates filing is whether
+-- the period's Zoho register reconciles (checked below).
+select s.entity_key, date_trunc('month', s.effective_sale_date)::date, 'gst_sale_not_invoiced', 'warning', 'transactions',
        'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
        'Sale of ' || to_char(coalesce(s.sale_total,0), 'FM999999990.00') ||
        ' (tax ' || to_char(coalesce(s.sale_gst,0), 'FM999999990.00') ||
-       ') has no invoice, so it is absent from the return.'
+       ') has no invoice recorded here' ||
+       case when coalesce(s.payment_status,'') = 'paid'
+            then '. It is fully paid, so the tax point has already passed -- check a Zoho invoice exists and record it.'
+            else ' and is not yet paid, which is expected until payment is secured.' end
 from sale_entity s join entities e on e.key = s.entity_key
 where e.is_gst_registered and coalesce(s.is_deleted,false) = false
   and s.invoice_id is null and coalesce(s.sale_type,'') = 'GST'
+  -- A sample, gift or warranty replacement will never be invoiced.
+  and s.gst_exclusion_reason is null
 
 union all
 select s.entity_key, date_trunc('month', s.effective_sale_date)::date, 'voided_sale_with_live_invoice', 'blocker', 'transactions',
@@ -300,7 +310,79 @@ from expenses e
 where coalesce(e.is_deleted, false) = false
   and e.supply_type in ('rcm_domestic', 'rcm_import_services')
   and coalesce(e.gst_amount, 0) > 0
-  and coalesce(e.itc_status, 'pending') = 'pending';
+  and coalesce(e.itc_status, 'pending') = 'pending'
+
+union all
+-- Filing gate. Invoices are issued in Zoho, so a period cannot be considered
+-- checked until its register has been uploaded here and every row matched or
+-- explicitly resolved.
+select p.entity_key, p.period_month, 'zoho_register_not_uploaded', 'blocker', 'document_summary',
+       'series', null::uuid, to_char(p.period_month, 'Mon YYYY'),
+       (p.status->>'reason')
+from (
+  select a.entity_key, a.period_month,
+         gst_zoho_register_status(a.entity_key, a.period_month,
+           (a.period_month + interval '1 month - 1 day')::date) as status
+  from (
+    select i.entity_key, date_trunc('month', i.invoice_date)::date as period_month
+    from invoices i join business_profiles b on b.key = i.entity_key
+    where b.is_gst_registered and coalesce(i.is_deleted,false) = false
+      and coalesce(i.invoice_type,'sales') in ('sales','credit_note')
+    union
+    select se.entity_key, date_trunc('month', se.effective_sale_date)::date
+    from sale_entity se join business_profiles b2 on b2.key = se.entity_key
+    where b2.is_gst_registered and coalesce(se.is_deleted,false) = false
+      and coalesce(se.sale_type,'') = 'GST'
+  ) a
+) p
+where (p.status->>'uploaded')::boolean = false
+
+union all
+select p.entity_key, p.period_month, 'zoho_register_unreconciled', 'blocker', 'document_summary',
+       'series', null::uuid, to_char(p.period_month, 'Mon YYYY'),
+       (p.status->>'reason')
+from (
+  select a.entity_key, a.period_month,
+         gst_zoho_register_status(a.entity_key, a.period_month,
+           (a.period_month + interval '1 month - 1 day')::date) as status
+  from (
+    select i.entity_key, date_trunc('month', i.invoice_date)::date as period_month
+    from invoices i join business_profiles b on b.key = i.entity_key
+    where b.is_gst_registered and coalesce(i.is_deleted,false) = false
+      and coalesce(i.invoice_type,'sales') in ('sales','credit_note')
+  ) a
+) p
+where (p.status->>'uploaded')::boolean = true
+  and (p.status->>'reconciled')::boolean = false
+
+union all
+-- An exclusion removes value from the tax base, so it gets owner sign-off
+-- before the period is filed.
+select s.entity_key, date_trunc('month', s.effective_sale_date)::date,
+       'gst_exclusion_needs_review', 'warning', 'transactions',
+       'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
+       'Excluded from GST as ' || s.gst_exclusion_reason ||
+       coalesce(' (' || nullif(trim(s.gst_exclusion_note), '') || ')', '') ||
+       ', worth ' || to_char(coalesce(s.sale_total,0), 'FM999999990.00') ||
+       '. Confirm before filing -- an exclusion takes value out of the return.'
+from sale_entity s join entities e on e.key = s.entity_key
+where e.is_gst_registered and coalesce(s.is_deleted,false) = false
+  and s.gst_exclusion_reason is not null
+  and s.gst_exclusion_reviewed_at is null
+
+union all
+-- s.17(5)(h): input credit is BLOCKED on goods disposed of by way of gift or
+-- free samples. So a sample costs the credit claimed when the unit was bought;
+-- it is not a free way to move stock. Raised as a warning because the reversal
+-- is a judgement on the original purchase, not something this can compute.
+select s.entity_key, date_trunc('month', s.effective_sale_date)::date,
+       'gift_itc_reversal_due', 'warning', 'transactions',
+       'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
+       'Given as a ' || s.gst_exclusion_reason ||
+       ', so no output tax arises -- but s.17(5)(h) blocks the input credit on goods disposed of as gifts or free samples. The credit claimed when this unit was purchased needs reversing in 3B Table 4(B).'
+from sale_entity s join entities e on e.key = s.entity_key
+where e.is_gst_registered and coalesce(s.is_deleted,false) = false
+  and s.gst_exclusion_reason in ('sample', 'gift');
 
 comment on view public.v_gst_exceptions is
   'Live GST pre-flight validation, one row per problem. Blockers must be cleared before a return is generated; warnings are advisory. Never stored -- a fixed record simply stops appearing.';

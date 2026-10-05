@@ -861,3 +861,16 @@ Impact: shipping GSTR-1 plus an output-tax figure, with ITC still coming from th
 **Margin scheme (Rule 32(5)) considered and declined — 18% on full sale price.** (2026-10-04)
 Why: owner's decision. Recording it because it is the largest single GST lever available to a refurbished-goods dealer and will come up again. CBIC's own flyer confirms refurbishment cost sits *inside* the taxable margin rather than being deducted from it, so the margin is strictly `sell − buy`; even so, on a ₹20,000 buy / ₹30,000 sell with ₹3,000 of parts it is roughly ₹3,000 less GST per unit. Two points make it a CA question rather than a feature flag: whether ITC on *other* business inputs survives (the Deccan Wheels AAR says no, without reasoning; Lakshmikumaran & Sridharan flag it as unresolved), and whether Table 12 should carry the margin or the full value, which is undocumented. It also changes the customer-facing document, since the buyer gets no ITC.
 Impact: none in code — the per-unit cost basis needed for it already exists on `asset_ledger`, so this stays available if the owner revisits it with their CA.
+
+---
+
+**Zoho is the authority for what's invoiced; the ERP reconciles to it, not the other way round.** (2026-10-05)
+Why: the owner described the actual process -- Sanjana enters a sale on its sold date immediately (the existing "immediately real" rule), but invoicing is deliberately deferred until payment is secured, so a September sale can get an October Zoho invoice once money lands. Measuring "has this sale got an `invoice_id` in the ERP" was therefore never a tax question, only a measure of this system's own recording backlog -- and it produced September showing 26 blockers for sales the owner had already confirmed were invoiced in Zoho.
+Impact: `gst_sale_not_invoiced` downgraded from blocker to warning; `gst_zoho_register_status()` checks whether the period's Zoho register has been uploaded (covering it fully -- a partial upload is rejected, not silently accepted) and every row matched or resolved, and that -- not the ERP's own invoice count -- is what gates `can_generate`. Verified both directions: September went from 30 blockers to 2 (a real series gap plus "no register uploaded"), and uploading + resolving a full-period register clears both new checks while leaving genuine remaining issues (series gaps) still blocking.
+
+---
+
+**A sale can be marked as never going to be invoiced, and doing so is not free.** (2026-10-05)
+Why: samples, gifts, warranty replacements and demo units move stock but produce no tax invoice, and were previously indistinguishable from a genuine missing invoice. The owner asked for a flag "that will let ERP and us know that this item is not ready for GST filing" rather than a dispatch-based model, since dispatch timing varies per sale.
+Impact: `sales.gst_exclusion_reason` (sample/gift/warranty_replacement/internal_use/other), set by whoever enters the sale, reviewed by the owner before filing (`gst_exclusion_reviewed_at`) since an exclusion removes value from the tax base. Deliberately NOT a free pass: s.17(5)(h) blocks the input credit on goods disposed of as a gift or sample, so `gift_itc_reversal_due` raises the reversal obligation on every sample/gift exclusion rather than letting it look costless. An already-invoiced sale cannot be excluded -- that needs a credit note instead.
+

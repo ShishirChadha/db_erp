@@ -184,7 +184,7 @@ Live schema snapshot -- 107 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~117 rows (estimate)
+~119 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1136,7 +1136,7 @@ One uploaded reconciliation source: a Zoho invoice register (outward, checks not
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~526 rows (estimate)
+~532 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1863,7 +1863,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales
 
-~485 rows (estimate)
+~491 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1911,6 +1911,12 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 | effective_sale_date | date | yes | `COALESCE(original_sold_date, sale_date)` |  |  |
 | eway_bill_number | text | yes |  |  |  |
 | eway_bill_date | date | yes |  |  |  |
+| gst_exclusion_reason | text | yes |  |  | Set when this sale will never produce a tax invoice: sample, gift, warranty_replacement, internal_use, other. Excludes it from the return's completeness expectations. For sample/gift this also triggers an s.17(5)(h) ITC reversal on the unit -- the credit is blocked on goods disposed of as gifts or free samples. |
+| gst_exclusion_note | text | yes |  |  |  |
+| gst_excluded_by | uuid | yes |  | FK -> users.id |  |
+| gst_excluded_at | timestamp with time zone | yes |  |  |  |
+| gst_exclusion_reviewed_by | uuid | yes |  | FK -> users.id |  |
+| gst_exclusion_reviewed_at | timestamp with time zone | yes |  |  | Owner sign-off. An exclusion removes value from the GST base, so staff can record it at entry but it is surfaced for review before the period is filed. |
 
 ## sales_document_items
 
@@ -1988,7 +1994,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~3,527 rows (estimate)
+~3,930 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

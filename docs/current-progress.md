@@ -1752,3 +1752,42 @@ merely baked in. Verified: a ₹23,677.97 credit note moves 3.1(a) from ₹10,50
 ₹10,26,619.24 and IGST from ₹31,289.49 to ₹27,027.46, with CGST/SGST untouched because that
 invoice was inter-state.
 
+---
+
+## GST module -- Zoho-as-authority and GST exclusions (2026-10-05)
+
+Reworked around how invoicing actually happens here, per the owner: Sanjana enters a sale
+immediately on its sold date, but the invoice is deliberately issued later in Zoho once
+payment is secured (an order can be cancelled, or paid weeks later) -- so "no invoice_id in
+the ERP" was never a tax gap, only this system's recording backlog.
+
+**`gst_sale_not_invoiced` downgraded blocker -> warning.** Filing now gates on
+`gst_zoho_register_status()`: has the period's Zoho register been uploaded (covering it
+*fully* -- a partial upload is rejected) and is every row matched or resolved. September
+went from 30 blockers to 2 real ones (a series gap, and "no register uploaded yet").
+Verified both directions with disposable scripts: the gate blocks until reconciled, and
+clears once a full-period register is uploaded and every row resolved, while genuine
+remaining issues (series gaps) still block correctly.
+
+**GST exclusion flag.** `sales.gst_exclusion_reason` (sample/gift/warranty_replacement/
+internal_use/other) marks a sale that will never be invoiced -- set by staff at entry
+(`/api/sales-entry` and the standalone `/api/gst/exclusions` POST), reviewed by the owner
+before filing (`gst_exclusion_reviewed_at`, owner-only PATCH). Deliberately not a free pass:
+s.17(5)(h) blocks the input credit on goods given as a gift or sample, so
+`gift_itc_reversal_due` raises that reversal rather than letting the exclusion look
+costless. An already-invoiced sale cannot be excluded -- 409 `already_invoiced`, pointing
+at a credit note instead. New GST page tab (owner review queue), tile, and a checkbox at
+sale entry.
+
+Verified: 24 assertions on the exclusion flow (role gating, 'other' requiring a note,
+ITC-reversal warning firing and persisting through review, already-invoiced refusal), 7 on
+the Zoho-gate reconciliation round-trip. All test data and users re-queried clean.
+
+### Still open
+- The 26 September sales awaiting a Zoho invoice are now correctly a warning, not a
+  blocker -- but the owner should still upload September's Zoho register to clear the real
+  gating check and resolve the 4 series gaps.
+- No UI yet for bulk-setting exclusions on existing sales (only at new-entry time and via
+  the API) -- today's 6 real zero/₹1 September sales were confirmed NOT samples and are
+  untouched.
+

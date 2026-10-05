@@ -80,6 +80,7 @@ export default function GstClient() {
   const [dash, setDash] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [tab, setTab] = useState('validation')
 
   const period = months.find((m) => m.value === month) ?? months[0]
 
@@ -140,6 +141,8 @@ export default function GstClient() {
   const canGenerate = !!readiness?.can_generate
   const completeness = readiness?.completeness
   const outward = readiness?.outward
+  const zoho = readiness?.zoho_register
+  const excluded = readiness?.excluded
 
   return (
     <div className="space-y-6">
@@ -198,12 +201,24 @@ export default function GstClient() {
               </CardContent>
             </Card>
 
-            <Card className={completeness?.uninvoiced_sales > 0 ? 'border-destructive/40' : undefined}>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Sales with no invoice</CardTitle></CardHeader>
+            <Card>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Awaiting a Zoho invoice</CardTitle></CardHeader>
               <CardContent>
                 <p className="text-2xl font-semibold tabular-nums">{completeness?.uninvoiced_sales ?? 0}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  {formatCurrency(completeness?.uninvoiced_tax ?? 0)} of tax missing from this return
+                  {formatCurrency(completeness?.uninvoiced_tax ?? 0)} of tax, normal until payment lands
+                </p>
+              </CardContent>
+            </Card>
+
+            <Card className={excluded?.awaiting_review > 0 ? 'border-warning/40' : undefined}>
+              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Excluded from GST</CardTitle></CardHeader>
+              <CardContent>
+                <p className="text-2xl font-semibold tabular-nums">{excluded?.count ?? 0}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {excluded?.awaiting_review > 0
+                    ? <button className="underline" onClick={() => setTab('exclusions')}>{excluded.awaiting_review} awaiting your review</button>
+                    : `${formatCurrency(excluded?.value ?? 0)} total`}
                 </p>
               </CardContent>
             </Card>
@@ -241,7 +256,38 @@ export default function GstClient() {
             </Card>
           )}
 
-          <Tabs defaultValue="validation">
+          {zoho && !zoho.reconciled && (
+            <Card className="border-destructive/40">
+              <CardContent className="pt-6 text-sm flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="font-medium text-destructive">
+                    {zoho.uploaded ? 'This period\'s Zoho register has unresolved rows.' : 'No Zoho invoice register uploaded for this period.'}
+                  </p>
+                  <p className="text-muted-foreground mt-1">
+                    Invoices are issued in Zoho, not here, so this is the real check that nothing is missing from
+                    the return. {zoho.reason}
+                  </p>
+                  {zoho.uploaded && (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {zoho.source_filename} · {zoho.matched_count}/{zoho.row_count} matched,
+                      uploaded {new Date(zoho.uploaded_at).toLocaleDateString('en-IN')}
+                    </p>
+                  )}
+                </div>
+                <Button onClick={() => setTab('uploads')}>
+                  {zoho.uploaded ? 'Resolve rows' : 'Upload Zoho register'}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
+          {zoho?.reconciled && (
+            <p className="text-xs text-success">
+              ✓ Zoho register reconciled — {zoho.matched_count}/{zoho.row_count} invoices matched
+              ({zoho.source_filename}).
+            </p>
+          )}
+
+          <Tabs value={tab} onValueChange={setTab}>
             <TabsList>
               <TabsTrigger value="validation">
                 Validation{blockers + warnings > 0 ? ` (${blockers + warnings})` : ''}
@@ -254,6 +300,9 @@ export default function GstClient() {
               <TabsTrigger value="dashboard">All periods</TabsTrigger>
               <TabsTrigger value="uploads">Match uploads</TabsTrigger>
               <TabsTrigger value="filing">Filing &amp; locks</TabsTrigger>
+              <TabsTrigger value="exclusions">
+                Excluded sales{excluded?.awaiting_review ? ` (${excluded.awaiting_review})` : ''}
+              </TabsTrigger>
             </TabsList>
 
             <TabsContent value="validation">
@@ -294,6 +343,10 @@ export default function GstClient() {
 
             <TabsContent value="uploads">
               <MatchUploads entity={entity} from={period.from} to={period.to} />
+            </TabsContent>
+
+            <TabsContent value="exclusions">
+              <ExcludedSales from={period.from} to={period.to} onChanged={load} />
             </TabsContent>
 
             <TabsContent value="filing">
@@ -1341,6 +1394,119 @@ function FilingAndLocks({
           )}
         </CardContent>
       </Card>
+    </div>
+  )
+}
+
+const EXCLUSION_LABELS: Record<string, string> = {
+  sample: 'Sample',
+  gift: 'Gift / free item',
+  warranty_replacement: 'Warranty replacement',
+  internal_use: 'Internal use',
+  other: 'Other',
+}
+
+/**
+ * Review queue for sales marked at entry as never-to-be-invoiced. Staff set
+ * the reason because they know it at the time; this is the owner's check
+ * before it's trusted to stay out of the return. A sample/gift also needs its
+ * purchase-side ITC reversed (s.17(5)(h)), flagged inline rather than acted on
+ * here -- that reversal is a judgement on the original purchase line.
+ */
+function ExcludedSales({ from, to, onChanged }: { from: string; to: string; onChanged: () => void }) {
+  const [rows, setRows] = useState<any[]>([])
+  const [loading, setLoading] = useState(false)
+  const [err, setErr] = useState('')
+  const [onlyUnreviewed, setOnlyUnreviewed] = useState(true)
+
+  const refresh = useCallback(async () => {
+    setLoading(true); setErr('')
+    try {
+      const qs = `from=${from}&to=${to}${onlyUnreviewed ? '&unreviewed=1' : ''}`
+      const r = await apiFetch(`/api/gst/exclusions?${qs}`)
+      if (!r.ok) { setErr((await r.json())?.error || 'Could not load'); return }
+      setRows(await r.json())
+    } finally { setLoading(false) }
+  }, [from, to, onlyUnreviewed])
+
+  useEffect(() => { refresh() }, [refresh])
+
+  const reviewOne = async (id: string) => {
+    const r = await apiFetch('/api/gst/exclusions', { method: 'PATCH', body: JSON.stringify({ sale_id: id }) })
+    if (r.ok) { await refresh(); onChanged() }
+  }
+  const reviewAll = async () => {
+    const ids = rows.map((r) => r.id)
+    if (ids.length === 0) return
+    const r = await apiFetch('/api/gst/exclusions', { method: 'PATCH', body: JSON.stringify({ sale_ids: ids }) })
+    if (r.ok) { await refresh(); onChanged() }
+  }
+  const clearExclusion = async (id: string) => {
+    const r = await apiFetch('/api/gst/exclusions', { method: 'POST', body: JSON.stringify({ sale_id: id, reason: null }) })
+    if (r.ok) { await refresh(); onChanged() }
+    else setErr((await r.json())?.error || 'Could not clear')
+  }
+
+  return (
+    <div className="space-y-4">
+      {err && <ErrorBanner message={err} />}
+      <div className="flex items-center justify-between">
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={onlyUnreviewed} onChange={(e) => setOnlyUnreviewed(e.target.checked)} />
+          Only show what needs review
+        </label>
+        {rows.some((r) => !r.gst_exclusion_reviewed_at) && (
+          <Button size="sm" onClick={reviewAll}>Mark all reviewed</Button>
+        )}
+      </div>
+
+      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+
+      {!loading && (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Customer</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Reason</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Note</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Value</th>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground">Reviewed</th>
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.length === 0 && <EmptyTableRow colSpan={7} message="Nothing excluded in this period." />}
+              {rows.map((r) => (
+                <tr key={r.id} className="border-t align-top">
+                  <td className="px-3 py-2 whitespace-nowrap">{r.effective_sale_date}</td>
+                  <td className="px-3 py-2">{r.customer_name || '—'}</td>
+                  <td className="px-3 py-2">
+                    <Badge variant="secondary">{EXCLUSION_LABELS[r.gst_exclusion_reason] || r.gst_exclusion_reason}</Badge>
+                    {(r.gst_exclusion_reason === 'sample' || r.gst_exclusion_reason === 'gift') && (
+                      <p className="text-xs text-warning mt-1">ITC reversal due on this unit (s.17(5)(h))</p>
+                    )}
+                  </td>
+                  <td className="px-3 py-2 text-muted-foreground text-xs max-w-[16rem]">{r.gst_exclusion_note || '—'}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(r.sale_total)}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">
+                    {r.gst_exclusion_reviewed_at ? new Date(r.gst_exclusion_reviewed_at).toLocaleDateString('en-IN') : '—'}
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    <div className="flex gap-1 justify-end">
+                      {!r.gst_exclusion_reviewed_at && (
+                        <Button size="sm" variant="outline" onClick={() => reviewOne(r.id)}>Approve</Button>
+                      )}
+                      <Button size="sm" variant="ghost" onClick={() => clearExclusion(r.id)}>Undo</Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

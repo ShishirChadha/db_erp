@@ -23,6 +23,9 @@ sources:
   - apps/erp/lib/recon/gst-2b-matcher.ts
   - apps/erp/lib/period-lock.ts
   - apps/erp/app/api/credit-notes/route.ts
+  - apps/erp/app/api/gst/exclusions/route.ts
+  - apps/erp/app/api/sales-entry/route.ts
+  - apps/erp/lib/sales-cart.ts
 updated: 2026-10-05
 ---
 
@@ -314,6 +317,51 @@ Owner-only, and it respects the period lock: issuing one into a locked period
 is refused. This is the correct remedy for an invoiced sale that has to be
 undone — voiding the sale alone leaves the invoice standing, which is exactly
 what `/api/sales/[id]/void` warns about.
+
+## Invoices are issued in Zoho, not here -- so Zoho is the authority on what's invoiced
+
+This is a correction to how readiness used to work, not a cosmetic change.
+Sales entry happens immediately on sale (per the "immediately real" business
+rule), but **invoicing is deliberately deferred until payment is secured** --
+an order can be cancelled, or paid weeks later, so a sale is entered on its
+sold date and only gets a Zoho invoice once money has actually landed, dated
+whenever that happens. That means "this sale has no `invoice_id` in the ERP"
+was never a tax-compliance question; it only ever measured this system's own
+recording backlog, because the ERP doesn't issue the invoice.
+
+So `gst_sale_not_invoiced` is now a **warning**, not a blocker, and what
+actually gates `can_generate` is `gst_zoho_register_status()`: has the Zoho
+invoice register for this period been uploaded (covering the *whole* period --
+a partial upload is rejected outright, since it would otherwise verify half a
+month and look clean) and has every row been matched or explicitly resolved.
+This is the real check, because it compares against what was actually issued
+rather than against this system's own (incomplete) record of it.
+
+One exception the warning text calls out: if a sale is marked `payment_status
+= 'paid'` with no invoice, that is worth a second look even under this model --
+the time of supply is the earlier of the invoice date or the date payment was
+received (s.12/s.13), so once payment has landed the tax point has already
+passed regardless of when the Zoho invoice gets dated.
+
+## A sale that will never be invoiced
+
+Some sales are deliberately not going to produce a tax invoice -- a sample, a
+gift, a warranty replacement, a demo/internal-use unit. `sales.gst_exclusion_reason`
+marks this; staff set it at entry (same "immediately real" posture as the sale
+itself, via `/api/gst/exclusions` POST, which also accepts it inline on
+`/api/sales-entry`), and the owner reviews it via `gst_exclusion_reviewed_at`
+before the period is filed -- an exclusion removes value from the tax base, so
+it should not pass unseen.
+
+**This is not a free way to move stock.** A gift or free sample raises no
+output tax (there is no consideration), but **s.17(5)(h) blocks the input
+credit** on goods disposed of as a gift or free sample -- the credit claimed
+when that unit was originally bought has to be reversed. `gift_itc_reversal_due`
+raises this as a warning for every `sample`/`gift` exclusion; it is a judgement
+on the *purchase* line so the check surfaces it rather than computing it.
+
+An already-invoiced sale cannot be excluded (`already_invoiced`, 409) -- it is
+already in a return, and the remedy there is a credit note, not a flag.
 
 ## Related
 
