@@ -7,7 +7,37 @@
 // diagram line became its own paragraph with its whitespace collapsed, so the
 // diagrams were unreadable in the DB Guide while looking fine in the repo --
 // and table rows rendered as raw pipe characters.
+//
+// A numbered list directly under a "## Steps" (or "### Steps") heading
+// renders as a connected step-flow (numbered badges + a vertical connecting
+// line + a small per-step icon guessed from its leading verb) instead of a
+// plain <ol> -- a real screenshot-free "infographic" look, derived entirely
+// from the chapter's own existing text. No new authoring step, nothing to go
+// stale: it re-renders from whatever the chapter already says, so it can
+// never drift independently of the prose bible:check already guards.
 import React from 'react'
+import {
+  ArrowRight,
+  MousePointerClick,
+  Keyboard,
+  Search as SearchIcon,
+  ListChecks,
+  Check,
+  Upload,
+  type LucideIcon,
+} from 'lucide-react'
+
+function stepIcon(text: string): LucideIcon | null {
+  const t = text.trim()
+  if (/^(open|go to|navigate to)\b/i.test(t)) return ArrowRight
+  if (/^(tap|click|press)\b/i.test(t)) return MousePointerClick
+  if (/^(enter|type|fill)\b/i.test(t)) return Keyboard
+  if (/^(search|look up|find)\b/i.test(t)) return SearchIcon
+  if (/^(select|pick|choose)\b/i.test(t)) return ListChecks
+  if (/^(confirm|submit|save)\b/i.test(t)) return Check
+  if (/^(upload|attach)\b/i.test(t)) return Upload
+  return null
+}
 
 function renderInline(text: string, keyPrefix: string): React.ReactNode[] {
   const parts = text.split(/(\*\*[^*]+\*\*|`[^`]+`)/g)
@@ -29,9 +59,37 @@ export function SimpleMarkdown({ text }: { text: string }) {
   let listType: 'ul' | 'ol' | null = null
   let fenceBuf: string[] | null = null   // inside a ``` block
   let tableBuf: string[] = []
+  let inStepsSection = false   // true while under a "## Steps" / "### Steps" heading
 
   const flushList = (key: string) => {
     if (listBuf.length === 0) return
+    if (listType === 'ol' && inStepsSection) {
+      blocks.push(
+        <ol key={key} className="my-4">
+          {listBuf.map((item, i) => {
+            const Icon = stepIcon(item)
+            const isLast = i === listBuf.length - 1
+            return (
+              <li key={i} className="relative flex gap-3 pb-6 last:pb-0">
+                {!isLast && (
+                  <span className="absolute left-[15px] top-8 bottom-0 w-px bg-border" aria-hidden="true" />
+                )}
+                <span className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+                  {i + 1}
+                </span>
+                <div className="flex flex-1 items-start gap-2 pt-1">
+                  {Icon && <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />}
+                  <span className="leading-relaxed">{renderInline(item, `${key}-${i}`)}</span>
+                </div>
+              </li>
+            )
+          })}
+        </ol>
+      )
+      listBuf = []
+      listType = null
+      return
+    }
     const items = listBuf.map((item, i) => <li key={i}>{renderInline(item, `${key}-${i}`)}</li>)
     blocks.push(
       listType === 'ol'
@@ -113,10 +171,14 @@ export function SimpleMarkdown({ text }: { text: string }) {
 
     if (/^##\s+/.test(line)) {
       flushList(`${key}-l`)
-      blocks.push(<h3 key={key} className="text-lg font-semibold mt-6 mb-2">{line.replace(/^##\s+/, '')}</h3>)
+      const headingText = line.replace(/^##\s+/, '')
+      inStepsSection = /^steps\b/i.test(headingText.trim())
+      blocks.push(<h3 key={key} className="text-lg font-semibold mt-6 mb-2">{headingText}</h3>)
     } else if (/^###\s+/.test(line)) {
       flushList(`${key}-l`)
-      blocks.push(<h4 key={key} className="text-base font-semibold mt-4 mb-1">{line.replace(/^###\s+/, '')}</h4>)
+      const headingText = line.replace(/^###\s+/, '')
+      inStepsSection = /^steps\b/i.test(headingText.trim())
+      blocks.push(<h4 key={key} className="text-base font-semibold mt-4 mb-1">{headingText}</h4>)
     } else if (/^[-*]\s+/.test(line) || /^\d+\.\s+/.test(line)) {
       const isOrdered = /^\d+\.\s+/.test(line)
       if (listType && listType !== (isOrdered ? 'ol' : 'ul')) flushList(`${key}-l`)

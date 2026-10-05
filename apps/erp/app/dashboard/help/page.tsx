@@ -17,9 +17,52 @@
 // reader.
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Search } from 'lucide-react'
+import {
+  Search,
+  type LucideIcon,
+  Package,
+  CalendarDays,
+  CalendarCheck,
+  ShieldCheck,
+  Users,
+  Receipt,
+  TrendingUp,
+  Barcode,
+  Laptop,
+  Megaphone,
+  ShoppingCart,
+  Scale,
+  Wrench,
+  Settings,
+  Globe,
+  BookOpen,
+} from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { ErrorBanner } from '@/components/ErrorBanner'
+
+// Per-module icon, purely decorative -- reuses sidebar.tsx's icon choices
+// where a module maps onto a real nav group, so the same feature always
+// looks the same everywhere. A module with no entry here (or a future one)
+// falls back to a plain book icon rather than breaking.
+const MODULE_ICONS: Record<string, LucideIcon> = {
+  accessories: Package,
+  'activities-notifications': CalendarDays,
+  attendance: CalendarCheck,
+  'backup-audit': ShieldCheck,
+  'customers-vendors': Users,
+  expenses: Receipt,
+  'finance-gst-reports': TrendingUp,
+  'inventory-sku': Barcode,
+  'live-stock-qc': Laptop,
+  marketing: Megaphone,
+  purchasing: ShoppingCart,
+  reconciliation: Scale,
+  rentals: CalendarCheck,
+  'repairs-replacements-rma': Wrench,
+  'sales-invoicing': TrendingUp,
+  'settings-admin': Settings,
+  website: Globe,
+}
 
 interface ChapterListItem {
   slug: string
@@ -105,29 +148,36 @@ export default function HelpCenterPage() {
       {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
       {error && <ErrorBanner message={error} />}
 
-      {modules.map((mod) => {
-        const children = (processesByModule.get(mod.slug) ?? []).filter(matches)
-        if (qWords.length > 0 && !matches(mod) && children.length === 0) return null
-        return (
-          <section key={mod.slug} className="mb-6">
-            <Link href={chapterHref(mod.slug)} className="text-lg font-semibold hover:underline">
-              {mod.title}
-            </Link>
-            {mod.summary && <p className="text-sm text-muted-foreground mb-2">{mod.summary}</p>}
-            {children.length > 0 && (
-              <ul className="space-y-1 pl-4">
-                {children.map((p) => (
-                  <li key={p.slug}>
-                    <Link href={chapterHref(p.slug)} className="text-sm text-primary hover:underline">
-                      {p.title}
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-        )
-      })}
+      <div className="grid gap-4 sm:grid-cols-2 mb-6">
+        {modules.map((mod) => {
+          const children = (processesByModule.get(mod.slug) ?? []).filter(matches)
+          if (qWords.length > 0 && !matches(mod) && children.length === 0) return null
+          const Icon = MODULE_ICONS[mod.slug] ?? BookOpen
+          return (
+            <section key={mod.slug} className="rounded-lg border p-4">
+              <Link href={chapterHref(mod.slug)} className="flex items-start gap-3 hover:underline">
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                  <Icon className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span className="text-base font-semibold leading-tight">{mod.title}</span>
+              </Link>
+              {mod.summary && <p className="mt-1 text-sm text-muted-foreground">{mod.summary}</p>}
+              {children.length > 0 && (
+                <ul className="mt-3 space-y-1 border-t pt-3">
+                  {children.map((p) => (
+                    <li key={p.slug}>
+                      <Link href={chapterHref(p.slug)} className="text-sm text-primary hover:underline">
+                        {p.title}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )
+        })}
+      </div>
+
 
       {orphanProcesses.filter(matches).length > 0 && (
         <section className="mb-6">

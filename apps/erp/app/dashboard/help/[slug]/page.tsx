@@ -51,9 +51,9 @@ export default function DbGuideChapterPage() {
         <article>
           <div className="mb-1 text-xs uppercase tracking-wide text-muted-foreground">{chapter.kind}</div>
           <h1 className="text-2xl font-bold mb-2">{chapter.title}</h1>
-          {chapter.routes?.length > 0 && (
+          {chapter.routes?.some((r) => !r.includes('[')) && (
             <div className="mb-4 flex flex-wrap gap-2">
-              {chapter.routes.map((r) => (
+              {chapter.routes.filter((r) => !r.includes('[')).map((r) => (
                 <Link key={r} href={r} className="text-sm text-primary underline underline-offset-2">
                   Open {r}
                 </Link>
