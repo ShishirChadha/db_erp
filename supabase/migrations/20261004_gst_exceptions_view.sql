@@ -1,6 +1,13 @@
 begin;
 
-create or replace view public.v_gst_exceptions as
+-- This migration is applied AFTER v_gst_exceptions has been dropped
+-- (20261005_gst_drop_view_before_column_drop.sql) and the exclusion columns
+-- dropped from `sales` (20261005_gst_drop_exclusion_columns.sql) -- see those
+-- files for why the ordering matters (the sale_entity CTE's `s.*` would
+-- otherwise re-establish a dependency on columns this revision no longer
+-- reads, blocking the drop). Recreating fresh here means `s.*` naturally
+-- expands against the now-narrower table.
+create view public.v_gst_exceptions as
 with entities as (
   select key, state_code, is_gst_registered from business_profiles
 ),
@@ -73,27 +80,15 @@ where e.is_gst_registered and not i.cancelled
                  and d.id <> i.id and not d.cancelled)
 
 -- ========================= TRANSACTIONS =========================
--- Completeness: a taxed sale with no invoice cannot appear in GSTR-1 at all.
-union all
--- A WARNING, not a blocker. Invoices are issued in Zoho, not here, so a sale
--- with no invoice_id measures this system's recording backlog rather than a tax
--- gap -- and under the business's process a sale is deliberately left
--- uninvoiced until payment is secured. What actually gates filing is whether
--- the period's Zoho register reconciles (checked below).
-select s.entity_key, date_trunc('month', s.effective_sale_date)::date, 'gst_sale_not_invoiced', 'warning', 'transactions',
-       'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
-       'Sale of ' || to_char(coalesce(s.sale_total,0), 'FM999999990.00') ||
-       ' (tax ' || to_char(coalesce(s.sale_gst,0), 'FM999999990.00') ||
-       ') has no invoice recorded here' ||
-       case when coalesce(s.payment_status,'') = 'paid'
-            then '. It is fully paid, so the tax point has already passed -- check a Zoho invoice exists and record it.'
-            else ' and is not yet paid, which is expected until payment is secured.' end
-from sale_entity s join entities e on e.key = s.entity_key
-where e.is_gst_registered and coalesce(s.is_deleted,false) = false
-  and s.invoice_id is null and coalesce(s.sale_type,'') = 'GST'
-  -- A sample, gift or warranty replacement will never be invoiced.
-  and s.gst_exclusion_reason is null
-
+-- gst_sale_not_invoiced was removed here (2026-10-05): invoices are issued in
+-- Zoho, not in the ERP, and a sale is deliberately left uninvoiced until
+-- payment is secured -- so "no invoice_id" was never a per-row compliance
+-- question, only this system's own recording backlog. Completeness is now a
+-- neutral count in gst_return_readiness() (not a check row here, and not part
+-- of blockers/warnings), backed by two independent reconciliations instead of
+-- per-sale chasing: the Zoho register (zoho_register_not_uploaded/
+-- unreconciled, below) and bank-credit reconciliation (bank_statement_not_
+-- uploaded/unexplained_bank_credit, below) -- see docs/decisions.md.
 union all
 select s.entity_key, date_trunc('month', s.effective_sale_date)::date, 'voided_sale_with_live_invoice', 'blocker', 'transactions',
        'sale', s.id, coalesce(s.customer_name, s.id::text),
@@ -356,33 +351,49 @@ where (p.status->>'uploaded')::boolean = true
   and (p.status->>'reconciled')::boolean = false
 
 union all
--- An exclusion removes value from the tax base, so it gets owner sign-off
--- before the period is filed.
-select s.entity_key, date_trunc('month', s.effective_sale_date)::date,
-       'gst_exclusion_needs_review', 'warning', 'transactions',
-       'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
-       'Excluded from GST as ' || s.gst_exclusion_reason ||
-       coalesce(' (' || nullif(trim(s.gst_exclusion_note), '') || ')', '') ||
-       ', worth ' || to_char(coalesce(s.sale_total,0), 'FM999999990.00') ||
-       '. Confirm before filing -- an exclusion takes value out of the return.'
-from sale_entity s join entities e on e.key = s.entity_key
-where e.is_gst_registered and coalesce(s.is_deleted,false) = false
-  and s.gst_exclusion_reason is not null
-  and s.gst_exclusion_reviewed_at is null
+-- Bank-credit safety net (2026-10-05). Owner's "dead sure" check: money that
+-- arrived with no paper trail anywhere, neither an ERP sale nor a Zoho
+-- invoice. Reuses the EXISTING Bank Reconciliation module's recon_status
+-- (bank_transactions/bank_transaction_matches, already built) rather than a
+-- second upload flow -- see gst_bank_credit_status(). Warning, not a blocker,
+-- per the owner's decision: surfaced clearly but does not stop filing.
+select p.entity_key, p.period_month, 'bank_statement_not_uploaded', 'warning', 'document_summary',
+       'series', null::uuid, to_char(p.period_month, 'Mon YYYY'),
+       (p.status->>'reason')
+from (
+  select b.key as entity_key, pm.period_month,
+         gst_bank_credit_status(b.key, pm.period_month,
+           (pm.period_month + interval '1 month - 1 day')::date) as status
+  from business_profiles b
+  cross join (
+    select distinct date_trunc('month', i.invoice_date)::date as period_month
+    from invoices i
+    where coalesce(i.is_deleted,false) = false
+      and coalesce(i.invoice_type,'sales') in ('sales','credit_note')
+  ) pm
+  where b.is_gst_registered
+) p
+where (p.status->>'uploaded')::boolean = false
 
 union all
--- s.17(5)(h): input credit is BLOCKED on goods disposed of by way of gift or
--- free samples. So a sample costs the credit claimed when the unit was bought;
--- it is not a free way to move stock. Raised as a warning because the reversal
--- is a judgement on the original purchase, not something this can compute.
-select s.entity_key, date_trunc('month', s.effective_sale_date)::date,
-       'gift_itc_reversal_due', 'warning', 'transactions',
-       'sale', s.id, coalesce(s.customer_name, s.asset_number, s.id::text),
-       'Given as a ' || s.gst_exclusion_reason ||
-       ', so no output tax arises -- but s.17(5)(h) blocks the input credit on goods disposed of as gifts or free samples. The credit claimed when this unit was purchased needs reversing in 3B Table 4(B).'
-from sale_entity s join entities e on e.key = s.entity_key
-where e.is_gst_registered and coalesce(s.is_deleted,false) = false
-  and s.gst_exclusion_reason in ('sample', 'gift');
+select p.entity_key, p.period_month, 'unexplained_bank_credit', 'warning', 'transactions',
+       'bank_transaction', (p.txn->>'id')::uuid,
+       to_char((p.txn->>'txn_date')::date, 'DD Mon') || ' — ' || to_char(((p.txn->>'credit')::numeric), 'FM999999990.00'),
+       'Credit of ' || to_char(((p.txn->>'credit')::numeric), 'FM999999990.00') || ' on ' ||
+       (p.txn->>'txn_date') || ' has no (or only partial) matching sale/vendor/expense entry in Bank Reconciliation. ' ||
+       'Narration: ' || coalesce(p.txn->>'narration', '(none)') ||
+       case when nullif(trim(coalesce(p.txn->>'reference','')),'') is not null
+            then ' · Ref: ' || (p.txn->>'reference') else '' end ||
+       '. If this is one payment covering more than one invoice, match each portion separately from Recon Sessions.'
+from (
+  select b.key as entity_key, date_trunc('month', bt.txn_date)::date as period_month, to_jsonb(bt.*) as txn
+  from business_profiles b
+  join bank_accounts ba on ba.entity_key = b.key
+  join bank_transactions bt on bt.bank_account_id = ba.id
+  where b.is_gst_registered
+    and coalesce(bt.credit,0) > 0
+    and bt.recon_status in ('open','split')
+) p;
 
 comment on view public.v_gst_exceptions is
   'Live GST pre-flight validation, one row per problem. Blockers must be cleared before a return is generated; warnings are advisory. Never stored -- a fixed record simply stops appearing.';

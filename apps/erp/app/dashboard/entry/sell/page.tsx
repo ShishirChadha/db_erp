@@ -189,11 +189,6 @@ function SellPageInner() {
 
   const { values: staffNames } = useCustomOptions('staff_names')
   const [soldBy, setSoldBy] = useState('')
-  // Marks this sale as never-to-be-invoiced -- a sample, gift, warranty
-  // replacement, or demo unit. Immediately real like the rest of this entry
-  // flow; the owner reviews excluded sales on the GST page before filing.
-  const [gstExclusionReason, setGstExclusionReason] = useState('')
-  const [gstExclusionNote, setGstExclusionNote] = useState('')
 
   // Browsable list of all sellable accessories, shown up-front in accessory mode
   // instead of requiring the employee to type before seeing anything.
@@ -466,8 +461,6 @@ function SellPageInner() {
         notes: notes || undefined,
         sold_by: soldBy || undefined,
         source_document_item_id: sourceDocumentItemId || undefined,
-        gst_exclusion_reason: gstExclusionReason || undefined,
-        gst_exclusion_note: gstExclusionNote || undefined,
         items: cartItems.map(line => line.kind === 'unit'
           ? {
               asset_ledger_id: line.unit.id,
@@ -915,39 +908,6 @@ function SellPageInner() {
             onChange={(e) => setNotes(e.target.value)}
             className="border p-2 w-full rounded"
           />
-        </div>
-
-        <div className="border rounded p-3 bg-muted/30">
-          <label className="block font-medium text-sm mb-1">This sale will never get a tax invoice</label>
-          <select
-            value={gstExclusionReason}
-            onChange={(e) => setGstExclusionReason(e.target.value)}
-            className="border p-2 w-full rounded"
-          >
-            <option value="">No -- normal sale, will be invoiced</option>
-            <option value="sample">Sample</option>
-            <option value="gift">Gift / free item</option>
-            <option value="warranty_replacement">Warranty replacement</option>
-            <option value="internal_use">Internal use</option>
-            <option value="other">Other (explain below)</option>
-          </select>
-          {gstExclusionReason && (
-            <>
-              <p className="text-xs text-muted-foreground mt-2">
-                This keeps it from blocking GST filing as a missing invoice. The owner will still
-                review it before the period is filed.
-                {(gstExclusionReason === 'sample' || gstExclusionReason === 'gift') &&
-                  ' No GST is owed on this, but the input credit originally claimed on this unit may need to be reversed.'}
-              </p>
-              <textarea
-                rows={2}
-                value={gstExclusionNote}
-                onChange={(e) => setGstExclusionNote(e.target.value)}
-                placeholder={gstExclusionReason === 'other' ? 'Required: explain why' : 'Optional note'}
-                className="border p-2 w-full rounded mt-2"
-              />
-            </>
-          )}
         </div>
 
         <div className="text-right text-sm space-y-1">

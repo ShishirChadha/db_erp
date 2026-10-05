@@ -98,10 +98,6 @@ export async function POST(req: NextRequest) {
     customer_id, sale_type, gst_percentage, sale_date,
     payment_account, sold_by, notes,
     source_document_item_id,
-    // Marks a sale that will never produce a tax invoice -- a sample, gift,
-    // warranty replacement or demo unit. Recorded at entry because that is
-    // when it is known; surfaced for the owner to confirm before filing.
-    gst_exclusion_reason, gst_exclusion_note,
   } = body
 
   const items: CartItemInput[] = Array.isArray(body.items) && body.items.length > 0
@@ -117,14 +113,6 @@ export async function POST(req: NextRequest) {
   if (!customer_id) return NextResponse.json({ error: 'customer_id is required.' }, { status: 400 })
   if (sale_date && !/^\d{4}-\d{2}-\d{2}$/.test(sale_date)) {
     return NextResponse.json({ error: 'sale_date must be in YYYY-MM-DD format.' }, { status: 400 })
-  }
-
-  const GST_EXCLUSION_REASONS = ['sample', 'gift', 'warranty_replacement', 'internal_use', 'other']
-  if (gst_exclusion_reason && !GST_EXCLUSION_REASONS.includes(gst_exclusion_reason)) {
-    return NextResponse.json({ error: `gst_exclusion_reason must be one of: ${GST_EXCLUSION_REASONS.join(', ')}` }, { status: 400 })
-  }
-  if (gst_exclusion_reason === 'other' && !String(gst_exclusion_note || '').trim()) {
-    return NextResponse.json({ error: "A note is required when gst_exclusion_reason is 'other'." }, { status: 400 })
   }
 
   // A sale dated into a filed-and-locked period would change a return that has
@@ -186,12 +174,6 @@ export async function POST(req: NextRequest) {
     sale_type: sale_type || 'GST',
     entered_by: sessionUser.id,
     sold_by: resolvedSoldBy,
-    ...(gst_exclusion_reason ? {
-      gst_exclusion_reason,
-      gst_exclusion_note: gst_exclusion_note || null,
-      gst_excluded_by: sessionUser.id,
-      gst_excluded_at: new Date().toISOString(),
-    } : {}),
     payment_account: payment_account || null,
     notes: typeof notes === 'string' && notes.trim() ? notes.trim() : null,
     finalized: false,

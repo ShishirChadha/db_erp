@@ -17,7 +17,11 @@ import Papa from 'papaparse'
 export type GstSectionKey = 'b2b' | 'b2cl' | 'b2cs' | 'cdnr' | 'cdnur' | 'hsn_b2b' | 'hsn_b2c' | 'docs'
 
 /** Reconciliation worksheets -- not GSTR-1 sections, so kept separate. */
-export type GstWorksheetKey = 'uninvoiced' | 'gaps'
+// Only 'gaps' remains (2026-10-05): the uninvoiced-sales worksheet was removed
+// along with the per-row gst_sale_not_invoiced check -- invoices are issued in
+// Zoho, not here, so that was never something to export and chase per-row.
+// See docs/decisions.md.
+export type GstWorksheetKey = 'gaps'
 
 /** `dd-mmm-yyyy` as the offline tool's CSV/Excel templates require. */
 export function csvDate(value: string | null | undefined): string {
@@ -162,25 +166,6 @@ export const GST_SECTIONS: Record<GstSectionKey, SectionSpec> = {
  * to be looked up in the other system rather than to match a GSTN template.
  */
 export const GST_WORKSHEETS: Record<GstWorksheetKey, SectionSpec> = {
-  uninvoiced: {
-    label: 'Sales with no invoice — needs an invoice number',
-    filename: 'uninvoiced_sales',
-    rows: (p) => (p?.uninvoiced_sales ?? []).map((r: any) => ({
-      'Sale Date': csvDate(r.sale_date),
-      'Customer': r.customer_name,
-      'Customer GSTIN': r.customer_gstin,
-      'Asset / Serial': r.identifier,
-      'Description': r.description,
-      'Taxable Value': n2(r.taxable_value),
-      'GST': n2(r.gst),
-      'Total': n2(r.total),
-      'Sold By': r.sold_by,
-      'Payment Status': r.payment_status,
-      // Left blank deliberately: this is the column to fill in from Zoho.
-      'Zoho Invoice Number': '',
-      'Or mark CANCELLED / NOT INVOICED': '',
-    })),
-  },
   gaps: {
     label: 'Missing invoice numbers — cancelled, or issued but not recorded?',
     filename: 'series_gaps',
@@ -200,7 +185,7 @@ export const GST_WORKSHEETS: Record<GstWorksheetKey, SectionSpec> = {
 export function worksheetCsv(key: GstWorksheetKey, payload: any): string {
   const rows = GST_WORKSHEETS[key].rows(payload)
   if (rows.length === 0) {
-    const sample = GST_WORKSHEETS[key].rows({ uninvoiced_sales: [{}], series_gaps: [{}] })
+    const sample = GST_WORKSHEETS[key].rows({ series_gaps: [{}] })
     return Papa.unparse({ fields: Object.keys(sample[0] ?? {}), data: [] })
   }
   return Papa.unparse(rows)

@@ -1,6 +1,14 @@
--- Readiness now leads with the Zoho register, because that is what actually
--- gates filing: invoices are issued there, so a period is unverified until its
+-- Readiness leads with the Zoho register, because that is what actually gates
+-- filing: invoices are issued there, so a period is unverified until its
 -- register has been uploaded here and reconciled.
+--
+-- (2026-10-05) Adds bank_reconciliation, the owner's second independent
+-- safety net, and removes the exclusion-feature's `excluded` block (the
+-- feature itself was removed -- see docs/decisions.md). The uninvoiced-sales
+-- count stays as a neutral, zero-severity figure only -- it is deliberately
+-- NOT part of blockers/warnings and NOT part of can_generate: invoices are
+-- issued in Zoho, not here, so "no invoice_id" measures this system's own
+-- recording backlog, not a tax gap.
 begin;
 
 create or replace function public.gst_return_readiness(
@@ -18,9 +26,9 @@ declare
   v_warnings int;
   v_uninvoiced_count int;
   v_uninvoiced_tax numeric;
-  v_excluded jsonb;
   v_outward jsonb;
   v_zoho jsonb;
+  v_bank jsonb;
 begin
   select key, legal_name, gstin, state_code, is_gst_registered
     into v_entity from business_profiles where key = p_entity_key;
@@ -37,6 +45,7 @@ begin
   end if;
 
   v_zoho := gst_zoho_register_status(p_entity_key, p_from, p_to);
+  v_bank := gst_bank_credit_status(p_entity_key, p_from, p_to);
 
   select coalesce(jsonb_agg(r order by r->>'severity' desc, (r->>'n')::int desc), '[]'::jsonb)
     into v_by_check
@@ -70,20 +79,6 @@ begin
   where coalesce(s.is_deleted,false) = false
     and s.invoice_id is null
     and coalesce(s.sale_type,'') = 'GST'
-    and s.gst_exclusion_reason is null
-    and (case when lower(trim(coalesce(s.payment_account,''))) in ('digitalbluez','techtenth','cash')
-              then lower(trim(s.payment_account)) else 'digitalbluez' end) = p_entity_key
-    and s.effective_sale_date between p_from and p_to;
-
-  select jsonb_build_object(
-    'count', count(*),
-    'value', coalesce(sum(coalesce(s.sale_total,0)), 0),
-    'awaiting_review', count(*) filter (where s.gst_exclusion_reviewed_at is null),
-    'by_reason', coalesce(jsonb_object_agg(s.gst_exclusion_reason, 1) filter (where s.gst_exclusion_reason is not null), '{}'::jsonb)
-  ) into v_excluded
-  from sales s
-  where coalesce(s.is_deleted,false) = false
-    and s.gst_exclusion_reason is not null
     and (case when lower(trim(coalesce(s.payment_account,''))) in ('digitalbluez','techtenth','cash')
               then lower(trim(s.payment_account)) else 'digitalbluez' end) = p_entity_key
     and s.effective_sale_date between p_from and p_to;
@@ -109,18 +104,21 @@ begin
     'entity', to_jsonb(v_entity),
     'period', jsonb_build_object('from', p_from, 'to', p_to),
     'zoho_register', v_zoho,
+    'bank_reconciliation', v_bank,
     'blockers', coalesce(v_blockers,0),
     'warnings', coalesce(v_warnings,0),
     'by_check', v_by_check,
+    -- Neutral, zero-severity: not a blocker, not a warning. Visibility
+    -- without implying action -- see the comment at the top of this file.
     'completeness', jsonb_build_object(
       'uninvoiced_sales', coalesce(v_uninvoiced_count,0),
       'uninvoiced_tax', coalesce(v_uninvoiced_tax,0)
     ),
-    'excluded', v_excluded,
     'outward', coalesce(v_outward, '{}'::jsonb),
     -- Two independent conditions: nothing outstanding, AND the period has
     -- actually been checked against Zoho. The second is the one that stops a
-    -- month being filed simply because nobody looked at it.
+    -- month being filed simply because nobody looked at it. bank_reconciliation
+    -- is deliberately NOT part of this -- the owner's decision was warning-only.
     'can_generate', coalesce(v_blockers,0) = 0 and (v_zoho->>'reconciled')::boolean
   );
 end;

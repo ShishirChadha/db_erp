@@ -1791,3 +1791,59 @@ the Zoho-gate reconciliation round-trip. All test data and users re-queried clea
   the API) -- today's 6 real zero/₹1 September sales were confirmed NOT samples and are
   untouched.
 
+
+---
+
+## GST module correction — removed exclusion flag, added bank reconciliation (2026-10-05)
+
+Reworked completeness around the owner's actual process: a sale is entered immediately on
+its sold date, invoicing is deliberately deferred in Zoho until payment is secured, and a
+sold entry is simply **out of scope of GST filing** until it has an invoice (Zoho-recorded
+or ERP-issued) — no per-sale categorisation of *why* inside the GST module.
+
+**Removed entirely**, zero production data affected (confirmed 0 live rows before dropping):
+`sales.gst_exclusion_reason`/`gst_exclusion_note`/`gst_excluded_by`/`gst_excluded_at`/
+`gst_exclusion_reviewed_by`/`gst_exclusion_reviewed_at`; `/api/gst/exclusions`; the entry-form
+exclusion control; the GST page's "Excluded sales" tab/tile; the `gst_exclusion_needs_review`
+and `gift_itc_reversal_due` checks. The per-row `gst_sale_not_invoiced` warning is gone too —
+replaced by a single neutral, zero-severity count in `gst_return_readiness()`, not part of
+`blockers`/`warnings`/`can_generate`.
+
+**Added**: `gst_bank_credit_status()` — the owner's "dead sure" safety net for money with no
+paper trail anywhere (no ERP sale, no Zoho invoice). Reuses the **existing** Bank
+Reconciliation module (`bank_accounts`/`bank_statements`/`bank_transactions.recon_status`,
+already trigger-maintained) rather than a second upload flow. Two new warning-level checks
+(`bank_statement_not_uploaded`, `unexplained_bank_credit`) — does not gate `can_generate`,
+per the owner's decision. GST page gains a warning banner linking to `/dashboard/recon/bank`
+and a "Bank credits" tile; the Reconcile tab is trimmed to series-gaps only.
+
+Verified live on September: blockers dropped from 30 to 2 real ones (`doc_series_gap`,
+`zoho_register_not_uploaded`); `bank_statement_not_uploaded` correctly fires as a warning
+(no September bank statement uploaded yet, confirmed against real data — Aug statement
+covers through 2026-08-31 only).
+
+### Migration ordering note for future reference
+`v_gst_exceptions`'s `sale_entity` CTE selects `s.*` from `sales`, which Postgres
+dependency-tracks against **every column of the table at CREATE time** — not just the ones
+a later SELECT actually reads. Rewriting the view to stop referencing a column is not enough
+on its own; the column drop still fails until the OLD view (with its stale `s.*` expansion)
+is gone. Correct order: drop the view → drop the column(s) → recreate the view fresh (so
+`s.*` expands against the now-narrower table). A `DROP VIEW` + `CREATE VIEW` in the *same*
+migration does not help, because the columns still exist on `sales` at the moment of
+recreate and the same dependency is immediately re-established.
+
+### Bugs found and fixed during verification
+- `gst_completeness_worksheet()`: concatenating `series_key || missing_seq` into
+  `missing_number` (to support multiple invoice series) made that field non-numeric, while
+  the function's `ORDER BY` still cast it to `bigint` — a 500 on every call. Fixed by adding
+  a separate numeric `missing_seq` field for sorting, keeping `missing_number` as the display
+  string.
+- A disposable verification script's cleanup left two production accessory SKUs'
+  `quantity_in_stock` decremented by 1 (it deleted a test `sales` row directly rather than
+  voiding it through the app, so the `stock_movements` row — and the real inventory
+  decrement it caused — was never reversed). Found via `stock_movements.created_by`
+  blocking deletion of the leftover test user; fixed with a compensating `+1` adjustment
+  movement (never a direct `UPDATE` to the trigger-maintained `quantity_in_stock`, per
+  CLAUDE.md), then removed the synthetic ledger rows. Confirmed restored: both SKUs back to
+  their correct pre-test quantity, with only their real, pre-existing "Stock received" rows
+  remaining.
