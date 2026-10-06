@@ -47,65 +47,13 @@ export type ProcessItemResult =
   | { ok: true; saleRow: ProcessedSaleRow }
   | { ok: false; status: number; message: string }
 
-// One payment method's contribution to a cart checkout -- e.g. ₹50,000 into
-// "Digitalbluez" + ₹50,000 "Cash" for one laptop. payment_account here is purely a
-// receipt/reconciliation detail (which of the business's accounts the money landed in)
-// and is independent of BaseSaleFields.payment_account, which stays the single
-// "invoicing entity" for GST/invoice-numbering purposes (see docs/decisions.md --
-// a serialized unit can only ever belong to one sales row, so it can't be
-// half-invoiced across entities, even though its payment legitimately can be split).
-export type PaymentLeg = { amount: number; payment_account: string; note?: string }
-
-// Allocates every leg's amount across every cart item's sale_total, processing legs IN
-// ORDER, each leg split proportionally across items' REMAINING (not yet allocated by an
-// earlier leg) capacity -- not their full total. This guarantees (a) one leg's
-// allocations across all items sum EXACTLY to that leg's own amount (this is real money
-// that must reconcile against actual bank/cash amounts) and (b) no single item is ever
-// allocated more than its own sale_total, which independently re-running a naive
-// per-item proportional split once per leg (against each item's full total every time)
-// does NOT guarantee -- two legs can jointly over-allocate one item past its own total
-// even though the whole-cart sum is exact. Reduces byte-for-byte to a simple
-// proportional-by-total split when legs.length === 1 (remaining == full item total on
-// the only leg). Integer-paise arithmetic; a leg's own floor-division remainder cascades
-// backward through items with remaining capacity.
-export function allocatePaymentLegs(
-  legs: PaymentLeg[],
-  itemTotalsRupees: number[]
-): Array<Array<{ legIndex: number; amount: number }>> {
-  const toPaise = (r: number) => Math.round(r * 100)
-  const n = itemTotalsRupees.length
-  const remaining = itemTotalsRupees.map(toPaise)
-  const perItem: Array<Array<{ legIndex: number; amount: number }>> = itemTotalsRupees.map(() => [])
-
-  legs.forEach((leg, legIndex) => {
-    const totalRemaining = remaining.reduce((sum, r) => sum + r, 0)
-    if (totalRemaining <= 0) return
-    const legPaise = Math.min(toPaise(leg.amount), totalRemaining) // defensive clamp
-    if (legPaise <= 0) return
-
-    const shares = remaining.map((r) => Math.floor((legPaise * r) / totalRemaining))
-    let remainder = legPaise - shares.reduce((sum, s) => sum + s, 0)
-
-    // Cascade the remainder backward through items with capacity left -- terminates with
-    // remainder === 0 because legPaise <= totalRemaining and floor division never
-    // over-allocates.
-    for (let i = n - 1; i >= 0 && remainder > 0; i--) {
-      const capacityLeft = remaining[i] - shares[i]
-      const add = Math.min(remainder, capacityLeft)
-      shares[i] += add
-      remainder -= add
-    }
-
-    for (let i = 0; i < n; i++) {
-      if (shares[i] > 0) {
-        perItem[i].push({ legIndex, amount: shares[i] / 100 })
-        remaining[i] -= shares[i]
-      }
-    }
-  })
-
-  return perItem
-}
+// PaymentLeg / allocatePaymentLegs moved to @db/shared (see sales.ts there) --
+// apps/web's website-order checkout needs the exact same paise-exact split
+// for a token/advance payment fanning out across one `sales` row per
+// order_item. Re-exported here so this file's own ~2 existing import sites
+// (app/api/sales-entry/route.ts, app/dashboard/entry/sell/page.tsx) are
+// unaffected.
+export { allocatePaymentLegs, type PaymentLeg } from '@db/shared'
 
 // Upfront, read-only pass over every line in the cart before anything is written --
 // catches the common case (stale search result, archived SKU, someone typed a bigger

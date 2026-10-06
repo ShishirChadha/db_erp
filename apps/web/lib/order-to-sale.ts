@@ -67,6 +67,22 @@ async function fulfillSelectedUpgrades(
   }
 }
 
+// Append-only ledger insert -- never write amount_paid/payment_status on
+// `sales` directly, per CLAUDE.md and sales-cart.ts's identical rule. The
+// trigger (sync_sale_payment_totals) derives both from sum(sale_payments)
+// immediately after this insert. recorded_by is left null, matching
+// sales.entered_by on a website order -- no staff member took this payment.
+async function recordSalePayment(saleId: string, amount: number, note: string): Promise<string | null> {
+  if (amount <= 0) return null
+  const { error } = await supabaseAdmin.from('sale_payments').insert({
+    sale_id: saleId,
+    amount,
+    payment_account: 'Digitalbluez',
+    note,
+  })
+  return error ? `Failed to record payment for sale ${saleId}: ${error.message}` : null
+}
+
 export async function convertOrderToSales(orderId: string): Promise<{ ok: boolean; error?: string }> {
   const { data: order } = await supabaseAdmin.from('orders').select('*').eq('id', orderId).single()
   if (!order) return { ok: false, error: 'Order not found' }
@@ -113,6 +129,16 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
     const base = Math.round((inclusiveTotal * 100) / (1 + GST_PERCENT / 100)) / 100
     const gst = Math.round((inclusiveTotal - base) * 100) / 100
 
+    // amount_paid/payment_status are deliberately absent here -- both are
+    // trigger-derived (sync_sale_payment_totals) from the sum of this sale's
+    // own sale_payments rows, same rule as the ERP's own Sell flow
+    // (sales-cart.ts). Writing them directly here was the bug fixed
+    // 2026-10-06: it worked by accident while every web order was paid in
+    // full in one shot, but the moment a delivery-balance payment is ever
+    // recorded against one of these sales, the trigger recomputes
+    // amount_paid as sum(sale_payments) with zero awareness of a value set
+    // here, and this would silently vanish. See the sale_payments insert
+    // below instead.
     const saleRecord = {
       sale_date: saleDate,
       sale_month: saleMonth,
@@ -122,8 +148,6 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
       sale_type: 'GST',
       entered_by: null,
       sold_by: 'Website',
-      payment_status: 'paid',
-      amount_paid: inclusiveTotal,
       payment_account: 'Digitalbluez',
       finalized: false,
       sale_base_price: base,
@@ -165,6 +189,9 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
         .single()
       if (saleErr) return { ok: false, error: saleErr.message }
 
+      const paymentErr = await recordSalePayment(sale.id, inclusiveTotal, `Razorpay order ${order.razorpay_order_id || orderId}`)
+      if (paymentErr) return { ok: false, error: paymentErr }
+
       // sku_master.quantity_in_stock is decremented atomically by the
       // existing trg_sync_sku_stock trigger on this insert.
       await supabaseAdmin.from('stock_movements').insert({
@@ -187,6 +214,9 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
         .select('id')
         .single()
       if (saleErr) return { ok: false, error: saleErr.message }
+
+      const paymentErr = await recordSalePayment(sale.id, inclusiveTotal, `Razorpay order ${order.razorpay_order_id || orderId}`)
+      if (paymentErr) return { ok: false, error: paymentErr }
 
       await supabaseAdmin.from('stock_movements').insert({
         sku_id: item.sku_id,
