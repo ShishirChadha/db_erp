@@ -1035,12 +1035,152 @@ function BlogSection() {
   )
 }
 
+interface PaymentSettings {
+  id: string
+  upi_discount_pct: number
+  card_discount_pct: number
+  cod_handling_fee_pct: number
+  cod_token_amount: number
+  cod_enabled: boolean
+}
+
+// Governs the pricing shown at /checkout on the storefront -- the prepaid-
+// discount model (owner's decision, 2026-10-06): a discount for paying in
+// full now (UPI/card), a handling fee for Cash on Delivery. Never a
+// surcharge -- a UPI surcharge is specifically illegal in India (Payment &
+// Settlement Systems Act s.10A), and card-network rules forbid card
+// surcharging too. Economically identical either way; this is the legal one.
+function PaymentSettingsSection() {
+  const [settings, setSettings] = useState<PaymentSettings | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [saved, setSaved] = useState(false)
+
+  const [upiDiscount, setUpiDiscount] = useState('0')
+  const [cardDiscount, setCardDiscount] = useState('0')
+  const [codFee, setCodFee] = useState('5')
+  const [codToken, setCodToken] = useState('1000')
+  const [codEnabled, setCodEnabled] = useState(true)
+
+  const fetchSettings = async () => {
+    setLoading(true)
+    const res = await apiFetch('/api/website-admin/payment-settings')
+    if (res.ok) {
+      const data: PaymentSettings = await res.json()
+      setSettings(data)
+      setUpiDiscount(String(data.upi_discount_pct))
+      setCardDiscount(String(data.card_discount_pct))
+      setCodFee(String(data.cod_handling_fee_pct))
+      setCodToken(String(data.cod_token_amount))
+      setCodEnabled(data.cod_enabled)
+    }
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchSettings() }, [])
+
+  const save = async () => {
+    setError('')
+    setSaved(false)
+    setSaving(true)
+    try {
+      const res = await apiFetch('/api/website-admin/payment-settings', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          upi_discount_pct: upiDiscount,
+          card_discount_pct: cardDiscount,
+          cod_handling_fee_pct: codFee,
+          cod_token_amount: codToken,
+          cod_enabled: codEnabled,
+        }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.error || 'Failed to save')
+        return
+      }
+      setSaved(true)
+      await fetchSettings()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (loading) return <p className="text-sm text-muted-foreground">Loading…</p>
+
+  // Worked example so the numbers below aren't abstract -- same wording the
+  // owner and I used when settling on this model.
+  const example = 30000
+  const upiPrice = Math.round(example * (1 - Number(upiDiscount || 0) / 100))
+  const cardPrice = Math.round(example * (1 - Number(cardDiscount || 0) / 100))
+  const codPrice = Math.round(example * (1 + Number(codFee || 0) / 100))
+
+  return (
+    <div className="max-w-xl space-y-5">
+      <p className="text-sm text-muted-foreground">
+        Sets the pricing shown at checkout for each payment method. UPI and Card get a
+        discount for paying the full amount now; Cash on Delivery carries a handling fee
+        and only a token amount is collected up front, with the rest due on delivery.
+        A UPI surcharge is illegal in India and card surcharging breaches network rules —
+        this is a discount, not a surcharge, so it's the same economics without that risk.
+      </p>
+      {error && <div className="text-destructive text-sm">{error}</div>}
+
+      <div className="border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold">UPI / Card discount</h3>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium w-32">UPI discount %</label>
+          <input type="number" min={0} max={100} step="0.5" value={upiDiscount} onChange={(e) => setUpiDiscount(e.target.value)} className="border p-2 rounded w-28" />
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium w-32">Card discount %</label>
+          <input type="number" min={0} max={100} step="0.5" value={cardDiscount} onChange={(e) => setCardDiscount(e.target.value)} className="border p-2 rounded w-28" />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          On a ₹{example.toLocaleString('en-IN')} item: UPI customer pays ₹{upiPrice.toLocaleString('en-IN')},
+          Card customer pays ₹{cardPrice.toLocaleString('en-IN')}.
+        </p>
+      </div>
+
+      <div className="border rounded-lg p-4 space-y-3">
+        <h3 className="text-sm font-semibold">Cash on Delivery</h3>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={codEnabled} onChange={(e) => setCodEnabled(e.target.checked)} className="h-4 w-4" />
+          Offer Cash on Delivery at checkout
+        </label>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium w-32">Handling fee %</label>
+          <input type="number" min={0} max={100} step="0.5" value={codFee} onChange={(e) => setCodFee(e.target.value)} disabled={!codEnabled} className="border p-2 rounded w-28 disabled:opacity-50" />
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="text-xs font-medium w-32">Token amount (₹)</label>
+          <input type="number" min={0} step="50" value={codToken} onChange={(e) => setCodToken(e.target.value)} disabled={!codEnabled} className="border p-2 rounded w-28 disabled:opacity-50" />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          On a ₹{example.toLocaleString('en-IN')} item paid by COD: customer pays
+          ₹{codPrice.toLocaleString('en-IN')} total — ₹{Math.min(Number(codToken || 0), codPrice).toLocaleString('en-IN')} online now,
+          the rest on delivery.
+        </p>
+      </div>
+
+      <div className="flex items-center gap-3">
+        <button onClick={save} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {saved && <span className="text-sm text-muted-foreground">Saved.</span>}
+      </div>
+    </div>
+  )
+}
+
 const TABS = [
   { key: 'upgrade_pricing', label: 'Upgrade Pricing' },
   { key: 'promotions', label: 'Promotions' },
   { key: 'cross_sell', label: 'Cross-sell' },
   { key: 'banners', label: 'Banners' },
   { key: 'blog', label: 'Blog' },
+  { key: 'payments', label: 'Payments' },
 ] as const
 
 export default function WebsiteAdminManager() {
@@ -1066,6 +1206,7 @@ export default function WebsiteAdminManager() {
       {tab === 'cross_sell' && <CrossSellSection />}
       {tab === 'banners' && <BannersSection />}
       {tab === 'blog' && <BlogSection />}
+      {tab === 'payments' && <PaymentSettingsSection />}
     </div>
   )
 }

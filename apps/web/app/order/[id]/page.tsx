@@ -1,4 +1,4 @@
-import { redirect, notFound } from 'next/navigation'
+import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@db/db/server'
 import { supabaseAdmin } from '@db/db/admin'
@@ -12,21 +12,42 @@ export const dynamic = 'force-dynamic'
 
 const STATUS_LABEL: Record<string, string> = {
   pending_payment: 'Confirming payment…',
+  partially_paid: 'Order confirmed — balance due on delivery',
   paid: 'Order confirmed',
   cancelled: 'Order cancelled',
   expired: 'Checkout expired',
 }
 
+// A paid-or-settling order is a completed purchase from the customer's side
+// -- COD only ever reaches 'partially_paid' from the webhook (the balance is
+// cash at delivery, settled later in the ERP), so gating purely on 'paid'
+// would never fire the purchase event for a COD order at all.
+const COMPLETED_STATUSES = new Set(['paid', 'partially_paid'])
+
 export default async function OrderPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await getCustomerSession()
-  if (!session) redirect(`/login`)
-
   const { id } = await params
-  const supabase = await createServerSupabaseClient()
-  const { data: order } = await supabase.from('orders').select('*').eq('id', id).single()
+
+  // Guest checkout (2026-10-06): an order placed without an account has
+  // nobody to check RLS against, so a guest reads it via the admin client
+  // instead. This is a deliberate, common tradeoff -- reaching this page at
+  // all already requires the random order UUID, which only the browser that
+  // just completed this specific checkout has (via its own redirect); it is
+  // not guessable. A signed-in viewer still only ever sees their OWN orders,
+  // enforced by the "Customers can view own orders" RLS policy on the normal
+  // path below.
+  let order: Record<string, any> | null = null
+  if (session) {
+    const supabase = await createServerSupabaseClient()
+    const { data } = await supabase.from('orders').select('*').eq('id', id).single()
+    order = data
+  } else {
+    const { data } = await supabaseAdmin.from('orders').select('*').eq('id', id).single()
+    order = data
+  }
   if (!order) notFound()
 
-  const { data: items } = await supabase
+  const { data: items } = await supabaseAdmin
     .from('order_items')
     .select('id, title_snapshot, quantity, unit_price')
     .eq('order_id', id)
@@ -52,15 +73,19 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
     reservedUntil = reservationRow?.expires_at ?? null
   }
 
+  const isCod = order.payment_method === 'cod'
+  const paidNow = isCod ? Number(order.token_amount ?? 0) : Number(order.total_amount)
+  const balanceDue = isCod ? Math.round((Number(order.total_amount) - paidNow) * 100) / 100 : 0
+
   return (
     <main className="mx-auto max-w-lg px-4 py-14 sm:px-6">
       {order.status === 'pending_payment' && <OrderStatusPoller />}
 
-      {/* Reported from committed 'paid' state rather than the Razorpay
-          callback, and deduped per order inside the component -- this page
-          refreshes itself while pending, so it remounts the moment the webhook
-          lands. */}
-      {order.status === 'paid' && (
+      {/* Reported from committed paid/partially_paid state rather than the
+          Razorpay callback, and deduped per order inside the component --
+          this page refreshes itself while pending, so it remounts the
+          moment the webhook lands. */}
+      {COMPLETED_STATUSES.has(order.status) && (
         <TrackPurchase
           orderId={order.id}
           value={Number(order.total_amount)}
@@ -86,6 +111,20 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
         </div>
       )}
 
+      {order.status === 'partially_paid' && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          We&apos;ve received {formatCurrency(paidNow)} online. The remaining {formatCurrency(balanceDue)} is due in
+          cash when your order is delivered.
+        </p>
+      )}
+
+      {!session && COMPLETED_STATUSES.has(order.status) && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          We&apos;ve set up an account for you with this email so you can track this order next time —
+          check your inbox to set a password, or <Link href="/login" className="underline">log in</Link> once you have.
+        </p>
+      )}
+
       {(order.status === 'cancelled' || order.status === 'expired') && (
         <p className="mt-4 text-sm text-muted-foreground">
           This order didn&apos;t go through. Nothing was charged. <Link href="/cart" className="underline">Return to your cart</Link>.
@@ -103,9 +142,21 @@ export default async function OrderPage({ params }: { params: Promise<{ id: stri
           <span>Total</span>
           <span className="tabular-nums">{formatCurrency(order.total_amount)}</span>
         </div>
+        {isCod && (
+          <>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Paid online</span>
+              <span className="tabular-nums">{formatCurrency(paidNow)}</span>
+            </div>
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>Due on delivery</span>
+              <span className="tabular-nums">{formatCurrency(balanceDue)}</span>
+            </div>
+          </>
+        )}
       </div>
 
-      {order.status === 'paid' && (
+      {session && COMPLETED_STATUSES.has(order.status) && (
         <Link href="/account/orders" className="mt-6 block text-center text-sm font-medium text-foreground underline">
           View order history
         </Link>

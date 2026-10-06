@@ -5,6 +5,7 @@ import { isRazorpayConfigured, createRazorpayOrder } from '@/lib/razorpay'
 import { releaseReservationsForOrder } from '@/lib/reservations'
 import { resolveApplicablePromotions } from '@/lib/promotions'
 import { productDisplayTitle } from '@/lib/product-title'
+import { parseCartLines } from '@/lib/cart-lines'
 
 const RESERVATION_TTL_MINUTES = 15
 
@@ -22,23 +23,67 @@ async function cancelOrder(
   await supabaseAdmin.from('orders').update({ status: 'cancelled', cancel_reason: reason }).eq('id', orderId)
 }
 
+type PaymentMethod = 'upi' | 'card' | 'cod'
+
 export async function POST(req: NextRequest) {
   const session = await getCustomerSession()
-  if (!session) return NextResponse.json({ error: 'Please log in to check out.' }, { status: 401 })
 
   if (!isRazorpayConfigured()) {
     return NextResponse.json({ error: 'Online checkout is not available yet. Please check back soon.' }, { status: 503 })
   }
 
-  const { shippingAddress, couponCode } = await req.json()
+  const { shippingAddress, couponCode, paymentMethod, guestContact, guestLines } = await req.json()
   if (!shippingAddress?.name || !shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.phone) {
     return NextResponse.json({ error: 'A complete shipping address is required.' }, { status: 400 })
   }
+  // Pincode and state were accepted but never actually checked before this --
+  // an order could be created with an empty pincode despite the client-side
+  // `required` attribute.
+  if (!shippingAddress?.state || !String(shippingAddress.pincode || '').trim()) {
+    return NextResponse.json({ error: 'State and pincode are required.' }, { status: 400 })
+  }
 
-  const { data: cartItems } = await supabaseAdmin
-    .from('cart_items')
-    .select('sku_id, quantity, selected_upgrades')
-    .eq('customer_id', session.id)
+  if (paymentMethod !== 'upi' && paymentMethod !== 'card' && paymentMethod !== 'cod') {
+    return NextResponse.json({ error: 'Choose a payment method.' }, { status: 400 })
+  }
+  const method: PaymentMethod = paymentMethod
+
+  const { data: paymentSettings } = await supabaseAdmin.from('website_payment_settings').select('*').maybeSingle()
+  if (!paymentSettings) return NextResponse.json({ error: 'Checkout is not configured yet.' }, { status: 503 })
+  if (method === 'cod' && !paymentSettings.cod_enabled) {
+    return NextResponse.json({ error: 'Cash on Delivery is not available right now.' }, { status: 400 })
+  }
+
+  // No account is required to place this order (see apps/web/lib/guest-cart.ts
+  // for why anonymous auth is specifically wrong here) -- but there is
+  // genuinely no server-side cart to read without one, so the guest path
+  // carries its localStorage lines in the request body instead, re-validated
+  // exactly like /api/cart/merge already does. A real CRM customer is only
+  // ever created once payment actually succeeds (see order-to-sale.ts) --
+  // never here, so an abandoned guest checkout costs nothing.
+  let cartItems: { sku_id: string; quantity: number; selected_upgrades: unknown }[]
+  let guestName: string | null = null
+  let guestPhone: string | null = null
+  let guestEmail: string | null = null
+
+  if (session) {
+    const { data } = await supabaseAdmin
+      .from('cart_items')
+      .select('sku_id, quantity, selected_upgrades')
+      .eq('customer_id', session.id)
+    cartItems = data ?? []
+  } else {
+    guestName = String(guestContact?.name || '').trim()
+    guestPhone = String(guestContact?.phone || '').trim()
+    guestEmail = guestContact?.email ? String(guestContact.email).trim() : null
+    if (!guestName || !guestPhone) {
+      return NextResponse.json({ error: 'Name and phone are required to check out as a guest.' }, { status: 400 })
+    }
+    const parsed = parseCartLines(guestLines)
+    if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
+    cartItems = parsed.lines
+  }
+
   if (!cartItems || cartItems.length === 0) {
     return NextResponse.json({ error: 'Your cart is empty.' }, { status: 400 })
   }
@@ -85,7 +130,13 @@ export async function POST(req: NextRequest) {
 
   const { data: order, error: orderErr } = await supabaseAdmin
     .from('orders')
-    .insert({ customer_id: session.id, status: 'pending_payment', shipping_address: shippingAddress })
+    .insert({
+      customer_id: session ? session.id : null,
+      guest_contact: session ? null : { name: guestName, phone: guestPhone, email: guestEmail },
+      status: 'pending_payment',
+      shipping_address: shippingAddress,
+      payment_method: method,
+    })
     .select()
     .single()
   if (orderErr) return NextResponse.json({ error: orderErr.message }, { status: 500 })
@@ -112,10 +163,27 @@ export async function POST(req: NextRequest) {
   )
   const preDiscountTotal = preDiscountLines.reduce((sum, l) => sum + l.lineTotal, 0)
 
+  // Payment-method adjustment -- the prepaid-discount model (owner's decision,
+  // 2026-10-06): UPI/card get a discount for paying the full amount now; COD
+  // carries a handling fee, because a surcharge on UPI is specifically
+  // illegal in India (Payment & Settlement Systems Act s.10A) and card
+  // surcharging breaches network rules, while a discount is legal on every
+  // method and has the identical economics. Negative = discount, positive =
+  // fee, expressed once here so the sign convention can't drift between the
+  // two call sites below.
+  const adjustmentPct =
+    method === 'upi' ? -Number(paymentSettings.upi_discount_pct)
+    : method === 'card' ? -Number(paymentSettings.card_discount_pct)
+    : Number(paymentSettings.cod_handling_fee_pct)
+
   // Discount is baked directly into unit_price -- never left only in
-  // orders.discount_amount metadata -- so order-to-sale's GST math (which
-  // only ever reads unit_price * quantity) stays accurate. Distributed
-  // proportionally by each line's share of the pre-discount total.
+  // orders.discount_amount/payment_adjustment_amount metadata -- so order-to-
+  // sale's GST math (which only ever reads unit_price * quantity) stays
+  // accurate. Promo discount distributed proportionally by each line's share
+  // of the pre-discount total (existing behaviour); the payment-method
+  // adjustment then applies independently per line, since there is no fixed
+  // external total it needs to hit exactly -- whatever the lines sum to after
+  // rounding IS the total charged, by construction.
   interface OrderItemRow {
     order_id: string
     sku_id: string
@@ -130,11 +198,12 @@ export async function POST(req: NextRequest) {
     const share = preDiscountTotal > 0 ? l.lineTotal / preDiscountTotal : 0
     const lineDiscount = Math.round(discountAmount * share * 100) / 100
     const discountedUnitPrice = Math.max(0, (l.lineTotal - lineDiscount) / l.quantity)
+    const adjustedUnitPrice = Math.round(discountedUnitPrice * (1 + adjustmentPct / 100) * 100) / 100
     return {
       order_id: order.id,
       sku_id: l.sku_id,
       quantity: l.quantity,
-      unit_price: Math.round(discountedUnitPrice * 100) / 100,
+      unit_price: adjustedUnitPrice,
       title_snapshot: l.title_snapshot,
       selected_upgrades: l.selected_upgrades,
     }
@@ -143,7 +212,8 @@ export async function POST(req: NextRequest) {
   // Free-gift promo: a real $0 order_item that flows through the exact same
   // reservation/stock-decrement path as any paid line -- never a silent
   // side-channel. If the gift SKU is out of stock, it's dropped silently
-  // rather than failing the whole cart (a real paid item still 409s).
+  // rather than failing the whole cart (a real paid item still 409s). A free
+  // gift is never adjusted by payment method -- 0 x anything is 0.
   if (freeGiftSkuId) {
     const { data: giftProduct } = await supabaseAdmin
       .from('public_products')
@@ -172,7 +242,7 @@ export async function POST(req: NextRequest) {
   if (appliedPromotionIds.length > 0 || freeGiftPromotionId) {
     const allApplied = [...appliedPromotionIds, ...(freeGiftPromotionId ? [freeGiftPromotionId] : [])]
     await supabaseAdmin.from('promotion_redemptions').insert(
-      allApplied.map((promotion_id) => ({ promotion_id, customer_id: session.id, order_id: order.id }))
+      allApplied.map((promotion_id) => ({ promotion_id, customer_id: session?.id ?? null, order_id: order.id }))
     )
   }
 
@@ -231,10 +301,18 @@ export async function POST(req: NextRequest) {
   }
 
   const totalAmount = orderItemRows.reduce((sum, r) => sum + r.unit_price * r.quantity, 0)
+  const paymentAdjustmentAmount = Math.round((totalAmount - preDiscountTotal + discountAmount) * 100) / 100
+
+  // COD collects only a token amount up front via Razorpay -- the configured
+  // cod_token_amount, capped at the order's own total so a sub-token order
+  // never "collects" more than it's worth. Stored on the order (not just read
+  // live from settings) so a later settings change can never retroactively
+  // change what this specific order is understood to have collected.
+  const chargeNow = method === 'cod' ? Math.min(Number(paymentSettings.cod_token_amount), totalAmount) : totalAmount
 
   let razorpayOrder
   try {
-    razorpayOrder = await createRazorpayOrder(totalAmount, order.id)
+    razorpayOrder = await createRazorpayOrder(chargeNow, order.id, method)
   } catch (err: any) {
     await releaseReservationsForOrder(order.id, 'aborted_payment_init')
     await cancelOrder(order.id, 'payment_init_failed')
@@ -248,6 +326,9 @@ export async function POST(req: NextRequest) {
       razorpay_order_id: razorpayOrder.id,
       discount_amount: discountAmount,
       applied_promotion_ids: appliedPromotionIds,
+      payment_adjustment_pct: adjustmentPct,
+      payment_adjustment_amount: paymentAdjustmentAmount,
+      token_amount: method === 'cod' ? chargeNow : null,
     })
     .eq('id', order.id)
 
@@ -255,6 +336,9 @@ export async function POST(req: NextRequest) {
     orderId: order.id,
     razorpayOrderId: razorpayOrder.id,
     amount: razorpayOrder.amount,
+    totalAmount,
+    chargeNow,
+    balanceDue: method === 'cod' ? Math.round((totalAmount - chargeNow) * 100) / 100 : 0,
     keyId: process.env.RAZORPAY_KEY_ID,
     reservedUntil,
   })

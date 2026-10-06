@@ -29,7 +29,8 @@ const SORT_COLUMNS: Record<string, string> = {
 // orders.customer_id points at customer_profiles.id (= auth.users.id), NOT at
 // customers.id -- so the display name is two hops out through the CRM link.
 const SELECT = `
-  id, customer_id, status, total_amount, discount_amount, shipping_address,
+  id, customer_id, guest_contact, status, total_amount, discount_amount, shipping_address,
+  payment_method, payment_adjustment_pct, payment_adjustment_amount, token_amount, fulfillment_status,
   razorpay_order_id, razorpay_payment_id, created_at, paid_at,
   cancel_reason, conversion_error, conversion_failed_at, applied_promotion_ids,
   order_items (
@@ -114,8 +115,14 @@ export async function GET(req: NextRequest) {
   let rows = (data || []).map((o: any) => ({
     ...o,
     needs_reconciliation: needsReconciliation(o),
-    customer_name: o.customer_profiles?.customers?.customer_name ?? o.customer_profiles?.full_name ?? null,
-    customer_phone: o.customer_profiles?.phone ?? null,
+    // guest_contact fallback: a guest order's customer_id stays null until
+    // conversion best-effort-creates an account (order-to-sale.ts) -- which
+    // may not have happened yet, or may never (no email given, or the email
+    // was already registered). Either way there's still a name/phone worth
+    // showing here.
+    customer_name: o.customer_profiles?.customers?.customer_name ?? o.customer_profiles?.full_name ?? o.guest_contact?.name ?? null,
+    customer_phone: o.customer_profiles?.phone ?? o.guest_contact?.phone ?? null,
+    is_guest: !o.customer_id,
   }))
 
   // Applied after the fetch because it is a derived predicate, not a column.

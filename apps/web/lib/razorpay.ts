@@ -4,9 +4,21 @@ export function isRazorpayConfigured(): boolean {
   return !!process.env.RAZORPAY_KEY_ID && !!process.env.RAZORPAY_KEY_SECRET
 }
 
+// `intendedMethod` is recorded in `notes` for visibility in the Razorpay
+// dashboard/reconciliation only -- the Orders API has no field that actually
+// restricts which payment method a customer uses once the hosted checkout
+// opens. The real restriction is the `method` config CheckoutForm.tsx passes
+// to the widget itself, which is a UI nudge (Razorpay's own hosted surface,
+// not bypassable without their API credentials) rather than a server-
+// enforced guarantee. What IS guaranteed regardless of method chosen: the
+// amount is fixed here, server-side, before the widget ever opens, and the
+// webhook re-checks it against this same figure (see the razorpay webhook
+// route) -- so the financial integrity doesn't depend on the method
+// restriction holding.
 export async function createRazorpayOrder(
   amountRupees: number,
-  receipt: string
+  receipt: string,
+  intendedMethod?: 'upi' | 'card' | 'cod'
 ): Promise<{ id: string; amount: number; currency: string }> {
   const auth = Buffer.from(`${process.env.RAZORPAY_KEY_ID}:${process.env.RAZORPAY_KEY_SECRET}`).toString('base64')
   const res = await fetch('https://api.razorpay.com/v1/orders', {
@@ -16,6 +28,7 @@ export async function createRazorpayOrder(
       amount: Math.round(amountRupees * 100), // paise
       currency: 'INR',
       receipt,
+      notes: intendedMethod ? { payment_method: intendedMethod } : undefined,
     }),
   })
   if (!res.ok) {

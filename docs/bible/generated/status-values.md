@@ -106,7 +106,9 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | marketing_settings | id | marketing_settings_id_check | `CHECK (id)` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | cancel_reason | orders_cancel_reason_check | `CHECK (((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['sold_out'::text, 'payment_init_failed'::text, 'reserve_error'::text, 'customer_abandoned'::text]))))` |
-| orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
+| orders | fulfillment_status | orders_fulfillment_status_check | `CHECK ((fulfillment_status = ANY (ARRAY['pending'::text, 'packed'::text, 'shipped'::text, 'delivered'::text, 'returned'::text])))` |
+| orders | payment_method | orders_payment_method_check | `CHECK (((payment_method IS NULL) OR (payment_method = ANY (ARRAY['upi'::text, 'card'::text, 'cod'::text]))))` |
+| orders | status | orders_status_check | `CHECK ((status = ANY (ARRAY['pending_payment'::text, 'partially_paid'::text, 'paid'::text, 'cancelled'::text, 'expired'::text])))` |
 | period_locks | module | period_locks_module_check | `CHECK ((module = ANY (ARRAY['sales'::text, 'purchases'::text, 'banking'::text, 'accounts'::text])))` |
 | period_locks | unlock_from | period_locks_unlock_reason_check | `CHECK (((unlock_from IS NULL) OR (NULLIF(TRIM(BOTH FROM COALESCE(unlock_reason, ''::text)), ''::text) IS NOT NULL)))` |
 | period_locks | unlock_from | period_locks_unlock_window_check | `CHECK ((((unlock_from IS NULL) AND (unlock_to IS NULL)) OR ((unlock_from IS NOT NULL) AND (unlock_to IS NOT NULL) AND (unlock_to >= unlock_from))))` |
@@ -167,3 +169,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | vendor_payments | amount | vendor_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
 | vendor_payments | payment_account | vendor_payments_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | web_reservations | release_reason | web_reservations_release_reason_check | `CHECK (((release_reason IS NULL) OR (release_reason = ANY (ARRAY['converted'::text, 'expired'::text, 'aborted_sold_out'::text, 'aborted_payment_init'::text]))))` |
+| website_payment_settings | card_discount_pct | website_payment_settings_card_discount_pct_check | `CHECK (((card_discount_pct >= (0)::numeric) AND (card_discount_pct <= (100)::numeric)))` |
+| website_payment_settings | cod_handling_fee_pct | website_payment_settings_cod_handling_fee_pct_check | `CHECK (((cod_handling_fee_pct >= (0)::numeric) AND (cod_handling_fee_pct <= (100)::numeric)))` |
+| website_payment_settings | cod_token_amount | website_payment_settings_cod_token_amount_check | `CHECK ((cod_token_amount >= (0)::numeric))` |
+| website_payment_settings | upi_discount_pct | website_payment_settings_upi_discount_pct_check | `CHECK (((upi_discount_pct >= (0)::numeric) AND (upi_discount_pct <= (100)::numeric)))` |

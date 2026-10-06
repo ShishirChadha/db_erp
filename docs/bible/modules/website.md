@@ -9,7 +9,10 @@ sources:
   - apps/web/lib/order-to-sale.ts
   - apps/web/lib/product-title.ts
   - apps/web/app/api/search/route.ts
+  - apps/web/app/api/checkout/start/route.ts
+  - apps/web/lib/customer-identity.ts
   - apps/erp/app/api/website-admin/**
+  - apps/erp/app/api/web-orders/**
 updated: 2026-10-06
 ---
 
@@ -34,10 +37,62 @@ cart), reserves inventory atomically before payment (`reserve_order_items`,
 a real `sales` row — same stock-decrement trigger, `sold_by = 'Website'`,
 `payment_account = 'Digitalbluez'`, `entered_by = NULL` (no staff entered it).
 
+## Checkout: no account required, and the price depends on how you pay
+
+**Guest checkout (2026-10-06).** No account is required to place an order.
+The guest's cart is carried in the request body (localStorage lines,
+re-validated server-side exactly like `/api/cart/merge`) rather than read
+from a server-side `cart_items` row. `orders.customer_id` is nullable;
+`orders.guest_contact` (name/phone/email) holds what was entered at
+checkout. **The CRM `customers` row is created or matched only once payment
+actually succeeds**, in the webhook — never at add-to-cart or checkout —
+reusing the exact phone-dedupe logic `/api/auth/signup` already has
+(`findOrCreateCustomerByPhone`, extracted so neither copy can drift). This
+is the direct answer to the reason anonymous Supabase auth is rejected
+elsewhere (`apps/web/lib/guest-cart.ts`): a bot or an abandoned guest
+checkout costs nothing, because nothing is written until money lands. A
+real login account is then created best-effort (never fatal to the sale)
+and the order retroactively linked to it — email delivery for the "set your
+password" link isn't wired up yet, same caveat `/api/auth/signup` already
+carries.
+
+**Payment-method pricing.** `website_payment_settings` (Settings → Website
+Admin → Payments, owner-editable, never hardcoded) holds a discount % for
+UPI/card and a handling fee % for Cash on Delivery — **a discount, not a
+surcharge**: a UPI surcharge is specifically illegal in India (Payment &
+Settlement Systems Act s.10A) and card surcharging breaches network rules,
+while a discount for paying the full amount up front is legal on every
+method and has identical economics. The adjustment is baked straight into
+`order_items.unit_price` (never left only in a display column), same rule
+as the existing promo `discount_amount`.
+
+**Cash on Delivery collects a token now, the rest later.** Razorpay only
+ever charges `min(website_payment_settings.cod_token_amount, order total)`
+up front — stored on the order as `token_amount` so a later settings change
+can't retroactively change what a specific order is understood to have
+collected. The balance is cash collected at delivery, recorded from the
+ERP's **Web Orders → "Mark delivered + record balance"** action (owner-only),
+which ledgers a real `sale_payments` row — allocated across however many
+`sales` rows the order produced via `allocatePaymentLegs` (in
+`packages/shared`, not duplicated in `apps/erp/lib/sales-cart.ts`, which
+re-exports it) — rather than ever writing `amount_paid` directly. `orders`
+gains `'partially_paid'` (token received, balance owed) alongside `paid`,
+and a new `fulfillment_status` (`pending → packed → shipped → delivered →
+returned`) that didn't exist in the schema at all before this.
+
+**The bug this depended on getting right first:** `order-to-sale.ts` used to
+write `sales.amount_paid`/`payment_status` directly on insert instead of
+through `sale_payments`. Harmless while every order was paid in full in one
+shot — but the trigger that derives both (`sync_sale_payment_totals`) recomputes
+them as `sum(sale_payments)` with zero awareness of a value set directly on
+the row, so the first COD balance payment would have silently erased the
+token payment. Fixed and verified standalone (see `docs/decisions.md`,
+2026-10-06) before building anything else on top of it.
+
 ## Configuration lives in Settings → Website Admin (owner-only)
 
 Upgrade pricing (RAM/SSD/warranty upsells — always admin-configured, never
-hardcoded), Promotions, Cross-sell rules, Banners, Blog.
+hardcoded), Promotions, Cross-sell rules, Banners, Blog, Payments.
 
 ## Product display titles go through one helper
 

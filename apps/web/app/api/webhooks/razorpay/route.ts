@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
 
     const { data: order } = await supabaseAdmin
       .from('orders')
-      .select('id, status')
+      .select('id, status, payment_method, token_amount, total_amount')
       .eq('razorpay_order_id', razorpayOrderId)
       .single()
     if (!order) return NextResponse.json({ received: true })
@@ -35,6 +35,29 @@ export async function POST(req: NextRequest) {
     // Idempotent: a redelivered webhook event for an already-paid order is a
     // no-op, never a second conversion attempt.
     if (order.status === 'paid') return NextResponse.json({ received: true })
+
+    // The amount Razorpay says it captured must match what we told it to
+    // charge -- either the full total (upi/card) or the token (cod). Harmless
+    // while every order was full-price (Razorpay enforces its own order
+    // amount already), but a real integrity check once amounts vary by
+    // method: if this ever disagrees, something has gone wrong with how the
+    // order was priced or which order this payment actually belongs to, and
+    // this must not be the thing that marks it paid and ships a unit.
+    const expectedRupees = order.payment_method === 'cod' ? Number(order.token_amount) : Number(order.total_amount)
+    const expectedPaise = Math.round(expectedRupees * 100)
+    if (typeof payment.amount === 'number' && Math.abs(payment.amount - expectedPaise) > 1) {
+      console.error(
+        `[razorpay webhook] order ${order.id}: payment amount ${payment.amount} paise does not match expected ${expectedPaise} paise -- not converting, needs manual review`
+      )
+      await supabaseAdmin
+        .from('orders')
+        .update({
+          conversion_error: `Amount mismatch: Razorpay reported ${payment.amount} paise, expected ${expectedPaise}`,
+          conversion_failed_at: new Date().toISOString(),
+        })
+        .eq('id', order.id)
+      return NextResponse.json({ received: true })
+    }
 
     await supabaseAdmin
       .from('orders')

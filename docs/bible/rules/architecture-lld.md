@@ -12,7 +12,7 @@ sources:
   - apps/erp/lib/chunked-in.ts
   - apps/erp/app/api/monitoring/route.ts
   - apps/web/lib/order-to-sale.ts
-updated: 2026-10-01
+updated: 2026-10-06
 ---
 
 ## 1. Authentication — login and request authorisation
@@ -113,13 +113,17 @@ trigger-maintained caches. Insert the movement or the payment row instead.
 ## 4. Website order → ERP sale
 
 ```
-  Customer checkout
+  Customer checkout (no account required -- see website.md's guest-checkout
+  section; a guest's cart arrives in the body, re-validated server-side)
      |
-     | POST /api/checkout/start
+     | POST /api/checkout/start  { paymentMethod: upi|card|cod, ... }
      v
   re-price from public_products (client cart price never trusted)
      |
-     +--> INSERT orders / order_items
+     +--> apply website_payment_settings adjustment into unit_price
+     |      upi/card: discount (negative %)   cod: handling fee (positive %)
+     +--> INSERT orders (customer_id NULL for a guest, guest_contact jsonb)
+     +--> INSERT order_items
      +--> RPC reserve_order_items
               serialized: lock ONE asset_ledger row
                           FOR UPDATE SKIP LOCKED -> status 'reserved_web'
@@ -127,14 +131,31 @@ trigger-maintained caches. Insert the movement or the payment row instead.
               both:       15-minute TTL
      |
      v
-  Razorpay payment
+  Razorpay payment -- cod charges only token_amount = min(cod_token_amount,
+                      total); upi/card charge the full total
      |
-     | webhook (signature-verified, idempotent)
+     | webhook (signature-verified, idempotent, amount re-checked against
+     |          token_amount or total_amount as appropriate)
      v
   apps/web/lib/order-to-sale.ts
-     +--> sales row (sold_by='Website', entered_by NULL)
+     +--> customer_id present?  no -> findOrCreateCustomerByPhone(guest_contact)
+     |                                (dedupe-by-phone, same as /api/auth/signup)
+     |                                -> best-effort: create login account,
+     |                                   link orders.customer_id to it
+     +--> sales row per order_item (sold_by='Website', entered_by NULL)
+     +--> sale_payments row (NEVER sales.amount_paid directly -- trigger-
+     |      derived, same rule as sales-cart.ts) -- cod: token_amount split
+     |      across all this order's sales via allocatePaymentLegs
+     |      (packages/shared, re-exported by apps/erp/lib/sales-cart.ts);
+     |      upi/card: each sale's own full inclusive total
      +--> stock_movements -> same trigger as an in-store sale
      +--> activities task if an upgrade was purchased
+     +--> orders.status: cod -> 'partially_paid', else -> 'paid'
+
+  COD balance, later (ERP Web Orders -> "Mark delivered + record balance"):
+     remaining_i = sale_total_i - amount_paid_i (read live, not assumed)
+     allocatePaymentLegs([{balance}], remaining) -> one sale_payments row
+     per sale -> fulfillment_status='delivered', status->'paid' once settled
 
   Unpaid after 15 min:
      pg_cron release-expired-web-reservations -> reservation released

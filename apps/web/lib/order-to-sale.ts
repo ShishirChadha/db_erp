@@ -1,4 +1,7 @@
+import crypto from 'node:crypto'
 import { supabaseAdmin } from '@db/db/admin'
+import { allocatePaymentLegs } from '@db/shared'
+import { findOrCreateCustomerByPhone } from './customer-identity'
 
 // An online order is just another sales channel into the ERP: each
 // order_item becomes a real `sales` row via the same rules the ERP's own
@@ -88,31 +91,113 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
   if (!order) return { ok: false, error: 'Order not found' }
   if (order.status === 'paid') return { ok: true }
 
-  const { data: customerProfile } = await supabaseAdmin
-    .from('customer_profiles')
-    .select('customer_id')
-    .eq('id', order.customer_id)
-    .single()
-  if (!customerProfile) return { ok: false, error: 'Customer profile not found' }
-
-  const { data: customer } = await supabaseAdmin
-    .from('customers')
-    .select('customer_name')
-    .eq('id', customerProfile.customer_id)
-    .single()
-
   const { data: orderItems } = await supabaseAdmin
     .from('order_items')
     .select('id, sku_id, quantity, unit_price, erp_sale_id, selected_upgrades')
     .eq('order_id', orderId)
   if (!orderItems || orderItems.length === 0) return { ok: false, error: 'No order items on this order' }
 
+  // A cod order never reaches status='paid' from this webhook (only the
+  // token payment arrives here -- see below), so the check above alone
+  // can't short-circuit a redelivered webhook event for it. This is the
+  // precise idempotency signal instead: every item already converted means
+  // this exact conversion already happened, regardless of what the order's
+  // own status string says.
+  if (orderItems.every((item) => item.erp_sale_id)) return { ok: true }
+
+  // Customer resolution. A signed-in checkout already has a
+  // customer_profiles row; a guest checkout does not -- the CRM customer is
+  // created or matched (by phone, same dedupe as /api/auth/signup) only now,
+  // because payment has actually succeeded. See apps/web/lib/guest-cart.ts
+  // for why this must never happen earlier (at add-to-cart/checkout), and
+  // orders.customer_id's column comment for the full reasoning.
+  let customerId: string
+  let customerName: string | null
+  if (order.customer_id) {
+    const { data: customerProfile } = await supabaseAdmin
+      .from('customer_profiles')
+      .select('customer_id')
+      .eq('id', order.customer_id)
+      .single()
+    if (!customerProfile) return { ok: false, error: 'Customer profile not found' }
+
+    const { data: customer } = await supabaseAdmin
+      .from('customers')
+      .select('customer_name')
+      .eq('id', customerProfile.customer_id)
+      .single()
+    customerId = customerProfile.customer_id
+    customerName = customer?.customer_name || null
+  } else {
+    const guest = order.guest_contact as { name?: string; phone?: string; email?: string } | null
+    if (!guest?.name || !guest?.phone) return { ok: false, error: 'Guest order has no contact details' }
+
+    const match = await findOrCreateCustomerByPhone({ fullName: guest.name, phone: guest.phone, email: guest.email ?? null })
+    if (!match.ok) return { ok: false, error: match.error }
+    customerId = match.match.customerId
+    customerName = guest.name
+
+    // Best-effort: give the guest a real login for next time, same as a
+    // normal signup would. Deliberately non-fatal -- the sale itself must
+    // never fail because of this. Most likely failure: the email is already
+    // registered (a returning customer who forgot they have an account), in
+    // which case they keep using their existing login; this order simply
+    // isn't linked to it automatically.
+    if (guest.email) {
+      try {
+        const { data: authUser, error: authErr } = await supabaseAdmin.auth.admin.createUser({
+          email: guest.email,
+          password: crypto.randomUUID(),
+          email_confirm: true,
+          user_metadata: { full_name: guest.name },
+        })
+        if (!authErr && authUser.user) {
+          const { error: profileErr } = await supabaseAdmin.from('customer_profiles').insert({
+            id: authUser.user.id,
+            customer_id: customerId,
+            full_name: guest.name,
+            phone: guest.phone,
+          })
+          if (!profileErr) {
+            // Link this order to the new account so it shows up in their
+            // order history once they set a password and log in.
+            await supabaseAdmin.from('orders').update({ customer_id: authUser.user.id }).eq('id', orderId)
+            // Best-effort "set your password" link. No verified email-sending
+            // domain is configured yet (same caveat as /api/auth/signup), so
+            // this generates the link but there's nothing wired to actually
+            // email it -- revisit once Resend is live.
+            await supabaseAdmin.auth.admin.generateLink({ type: 'recovery', email: guest.email })
+          } else {
+            await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)
+          }
+        }
+      } catch (err) {
+        console.error(`[order-to-sale] order ${orderId}: best-effort account creation failed:`, err)
+      }
+    }
+  }
+
+  // cod collects only a token amount up front (see checkout/start/route.ts);
+  // the rest is cash at delivery, recorded later in the ERP. Every other
+  // method collects the full per-line amount now. allocatePaymentLegs gives
+  // the same paise-exact proportional split the ERP's own multi-item Sell
+  // cart uses, so the token is distributed fairly across sales rows rather
+  // than dumping it all onto whichever line converts first.
+  const isCod = order.payment_method === 'cod'
+  const paymentAllocation = isCod
+    ? allocatePaymentLegs(
+        [{ amount: Number(order.token_amount) || 0, payment_account: 'Digitalbluez' }],
+        orderItems.map((i) => i.unit_price * i.quantity)
+      )
+    : null
+
   const now = new Date()
   const saleDate = now.toISOString().slice(0, 10)
   const saleMonth = MONTHS[now.getUTCMonth()]
   const saleYear = now.getUTCFullYear()
 
-  for (const item of orderItems) {
+  for (let idx = 0; idx < orderItems.length; idx++) {
+    const item = orderItems[idx]
     if (item.erp_sale_id) continue
 
     const { data: reservation } = await supabaseAdmin
@@ -143,8 +228,8 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
       sale_date: saleDate,
       sale_month: saleMonth,
       sale_year: saleYear,
-      customer_id: customerProfile.customer_id,
-      customer_name: customer?.customer_name || null,
+      customer_id: customerId,
+      customer_name: customerName,
       sale_type: 'GST',
       entered_by: null,
       sold_by: 'Website',
@@ -189,7 +274,14 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
         .single()
       if (saleErr) return { ok: false, error: saleErr.message }
 
-      const paymentErr = await recordSalePayment(sale.id, inclusiveTotal, `Razorpay order ${order.razorpay_order_id || orderId}`)
+      const paidNow = isCod ? (paymentAllocation?.[idx]?.[0]?.amount ?? 0) : inclusiveTotal
+      const paymentErr = await recordSalePayment(
+        sale.id,
+        paidNow,
+        isCod
+          ? `Razorpay order ${order.razorpay_order_id || orderId} (COD token)`
+          : `Razorpay order ${order.razorpay_order_id || orderId}`
+      )
       if (paymentErr) return { ok: false, error: paymentErr }
 
       // sku_master.quantity_in_stock is decremented atomically by the
@@ -215,7 +307,14 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
         .single()
       if (saleErr) return { ok: false, error: saleErr.message }
 
-      const paymentErr = await recordSalePayment(sale.id, inclusiveTotal, `Razorpay order ${order.razorpay_order_id || orderId}`)
+      const paidNow = isCod ? (paymentAllocation?.[idx]?.[0]?.amount ?? 0) : inclusiveTotal
+      const paymentErr = await recordSalePayment(
+        sale.id,
+        paidNow,
+        isCod
+          ? `Razorpay order ${order.razorpay_order_id || orderId} (COD token)`
+          : `Razorpay order ${order.razorpay_order_id || orderId}`
+      )
       if (paymentErr) return { ok: false, error: paymentErr }
 
       await supabaseAdmin.from('stock_movements').insert({
@@ -232,7 +331,13 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
     }
   }
 
-  await supabaseAdmin.from('orders').update({ status: 'paid', paid_at: now.toISOString() }).eq('id', orderId)
+  // cod is only ever partially settled here -- the balance is cash at
+  // delivery, recorded later in the ERP's Web Orders page (which is also
+  // what moves this to 'paid' and stamps paid_at once the balance lands).
+  await supabaseAdmin
+    .from('orders')
+    .update(isCod ? { status: 'partially_paid' } : { status: 'paid', paid_at: now.toISOString() })
+    .eq('id', orderId)
 
   // Clear the lines the customer actually bought out of their cart.
   //

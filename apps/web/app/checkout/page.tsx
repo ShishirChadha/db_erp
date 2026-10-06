@@ -1,15 +1,31 @@
 import { redirect } from 'next/navigation'
 import { createServerSupabaseClient } from '@db/db/server'
 import { getCustomerSession } from '@/lib/customer-session'
+import { getPaymentSettings } from '@/lib/payment-settings'
 import { formatCurrency } from '@db/shared'
 import { productDisplayTitle } from '@/lib/product-title'
 import { CheckoutForm } from '@/components/CheckoutForm'
+import { GuestCheckoutSummary } from '@/components/GuestCheckoutSummary'
 
 export const dynamic = 'force-dynamic'
 
 export default async function CheckoutPage() {
   const session = await getCustomerSession()
-  if (!session) redirect('/login?next=/checkout')
+  const paymentSettings = await getPaymentSettings()
+
+  // No account is required to check out (see apps/web/lib/guest-cart.ts) --
+  // a guest's cart lives in localStorage, which a server component can't
+  // read, so the guest path renders its own client component that loads and
+  // re-prices it itself (same client-direct public_products pattern
+  // GuestCart.tsx already uses).
+  if (!session) {
+    return (
+      <main className="mx-auto max-w-lg px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Checkout</h1>
+        <GuestCheckoutSummary paymentSettings={paymentSettings} />
+      </main>
+    )
+  }
 
   const supabase = await createServerSupabaseClient()
   const { data: cartItems } = await supabase.from('cart_items').select('sku_id, quantity').eq('customer_id', session.id)
@@ -52,7 +68,13 @@ export default async function CheckoutPage() {
       </div>
 
       <div className="mt-6">
-        <CheckoutForm subtotal={subtotal} customerName={session.fullName || ''} customerEmail={session.email || ''} />
+        <CheckoutForm
+          subtotal={subtotal}
+          customerName={session.fullName || ''}
+          customerEmail={session.email || ''}
+          paymentSettings={paymentSettings}
+          mode="account"
+        />
       </div>
     </main>
   )

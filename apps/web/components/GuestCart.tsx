@@ -148,17 +148,23 @@ export function GuestCart() {
         <span className="text-lg font-semibold tabular-nums text-foreground">{formatCurrency(subtotal)}</span>
       </div>
 
-      {/* An account is genuinely required from here: the order and the stock
-          reservation have to belong to someone. The cart carries over on login. */}
+      {/* Guest checkout, 2026-10-06: an account is no longer required here --
+          /checkout's guest path re-prices this same localStorage cart and
+          creates/matches a CRM customer only once payment actually succeeds
+          (see order-to-sale.ts). Logging in first still works and is offered
+          below for a returning customer who wants their order history. */}
       <Link
-        href="/login?next=/checkout"
+        href="/checkout"
         className="mt-4 block w-full rounded-full bg-brand-orange px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
       >
-        Log in to check out
+        Checkout as guest
       </Link>
-      <p className="mt-2 text-center text-xs text-muted-foreground">
-        Your cart will be waiting for you after you log in.
-      </p>
+      <Link
+        href="/login?next=/checkout"
+        className="mt-2 block text-center text-xs text-muted-foreground underline"
+      >
+        Already have an account? Log in
+      </Link>
     </>
   )
 }

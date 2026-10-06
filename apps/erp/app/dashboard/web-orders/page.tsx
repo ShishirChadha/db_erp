@@ -43,6 +43,10 @@ interface WebOrder {
   total_amount: number
   discount_amount: number | null
   shipping_address: any
+  payment_method: 'upi' | 'card' | 'cod' | null
+  payment_adjustment_pct: number | null
+  token_amount: number | null
+  fulfillment_status: string
   razorpay_order_id: string | null
   razorpay_payment_id: string | null
   created_at: string
@@ -54,6 +58,7 @@ interface WebOrder {
   customer_name: string | null
   customer_phone: string | null
   needs_reconciliation: boolean
+  is_guest: boolean
 }
 
 const RESERVATION_TTL_MIN = 15
@@ -101,6 +106,7 @@ function WebOrdersPage() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [delivering, setDelivering] = useState(false)
 
   const PAGE_SIZE = useListPageSize()
   const isDesktop = useIsDesktopViewport()
@@ -139,6 +145,29 @@ function WebOrdersPage() {
   useEffect(() => { setPage(1) }, [statusFilter, flag, from, to])
 
   const active = useMemo(() => rows.find((o) => o.id === activeId) ?? null, [rows, activeId])
+
+  // The one write this page makes -- a deliberate, named exception to the
+  // "read-only" rule below. Not a parallel money-moving path: it ledgers a
+  // real sale_payments row via the exact same primitive (allocatePaymentLegs)
+  // the ERP's own Sell cart checkout uses, just orchestrated here because a
+  // COD balance is new money arriving later, split across however many
+  // sales the order produced -- something no existing single-sale action
+  // (AddPaymentDialog) is built to do across several sales at once.
+  const markDelivered = useCallback(async () => {
+    if (!active) return
+    setDelivering(true)
+    try {
+      const res = await apiFetch(`/api/web-orders/${active.id}/deliver`, { method: 'POST', body: JSON.stringify({}) })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setError(json.error || 'Could not mark this order delivered.')
+        return
+      }
+      await load()
+    } finally {
+      setDelivering(false)
+    }
+  }, [active, load])
 
   const cards = useMemo(() => {
     const spec = [
@@ -318,17 +347,48 @@ function WebOrdersPage() {
               )}
 
               <div className="rounded-md border border-border p-3">
-                <Field label="Customer">{active.customer_name || '—'}</Field>
+                <Field label="Customer">
+                  {active.customer_name || '—'}
+                  {active.is_guest && <span className="ml-1.5 text-xs text-muted-foreground">(guest)</span>}
+                </Field>
                 <Field label="Phone">{active.customer_phone || '—'}</Field>
+                <Field label="Payment method">
+                  {active.payment_method ? active.payment_method.toUpperCase() : '—'}
+                  {active.payment_adjustment_pct ? (
+                    <span className="ml-1 text-xs text-muted-foreground">
+                      ({active.payment_adjustment_pct > 0 ? '+' : ''}{active.payment_adjustment_pct}%)
+                    </span>
+                  ) : null}
+                </Field>
                 <Field label="Total">{money(active.total_amount)}</Field>
+                {active.payment_method === 'cod' && (
+                  <>
+                    <Field label="Paid online">{money(active.token_amount)}</Field>
+                    <Field label="Due on delivery">{money(Number(active.total_amount) - Number(active.token_amount || 0))}</Field>
+                  </>
+                )}
                 {Number(active.discount_amount) > 0 && (
                   <Field label="Discount">{money(active.discount_amount)}</Field>
                 )}
+                <Field label="Fulfillment">{active.fulfillment_status.replace(/_/g, ' ')}</Field>
                 <Field label="Paid at">{dt(active.paid_at)}</Field>
                 {active.razorpay_payment_id && (
                   <Field label="Razorpay payment"><span className="font-mono text-xs">{active.razorpay_payment_id}</span></Field>
                 )}
               </div>
+
+              {active.payment_method === 'cod' && active.fulfillment_status !== 'delivered' && (
+                <div className="rounded-md border border-border p-3 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {active.status === 'partially_paid'
+                      ? `Collects ${money(Number(active.total_amount) - Number(active.token_amount || 0))} in cash and marks this order delivered.`
+                      : 'Marks this order delivered. No balance is owed.'}
+                  </p>
+                  <Button size="sm" onClick={markDelivered} disabled={delivering}>
+                    {delivering ? 'Recording…' : 'Mark delivered + record balance'}
+                  </Button>
+                </div>
+              )}
 
               {active.shipping_address && (
                 <div className="rounded-md border border-border p-3 text-sm">
@@ -387,13 +447,16 @@ function WebOrdersPage() {
                 </div>
               </div>
 
-              {/* Deliberately read-only. Every write here would touch real money
-                  or real stock, and the only code that knows how to do that
-                  correctly is the storefront's own conversion path -- importing
-                  it would duplicate the GST and stock logic. A retry action
-                  belongs here once a real order has actually failed. */}
+              {/* Otherwise deliberately read-only. "Mark delivered + record
+                  balance" above is the one named exception, and it still
+                  never touches sales.amount_paid directly -- it ledgers a
+                  sale_payments row via the same primitive the storefront's
+                  own conversion path uses. Everything else (a missed sale,
+                  a refund, a cancellation) would touch real money or real
+                  stock through a path that doesn't already know how, so
+                  it stays a by-hand action outside this page. */}
               <p className="text-xs text-muted-foreground">
-                This page is read-only. Recording a missed sale, refunding or cancelling is still done
+                Otherwise read-only. Recording a missed sale, refunding or cancelling is still done
                 by hand, so that money and stock only ever move through the paths that already know how.
               </p>
             </div>

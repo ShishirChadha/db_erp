@@ -26,7 +26,7 @@ sources:
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/sales-cart.ts
   - apps/erp/lib/gst-returns.ts
-updated: 2026-10-05
+updated: 2026-10-06
 ---
 
 ## The single reporting dispatcher
