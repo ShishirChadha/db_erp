@@ -11,6 +11,7 @@ sources:
   - apps/web/app/api/search/route.ts
   - apps/web/app/api/checkout/start/route.ts
   - apps/web/lib/customer-identity.ts
+  - apps/web/lib/email.ts
   - apps/erp/app/api/website-admin/**
   - apps/erp/app/api/web-orders/**
 updated: 2026-10-06
@@ -52,9 +53,14 @@ is the direct answer to the reason anonymous Supabase auth is rejected
 elsewhere (`apps/web/lib/guest-cart.ts`): a bot or an abandoned guest
 checkout costs nothing, because nothing is written until money lands. A
 real login account is then created best-effort (never fatal to the sale)
-and the order retroactively linked to it — email delivery for the "set your
-password" link isn't wired up yet, same caveat `/api/auth/signup` already
-carries.
+and the order retroactively linked to it, and emailed a "set your password"
+link via Resend (`apps/web/lib/email.ts` + `email-templates.ts`, same thin
+REST wrapper `apps/erp/lib/email.ts` already uses — duplicated rather than
+shared since the two apps are separately deployed with separate env/Vercel
+projects; apps/erp having `RESEND_API_KEY` does nothing for apps/web until
+it's set there too, 2026-10-06). `/api/auth/signup`'s own confirmation
+email is unaffected — it still auto-confirms (`email_confirm: true`), a
+separate decision from whether Resend is configured.
 
 **Payment-method pricing.** `website_payment_settings` (Settings → Website
 Admin → Payments, owner-editable, never hardcoded) holds a discount % for

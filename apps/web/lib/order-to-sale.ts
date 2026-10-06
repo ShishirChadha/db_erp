@@ -2,6 +2,8 @@ import crypto from 'node:crypto'
 import { supabaseAdmin } from '@db/db/admin'
 import { allocatePaymentLegs } from '@db/shared'
 import { findOrCreateCustomerByPhone } from './customer-identity'
+import { sendEmail } from './email'
+import { setPasswordEmailHtml } from './email-templates'
 
 // An online order is just another sales channel into the ERP: each
 // order_item becomes a real `sales` row via the same rules the ERP's own
@@ -162,11 +164,32 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
             // Link this order to the new account so it shows up in their
             // order history once they set a password and log in.
             await supabaseAdmin.from('orders').update({ customer_id: authUser.user.id }).eq('id', orderId)
-            // Best-effort "set your password" link. No verified email-sending
-            // domain is configured yet (same caveat as /api/auth/signup), so
-            // this generates the link but there's nothing wired to actually
-            // email it -- revisit once Resend is live.
-            await supabaseAdmin.auth.admin.generateLink({ type: 'recovery', email: guest.email })
+            // Best-effort "set your password" email -- a GoTrue recovery
+            // link is the right primitive for "let this user set a password
+            // on an account that has none yet" even though nothing was ever
+            // forgotten; sendEmail() itself no-ops cleanly (logged, not
+            // thrown) if RESEND_API_KEY/RESEND_FROM_EMAIL aren't set in
+            // apps/web's own environment -- the ERP having them does nothing
+            // for this app; it's a separate Vercel project.
+            const { data: linkData, error: linkErr } = await supabaseAdmin.auth.admin.generateLink({
+              type: 'recovery',
+              email: guest.email,
+            })
+            if (linkErr) {
+              console.error(`[order-to-sale] order ${orderId}: could not generate password-set link:`, linkErr.message)
+            } else {
+              const actionLink = linkData?.properties?.action_link
+              if (actionLink) {
+                const emailResult = await sendEmail({
+                  to: guest.email,
+                  subject: 'Set a password for your DigitalBluez account',
+                  html: setPasswordEmailHtml({ name: guest.name, actionLink }),
+                })
+                if (!emailResult.success) {
+                  console.error(`[order-to-sale] order ${orderId}: set-password email not sent:`, emailResult.error)
+                }
+              }
+            }
           } else {
             await supabaseAdmin.auth.admin.deleteUser(authUser.user.id)
           }
