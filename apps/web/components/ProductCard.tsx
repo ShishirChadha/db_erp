@@ -1,8 +1,9 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { buildConfigSummary, type ConfigSummaryTemplate } from '@db/shared'
+import type { ConfigSummaryTemplate } from '@db/shared'
 import type { PublicProduct } from '@/lib/queries'
 import { productImageUrl } from '@/lib/image-url'
+import { productDisplayTitle } from '@/lib/product-title'
 import { PriceTag } from './PriceTag'
 import { AvailabilityBadge } from './AvailabilityBadge'
 import { ConditionBadge } from './ConditionBadge'
@@ -15,10 +16,7 @@ export function ProductCard({
   product: PublicProduct
   templates: ConfigSummaryTemplate[]
 }) {
-  const title =
-    product.web_title ||
-    buildConfigSummary(product.category, product.specifications, templates) ||
-    [product.brand, product.model_name].filter(Boolean).join(' ')
+  const title = productDisplayTitle(product, templates)
 
   const hasDiscount = !!product.market_price && product.market_price > product.web_price
   const percentOff = hasDiscount
@@ -37,7 +35,7 @@ export function ProductCard({
             alt={title}
             fill
             sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 50vw"
-            className="object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+            className="object-contain transition-transform duration-300 group-hover:scale-[1.04]"
           />
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>

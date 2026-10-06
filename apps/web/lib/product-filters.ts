@@ -17,11 +17,50 @@ export interface SelectedFilters {
   warranty: string[]
   minPrice: number | null
   maxPrice: number | null
+  // A single on/off toggle, not a multi-select facet like the others above --
+  // availability_bucket is a fixed 3-value enum computed server-side
+  // (public_products view), and "hide sold out" is the one distinction a
+  // shopper actually wants here. Shared by every listing/search surface via
+  // ListingToolbar.tsx, not just the two filterable categories.
+  inStockOnly: boolean
 }
 
 export const EMPTY_FILTERS: SelectedFilters = {
   brand: [], cpu: [], ram: [], ssd: [], gpuType: [], os: [], warranty: [],
-  minPrice: null, maxPrice: null,
+  minPrice: null, maxPrice: null, inStockOnly: false,
+}
+
+// Sort options shown on every listing/search surface. 'featured' is the
+// existing default (published_at desc) left exactly as-is -- there was no
+// sort UI at all before this, so nothing regresses for someone who doesn't
+// touch the control.
+export type SortKey = 'featured' | 'price_asc' | 'price_desc' | 'newest'
+
+export const SORT_OPTIONS: { value: SortKey; label: string }[] = [
+  { value: 'featured', label: 'Featured' },
+  { value: 'newest', label: 'Newest first' },
+  { value: 'price_asc', label: 'Price: low to high' },
+  { value: 'price_desc', label: 'Price: high to low' },
+]
+
+export function parseSort(sp: Record<string, string | string[] | undefined>): SortKey {
+  const v = Array.isArray(sp.sort) ? sp.sort[0] : sp.sort
+  return SORT_OPTIONS.some((o) => o.value === v) ? (v as SortKey) : 'featured'
+}
+
+// Applied client/server-side (in-memory) for the filterable category pages,
+// which already hold the full array for facet counting. The DB-paginated
+// path (getPublishedProductsPage) takes the same SortKey and translates it
+// into a Postgres .order() instead -- see queries.ts.
+export function applySort(products: PublicProduct[], sort: SortKey): PublicProduct[] {
+  if (sort === 'price_asc') return [...products].sort((a, b) => a.web_price - b.web_price)
+  if (sort === 'price_desc') return [...products].sort((a, b) => b.web_price - a.web_price)
+  if (sort === 'newest') {
+    return [...products].sort(
+      (a, b) => new Date(b.published_at).getTime() - new Date(a.published_at).getTime()
+    )
+  }
+  return products // 'featured' -- already published_at desc from the query itself
 }
 
 // Groups values that only differ by whitespace/case ("16GB" / "16 GB" / "16gb")
@@ -59,6 +98,8 @@ export interface ProductFacets {
   warranty: Facet[]
   minPrice: number
   maxPrice: number
+  inStockCount: number
+  totalCount: number
 }
 
 function buildFacet(products: PublicProduct[], getValue: (p: PublicProduct) => string | null): Facet[] {
@@ -88,6 +129,8 @@ export function getFilterFacets(products: PublicProduct[]): ProductFacets {
     warranty: buildFacet(products, (p) => p.warranty_label),
     minPrice: prices.length ? Math.min(...prices) : 0,
     maxPrice: prices.length ? Math.max(...prices) : 0,
+    inStockCount: products.filter((p) => p.availability_bucket !== 'sold_out').length,
+    totalCount: products.length,
   }
 }
 
@@ -100,6 +143,7 @@ function matchesAny(selected: string[], raw: string | null): boolean {
 
 export function filterProducts(products: PublicProduct[], filters: SelectedFilters): PublicProduct[] {
   return products.filter((p) => {
+    if (filters.inStockOnly && p.availability_bucket === 'sold_out') return false
     if (filters.minPrice != null && p.web_price < filters.minPrice) return false
     if (filters.maxPrice != null && p.web_price > filters.maxPrice) return false
     if (!matchesAny(filters.brand, p.brand)) return false
@@ -138,5 +182,6 @@ export function parseFiltersFromSearchParams(sp: Record<string, string | string[
     warranty: list('warranty'),
     minPrice: num('minPrice'),
     maxPrice: num('maxPrice'),
+    inStockOnly: (Array.isArray(sp.availability) ? sp.availability[0] : sp.availability) === 'in_stock',
   }
 }

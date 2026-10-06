@@ -15,6 +15,7 @@ import {
   getCrossSellCategories,
 } from "@/lib/queries";
 import { productImageUrl } from "@/lib/image-url";
+import { productDisplayTitle } from "@/lib/product-title";
 import { categoryToSlug } from "@/lib/categories";
 import { ProductGallery } from "@/components/ProductGallery";
 import { PriceTag } from "@/components/PriceTag";
@@ -71,7 +72,8 @@ export async function generateMetadata({
   const product = await getProductBySlug(slug);
   if (!product) return {};
 
-  const title = product.web_title || [product.brand, product.model_name].filter(Boolean).join(" ");
+  const templates = await getCategories();
+  const title = productDisplayTitle(product, templates);
   const description =
     product.web_description || `Refurbished ${title}, quality-checked and backed by warranty.`;
   const ogImage = product.primary_image_path ? [productImageUrl(product.primary_image_path)] : undefined;
@@ -113,16 +115,18 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
   const template = templates.find((t) => t.category === product.category);
   const rows = specRows(product.specifications, template?.field_schema);
-  const title = product.web_title || [product.brand, product.model_name].filter(Boolean).join(" ");
+  const title = productDisplayTitle(product, templates);
   const categorySlug = categoryToSlug(product.category);
 
   // One GA4 item shape, built once and shared by view_item, add_to_cart (main
   // CTA and sticky bar) and anything added later -- so a product can never be
   // reported under two different names or categories depending on which
-  // control the customer used.
+  // control the customer used. Deliberately kept on the BARE title (not the
+  // "Certified Refurbished"-prefixed display title) so historical analytics
+  // stay comparable across the naming change.
   const gaItem = {
     item_id: product.id,
-    item_name: title,
+    item_name: product.web_title || [product.brand, product.model_name].filter(Boolean).join(" "),
     item_category: product.category,
     item_brand: product.brand ?? undefined,
     price: product.web_price,

@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { getPublishedProductsPage, getCategories, LISTING_PAGE_SIZE } from "@/lib/queries";
 import { ProductCard } from "@/components/ProductCard";
 import { Pagination } from "@/components/Pagination";
+import { ListingToolbar } from "@/components/ListingToolbar";
+import { parseSort } from "@/lib/product-filters";
 
 export const metadata: Metadata = {
   title: "Search",
@@ -13,15 +15,22 @@ import { TrackSearchResults } from "@/components/TrackSearchResults";
 export default async function SearchPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; page?: string }>;
+  searchParams: Promise<{ q?: string; page?: string; sort?: string; availability?: string }>;
 }) {
-  const { q, page: rawPage } = await searchParams;
+  const resolvedSearchParams = await searchParams;
+  const { q, page: rawPage, availability } = resolvedSearchParams;
   const query = (q || "").trim();
   const currentPage = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const sort = parseSort(resolvedSearchParams);
 
   const [{ products, total }, templates] = await Promise.all([
     query
-      ? getPublishedProductsPage({ search: query, page: currentPage })
+      ? getPublishedProductsPage({
+          search: query,
+          page: currentPage,
+          sort,
+          excludeSoldOut: availability === "in_stock",
+        })
       : Promise.resolve({ products: [], total: 0 }),
     getCategories(),
   ]);
@@ -33,12 +42,17 @@ export default async function SearchPage({
           that returns nothing is a catalogue gap, which is invisible from
           page-view data alone. */}
       <TrackSearchResults term={query} resultsCount={total} />
-      <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
-        {query ? `Results for "${query}"` : "Search"}
-      </h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {query ? `${total} product${total !== 1 ? "s" : ""}` : "Enter a search term above."}
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">
+            {query ? `Results for "${query}"` : "Search"}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {query ? `${total} product${total !== 1 ? "s" : ""}` : "Enter a search term above."}
+          </p>
+        </div>
+        {query && total > 0 && <ListingToolbar showAvailability />}
+      </div>
 
       {query && products.length === 0 && (
         <p className="mt-10 rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
@@ -59,6 +73,8 @@ export default async function SearchPage({
             buildHref={(page) => {
               const params = new URLSearchParams();
               params.set("q", query);
+              if (sort !== "featured") params.set("sort", sort);
+              if (availability === "in_stock") params.set("availability", "in_stock");
               if (page > 1) params.set("page", String(page));
               return `/search?${params.toString()}`;
             }}

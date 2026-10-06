@@ -2,8 +2,8 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { createServerSupabaseClient } from '@db/db/server'
 import { getCustomerSession } from '@/lib/customer-session'
-import { buildConfigSummary } from '@db/shared'
 import { formatCurrency } from '@db/shared'
+import { productDisplayTitle } from '@/lib/product-title'
 import { CartItemRow } from '@/components/CartItemRow'
 import { TrackViewCart } from '@/components/TrackViewCart'
 import { GuestCart } from '@/components/GuestCart'
@@ -47,10 +47,7 @@ export default async function CartPage() {
   const rows = (cartItems ?? []).map((item) => {
     const product = productById.get(item.sku_id)
     const soldOut = !product || product.availability_bucket === 'sold_out'
-    const title =
-      (product?.web_title ||
-        (product && buildConfigSummary(product.category, product.specifications, templates ?? []))) ||
-      'No longer available'
+    const title = product ? productDisplayTitle(product, templates ?? []) : 'No longer available'
     return {
       cartItemId: item.id,
       title,

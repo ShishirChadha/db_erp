@@ -2,6 +2,7 @@ import { redirect } from 'next/navigation'
 import { createServerSupabaseClient } from '@db/db/server'
 import { getCustomerSession } from '@/lib/customer-session'
 import { formatCurrency } from '@db/shared'
+import { productDisplayTitle } from '@/lib/product-title'
 import { CheckoutForm } from '@/components/CheckoutForm'
 
 export const dynamic = 'force-dynamic'
@@ -17,7 +18,7 @@ export default async function CheckoutPage() {
 
   const { data: products } = await supabase
     .from('public_products')
-    .select('id, web_title, web_price, availability_bucket')
+    .select('id, web_title, brand, model_name, category, web_price, availability_bucket')
     .in('id', cartItems.map((c) => c.sku_id))
   const productById = new Map((products ?? []).map((p) => [p.id, p]))
 
@@ -39,7 +40,7 @@ export default async function CheckoutPage() {
           const p = productById.get(c.sku_id)
           return (
             <div key={c.sku_id} className="flex justify-between py-1">
-              <span className="text-muted-foreground">{p?.web_title} × {c.quantity}</span>
+              <span className="text-muted-foreground">{p ? productDisplayTitle(p) : 'Item'} × {c.quantity}</span>
               <span className="tabular-nums">{formatCurrency((p?.web_price ?? 0) * c.quantity)}</span>
             </div>
           )

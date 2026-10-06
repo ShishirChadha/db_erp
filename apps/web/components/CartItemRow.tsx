@@ -43,7 +43,7 @@ export function CartItemRow({
   return (
     <div className="flex items-center gap-4 border-b border-border py-4 last:border-b-0">
       <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-muted">
-        {imagePath && <Image src={productImageUrl(imagePath)} alt={title} fill sizes="64px" className="object-cover" />}
+        {imagePath && <Image src={productImageUrl(imagePath)} alt={title} fill sizes="64px" className="object-contain" />}
       </div>
       <div className="min-w-0 flex-1">
         {slug ? (

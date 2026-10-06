@@ -59,7 +59,7 @@ function ProductThumb({ path, size = 56 }: { path: string | null; size?: number 
   }
   return (
     <div className="relative rounded border overflow-hidden shrink-0" style={{ width: size, height: size }}>
-      <Image src={productImageUrl(path)} alt="" fill sizes={`${size}px`} className="object-cover" />
+      <Image src={productImageUrl(path)} alt="" fill sizes={`${size}px`} className="object-contain" />
     </div>
   )
 }

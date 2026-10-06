@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { createBrowserSupabaseClient } from '@db/db/browser'
-import { buildConfigSummary, formatCurrency } from '@db/shared'
+import { formatCurrency } from '@db/shared'
 import { productImageUrl } from '@/lib/image-url'
+import { productDisplayTitle } from '@/lib/product-title'
 import { readGuestCart, setGuestLineQuantity, type GuestLine } from '@/lib/guest-cart'
 import { track } from '@/lib/analytics'
 
@@ -49,9 +50,7 @@ export function GuestCart() {
         const p = byId.get(line.sku_id)
         return {
           line,
-          title:
-            (p?.web_title || (p && buildConfigSummary(p.category, p.specifications, (templates ?? []) as any))) ||
-            'No longer available',
+          title: p ? productDisplayTitle(p, (templates ?? []) as any) : 'No longer available',
           slug: p?.web_slug ?? null,
           price: p?.web_price ?? 0,
           imagePath: p?.primary_image_path ?? null,
@@ -107,7 +106,7 @@ export function GuestCart() {
           <div key={`${r.line.sku_id}-${JSON.stringify(r.line.selected_upgrades)}`}
                className="flex items-center gap-4 border-b border-border py-4 last:border-b-0">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded-md bg-muted">
-              {r.imagePath && <Image src={productImageUrl(r.imagePath)} alt={r.title} fill sizes="64px" className="object-cover" />}
+              {r.imagePath && <Image src={productImageUrl(r.imagePath)} alt={r.title} fill sizes="64px" className="object-contain" />}
             </div>
             <div className="min-w-0 flex-1">
               {r.slug ? (

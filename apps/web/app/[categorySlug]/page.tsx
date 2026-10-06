@@ -5,8 +5,10 @@ import { getPublishedProducts, getPublishedProductsPage, getCategories, LISTING_
 import { CATEGORY_SLUGS, slugToCategory } from "@/lib/categories";
 import { ProductCard } from "@/components/ProductCard";
 import { ProductFilters } from "@/components/ProductFilters";
+import { ListingToolbar } from "@/components/ListingToolbar";
 import { Pagination } from "@/components/Pagination";
-import { getFilterFacets, filterProducts, parseFiltersFromSearchParams } from "@/lib/product-filters";
+import { getFilterFacets, filterProducts, applySort, parseSort, parseFiltersFromSearchParams } from "@/lib/product-filters";
+import { productDisplayTitle } from "@/lib/product-title";
 
 export const revalidate = 60;
 
@@ -78,17 +80,25 @@ export default async function CategoryPage({
   let products: Awaited<ReturnType<typeof getPublishedProducts>>;
   let totalCount: number;
 
+  const sort = parseSort(resolvedSearchParams);
+
   if (isFilterable) {
     allProducts = await getPublishedProducts({ category: category.code });
     const activeFilters = parseFiltersFromSearchParams(resolvedSearchParams);
     const filtered = activeFilters ? filterProducts(allProducts, activeFilters) : allProducts;
-    totalCount = filtered.length;
+    const sorted = applySort(filtered, sort);
+    totalCount = sorted.length;
     const start = (currentPage - 1) * LISTING_PAGE_SIZE;
-    products = filtered.slice(start, start + LISTING_PAGE_SIZE);
+    products = sorted.slice(start, start + LISTING_PAGE_SIZE);
   } else {
+    const rawAvailability = Array.isArray(resolvedSearchParams.availability)
+      ? resolvedSearchParams.availability[0]
+      : resolvedSearchParams.availability;
     const { products: pageProducts, total } = await getPublishedProductsPage({
       category: category.code,
       page: currentPage,
+      sort,
+      excludeSoldOut: rawAvailability === "in_stock",
     });
     products = pageProducts;
     totalCount = total;
@@ -113,7 +123,7 @@ export default async function CategoryPage({
       "@type": "ListItem",
       position: i + 1,
       url: `/product/${product.web_slug}`,
-      name: product.web_title || [product.brand, product.model_name].filter(Boolean).join(" "),
+      name: productDisplayTitle(product, category.templates),
     })),
   };
 
@@ -140,7 +150,10 @@ export default async function CategoryPage({
         <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           Refurbished {category.displayName}s
         </h1>
-        <p className="text-sm text-muted-foreground">{totalCount} product{totalCount !== 1 ? "s" : ""}</p>
+        <div className="flex items-center gap-4">
+          <p className="text-sm text-muted-foreground">{totalCount} product{totalCount !== 1 ? "s" : ""}</p>
+          <ListingToolbar showAvailability={!isFilterable} />
+        </div>
       </div>
 
       <div className="mt-6 flex flex-col gap-6 lg:flex-row">

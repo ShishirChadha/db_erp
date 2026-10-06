@@ -216,7 +216,7 @@ export function SkuWebPublishDialog({
               {images.map((img) => (
                 <div key={img.id} className="relative w-24 h-24 rounded-md overflow-hidden border">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={publicImageUrl(img.storage_path)} alt={img.alt_text || ''} className="w-full h-full object-cover" />
+                  <img src={publicImageUrl(img.storage_path)} alt={img.alt_text || ''} className="w-full h-full object-contain" />
                   {img.is_primary && (
                     <span className="absolute top-1 left-1 bg-warning text-warning-foreground rounded-full p-0.5">
                       <Star className="size-3" fill="currentColor" />

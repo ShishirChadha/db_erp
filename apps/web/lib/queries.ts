@@ -29,6 +29,8 @@ export interface PublicProductImage {
   alt_text: string | null
   sort_order: number
   is_primary: boolean
+  width: number | null
+  height: number | null
 }
 
 export interface CategoryTemplate {
@@ -92,6 +94,11 @@ export const getPublishedProductsPage = cache(async (opts: {
   search?: string
   page?: number
   limit?: number
+  // 'featured' (the longstanding default) and 'newest' both resolve to the
+  // same published_at desc order the query already had, so only price sorts
+  // actually change the .order() call below.
+  sort?: 'featured' | 'price_asc' | 'price_desc' | 'newest'
+  excludeSoldOut?: boolean
 }): Promise<{ products: PublicProduct[]; total: number }> => {
   const supabase = createPublicSupabaseClient()
   const limit = opts.limit ?? LISTING_PAGE_SIZE
@@ -102,8 +109,15 @@ export const getPublishedProductsPage = cache(async (opts: {
   let query = supabase
     .from('public_products')
     .select(PRODUCT_COLUMNS, { count: 'exact' })
-    .order('published_at', { ascending: false })
-    .range(from, to)
+
+  query =
+    opts.sort === 'price_asc'
+      ? query.order('web_price', { ascending: true })
+      : opts.sort === 'price_desc'
+        ? query.order('web_price', { ascending: false })
+        : query.order('published_at', { ascending: false })
+
+  query = query.range(from, to)
 
   if (Array.isArray(opts.category)) {
     if (opts.category.length > 0) query = query.in('category', opts.category)
@@ -116,6 +130,11 @@ export const getPublishedProductsPage = cache(async (opts: {
       `web_title.ilike.%${term}%,brand.ilike.%${term}%,model_name.ilike.%${term}%,full_sku_code.ilike.%${term}%`
     )
   }
+  // availability_bucket is a real computed column on the view, so this
+  // filters in SQL rather than needing the whole category in memory --
+  // unlike the facet filters on the two filterable categories, which do
+  // need the full set for their counts (see product-filters.ts).
+  if (opts.excludeSoldOut) query = query.neq('availability_bucket', 'sold_out')
 
   const { data, count } = await query
   return { products: (data ?? []) as unknown as PublicProduct[], total: count ?? 0 }
@@ -153,7 +172,7 @@ export const getProductImages = cache(async (skuId: string): Promise<PublicProdu
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('public_product_images')
-    .select('id, storage_path, alt_text, sort_order, is_primary')
+    .select('id, storage_path, alt_text, sort_order, is_primary, width, height')
     .eq('sku_id', skuId)
     .order('is_primary', { ascending: false })
     .order('sort_order', { ascending: true })

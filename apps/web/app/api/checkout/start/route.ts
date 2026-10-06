@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@db/db/admin'
 import { isRazorpayConfigured, createRazorpayOrder } from '@/lib/razorpay'
 import { releaseReservationsForOrder } from '@/lib/reservations'
 import { resolveApplicablePromotions } from '@/lib/promotions'
+import { productDisplayTitle } from '@/lib/product-title'
 
 const RESERVATION_TTL_MINUTES = 15
 
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
   // the client's cart is never trusted for price.
   const { data: products } = await supabaseAdmin
     .from('public_products')
-    .select('id, web_title, web_price, availability_bucket, category, brand')
+    .select('id, web_title, web_price, availability_bucket, category, brand, model_name')
     .in('id', cartItems.map((c) => c.sku_id))
   const productById = new Map((products ?? []).map((p) => [p.id, p]))
 
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
       quantity: c.quantity,
       unitPrice,
       lineTotal: unitPrice * c.quantity,
-      title_snapshot: product.web_title,
+      title_snapshot: productDisplayTitle(product),
       selected_upgrades: c.selected_upgrades,
       category: product.category,
       brand: product.brand ?? null,
@@ -146,7 +147,7 @@ export async function POST(req: NextRequest) {
   if (freeGiftSkuId) {
     const { data: giftProduct } = await supabaseAdmin
       .from('public_products')
-      .select('id, web_title, availability_bucket')
+      .select('id, web_title, brand, model_name, category, availability_bucket')
       .eq('id', freeGiftSkuId)
       .maybeSingle()
     if (giftProduct && giftProduct.availability_bucket !== 'sold_out') {
@@ -155,7 +156,7 @@ export async function POST(req: NextRequest) {
         sku_id: giftProduct.id,
         quantity: 1,
         unit_price: 0,
-        title_snapshot: `${giftProduct.web_title} (free gift)`,
+        title_snapshot: `${productDisplayTitle(giftProduct)} (free gift)`,
         selected_upgrades: [],
         is_promotional_gift: true,
       })

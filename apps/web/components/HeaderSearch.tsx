@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { createBrowserSupabaseClient } from '@db/db/browser'
 import { formatCurrency } from '@db/shared'
 import { productImageUrl } from '@/lib/image-url'
+import { productDisplayTitle } from '@/lib/product-title'
 
 interface Suggestion {
   id: string
@@ -15,6 +16,7 @@ interface Suggestion {
   web_title: string | null
   brand: string | null
   model_name: string | null
+  category: string | null
   web_price: number
   primary_image_path: string | null
 }
@@ -64,7 +66,7 @@ export function HeaderSearch() {
       const cleaned = term.replace(/[%_]/g, '')
       const { data } = await supabase
         .from('public_products')
-        .select('id, web_slug, web_title, brand, model_name, web_price, primary_image_path')
+        .select('id, web_slug, web_title, brand, model_name, category, web_price, primary_image_path')
         .or(`web_title.ilike.%${cleaned}%,brand.ilike.%${cleaned}%,model_name.ilike.%${cleaned}%,full_sku_code.ilike.%${cleaned}%`)
         .order('published_at', { ascending: false })
         .limit(LIMIT)
@@ -136,7 +138,7 @@ export function HeaderSearch() {
         <p className="p-3 text-sm text-muted-foreground">No products matched &ldquo;{query}&rdquo;.</p>
       )}
       {!loading && results.map((r, i) => {
-        const title = r.web_title || [r.brand, r.model_name].filter(Boolean).join(' ')
+        const title = productDisplayTitle(r)
         return (
           <Link
             key={r.id}
@@ -148,7 +150,7 @@ export function HeaderSearch() {
           >
             <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded-md bg-muted">
               {r.primary_image_path && (
-                <Image src={productImageUrl(r.primary_image_path)} alt="" fill sizes="40px" className="object-cover" />
+                <Image src={productImageUrl(r.primary_image_path)} alt="" fill sizes="40px" className="object-contain" />
               )}
             </span>
             <span className="min-w-0 flex-1">

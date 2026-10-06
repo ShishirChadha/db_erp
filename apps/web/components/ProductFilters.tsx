@@ -40,12 +40,34 @@ export function ProductFilters({ facets }: { facets: ProductFacets }) {
     router.push(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
-  const hasAnyFilter = [...FACET_GROUPS.map((g) => g.param), 'minPrice', 'maxPrice'].some((p) => searchParams.has(p))
+  const hasAnyFilter = [...FACET_GROUPS.map((g) => g.param), 'minPrice', 'maxPrice', 'availability'].some((p) =>
+    searchParams.has(p)
+  )
 
   const clearAll = () => router.push(pathname, { scroll: false })
 
+  const inStockOnly = searchParams.get('availability') === 'in_stock'
+  const toggleInStock = () => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (inStockOnly) params.delete('availability'); else params.set('availability', 'in_stock')
+    router.push(`${pathname}?${params.toString()}`, { scroll: false })
+  }
+
   const body = (
     <div className="space-y-5">
+      <div>
+        <label className="flex cursor-pointer items-center gap-2 text-sm font-medium text-foreground">
+          <input
+            type="checkbox"
+            checked={inStockOnly}
+            onChange={toggleInStock}
+            className="h-3.5 w-3.5 rounded border-input"
+          />
+          In stock only
+          <span className="text-xs text-muted-foreground">({facets.inStockCount})</span>
+        </label>
+      </div>
+
       <div>
         <p className="mb-2 text-sm font-semibold text-foreground">Price</p>
         <div className="flex items-center gap-2">
