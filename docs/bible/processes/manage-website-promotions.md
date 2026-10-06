@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/promotions/[id]/route.ts
   - apps/web/lib/promotions.ts
   - apps/web/app/api/checkout/start/route.ts
-updated: 2026-10-01
+updated: 2026-10-06
 ---
 
 ## What this is

@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/marketing/products/route.tsx
   - apps/erp/app/api/marketing/collage/route.tsx
   - apps/erp/app/api/marketing/card/route.tsx
-updated: 2026-10-03
+updated: 2026-10-06
 ---
 
 ## What this is

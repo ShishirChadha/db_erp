@@ -843,11 +843,204 @@ function BannersSection() {
   )
 }
 
+interface BlogPost {
+  id: string
+  slug: string
+  title: string
+  excerpt: string | null
+  body: string
+  status: 'draft' | 'published'
+  published_at: string | null
+  created_at: string
+  updated_at: string
+}
+
+const emptyBlogForm = { title: '', slug: '', excerpt: '', body: '' }
+
+// List + create/edit for apps/web's blog. The storefront pages, JSON-LD and
+// sitemap entries all already exist (see docs/decisions.md) -- this is just
+// the missing authoring screen, which is why blog_posts sat at 0 rows.
+function BlogSection() {
+  const [posts, setPosts] = useState<BlogPost[]>([])
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [form, setForm] = useState(emptyBlogForm)
+
+  const fetchPosts = async () => {
+    setLoading(true)
+    const res = await apiFetch('/api/website-admin/blog-posts')
+    if (res.ok) setPosts(await res.json())
+    setLoading(false)
+  }
+
+  useEffect(() => { fetchPosts() }, [])
+
+  const resetForm = () => {
+    setEditingId(null)
+    setForm(emptyBlogForm)
+    setError('')
+  }
+
+  const startEdit = (p: BlogPost) => {
+    setEditingId(p.id)
+    setForm({ title: p.title, slug: p.slug, excerpt: p.excerpt || '', body: p.body })
+    setError('')
+  }
+
+  const save = async (status: 'draft' | 'published') => {
+    setError('')
+    if (!form.title.trim() || !form.body.trim()) {
+      setError('Title and body are both required')
+      return
+    }
+    setSaving(true)
+    try {
+      const payload = { title: form.title, slug: form.slug, excerpt: form.excerpt, body: form.body, status }
+      const res = editingId
+        ? await apiFetch(`/api/website-admin/blog-posts/${editingId}`, { method: 'PATCH', body: JSON.stringify(payload) })
+        : await apiFetch('/api/website-admin/blog-posts', { method: 'POST', body: JSON.stringify(payload) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.error || 'Failed to save post')
+        return
+      }
+      resetForm()
+      await fetchPosts()
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const togglePublished = async (p: BlogPost) => {
+    await apiFetch(`/api/website-admin/blog-posts/${p.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: p.status === 'published' ? 'draft' : 'published' }),
+    })
+    await fetchPosts()
+  }
+
+  const removePost = async (id: string) => {
+    if (!confirm('Delete this post? This cannot be undone.')) return
+    await apiFetch(`/api/website-admin/blog-posts/${id}`, { method: 'DELETE' })
+    if (editingId === id) resetForm()
+    await fetchPosts()
+  }
+
+  return (
+    <div>
+      <p className="text-sm text-muted-foreground mb-4">
+        Posts shown at /blog and /blog/[slug] on the storefront, and surfaced in search results once there
+        are few enough matching products. A post must be Published to appear anywhere public -- Draft is
+        only visible here.
+      </p>
+
+      <div className="border rounded-lg p-4 mb-4">
+        <h3 className="text-sm font-semibold mb-3">{editingId ? 'Edit Post' : 'New Post'}</h3>
+        {error && <div className="text-destructive text-sm mb-2">{error}</div>}
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">Title</label>
+            <input
+              type="text"
+              value={form.title}
+              onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+              className="border p-2 rounded w-full"
+              placeholder="e.g. How to choose a refurbished laptop"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">
+              Slug <span className="text-muted-foreground">(leave blank to generate from the title)</span>
+            </label>
+            <input
+              type="text"
+              value={form.slug}
+              onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value }))}
+              className="border p-2 rounded w-full"
+              placeholder="how-to-choose-a-refurbished-laptop"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Excerpt <span className="text-muted-foreground">(shown in listings and search)</span></label>
+            <textarea
+              value={form.excerpt}
+              onChange={(e) => setForm((f) => ({ ...f, excerpt: e.target.value }))}
+              className="border p-2 rounded w-full"
+              rows={2}
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Body</label>
+            <textarea
+              value={form.body}
+              onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
+              className="border p-2 rounded w-full font-mono text-sm"
+              rows={10}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button onClick={() => save('draft')} disabled={saving} className="border px-4 py-2 rounded disabled:opacity-50">
+              {saving ? 'Saving…' : 'Save as Draft'}
+            </button>
+            <button onClick={() => save('published')} disabled={saving} className="bg-primary text-primary-foreground px-4 py-2 rounded disabled:opacity-50">
+              {saving ? 'Saving…' : 'Publish'}
+            </button>
+            {editingId && (
+              <button onClick={resetForm} className="text-sm text-muted-foreground underline">Cancel edit</button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm text-muted-foreground">Loading…</p>
+      ) : posts.length === 0 ? (
+        <p className="text-sm text-muted-foreground">No posts yet.</p>
+      ) : (
+        <table className="min-w-full border">
+          <thead>
+            <tr>
+              <th className="border p-2 text-left">Title</th>
+              <th className="border p-2 text-left">Slug</th>
+              <th className="border p-2 text-center">Status</th>
+              <th className="border p-2 text-left">Published</th>
+              <th className="border p-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {posts.map((p) => (
+              <tr key={p.id} className={p.status === 'published' ? '' : 'opacity-60'}>
+                <td className="border p-2">{p.title}</td>
+                <td className="border p-2 text-xs text-muted-foreground">{p.slug}</td>
+                <td className="border p-2 text-center">
+                  <button onClick={() => togglePublished(p)} className="text-primary underline text-xs">
+                    {p.status === 'published' ? 'Unpublish' : 'Publish'}
+                  </button>
+                </td>
+                <td className="border p-2 text-xs">{p.published_at ? new Date(p.published_at).toLocaleDateString() : '—'}</td>
+                <td className="border p-2 space-x-2 whitespace-nowrap">
+                  <button onClick={() => startEdit(p)} className="text-primary underline text-xs">Edit</button>
+                  <button onClick={() => removePost(p.id)} className="text-destructive underline text-xs inline-flex items-center gap-1">
+                    <Trash2 className="size-3" /> Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}
+
 const TABS = [
   { key: 'upgrade_pricing', label: 'Upgrade Pricing' },
   { key: 'promotions', label: 'Promotions' },
   { key: 'cross_sell', label: 'Cross-sell' },
   { key: 'banners', label: 'Banners' },
+  { key: 'blog', label: 'Blog' },
 ] as const
 
 export default function WebsiteAdminManager() {
@@ -872,6 +1065,7 @@ export default function WebsiteAdminManager() {
       {tab === 'promotions' && <PromotionsSection />}
       {tab === 'cross_sell' && <CrossSellSection />}
       {tab === 'banners' && <BannersSection />}
+      {tab === 'blog' && <BlogSection />}
     </div>
   )
 }

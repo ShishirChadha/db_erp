@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/marketing/collage/route.tsx
   - apps/erp/app/api/marketing/card/route.tsx
   - apps/erp/app/api/marketing/products/route.tsx
-updated: 2026-09-16
+updated: 2026-10-06
 ---
 
 ## What this is

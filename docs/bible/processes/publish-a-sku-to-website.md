@@ -8,7 +8,7 @@ routes: [/dashboard/sku-master]
 keywords: [publish, website, online, list on site, digitalbluez.com, web price, unpublish]
 sources:
   - apps/erp/components/SkuWebPublishDialog.tsx
-updated: 2026-10-01
+updated: 2026-10-06
 ---
 
 ## What this is
@@ -52,3 +52,11 @@ it decodes what is there and re-encodes a well-formed image.
 
 Nothing changes in how you use it -- pick a photo as before. Large photos simply
 upload faster now.
+
+## The photo manager's preview no longer crops
+
+Before 2026-10-06 a non-square photo looked cropped here too, in the little
+square preview thumbnail — this was display only (`object-cover`); the actual
+uploaded file was never touched. The preview now letterboxes the whole photo
+instead, matching what the storefront itself shows, so what you see here is
+what customers will see.

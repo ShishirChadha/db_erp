@@ -480,7 +480,7 @@ Append-only punch-event log. A correction is a new row plus a void on the old on
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~3,518 rows (estimate)
+~3,801 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -944,7 +944,7 @@ Plain reference calendar of major/minor Indian festivals for the Marketing Studi
 
 ## field_corrections
 
-~1,249 rows (estimate)
+~1,425 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1153,7 +1153,7 @@ One uploaded reconciliation source: a Zoho invoice register (outward, checks not
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~536 rows (estimate)
+~535 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1436,7 +1436,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## product_images
 
-~171 rows (estimate)
+~200 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2059,7 +2059,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_metrics
 
-~4,374 rows (estimate)
+~5,417 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2128,7 +2128,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## sku_master
 
-~353 rows (estimate)
+~354 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2282,7 +2282,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~43 rows (estimate)
+~69 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2397,7 +2397,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## website_health_checks
 
-~5,437 rows (estimate)
+~5,302 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
