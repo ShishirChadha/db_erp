@@ -71,10 +71,10 @@ export function useNavPrefs() {
 
   return {
     prefs,
-    hiddenItems: prefs.hiddenItems || [],
-    pinnedItems: prefs.pinnedItems || [],
-    groupOrder: prefs.groupOrder || [],
-    itemParents: prefs.itemParents || {},
+    hiddenItems: prefs.hiddenItems || EMPTY_ARRAY,
+    pinnedItems: prefs.pinnedItems || EMPTY_ARRAY,
+    groupOrder: prefs.groupOrder || EMPTY_ARRAY,
+    itemParents: prefs.itemParents || EMPTY_PARENTS,
     toggleHidden,
     togglePinned,
     setGroupOrder,
