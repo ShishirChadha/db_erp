@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { PriceTag } from './PriceTag'
 import { AddToCartButton } from './AddToCartButton'
+import { BuyNowButton } from './BuyNowButton'
 import type { GaItem } from '@/lib/analytics'
 import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 
@@ -46,10 +47,13 @@ export function StickyBuyBar({
         <div className="min-w-0 flex-1">
           <PriceTag price={price} marketPrice={marketPrice} />
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5">
           <WhatsAppOrderButton href={whatsappHref} compact />
-          <div className="w-24">
+          <div className="w-20">
             <AddToCartButton skuId={skuId} disabled={disabled} item={item} />
+          </div>
+          <div className="w-20">
+            <BuyNowButton skuId={skuId} disabled={disabled} item={item} />
           </div>
         </div>
       </div>

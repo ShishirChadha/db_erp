@@ -6,7 +6,7 @@ import Script from 'next/script'
 import { formatCurrency } from '@db/shared'
 import { ReservationCountdown } from './ReservationCountdown'
 import { track } from '@/lib/analytics'
-import { clearGuestCart, type GuestLine } from '@/lib/guest-cart'
+import type { GuestLine } from '@/lib/guest-cart'
 import type { PaymentSettings } from '@/lib/payment-settings'
 
 declare global {
@@ -31,14 +31,25 @@ export function CheckoutForm({
   customerEmail,
   paymentSettings,
   mode,
-  guestLines,
+  items,
+  onSuccess,
 }: {
   subtotal: number
   customerName: string
   customerEmail: string
   paymentSettings: PaymentSettings
   mode: 'account' | 'guest'
-  guestLines?: GuestLine[]
+  // An ad-hoc line list, sent regardless of mode -- this is what both a
+  // guest's full cart AND a "Buy Now" single-item express checkout (either
+  // mode) use instead of the server reading cart_items. Omit it for the
+  // ordinary signed-in "check out my real cart" path, which still relies on
+  // /api/checkout/start reading cart_items itself.
+  items?: GuestLine[]
+  // Called right before navigating to the order page on payment success --
+  // callers clear whichever client-side source `items` came from (guest
+  // cart vs the Buy Now buffer). Omitted for the ordinary account path,
+  // which has nothing client-side to clear.
+  onSuccess?: () => void
 }) {
   const router = useRouter()
   const [name, setName] = useState(customerName)
@@ -88,7 +99,9 @@ export function CheckoutForm({
       }
       if (mode === 'guest') {
         body.guestContact = { name, phone, email }
-        body.guestLines = guestLines ?? []
+      }
+      if (items !== undefined) {
+        body.items = items
       }
 
       const res = await fetch('/api/checkout/start', {

@@ -6,6 +6,7 @@ import type { UpgradeOption } from '@/lib/queries'
 import type { SelectedUpgrade } from '@/lib/upgrades'
 import { UpgradeSelector } from './UpgradeSelector'
 import { AddToCartButton } from './AddToCartButton'
+import { BuyNowButton } from './BuyNowButton'
 import type { GaItem } from '@/lib/analytics'
 import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 
@@ -41,8 +42,11 @@ export function PurchaseUpgradeArea({
         </p>
       )}
       <div id="main-buy-cta" className="mt-3 flex flex-col gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <AddToCartButton skuId={skuId} disabled={disabled} selectedUpgrades={selected} item={item} />
+          <BuyNowButton skuId={skuId} disabled={disabled} selectedUpgrades={selected} item={item} />
+        </div>
         <WhatsAppOrderButton href={whatsappHref} />
-        <AddToCartButton skuId={skuId} disabled={disabled} selectedUpgrades={selected} item={item} />
       </div>
     </div>
   )

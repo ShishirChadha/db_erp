@@ -32,7 +32,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Online checkout is not available yet. Please check back soon.' }, { status: 503 })
   }
 
-  const { shippingAddress, couponCode, paymentMethod, guestContact, guestLines } = await req.json()
+  const { shippingAddress, couponCode, paymentMethod, guestContact, items: buyNowItems } = await req.json()
   if (!shippingAddress?.name || !shippingAddress?.line1 || !shippingAddress?.city || !shippingAddress?.phone) {
     return NextResponse.json({ error: 'A complete shipping address is required.' }, { status: 400 })
   }
@@ -61,27 +61,39 @@ export async function POST(req: NextRequest) {
   // exactly like /api/cart/merge already does. A real CRM customer is only
   // ever created once payment actually succeeds (see order-to-sale.ts) --
   // never here, so an abandoned guest checkout costs nothing.
+  //
+  // `items`, when present, is an ad-hoc line list that takes priority over
+  // whichever cart source would otherwise apply -- this is what lets "Buy
+  // Now" (lib/buy-now.ts) skip the cart entirely for a single item, for a
+  // signed-in customer exactly as much as a guest. A guest's regular
+  // checkout (the whole cart, not a single item) also arrives this same
+  // way, since there's no DB row to read without a session either way.
   let cartItems: { sku_id: string; quantity: number; selected_upgrades: unknown }[]
   let guestName: string | null = null
   let guestPhone: string | null = null
   let guestEmail: string | null = null
 
-  if (session) {
-    const { data } = await supabaseAdmin
-      .from('cart_items')
-      .select('sku_id, quantity, selected_upgrades')
-      .eq('customer_id', session.id)
-    cartItems = data ?? []
-  } else {
+  if (!session) {
     guestName = String(guestContact?.name || '').trim()
     guestPhone = String(guestContact?.phone || '').trim()
     guestEmail = guestContact?.email ? String(guestContact.email).trim() : null
     if (!guestName || !guestPhone) {
       return NextResponse.json({ error: 'Name and phone are required to check out as a guest.' }, { status: 400 })
     }
-    const parsed = parseCartLines(guestLines)
+  }
+
+  if (buyNowItems !== undefined) {
+    const parsed = parseCartLines(buyNowItems)
     if (!parsed.ok) return NextResponse.json({ error: parsed.error }, { status: 400 })
     cartItems = parsed.lines
+  } else if (session) {
+    const { data } = await supabaseAdmin
+      .from('cart_items')
+      .select('sku_id, quantity, selected_upgrades')
+      .eq('customer_id', session.id)
+    cartItems = data ?? []
+  } else {
+    return NextResponse.json({ error: 'Your cart is empty.' }, { status: 400 })
   }
 
   if (!cartItems || cartItems.length === 0) {
