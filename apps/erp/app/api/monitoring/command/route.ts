@@ -11,18 +11,87 @@ import { withRetry } from '@/lib/db-retry'
 // docs/bible/modules/system-health.md.
 export const dynamic = 'force-dynamic'
 
+// How long to wait for proof the box actually came back before giving up and
+// calling it failed. Generous on purpose -- a restart is normally 3-5 minutes,
+// but a post-update fsck or a slow BIOS POST can run well past that, and
+// calling it "failed" while it's still genuinely coming up would be wrong.
+const RESOLVE_TIMEOUT_MINUTES = 20
+
+// A command that reached 'acknowledged' is seconds from the poller actually
+// running reboot/shutdown -- there is no moment left on the box's side to
+// write back "it worked". So this is resolved here instead, the next time
+// anyone asks: a server_boot_events row booted AFTER acknowledged_at is proof
+// a real reboot happened (restart succeeded, or the box was later powered
+// back on after a shutdown). No such row within the timeout means something
+// didn't happen as expected -- the poller never ran it, sudo failed, or the
+// machine genuinely didn't come back -- and failed() says so rather than
+// leaving the page stuck on "in progress" forever, which is exactly the bug
+// this fixes.
+async function resolveInFlightCommands() {
+  const { data: open } = await withRetry(() =>
+    supabaseAdmin
+      .from('server_commands')
+      .select('id, command, status, requested_at, acknowledged_at')
+      .in('status', ['pending', 'acknowledged'])
+  )
+  if (!open || open.length === 0) return
+
+  const { data: boots } = await withRetry(() =>
+    supabaseAdmin
+      .from('server_boot_events')
+      .select('booted_at')
+      .order('booted_at', { ascending: false })
+      .limit(5)
+  )
+  const bootTimes = (boots || []).map(b => new Date(b.booted_at).getTime())
+
+  for (const cmd of open) {
+    const sinceIso = cmd.acknowledged_at || cmd.requested_at
+    const since = new Date(sinceIso).getTime()
+    const rebootedAfter = bootTimes.some(t => t > since)
+
+    if (rebootedAfter) {
+      await withRetry(() =>
+        supabaseAdmin
+          .from('server_commands')
+          .update({ status: 'done', resolved_at: new Date().toISOString() })
+          .eq('id', cmd.id)
+      )
+      continue
+    }
+
+    const ageMinutes = (Date.now() - new Date(cmd.requested_at).getTime()) / 60_000
+    if (ageMinutes > RESOLVE_TIMEOUT_MINUTES) {
+      await withRetry(() =>
+        supabaseAdmin
+          .from('server_commands')
+          .update({
+            status: 'failed',
+            resolved_at: new Date().toISOString(),
+            error: cmd.status === 'pending'
+              ? 'The box never picked this up within 20 minutes -- check the poller timer.'
+              : 'No restart was seen within 20 minutes of this being acted on.',
+          })
+          .eq('id', cmd.id)
+      )
+    }
+  }
+}
+
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
+  await resolveInFlightCommands()
+
   // Only what the page needs to show "a restart was requested, waiting for
   // the box to pick it up" -- a handful of rows a year, so no pagination.
   const { data, error } = await withRetry(() =>
     supabaseAdmin
       .from('server_commands')
-      .select('id, command, status, requested_by, requested_at, acknowledged_at, error')
+      .select('id, command, status, requested_by, requested_at, acknowledged_at, resolved_at, error')
       .order('requested_at', { ascending: false })
       .limit(10)
   )
@@ -52,6 +121,11 @@ export async function POST(req: NextRequest) {
   if (command === 'shutdown' && body?.confirm !== 'SHUTDOWN') {
     return NextResponse.json({ error: 'Type SHUTDOWN to confirm.' }, { status: 400 })
   }
+
+  // Resolve any stuck pending/acknowledged row first, so a restart that
+  // actually succeeded minutes ago (or one that genuinely timed out) never
+  // blocks a new request from going through.
+  await resolveInFlightCommands()
 
   // Refuse a second request while one is still pending/acknowledged, rather
   // than queuing a restart behind a shutdown (or vice versa) that the box may

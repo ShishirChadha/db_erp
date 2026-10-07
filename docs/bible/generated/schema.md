@@ -2067,7 +2067,7 @@ One row per boot of the ProDesk, classifying how the previous boot ended (power 
 
 ## server_commands
 
-Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed by erp-command-poller.timer. See docs/bible/modules/system-health.md.
+Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed by erp-command-poller.timer. GET /api/monitoring/command resolves a stuck pending/acknowledged row to done (a server_boot_events row after acknowledged_at proves it actually rebooted) or failed (timed out with no such boot). See docs/bible/modules/system-health.md.
 
 ~0 rows (estimate)
 
@@ -2080,6 +2080,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 | requested_at | timestamp with time zone | no | `now()` |  |  |
 | acknowledged_at | timestamp with time zone | yes |  |  |  |
 | error | text | yes |  |  |  |
+| resolved_at | timestamp with time zone | yes |  |  |  |
 
 ## server_metrics
 

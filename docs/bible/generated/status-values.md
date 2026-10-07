@@ -152,7 +152,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | sales_documents | status | sales_documents_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'accepted'::text, 'rejected'::text, 'expired'::text, 'void'::text])))` |
 | server_boot_events | shutdown_kind | server_boot_events_shutdown_kind_check | `CHECK ((shutdown_kind = ANY (ARRAY['power_loss'::text, 'clean_reboot'::text, 'clean_shutdown'::text, 'crash'::text, 'unknown'::text, 'first_boot'::text])))` |
 | server_commands | command | server_commands_command_check | `CHECK ((command = ANY (ARRAY['restart'::text, 'shutdown'::text])))` |
-| server_commands | status | server_commands_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'acknowledged'::text, 'failed'::text])))` |
+| server_commands | status | server_commands_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'acknowledged'::text, 'done'::text, 'failed'::text])))` |
 | sku_master | status | sku_master_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])))` |
 | sku_upgrade_rules | field_name | sku_upgrade_rules_field_name_check | `CHECK ((field_name = ANY (ARRAY['ram'::text, 'ssd'::text, 'warranty_months'::text])))` |
 | sku_upgrade_rules | price_delta | sku_upgrade_rules_price_delta_check | `CHECK ((price_delta >= (0)::numeric))` |

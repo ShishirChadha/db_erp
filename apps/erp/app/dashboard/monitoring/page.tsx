@@ -27,10 +27,11 @@ interface Endpoint {
 interface ServerCommand {
   id: string
   command: 'restart' | 'shutdown'
-  status: 'pending' | 'acknowledged' | 'failed'
+  status: 'pending' | 'acknowledged' | 'done' | 'failed'
   requested_by: string | null
   requested_at: string
   acknowledged_at: string | null
+  resolved_at: string | null
   error: string | null
 }
 
@@ -672,9 +673,19 @@ function MonitoringInner() {
             {inFlight.command === 'restart' && ' It should report back in here within a few minutes.'}
           </div>
         )}
-        {commands.find(c => c.status === 'failed') && !inFlight && (
+        {/* Only the MOST RECENT command's outcome is shown here, not any
+            failed/done row ever seen -- otherwise a long-past failure (or a
+            success from months ago) would sit here forever once a newer
+            request supersedes it. */}
+        {!inFlight && commands[0]?.status === 'done' && (
+          <div className="mb-3 rounded-md border border-emerald-500/40 bg-emerald-500/10 p-2 text-sm">
+            <strong className="capitalize">{commands[0].command}</strong> completed — the box is back
+            {commands[0].resolved_at && <span className="text-muted-foreground"> ({ago(commands[0].resolved_at)})</span>}.
+          </div>
+        )}
+        {!inFlight && commands[0]?.status === 'failed' && (
           <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">
-            Last request failed: {commands.find(c => c.status === 'failed')?.error || 'unknown error'}
+            Last request ({commands[0].command}) failed: {commands[0].error || 'unknown error'}
           </div>
         )}
         <div className="flex flex-wrap gap-2">
