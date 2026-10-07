@@ -11,7 +11,7 @@ import { ATTENDANCE_STATUSES, formatMinutes } from '@/lib/attendance'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ATTENDANCE_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import type { RegisterRow } from '@/components/attendance/DayRegister'
-import { Loader2, Ban } from 'lucide-react'
+import { Loader2, Ban, Plus } from 'lucide-react'
 
 interface PunchRow {
   id: string
@@ -32,9 +32,23 @@ function istTime(iso: string) {
   })
 }
 
+// Converts a local HH:MM on a given work_date (YYYY-MM-DD) into a UTC ISO
+// string, treating the time as IST (Asia/Kolkata = UTC+5:30).
+function istToUtcIso(date: string, hhmm: string): string {
+  const [hh, mm] = hhmm.split(':').map(Number)
+  // Build a Date in UTC that represents this IST moment:
+  // IST = UTC + 5h30m, so UTC = IST - 5h30m
+  const [y, mo, d] = date.split('-').map(Number)
+  const utcMs = Date.UTC(y, mo - 1, d, hh - 5, mm - 30)
+  return new Date(utcMs).toISOString()
+}
+
 // Correct one staff member's day.
 //
 // Three things happen here, and they are deliberately distinct:
+//   - ADD a punch at a chosen time (supervisor path: exempt from IP check,
+//     requires a reason, fully audited -- same as the API's own isSupervisorAction
+//     branch in api/attendance/punch/route.ts)
 //   - override the day's STATUS (sticky: status_source becomes 'manual', so no
 //     later punch or nightly scan can undo it)
 //   - revert that override, handing the day back to the punch log
@@ -55,6 +69,11 @@ export function CorrectDayDialog({
   const [status, setStatus] = useState<string>('')
   const [reason, setReason] = useState('')
 
+  // Add-punch form state
+  const [addType, setAddType] = useState<'in' | 'out'>('in')
+  const [addTime, setAddTime] = useState('')
+  const [showAddForm, setShowAddForm] = useState(false)
+
   const loadPunches = useCallback(async () => {
     if (!row) return
     setLoading(true)
@@ -68,8 +87,43 @@ export function CorrectDayDialog({
     setError('')
     setReason('')
     setStatus(row?.day?.status ?? '')
+    setShowAddForm(false)
+    setAddTime('')
+    setAddType('in')
     loadPunches()
   }, [isOpen, row, loadPunches])
+
+  const addPunch = useAsyncAction(async () => {
+    const why = reason.trim()
+    if (!why) {
+      setError('Fill in the reason above before adding a punch.')
+      return
+    }
+    if (!addTime) {
+      setError('Choose a time for the punch.')
+      return
+    }
+    setError('')
+    const punched_at = istToUtcIso(date, addTime)
+    const res = await apiFetch('/api/attendance/punch', {
+      method: 'POST',
+      body: JSON.stringify({
+        type: addType,
+        staff_id: row!.staff.id,
+        punched_at,
+        reason: why,
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) {
+      setError(json.error || 'Could not add that punch.')
+      return
+    }
+    setShowAddForm(false)
+    setAddTime('')
+    await loadPunches()
+    onSaved()
+  })
 
   const save = useAsyncAction(async () => {
     if (!row?.day) {
@@ -164,7 +218,55 @@ export function CorrectDayDialog({
         {/* The punch log, voided rows included -- an append-only ledger is only
             useful if the UI can show what was originally recorded. */}
         <div>
-          <div className="text-sm font-medium mb-1.5">Punch log</div>
+          <div className="flex items-center justify-between mb-1.5">
+            <div className="text-sm font-medium">Punch log</div>
+            {!showAddForm && (
+              <Button variant="outline" size="sm" className="h-7 text-xs"
+                onClick={() => setShowAddForm(true)}>
+                <Plus className="h-3 w-3 mr-1" /> Add punch
+              </Button>
+            )}
+          </div>
+
+          {/* Add-punch inline form -- supervisor path, exempt from IP check,
+              requires a reason (shared with the reason field below), fully
+              audited. The API's isSupervisorAction branch fires because
+              staff_id + punched_at are present in the body. */}
+          {showAddForm && (
+            <div className="rounded-md border border-border p-3 mb-2 space-y-2 bg-muted/30">
+              <div className="text-xs font-medium text-muted-foreground">Add a supervisor punch</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <select
+                  value={addType}
+                  onChange={e => setAddType(e.target.value as 'in' | 'out')}
+                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                >
+                  <option value="in">Punch In</option>
+                  <option value="out">Punch Out</option>
+                </select>
+                <Input
+                  type="time"
+                  value={addTime}
+                  onChange={e => setAddTime(e.target.value)}
+                  className="h-8 w-32"
+                />
+                <span className="text-xs text-muted-foreground">IST on {date}</span>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" className="h-7 text-xs"
+                  disabled={addPunch.pending || !addTime}
+                  onClick={() => addPunch.run()}>
+                  {addPunch.pending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
+                  Save punch
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 text-xs"
+                  onClick={() => { setShowAddForm(false); setAddTime('') }}>
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          )}
+
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
               <Loader2 className="h-4 w-4 animate-spin" /> Loading...
@@ -203,7 +305,8 @@ export function CorrectDayDialog({
         </div>
 
         {/* Reason first: it gates every action below it, including voiding a
-            punch, so it belongs above them rather than at the bottom. */}
+            punch and adding a new one, so it belongs above them rather than
+            at the bottom. */}
         <div>
           <label className="text-sm font-medium block mb-1">Reason <span className="text-destructive">*</span></label>
           <Input
