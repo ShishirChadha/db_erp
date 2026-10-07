@@ -262,6 +262,9 @@ export async function GET(req: NextRequest) {
   // row of their own -- a rent charge has no asset/accessory link at all, so its
   // display text comes from the linked agreement.
   const rentalAgreementIds = [...new Set((data || []).map((s: any) => s.rental_agreement_id).filter(Boolean))]
+  // invoice_id resolves to the invoice's own invoice_date (ERP-generated or
+  // Zoho-recorded) -- distinct from sale_date, which is when the item itself was sold.
+  const invoiceIds = [...new Set((data || []).map((s: any) => s.invoice_id).filter(Boolean))]
 
   // Every lookup below only depends on `data` (already fetched above), not on each
   // other -- run them concurrently rather than as 7 sequential round trips, each of
@@ -278,6 +281,7 @@ export async function GET(req: NextRequest) {
     { data: bundledSkus },
     { data: repairJobs },
     { data: rentalAgreements },
+    { data: invoices },
     paymentDateBySaleId,
   ] = await Promise.all([
     chunkedIn<any>(unfinalizedCustomerIds, chunk =>
@@ -302,6 +306,9 @@ export async function GET(req: NextRequest) {
     chunkedIn<any>(rentalAgreementIds, chunk =>
       supabaseAdmin.from('rental_agreements').select('id, agreement_number').in('id', chunk)
     ),
+    chunkedIn<any>(invoiceIds, chunk =>
+      supabaseAdmin.from('invoices').select('id, invoice_date').in('id', chunk)
+    ),
     // Most recent sale_payments installment date per sale -- shown as "Payment Date"
     // alongside sale_date; a sale with 2+ partial payments shows its latest one.
     latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
@@ -313,6 +320,7 @@ export async function GET(req: NextRequest) {
   const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
   const rentalAgreementById = new Map((rentalAgreements || []).map((r: any) => [r.id, r]))
+  const invoiceDateById = new Map((invoices || []).map((i: any) => [i.id, i.invoice_date]))
 
   // Include specifications/category so the ledger can surface RAM/SSD directly
   // (specifications.ram / specifications.ssd -- see sku_category_templates field
@@ -358,6 +366,7 @@ export async function GET(req: NextRequest) {
     withName.rental_period = s.rental_period_start && s.rental_period_end
       ? `${s.rental_period_start} to ${s.rental_period_end}` : null
     withName.payment_date = paymentDateBySaleId.get(s.id) || null
+    withName.invoice_date = s.invoice_id ? invoiceDateById.get(s.invoice_id) || null : null
     return withName
   })
 

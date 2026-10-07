@@ -63,6 +63,7 @@ interface Sale {
   finalized: boolean;
   is_deleted?: boolean;
   invoice_number: string | null;
+  invoice_date: string | null;
   invoice_id?: string | null;
   original_sold_date?: string | null;
   invoice_mode?: "erp" | "external";
@@ -184,24 +185,31 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
   return (
     <>
       {sale.finalized ? (
-        <span className="text-success inline-flex items-center gap-1.5">
-          ✓ {sale.invoice_number}
-          {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
-              one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
-          {isExternal && isOwner && sale.invoice_id && (
-            <Button variant="link" size="sm" onClick={() => setShowAttachDialog(true)} className="text-primary text-xs">
-              File
-            </Button>
-          )}
-          {isOwner && sale.invoice_id && (
-            <button
-              type="button"
-              title="Remove this item from the invoice (e.g. it was checked into the invoice by mistake)"
-              onClick={() => { setRemoveErr(""); setShowRemoveDialog(true); }}
-              className="text-muted-foreground hover:text-destructive"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+        <span className="text-success inline-flex flex-col gap-0.5">
+          <span className="inline-flex items-center gap-1.5">
+            ✓ {sale.invoice_number}
+            {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
+                one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
+            {isExternal && isOwner && sale.invoice_id && (
+              <Button variant="link" size="sm" onClick={() => setShowAttachDialog(true)} className="text-primary text-xs">
+                File
+              </Button>
+            )}
+            {isOwner && sale.invoice_id && (
+              <button
+                type="button"
+                title="Remove this item from the invoice (e.g. it was checked into the invoice by mistake)"
+                onClick={() => { setRemoveErr(""); setShowRemoveDialog(true); }}
+                className="text-muted-foreground hover:text-destructive"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </span>
+          {sale.invoice_date && (
+            <span className="text-muted-foreground text-xs">
+              {new Date(sale.invoice_date).toLocaleDateString()}
+            </span>
           )}
         </span>
       ) : sale.is_deleted ? (

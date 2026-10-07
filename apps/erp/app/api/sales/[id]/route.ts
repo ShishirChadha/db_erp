@@ -60,11 +60,22 @@ export async function GET(
     }
   }
 
+  let invoiceDate: string | null = null
+  if (data.invoice_id) {
+    const { data: invoiceRow } = await supabaseAdmin
+      .from('invoices')
+      .select('invoice_date')
+      .eq('id', data.invoice_id)
+      .maybeSingle()
+    invoiceDate = invoiceRow?.invoice_date || null
+  }
+
   return NextResponse.json({
     ...data,
     bundled_accessories: bundledAccessories,
     unit_sku_description: unitSkuDescription,
     unit_full_sku_code: unitFullSkuCode,
+    invoice_date: invoiceDate,
     history: history || [],
   })
 }
