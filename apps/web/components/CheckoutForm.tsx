@@ -132,7 +132,7 @@ export function CheckoutForm({
         // ever opens, which is the guarantee that actually matters.
         method: paymentMethod === 'cod' ? undefined : { upi: paymentMethod === 'upi', card: paymentMethod === 'card' },
         handler: () => {
-          if (mode === 'guest') clearGuestCart()
+          onSuccess?.()
           router.push(`/order/${json.orderId}`)
         },
         modal: {

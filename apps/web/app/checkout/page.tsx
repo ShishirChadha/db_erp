@@ -6,12 +6,36 @@ import { formatCurrency } from '@db/shared'
 import { productDisplayTitle } from '@/lib/product-title'
 import { CheckoutForm } from '@/components/CheckoutForm'
 import { GuestCheckoutSummary } from '@/components/GuestCheckoutSummary'
+import { BuyNowCheckoutSummary } from '@/components/BuyNowCheckoutSummary'
 
 export const dynamic = 'force-dynamic'
 
-export default async function CheckoutPage() {
+export default async function CheckoutPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ buyNow?: string }>
+}) {
   const session = await getCustomerSession()
   const paymentSettings = await getPaymentSettings()
+  const { buyNow } = await searchParams
+
+  // "Buy Now" (lib/buy-now.ts) skips the cart entirely for a single item --
+  // for a signed-in customer exactly as much as a guest, since the whole
+  // point is bypassing cart_items, not just localStorage. Checked first,
+  // before either of the normal paths below, since it overrides both.
+  if (buyNow === '1') {
+    return (
+      <main className="mx-auto max-w-lg px-4 py-10 sm:px-6 lg:px-8">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground">Checkout</h1>
+        <BuyNowCheckoutSummary
+          paymentSettings={paymentSettings}
+          mode={session ? 'account' : 'guest'}
+          customerName={session?.fullName || ''}
+          customerEmail={session?.email || ''}
+        />
+      </main>
+    )
+  }
 
   // No account is required to check out (see apps/web/lib/guest-cart.ts) --
   // a guest's cart lives in localStorage, which a server component can't
