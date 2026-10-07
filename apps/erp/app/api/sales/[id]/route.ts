@@ -120,12 +120,25 @@ export async function PATCH(
     updates.sale_base_price = basePrice
     updates.sale_gst = gstAmount
     updates.sale_total = basePrice + gstAmount
+
+    // payment_status is trigger-derived from sale_payments, but that trigger only
+    // fires on sale_payments inserts/deletes -- it never re-runs just because
+    // sale_total itself changed here. Without this, a sale created free (sale_total
+    // 0 -> payment_status hardcoded 'paid' at creation, see lib/sales-cart.ts) stays
+    // stuck 'paid' forever once a real price is added later, even though nothing has
+    // actually been paid -- same CASE logic as sync_sale_payment_totals(), using the
+    // existing (unaffected, ledger-derived) amount_paid against the NEW total.
+    const amountPaid = existing.amount_paid || 0
+    const newTotal = updates.sale_total
+    updates.payment_status = newTotal <= 0 ? 'paid'
+      : amountPaid <= 0 ? 'pending'
+      : amountPaid >= newTotal - 0.5 ? 'paid'
+      : 'partial'
   }
 
-  // payment_status/amount_paid are no longer directly editable here -- they're
-  // trigger-derived from the sum of sale_payments (see POST/DELETE
-  // /api/sales/[id]/payments). Record an installment or delete an erroneous one
-  // there instead of overwriting these fields directly.
+  // amount_paid itself is never directly editable here -- it's trigger-derived from
+  // the sum of sale_payments (see POST/DELETE /api/sales/[id]/payments). Record an
+  // installment or delete an erroneous one there instead of overwriting it directly.
   for (const key of ['sale_type', 'payment_account', 'sold_by', 'sale_date', 'notes', 'eway_bill_number', 'eway_bill_date'] as const) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
