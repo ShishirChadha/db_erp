@@ -5,8 +5,9 @@ import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Info } from 'lucide-react'
+import { RefreshCw, Info, Power, PowerOff } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { SimpleModal } from '@/components/SimpleModal'
 
 // System Health. Everything here is read-only; the page never writes.
 //
@@ -21,6 +22,16 @@ type Server = Record<string, number | string | boolean | string[] | null>
 interface Endpoint {
   key: string; label: string; url: string
   ok: boolean; status: number; latencyMs: number; error: string | null
+}
+
+interface ServerCommand {
+  id: string
+  command: 'restart' | 'shutdown'
+  status: 'pending' | 'acknowledged' | 'failed'
+  requested_by: string | null
+  requested_at: string
+  acknowledged_at: string | null
+  error: string | null
 }
 
 interface BootEvent {
@@ -283,6 +294,20 @@ function MonitoringInner() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
 
+  const [commands, setCommands] = useState<ServerCommand[]>([])
+  const [restartOpen, setRestartOpen] = useState(false)
+  const [shutdownOpen, setShutdownOpen] = useState(false)
+  const [shutdownPhrase, setShutdownPhrase] = useState('')
+  const [cmdSubmitting, setCmdSubmitting] = useState(false)
+  const [cmdError, setCmdError] = useState('')
+
+  const loadCommands = useCallback(async () => {
+    try {
+      const res = await apiFetch('/api/monitoring/command')
+      if (res.ok) setCommands((await res.json()).commands || [])
+    } catch { /* a failed poll here just leaves the last-known status showing */ }
+  }, [])
+
   const load = useCallback(async () => {
     try {
       const res = await apiFetch('/api/monitoring')
@@ -304,9 +329,48 @@ function MonitoringInner() {
 
   useEffect(() => {
     load()
+    loadCommands()
     const t = setInterval(load, REFRESH_MS)
     return () => clearInterval(t)
-  }, [load])
+  }, [load, loadCommands])
+
+  // The in-flight command, if any -- while this exists both buttons stay
+  // disabled, since the box may be about to vanish and there is nowhere for a
+  // second request to queue safely.
+  const inFlight = commands.find(c => c.status === 'pending' || c.status === 'acknowledged') || null
+
+  // Faster polling only while something is actually happening -- no reason to
+  // hit this endpoint every few seconds the rest of the time.
+  useEffect(() => {
+    if (!inFlight) return
+    const t = setInterval(loadCommands, 4000)
+    return () => clearInterval(t)
+  }, [inFlight, loadCommands])
+
+  async function submitCommand(command: 'restart' | 'shutdown', confirm?: string) {
+    setCmdSubmitting(true)
+    setCmdError('')
+    try {
+      const res = await apiFetch('/api/monitoring/command', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ command, confirm }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        setCmdError(json?.error || `Could not send the request (HTTP ${res.status}).`)
+        return
+      }
+      setRestartOpen(false)
+      setShutdownOpen(false)
+      setShutdownPhrase('')
+      await loadCommands()
+    } catch {
+      setCmdError('Could not reach the ERP’s own backend.')
+    } finally {
+      setCmdSubmitting(false)
+    }
+  }
 
   const s = data?.server
   const memPct = s && s.mem_total_bytes ? (Number(s.mem_used_bytes) / Number(s.mem_total_bytes)) * 100 : null
@@ -596,6 +660,76 @@ function MonitoringInner() {
           </div>
         </details>
       </Card>
+
+      <Card
+        title="Server control"
+        info="Sends a request into the database; a small job on the ProDesk checks for it every ~10 seconds and acts on it. There is no remote power-on on this machine, so a shutdown that does not come back by itself stays off until someone is physically at the office."
+      >
+        {inFlight && (
+          <div className="mb-3 rounded-md border border-amber-500/40 bg-amber-500/10 p-2 text-sm">
+            <strong className="capitalize">{inFlight.command}</strong> requested by {inFlight.requested_by || 'you'}
+            {' '}— {inFlight.status === 'pending' ? 'waiting for the box to pick it up' : 'in progress, the box may drop offline any moment'}.
+            {inFlight.command === 'restart' && ' It should report back in here within a few minutes.'}
+          </div>
+        )}
+        {commands.find(c => c.status === 'failed') && !inFlight && (
+          <div className="mb-3 rounded-md border border-destructive/40 bg-destructive/10 p-2 text-sm text-destructive">
+            Last request failed: {commands.find(c => c.status === 'failed')?.error || 'unknown error'}
+          </div>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setCmdError(''); setRestartOpen(true) }} disabled={!!inFlight}>
+            <Power className="h-4 w-4" /> Restart server
+          </Button>
+          <Button variant="destructive" size="sm" onClick={() => { setCmdError(''); setShutdownOpen(true) }} disabled={!!inFlight}>
+            <PowerOff className="h-4 w-4" /> Shut down server
+          </Button>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          A restart takes 3–5 minutes and everything comes back on its own. Only do this outside working hours.
+        </p>
+      </Card>
+
+      <SimpleModal isOpen={restartOpen} onClose={() => setRestartOpen(false)} title="Restart the server?">
+        <p className="text-sm text-muted-foreground">
+          The ERP, website and database will all be unreachable for roughly 3–5 minutes while it comes back up on
+          its own. Do this outside working hours.
+        </p>
+        {cmdError && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{cmdError}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => setRestartOpen(false)}>Cancel</Button>
+          <Button size="sm" onClick={() => submitCommand('restart')} disabled={cmdSubmitting}>
+            {cmdSubmitting ? 'Sending…' : 'Restart now'}
+          </Button>
+        </div>
+      </SimpleModal>
+
+      <SimpleModal isOpen={shutdownOpen} onClose={() => { setShutdownOpen(false); setShutdownPhrase('') }} title="Shut down the server?">
+        <p className="text-sm text-muted-foreground">
+          This machine has <strong>no remote power-on</strong> — it will not turn itself back on. The ERP, website
+          and database stay down until someone is physically at the office to press the power button.
+        </p>
+        <label className="mt-4 block text-xs text-muted-foreground">
+          Type <strong>SHUTDOWN</strong> to confirm
+        </label>
+        <input
+          value={shutdownPhrase}
+          onChange={(e) => setShutdownPhrase(e.target.value)}
+          className="mt-1 w-full rounded-md border border-input px-3 py-2 text-sm outline-none focus:border-destructive focus:ring-2 focus:ring-destructive/25"
+        />
+        {cmdError && <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{cmdError}</p>}
+        <div className="mt-4 flex justify-end gap-2">
+          <Button variant="outline" size="sm" onClick={() => { setShutdownOpen(false); setShutdownPhrase('') }}>Cancel</Button>
+          <Button
+            variant="destructive"
+            size="sm"
+            onClick={() => submitCommand('shutdown', shutdownPhrase)}
+            disabled={cmdSubmitting || shutdownPhrase !== 'SHUTDOWN'}
+          >
+            {cmdSubmitting ? 'Sending…' : 'Shut down now'}
+          </Button>
+        </div>
+      </SimpleModal>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card title="Server — HP ProDesk" right={s ? <span className="text-xs text-muted-foreground">{String(s.hostname)}</span> : null}>

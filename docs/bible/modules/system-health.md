@@ -4,11 +4,12 @@ title: System Health
 kind: module
 audience: [owner]
 routes: [/dashboard/monitoring]
-keywords: [monitoring, system health, server, vitals, cpu, temperature, disk, memory, uptime, containers, tunnel, backup status, restart, reboot, server down, power outage, power cut, bijli, downtime, availability, kya chal raha hai]
+keywords: [monitoring, system health, server, vitals, cpu, temperature, disk, memory, uptime, containers, tunnel, backup status, restart, reboot, shutdown, power off, server down, power outage, power cut, bijli, downtime, availability, kya chal raha hai]
 sources:
   - apps/erp/app/dashboard/monitoring/page.tsx
   - apps/erp/app/api/monitoring/route.ts
-updated: 2026-10-03
+  - apps/erp/app/api/monitoring/command/route.ts
+updated: 2026-10-08
 ---
 
 ## What this page is for
@@ -93,6 +94,15 @@ The page distinguishes two things that look identical on a naive dashboard:
 Similarly, a restart whose cause cannot be established is recorded as `unknown` and the earliest boot on record as `first_boot` — neither is counted as downtime, because guessing a cause would be worse than admitting the log no longer goes back that far.
 
 A dashboard whose job is telling you something is wrong cannot afford to render "could not ask" the same as "nothing to report". The first version of this page did exactly that and was briefly misleading.
+
+## Restarting or shutting down from the page (2026-10-08)
+
+**Server control** on this page sends a restart or shutdown request into the database (`public.server_commands`) rather than reaching the box directly — nothing listens for inbound commands on the ProDesk, same as everywhere else on this page. A systemd timer (`erp-command-poller.timer`, every ~10s) checks that table and runs `sudo reboot` or `sudo shutdown -h now` when it finds a pending row. `db_erp` has passwordless sudo on the box, which is what makes this possible without a password prompt baked in anywhere.
+
+- **Restart** is a single confirm dialog — the box comes back on its own in 3–5 minutes, same as the manual `ssh` + `sudo reboot` path this replaces.
+- **Shutdown** requires typing `SHUTDOWN` to confirm, enforced server-side in `POST /api/monitoring/command`, not just hidden behind a client dialog. This machine has **no remote power-on** (no Wake-on-LAN, no smart plug), so a shutdown stays down until someone is physically at the office — the dialog says this plainly rather than letting a shutdown look as casual as a restart.
+- Only one request can be in flight at a time — the route refuses a second while one is `pending`/`acknowledged`, so a restart can't queue behind a shutdown that may never get a chance to run.
+- There is deliberately **no "done" status.** The moment the poller actually executes the command, the box is seconds from disappearing (restart) or gone for good until someone presses the button (shutdown) — there is no window left to write a completion row, and trying would just race the reboot. The page's own staleness detection, and a fresh row in `server_boot_events` once it's back, is the real confirmation — exactly the same signal that already proves a restart happened today.
 
 ## Known gaps
 
