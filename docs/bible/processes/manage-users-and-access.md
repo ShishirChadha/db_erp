@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/users/route.ts
   - apps/erp/app/api/users/[id]/route.ts
   - apps/erp/app/api/users/[id]/password/route.ts
-updated: 2026-09-16
+updated: 2026-10-06
 ---
 
 ## What this is
@@ -47,7 +47,12 @@ access to this screen.
      has full access implicitly, with an empty `allowed_pages` array). Check
      each page the user should see, grouped the same way as the sidebar
      (Dashboard, New Entry, Accessories, Inventory, Live Stock, Sales,
-     Contacts, Service, Finance, Activity Hub, Marketing).
+     Contacts, Leads, Service, Finance, Activity Hub, Marketing).
+     **Granting the `leads` key is not enough on its own** — it only shows an
+     empty Leads screen until a Lead Set is actually assigned to that person
+     (either they create one themselves, which auto-assigns it to them, or a
+     manager/owner reassigns an existing one to them from the Leads page).
+     See **leads** and the "Leads" section of **roles-permissions**.
 3. Click **Create User**. This creates both a Supabase Auth user and a
    `profiles` row in one action; if the profile insert fails, the auth user
    is rolled back (deleted) so you never end up with a login that has no
@@ -64,8 +69,9 @@ Each page in the access grid can be **view-only** or **view + edit**:
    `pending_tasks`, and `reports` are view-only nav/landing pages with no
    edit concept (the DB's `profile_page_actions.page_key` CHECK constraint
    rejects them). Editable pages are: New Entry, Accessories, Repair Jobs,
-   Replacement Jobs, SKU Master, Live Stock, Invoices, Customers,
-   Activities, Sales, Stock, Website, Expenses, Quotations, RMA, Marketing.
+   Replacement Jobs, SKU Master, Live Stock, Invoices, Customers, Leads,
+   Activities, Sales, Stock, Website, Expenses, Quotations, RMA, Marketing,
+   Rentals, Attendance.
 3. **Unchecking view access for a page automatically drops its edit grant
    too** — edit implies view, so the UI enforces this client-side
    (`PageAccessCheckboxes`'s `toggle`).

@@ -11,7 +11,8 @@ sources:
   - apps/erp/components/sidebar.tsx
   - apps/erp/components/RequirePageAccess.tsx
   - apps/erp/app/dashboard/home/page.tsx
-updated: 2026-10-05
+  - apps/erp/lib/leads.ts
+updated: 2026-10-06
 ---
 
 ## The three roles
@@ -168,3 +169,36 @@ business pages — landing an employee on an arbitrary granted page read as
 entry must stay visible to every role regardless of `allowed_pages` — hiding
 it would break the one safe redirect target `RequirePageAccess` has for a
 denied `dashboard` check.
+
+## Leads (2026-10-06)
+
+New page key **`leads`**, granted/edited exactly like any other page in
+**Settings → Users & Access** (see **manage-users-and-access**) — there is
+nothing special about how the key itself is assigned.
+
+What *is* unusual, and worth knowing before answering "why can't Sanjana see
+this Set": like Attendance, **own-only is the default, and it's gated on
+assignment, not on the key**. Holding the `leads` view key only lets an
+employee see **Sets currently assigned to them** (`lead_sets.current_assignee_id`)
+— never a shared pool, never another staff member's Set. Manager/owner see
+and manage every Set regardless of assignment, via the same
+`is_manager_or_above()` added for Attendance (reused, not redefined).
+`isCurrentHolderOrManager()` (`apps/erp/lib/leads.ts`) is the one place this
+check lives, called by every route under `/api/lead-sets` and `/api/leads`.
+
+So "give Sanjana the Leads module" is two different things, and both matter:
+
+1. **Grant the page** — Settings → Users & Access → tick `leads` (and its
+   "Can edit" box) for Sanjana's account, same as any other page.
+2. **Assign her a Set** — granting the page alone shows her an empty list.
+   She needs at least one Lead Set actually assigned to her
+   (`current_assignee_id`), either because she uploaded/created it herself
+   (auto-assigns to the creator) or because a manager/owner reassigned an
+   existing Set to her from the Leads page.
+
+**Reassigning a Set is manager-or-above; cloning it (a fresh copy with no
+history) is owner-only.** This is one notch stricter than the plain
+page-edit grant most other modules use for their day-to-day actions —
+reassignment is the specific lever the owner asked for control over, since
+it decides who can see a batch of contact data, not just who can edit a
+record. See **leads** for the transfer-vs-clone distinction itself.

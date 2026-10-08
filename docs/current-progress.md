@@ -1,6 +1,6 @@
 # Current Progress
 
-Last updated: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
+Last updated: 2026-10-06 — Leads / Calling Lists module shipped (owner-assignable "Lead Sets" for sales-pitch calling, CSV import with auto-detected column mapping, transfer-with-history vs. fresh-copy clone reassignment, per-lead remarks + follow-up date reusing the Activity Hub's due-date/notification machinery, status and follow-up filters, manual single-lead entry for referrals). Prior entry: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
 
 
 
@@ -1847,3 +1847,62 @@ recreate and the same dependency is immediately re-established.
   CLAUDE.md), then removed the synthetic ledger rows. Confirmed restored: both SKUs back to
   their correct pre-test quantity, with only their real, pre-existing "Stock received" rows
   remaining.
+
+## Leads / Calling Lists module shipped (2026-10-06)
+
+New `leads`/`lead_sets`/`lead_set_assignment_history` tables (`backups/20261006_lead_sets.sql`)
+for sales-pitch cold-calling lists, kept deliberately separate from `customers` (a lead is
+pre-sale/unconfirmed and the assignment/recycling model has no analog there) and deliberately
+NOT routed through `lib/auth/redact.ts` (that system hides columns by role; what's needed here
+is partitioning rows by who a Set is currently assigned to — a different axis).
+
+A **Lead Set** is a named batch (e.g. "Golden Data", "Noida Data") assigned as a whole to one
+staff member via `current_assignee_id`. Two reassignment modes: **transfer** (same Set, new
+`current_assignee_id`, same leads/history visible to the new holder — including swapping
+`activity_assignees` so the previous holder loses Activity Hub visibility into worked leads)
+and **clone** (owner-only; a brand-new Set with copied contact fields only, no linked
+activities, so it's a genuinely fresh list for cold-calling while the original stays intact).
+A Set can also be seeded from existing `customers` rows (`from-customers`) for win-back-style
+campaigns.
+
+**Remarks and follow-up reuse the Activity Hub, not new tables.** Each lead lazily gets one
+linked `activities` row (`related_type: 'lead'`) on its first remark or follow-up date — not
+at import time, which would otherwise flood the Activity Hub and fire a notification storm on
+a 500-row CSV import. A follow-up date is literally `activities.due_date` on that row, so the
+existing `scan_activity_due_dates()` cron's due-soon/overdue notifications apply with zero
+additional migration. A cloned (fresh-copy) lead starts with `activity_id = null`, which is
+what makes "no history" true by construction rather than a special hide-rule.
+
+Access: `isCurrentHolderOrManager()` (`apps/erp/lib/leads.ts`) gates every API route — an
+employee only sees/works Sets currently assigned to them; manager/owner see and manage
+everything. Mirrors the row-partition RLS pattern shipped three days earlier for Attendance
+(`backups/20261005_attendance_core.sql`'s `is_manager_or_above()`), reused rather than
+redefined, as defense-in-depth alongside the API-layer check (every route here runs on
+`supabaseAdmin`, which bypasses RLS, so the API check is the real boundary).
+
+New page key `leads` added everywhere the pattern requires it: `profiles.allowed_pages` /
+`profile_page_actions` CHECK constraints, `ALLOWED_PAGE_KEYS`/`EDITABLE_PAGE_KEYS` in both
+`/api/users` routes and `UserManager.tsx`, the sidebar nav entry, and a new "Leads" group in
+the Page Access grid (Settings → Users & Access) — granted/edited exactly like any other page,
+see **manage-users-and-access**.
+
+CSV import (`BulkImportDialog.tsx`) auto-detects column headers against an alias list (handles
+real-world quirks like "Hone" for Phone, "Email Id" for Email) and always shows an editable
+mapping + preview before importing, rather than silently dropping unmatched columns — this was
+a real bug hit on the first live import (a 578-row file imported with phone/email fields
+empty because the exact-match version only recognized literal "Phone"/"Email" headers; fixed,
+and the bad Set deleted).
+
+Also added: a single-lead "Add Lead" entry point inside a Set (the common real case is a
+referral — an existing lead mentions someone else mid-call), status + follow-up filters
+(overdue/due today/upcoming/has-a-date/none) on the Set-detail leads list, and Rename/Delete
+on Lead Sets (delete soft-deletes the Set and all its leads).
+
+Documented in `docs/bible/modules/leads.md`, with cross-references added to
+`docs/bible/rules/roles-permissions.md` and `docs/bible/processes/manage-users-and-access.md`.
+
+### Deliberately not built yet
+CSV export/download (an explicit security choice — reduces the risk of a departing employee
+taking a list with them; the existing Customers page has no export either, so this isn't even
+a feature regression), per-lead reassignment (Set-level only, matching every real example
+given), and a dedicated stale-lead reminder cron beyond the generic due-date one.

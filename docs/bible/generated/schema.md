@@ -190,7 +190,7 @@ Live schema snapshot -- 113 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~119 rows (estimate)
+~121 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2084,7 +2084,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~7,176 rows (estimate)
+~7,944 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

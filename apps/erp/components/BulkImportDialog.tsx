@@ -58,11 +58,51 @@ function guessMapping(headers: string[], fields: ImportField[]): Record<string, 
 
 export const LEAD_IMPORT_FIELDS: ImportField[] = [
   { key: "name", label: "Name", required: true, aliases: ["name", "fullname", "contactname", "residentname", "customername"] },
-  { key: "phone", label: "Phone", aliases: ["phone", "mobile", "mob", "contact", "contactno", "mobileno", "phoneno", "cell", "hone", "telephone"] },
+  { key: "phone", label: "Phone", aliases: ["phone", "mobile", "mob", "contact", "contactno", "customerno", "mobileno", "phoneno", "cell", "hone", "telephone"] },
   { key: "email", label: "Email", aliases: ["email", "emailid", "mail", "emailaddress", "mailid"] },
   { key: "address", label: "Address", aliases: ["address", "addr", "flat", "unit", "flatno", "unitno", "houseno"] },
   { key: "external_identifier", label: "Identifier (optional)", aliases: ["identifier", "id", "location", "society", "project", "reference"] },
 ];
+
+// A real header row has several distinct, non-blank cells; a stray blank/title
+// row above it (seen on a real import -- a fully blank row before the actual
+// "DATE,CUSTOMER NAME,..." header line) does not. Scanning for this, rather
+// than trusting Papa's "first line is the header" default, is what keeps a
+// file like that from ever reaching the UI with empty-string column names --
+// which previously crashed the page, because Radix's Select explicitly
+// forbids an empty-string item value.
+function extractHeaderAndRows(rows: string[][]): { headers: string[]; dataRows: Record<string, string>[] } {
+  const headerRowIndex = rows.findIndex((r) => r.filter((c) => c && c.trim()).length >= 2)
+  if (headerRowIndex === -1) return { headers: [], dataRows: [] }
+
+  // Blank header cells (a trailing empty column from a trailing comma) are
+  // dropped entirely rather than rendered as an unmappable "" option.
+  // Duplicate header names (common in real exports) get a "(2)", "(3)" suffix
+  // so every option passed to Select stays unique -- Radix silently breaks on
+  // duplicate item values too, not just empty ones.
+  const seen = new Map<string, number>()
+  const colIndexes: number[] = []
+  const headers: string[] = []
+  rows[headerRowIndex].forEach((raw, i) => {
+    const trimmed = (raw || "").trim()
+    if (!trimmed) return
+    const count = seen.get(trimmed) || 0
+    seen.set(trimmed, count + 1)
+    headers.push(count === 0 ? trimmed : `${trimmed} (${count + 1})`)
+    colIndexes.push(i)
+  })
+
+  const dataRows = rows
+    .slice(headerRowIndex + 1)
+    .filter((r) => r.some((c) => c && c.trim()))
+    .map((r) => {
+      const obj: Record<string, string> = {}
+      colIndexes.forEach((colIdx, j) => { obj[headers[j]] = r[colIdx] || "" })
+      return obj
+    })
+
+  return { headers, dataRows }
+}
 
 export default function BulkImportDialog({
   open,
@@ -88,13 +128,24 @@ export default function BulkImportDialog({
     const picked = e.target.files?.[0];
     if (!picked) return;
     setFile(picked);
+    // Parsed headerless (string[][]), not with Papa's own `header: true` --
+    // that option trusts the literal first line as the header, and a stray
+    // blank/title row above the real header (seen on a real import) would
+    // otherwise reach the UI as a batch of empty-string column names. See
+    // extractHeaderAndRows() for why that specifically crashes the page.
+    // 'greedy' also drops whitespace-only trailing rows (a 900-row file with
+    // ~700 blank rows at the end was the case that surfaced this).
     Papa.parse(picked, {
-      header: true,
-      skipEmptyLines: true,
+      header: false,
+      skipEmptyLines: 'greedy',
       complete: (results) => {
-        const detectedHeaders = results.meta.fields || [];
+        const { headers: detectedHeaders, dataRows } = extractHeaderAndRows(results.data as string[][]);
+        if (detectedHeaders.length === 0) {
+          toast.error("Could not find a header row in that file.");
+          return;
+        }
         setHeaders(detectedHeaders);
-        setRawRows(results.data as Record<string, string>[]);
+        setRawRows(dataRows);
         setMapping(guessMapping(detectedHeaders, fields));
       },
       error: () => toast.error("Error parsing CSV."),
@@ -154,7 +205,13 @@ export default function BulkImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) reset(); onOpenChange(v); }}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto max-w-2xl">
+      {/*
+        shadcn's DialogContent ships a built-in `sm:max-w-sm` (see packages/ui/src/components/ui/dialog.tsx).
+        An unprefixed `max-w-2xl` doesn't reliably beat that at the same breakpoint, which is
+        what was clipping the mapping grid's right side on desktop -- `sm:max-w-2xl` overrides
+        the exact same variant instead of a different one, which tailwind-merge actually dedupes.
+      */}
+      <DialogContent className="w-full max-w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>New Lead Set</DialogTitle>
         </DialogHeader>
@@ -189,7 +246,9 @@ export default function BulkImportDialog({
                       <SelectTrigger className="h-8 mt-1"><SelectValue placeholder="Not in file" /></SelectTrigger>
                       <SelectContent>
                         <SelectItem value={NONE}>Not in file</SelectItem>
-                        {headers.map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                        {/* Defensive filter -- Radix's Select throws on an empty-string item value,
+                            and extractHeaderAndRows() should already guarantee this never happens. */}
+                        {headers.filter(Boolean).map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
