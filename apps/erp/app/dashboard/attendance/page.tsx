@@ -25,6 +25,10 @@ const CorrectDayDialog = dynamic(
   () => import('@/components/attendance/CorrectDayDialog').then(m => m.CorrectDayDialog),
   { ssr: false },
 )
+const StaffCalendar = dynamic(
+  () => import('@/components/attendance/StaffCalendar').then(m => m.StaffCalendar),
+  { ssr: false },
+)
 const NewLeaveRequestDialog = dynamic(
   () => import('@/components/attendance/NewLeaveRequestDialog').then(m => m.NewLeaveRequestDialog),
   { ssr: false },
@@ -34,11 +38,12 @@ const ApproveLeaveDialog = dynamic(
   { ssr: false },
 )
 
-type Tab = 'today' | 'register' | 'monthly' | 'leave'
+type Tab = 'today' | 'register' | 'calendar' | 'monthly' | 'leave'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'today', label: 'Today' },
   { key: 'register', label: 'Register' },
+  { key: 'calendar', label: 'Calendar' },
   { key: 'monthly', label: 'Monthly' },
   { key: 'leave', label: 'Leave' },
 ]
@@ -74,6 +79,11 @@ function AttendancePage() {
   const [newLeaveOpen, setNewLeaveOpen] = useState(false)
   const [deciding, setDeciding] = useState<LeaveRow | null>(null)
   const PAGE_SIZE = useListPageSize()
+
+  // Calendar tab: owns its own correcting state so the refresh can be scoped.
+  const [calendarCorrecting, setCalendarCorrecting] = useState<RegisterRow | null>(null)
+  const [calendarCorrectingDate, setCalendarCorrectingDate] = useState('')
+  const [calendarKey, setCalendarKey] = useState(0)   // bump to force a re-mount after save
 
   // Today and Register are the same view over a different date -- Today pins it
   // to the current IST date so the common case needs no date picking.
@@ -222,6 +232,14 @@ function AttendancePage() {
         </div>
       )}
 
+      {tab === 'calendar' && (
+        <StaffCalendar
+          key={calendarKey}
+          canEdit={canEdit && isManagerOrAbove}
+          onCorrect={(row, date) => { setCalendarCorrecting(row); setCalendarCorrectingDate(date) }}
+        />
+      )}
+
       {tab === 'monthly' && (
         <div className="space-y-3">
           <div>
@@ -281,6 +299,13 @@ function AttendancePage() {
         isOpen={!!correcting}
         onClose={() => setCorrecting(null)}
         onSaved={loadRegister}
+      />
+      <CorrectDayDialog
+        row={calendarCorrecting}
+        date={calendarCorrectingDate}
+        isOpen={!!calendarCorrecting}
+        onClose={() => setCalendarCorrecting(null)}
+        onSaved={() => { setCalendarCorrecting(null); setCalendarKey(k => k + 1) }}
       />
       <NewLeaveRequestDialog
         isOpen={newLeaveOpen}

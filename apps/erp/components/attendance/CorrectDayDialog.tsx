@@ -126,15 +126,45 @@ export function CorrectDayDialog({
   })
 
   const save = useAsyncAction(async () => {
-    if (!row?.day) {
-      setError('This day has no record yet -- add a punch for this person first.')
-      return
-    }
     if (!reason.trim()) {
       setError('A reason is required when overriding attendance.')
       return
     }
+    if (!status) {
+      setError('Choose a status to set.')
+      return
+    }
     setError('')
+
+    // No row yet: create it with manual status directly.
+    if (!row?.day) {
+      const res = await apiFetch('/api/attendance', {
+        method: 'POST',
+        body: JSON.stringify({ staff_id: row!.staff.id, work_date: date, status, reason: reason.trim() }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        // Race: the nightly scan created the row between our load and save.
+        // Re-use the existing row's id that the API hands back.
+        if (res.status === 409 && json.existing_id) {
+          const patchRes = await apiFetch(`/api/attendance/${json.existing_id}`, {
+            method: 'PATCH',
+            body: JSON.stringify({ status, reason: reason.trim() }),
+          })
+          if (!patchRes.ok) {
+            setError((await patchRes.json().catch(() => ({}))).error || 'Could not save that correction.')
+            return
+          }
+        } else {
+          setError(json.error || 'Could not save that correction.')
+          return
+        }
+      }
+      onSaved()
+      onClose()
+      return
+    }
+
     const res = await apiFetch(`/api/attendance/${row.day.id}`, {
       method: 'PATCH',
       body: JSON.stringify({ status, reason: reason.trim() }),
@@ -334,6 +364,12 @@ export function CorrectDayDialog({
             though the worked/late figures above keep updating.
           </p>
         </div>
+
+        {!row.day && (
+          <p className="text-xs text-muted-foreground">
+            No attendance record exists for this day yet. Setting a status will create one.
+          </p>
+        )}
 
         <div className="flex flex-wrap justify-end gap-2 pt-2">
           {row.day?.status_source !== 'derived' && row.day && (

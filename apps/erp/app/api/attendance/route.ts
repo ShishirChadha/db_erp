@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isManagerOrAbove, canEditPage } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { withRetry } from '@/lib/db-retry'
 import { resolveVisibleStaffIds, istToday, ATTENDANCE_STATUSES } from '@/lib/attendance-server'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // Sort allowlist. work_date is the default and descending, per the house rule
 // that every list view's date column comes first and default-sorts newest-first.
@@ -162,4 +163,69 @@ export async function GET(req: NextRequest) {
   // callers never break (see parsePagination's contract).
   if (pagination) return NextResponse.json({ data: data || [], total: count ?? 0 })
   return NextResponse.json(data || [])
+}
+
+// Create an attendance_days row with a manual status override for a day that
+// has no record yet (e.g. marking someone on leave when they never punched in
+// and the nightly scan hasn't run yet). The PATCH handler on /[id] handles the
+// case where the row already exists.
+export async function POST(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isManagerOrAbove(sessionUser) || !canEditPage(sessionUser, 'attendance')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  }
+
+  const body = await req.json().catch(() => ({}))
+  const { staff_id, work_date, status, reason } = body
+  if (!staff_id || !work_date || !status || !reason?.trim()) {
+    return NextResponse.json({ error: 'staff_id, work_date, status, and reason are required.' }, { status: 400 })
+  }
+  if (!ATTENDANCE_STATUSES.includes(status)) {
+    return NextResponse.json({ error: `status must be one of: ${ATTENDANCE_STATUSES.join(', ')}` }, { status: 400 })
+  }
+
+  // Guard against racing with the nightly scan or another tab.
+  const { data: existing } = await supabaseAdmin
+    .from('attendance_days')
+    .select('id')
+    .eq('staff_id', staff_id)
+    .eq('work_date', work_date)
+    .maybeSingle()
+  if (existing) {
+    return NextResponse.json({ error: 'A record already exists for this day — use the edit path.', existing_id: existing.id }, { status: 409 })
+  }
+
+  const { data: staffRow } = await supabaseAdmin
+    .from('staff').select('full_name').eq('id', staff_id).maybeSingle()
+  const staffName = (staffRow as any)?.full_name ?? 'staff'
+
+  const { data: day, error } = await supabaseAdmin
+    .from('attendance_days')
+    .insert({
+      staff_id,
+      work_date,
+      status,
+      status_source: 'manual',
+      override_reason: reason.trim(),
+      overridden_by: sessionUser.id,
+      overridden_at: new Date().toISOString(),
+    })
+    .select('*')
+    .single()
+
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'create',
+    module: 'attendance',
+    tableName: 'attendance_days',
+    recordId: day.id,
+    recordLabel: `${staffName} ${work_date} created as ${status}`,
+    reason: reason.trim(),
+    metadata: { status, status_source: 'manual' },
+  })
+
+  return NextResponse.json({ success: true, day })
 }
