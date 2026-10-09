@@ -69,9 +69,9 @@ export function CorrectDayDialog({
   const [status, setStatus] = useState<string>('')
   const [reason, setReason] = useState('')
 
-  // Add-punch form state
-  const [addType, setAddType] = useState<'in' | 'out'>('in')
-  const [addTime, setAddTime] = useState('')
+  // Add-punch form state — both In and Out can be set at once
+  const [addInTime, setAddInTime] = useState('')
+  const [addOutTime, setAddOutTime] = useState('')
   const [showAddForm, setShowAddForm] = useState(false)
 
   const loadPunches = useCallback(async () => {
@@ -88,8 +88,8 @@ export function CorrectDayDialog({
     setReason('')
     setStatus(row?.day?.status ?? '')
     setShowAddForm(false)
-    setAddTime('')
-    setAddType('in')
+    setAddInTime('')
+    setAddOutTime('')
     loadPunches()
   }, [isOpen, row, loadPunches])
 
@@ -99,28 +99,34 @@ export function CorrectDayDialog({
       setError('Fill in the reason above before adding a punch.')
       return
     }
-    if (!addTime) {
-      setError('Choose a time for the punch.')
+    if (!addInTime && !addOutTime) {
+      setError('Enter at least one time (Punch In or Punch Out).')
       return
     }
     setError('')
-    const punched_at = istToUtcIso(date, addTime)
-    const res = await apiFetch('/api/attendance/punch', {
-      method: 'POST',
-      body: JSON.stringify({
-        type: addType,
-        staff_id: row!.staff.id,
-        punched_at,
-        reason: why,
-      }),
-    })
-    const json = await res.json().catch(() => ({}))
-    if (!res.ok) {
-      setError(json.error || 'Could not add that punch.')
+
+    const postPunch = async (type: 'in' | 'out', hhmm: string) => {
+      const res = await apiFetch('/api/attendance/punch', {
+        method: 'POST',
+        body: JSON.stringify({ type, staff_id: row!.staff.id, punched_at: istToUtcIso(date, hhmm), reason: why }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || `Could not add punch ${type}.`)
+    }
+
+    try {
+      // Always save in order: in before out, so the pair is chronologically correct.
+      if (addInTime) await postPunch('in', addInTime)
+      if (addOutTime) await postPunch('out', addOutTime)
+    } catch (err: any) {
+      setError(err.message)
+      await loadPunches()
       return
     }
+
     setShowAddForm(false)
-    setAddTime('')
+    setAddInTime('')
+    setAddOutTime('')
     await loadPunches()
     onSaved()
   })
@@ -261,36 +267,44 @@ export function CorrectDayDialog({
           {/* Add-punch inline form -- supervisor path, exempt from IP check,
               requires a reason (shared with the reason field below), fully
               audited. The API's isSupervisorAction branch fires because
-              staff_id + punched_at are present in the body. */}
+              staff_id + punched_at are present in the body.
+              Both In and Out can be saved in one action -- In is posted first,
+              Out second, so the pair is always chronologically correct. */}
           {showAddForm && (
             <div className="rounded-md border border-border p-3 mb-2 space-y-2 bg-muted/30">
-              <div className="text-xs font-medium text-muted-foreground">Add a supervisor punch</div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <select
-                  value={addType}
-                  onChange={e => setAddType(e.target.value as 'in' | 'out')}
-                  className="h-8 rounded-md border border-input bg-background px-2 text-sm"
-                >
-                  <option value="in">Punch In</option>
-                  <option value="out">Punch Out</option>
-                </select>
-                <Input
-                  type="time"
-                  value={addTime}
-                  onChange={e => setAddTime(e.target.value)}
-                  className="h-8 w-32"
-                />
-                <span className="text-xs text-muted-foreground">IST on {date}</span>
+              <div className="text-xs font-medium text-muted-foreground">
+                Add supervisor punches — IST on {date}
               </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Punch In time</label>
+                  <Input
+                    type="time"
+                    value={addInTime}
+                    onChange={e => setAddInTime(e.target.value)}
+                    className="h-8"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">Punch Out time</label>
+                  <Input
+                    type="time"
+                    value={addOutTime}
+                    onChange={e => setAddOutTime(e.target.value)}
+                    className="h-8"
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Fill one or both. At least one is required.</p>
               <div className="flex gap-2">
                 <Button size="sm" className="h-7 text-xs"
-                  disabled={addPunch.pending || !addTime}
+                  disabled={addPunch.pending || (!addInTime && !addOutTime)}
                   onClick={() => addPunch.run()}>
                   {addPunch.pending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                  Save punch
+                  Save punch{addInTime && addOutTime ? 'es' : ''}
                 </Button>
                 <Button variant="ghost" size="sm" className="h-7 text-xs"
-                  onClick={() => { setShowAddForm(false); setAddTime('') }}>
+                  onClick={() => { setShowAddForm(false); setAddInTime(''); setAddOutTime('') }}>
                   Cancel
                 </Button>
               </div>
