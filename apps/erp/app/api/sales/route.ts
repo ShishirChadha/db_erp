@@ -71,8 +71,33 @@ export async function GET(req: NextRequest) {
   // (trimmed of stray whitespace); non-numeric search terms skip this clause
   // entirely rather than risk building a malformed PostgREST filter string.
   const searchAmount = search && /^\d+(\.\d{1,2})?$/.test(search.trim()) ? search.trim() : null
+  // Item name/SKU search: sales has no item/SKU column of its own (it's resolved via
+  // accessory_id or asset_ledger_id -> sku_master, same as the enrichment below) --
+  // find matching sku_master rows up front, then OR in every sale that points at one
+  // directly (accessory_id) or indirectly via its unit's current/as-purchased SKU.
+  let searchAccessoryIds: string[] = []
+  let searchAssetLedgerIds: string[] = []
+  if (search) {
+    const { data: matchingSkus } = await withRetry(() =>
+      supabaseAdmin
+        .from('sku_master')
+        .select('id')
+        .or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%`)
+    )
+    const matchingSkuIds = (matchingSkus || []).map((s: any) => s.id)
+    if (matchingSkuIds.length) {
+      searchAccessoryIds = matchingSkuIds
+      const { data: matchingAssets } = await withRetry(() =>
+        supabaseAdmin
+          .from('asset_ledger')
+          .select('id')
+          .or(`sku_id.in.(${matchingSkuIds.join(',')}),current_sku_id.in.(${matchingSkuIds.join(',')})`)
+      )
+      searchAssetLedgerIds = (matchingAssets || []).map((a: any) => a.id)
+    }
+  }
   const searchFilter = search
-    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}`
+    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}${searchAccessoryIds.length ? `,accessory_id.in.(${searchAccessoryIds.join(',')})` : ''}${searchAssetLedgerIds.length ? `,asset_ledger_id.in.(${searchAssetLedgerIds.join(',')})` : ''}`
     : ''
 
   // Customers Owed Money mode: two cases where money is owed back that nothing else
