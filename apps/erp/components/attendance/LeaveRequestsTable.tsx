@@ -5,6 +5,7 @@ import { EmptyTableRow } from '@/components/EmptyTableRow'
 import { LEAVE_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { LEAVE_TYPE_LABELS, type LeaveType } from '@/lib/attendance'
 import { Button } from '@/components/ui/button'
+import { Trash2 } from 'lucide-react'
 
 export interface LeaveRow {
   id: string
@@ -28,11 +29,12 @@ function range(r: LeaveRow) {
 // the ordering itself is applied server-side in app/api/leave-requests/route.ts
 // so it matches the displayed column rather than an unrelated timestamp.
 export function LeaveRequestsTable({
-  rows, canDecide, onDecide, loading,
+  rows, canDecide, onDecide, onDelete, loading,
 }: {
   rows: LeaveRow[]
   canDecide: boolean
   onDecide: (row: LeaveRow) => void
+  onDelete?: (row: LeaveRow) => void
   loading?: boolean
 }) {
   return (
@@ -46,12 +48,12 @@ export function LeaveRequestsTable({
               <th className="p-2 font-medium">Type</th>
               <th className="p-2 font-medium">Status</th>
               <th className="p-2 font-medium">Reason</th>
-              {canDecide && <th className="p-2 font-medium w-24" />}
+              {(canDecide || onDelete) && <th className="p-2 font-medium w-32" />}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && !loading && (
-              <EmptyTableRow colSpan={canDecide ? 6 : 5} message="No leave requests." />
+              <EmptyTableRow colSpan={(canDecide || onDelete) ? 6 : 5} message="No leave requests." />
             )}
             {rows.map(r => (
               <tr key={r.id} className="border-t border-border">
@@ -70,11 +72,22 @@ export function LeaveRequestsTable({
                   {r.reason || '--'}
                   {r.decision_note && <div className="italic">note: {r.decision_note}</div>}
                 </td>
-                {canDecide && (
+                {(canDecide || onDelete) && (
                   <td className="p-2">
-                    {r.status === 'pending' && (
-                      <Button size="sm" className="h-8" onClick={() => onDecide(r)}>Decide</Button>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {canDecide && r.status === 'pending' && (
+                        <Button size="sm" className="h-8" onClick={() => onDecide(r)}>Decide</Button>
+                      )}
+                      {onDelete && (
+                        <Button
+                          variant="ghost" size="sm"
+                          className="h-8 px-2 text-destructive hover:text-destructive"
+                          onClick={() => onDelete(r)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
                   </td>
                 )}
               </tr>
@@ -98,9 +111,18 @@ export function LeaveRequestsTable({
               {LEAVE_TYPE_LABELS[r.leave_type] ?? r.leave_type}
               {r.reason && ` · ${r.reason}`}
             </div>
-            {canDecide && r.status === 'pending' && (
-              <Button size="sm" className="h-8 w-full" onClick={() => onDecide(r)}>Decide</Button>
-            )}
+            <div className="flex gap-2">
+              {canDecide && r.status === 'pending' && (
+                <Button size="sm" className="h-8 flex-1" onClick={() => onDecide(r)}>Decide</Button>
+              )}
+              {onDelete && (
+                <Button variant="ghost" size="sm"
+                  className="h-8 px-3 text-destructive hover:text-destructive"
+                  onClick={() => onDelete(r)}>
+                  <Trash2 className="h-3.5 w-3.5 mr-1" /> Delete
+                </Button>
+              )}
+            </div>
           </div>
         ))}
       </div>

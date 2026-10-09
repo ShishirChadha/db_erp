@@ -17,7 +17,7 @@ import { MonthSummaryTable, type SummaryRow } from '@/components/attendance/Mont
 import { LeaveRequestsTable, type LeaveRow } from '@/components/attendance/LeaveRequestsTable'
 import { istToday } from '@/lib/attendance'
 import { cn } from '@/lib/utils'
-import { Loader2, Plus } from 'lucide-react'
+import { Loader2, Plus, Trash2 } from 'lucide-react'
 
 // Code-split: only one tab's dialog is ever open, and the correction dialog in
 // particular pulls in the punch log.
@@ -53,7 +53,7 @@ function currentMonth() {
 }
 
 function AttendancePage() {
-  const { canEditPage, isManagerOrAbove } = useRole()
+  const { canEditPage, isManagerOrAbove, isOwner } = useRole()
   const canEdit = canEditPage('attendance')
 
   const [tab, setTab] = useState<Tab>('today')
@@ -78,6 +78,9 @@ function AttendancePage() {
   const [leaveStatus, setLeaveStatus] = useState('')
   const [newLeaveOpen, setNewLeaveOpen] = useState(false)
   const [deciding, setDeciding] = useState<LeaveRow | null>(null)
+  const [deletingLeave, setDeletingLeave] = useState<LeaveRow | null>(null)
+  const [deleteLeaveError, setDeleteLeaveError] = useState('')
+  const [deleteLeaveLoading, setDeleteLeaveLoading] = useState(false)
   const PAGE_SIZE = useListPageSize()
 
   // Calendar tab: owns its own correcting state so the refresh can be scoped.
@@ -285,6 +288,7 @@ function AttendancePage() {
                 rows={leaveRows}
                 canDecide={canEdit && isManagerOrAbove}
                 onDecide={setDeciding}
+                onDelete={isOwner ? row => { setDeletingLeave(row); setDeleteLeaveError('') } : undefined}
                 loading={loading}
               />
               <Pagination page={leavePage} pageSize={PAGE_SIZE} total={leaveTotal} onPageChange={setLeavePage} />
@@ -319,6 +323,47 @@ function AttendancePage() {
         onClose={() => setDeciding(null)}
         onSaved={loadLeave}
       />
+
+      {/* Delete leave request confirmation */}
+      {deletingLeave && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-background rounded-lg border border-border shadow-lg max-w-sm w-full p-5 space-y-4">
+            <div className="flex items-center gap-2 text-destructive">
+              <Trash2 className="h-4 w-4" />
+              <span className="font-semibold text-foreground">Delete leave request?</span>
+            </div>
+            <p className="text-sm text-muted-foreground">
+              This will permanently delete the <strong>{deletingLeave.leave_type}</strong> leave for{' '}
+              <strong>{deletingLeave.staff?.full_name}</strong> ({deletingLeave.from_date}
+              {deletingLeave.from_date !== deletingLeave.to_date ? ` to ${deletingLeave.to_date}` : ''}).
+              {deletingLeave.status === 'approved' && ' The linked attendance days will be released.'}
+            </p>
+            {deleteLeaveError && <p className="text-sm text-destructive">{deleteLeaveError}</p>}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" disabled={deleteLeaveLoading}
+                onClick={() => { setDeletingLeave(null); setDeleteLeaveError('') }}>
+                Cancel
+              </Button>
+              <Button variant="destructive" size="sm" disabled={deleteLeaveLoading}
+                onClick={async () => {
+                  setDeleteLeaveLoading(true)
+                  setDeleteLeaveError('')
+                  const res = await apiFetch(`/api/leave-requests/${deletingLeave.id}`, { method: 'DELETE' })
+                  setDeleteLeaveLoading(false)
+                  if (!res.ok) {
+                    setDeleteLeaveError((await res.json().catch(() => ({}))).error || 'Could not delete.')
+                    return
+                  }
+                  setDeletingLeave(null)
+                  loadLeave()
+                }}>
+                {deleteLeaveLoading && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
+                Delete
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
