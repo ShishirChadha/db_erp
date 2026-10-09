@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from 'sonner';
 import ThemeProvider from '@/components/ThemeProvider';
 import { RoleProvider } from '@/lib/auth/useRole';
+import { SessionRefreshOnFocus } from '@/components/SessionRefreshOnFocus';
 
 // Runs before hydration so the theme is correct on first paint -- ThemeProvider's
 // own React state sync (localStorage -> data-theme attribute) would otherwise
@@ -48,6 +49,7 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
       </head>
       <body className="min-h-full flex flex-col">
+        <SessionRefreshOnFocus />
         <RoleProvider>
           <ThemeProvider>
             {children}
