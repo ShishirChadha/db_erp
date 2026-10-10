@@ -198,6 +198,10 @@ export async function POST(req: NextRequest) {
       notes: `Replacement job ${jobNumber}`,
       userId: sessionUser.id,
       eventDate: resolvedJobDate,
+      // The old sale's paid amount is folded forward into the new replacement sale
+      // below (carriedOverPaid), not refunded -- this is a swap, not a return, so it
+      // skips the Refund/Credit Note prompt that a plain RMA return now requires.
+      skipResolution: true,
     })
     if (returnResult.error) {
       return NextResponse.json({ error: returnResult.error }, { status: returnResult.status || 500 })

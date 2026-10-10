@@ -143,6 +143,7 @@ function SellPageInner() {
 
   const [customerId, setCustomerId] = useState<string | null>(null)
   const [customerData, setCustomerData] = useState<any>(null)
+  const [customerCreditBalance, setCustomerCreditBalance] = useState<number | null>(null)
   const [customerRefreshKey, setCustomerRefreshKey] = useState(0)
 
   const [gstPercent, setGstPercent] = useState<number>(18)
@@ -767,7 +768,13 @@ function SellPageInner() {
               <SearchableCustomerSelect
                 key={customerRefreshKey}
                 value={customerId}
-                onChange={setCustomerId}
+                onChange={(id) => {
+                  setCustomerId(id)
+                  if (!id) { setCustomerCreditBalance(null); return }
+                  apiFetch(`/api/customers/${id}/credit`).then(async (res) => {
+                    setCustomerCreditBalance(res.ok ? (await res.json()).balance ?? 0 : null)
+                  })
+                }}
                 onCustomerData={setCustomerData}
               />
             </div>
@@ -779,6 +786,11 @@ function SellPageInner() {
               }
             }} />
           </div>
+          {!!customerCreditBalance && customerCreditBalance > 0.5 && (
+            <p className="text-xs text-muted-foreground mt-1">
+              Credit available: ₹{customerCreditBalance.toFixed(2)} (apply it as a payment on this sale, "Received Into: Customer Credit")
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

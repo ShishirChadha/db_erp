@@ -144,6 +144,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | replacement_jobs | payment_account | replacement_jobs_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | replacement_jobs | status | replacement_jobs_status_check | `CHECK ((status = ANY (ARRAY['intake'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
 | sale_payments | amount | sale_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
+| sale_refunds | amount | sale_refunds_amount_check | `CHECK ((amount > (0)::numeric))` |
 | sales | payment_account | sales_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | sales | payment_status | sales_payment_status_check | `CHECK ((payment_status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text])))` |
 | sales | sale_type | sales_sale_type_check | `CHECK ((sale_type = ANY (ARRAY['Cash'::text, 'GST'::text])))` |

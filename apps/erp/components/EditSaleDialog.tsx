@@ -600,6 +600,7 @@ export function EditSaleDialog({
         <AddPaymentDialog
           saleId={saleId}
           balanceDue={sale.sale_total - sale.amount_paid}
+          customerId={sale.customer_id}
           onClose={() => setShowAddPayment(false)}
           onSaved={() => {
             loadPayments();

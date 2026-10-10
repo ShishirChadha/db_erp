@@ -62,11 +62,28 @@ export async function POST(
 
   const { data: sale, error: saleErr } = await supabaseAdmin
     .from('sales')
-    .select('id, sale_total, amount_paid, is_deleted')
+    .select('id, customer_id, sale_total, amount_paid, is_deleted')
     .eq('id', id)
     .single()
   if (saleErr || !sale || sale.is_deleted) {
     return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
+  }
+
+  // Paying with store credit debits the customer's credit_note balance -- validate
+  // it covers the amount before anything is written (see customer_credit_ledger,
+  // apps/erp/app/api/customers/[id]/credit/route.ts).
+  if (body.payment_account === 'Customer Credit') {
+    if (!sale.customer_id) {
+      return NextResponse.json({ error: 'This sale has no linked customer to charge store credit against.' }, { status: 400 })
+    }
+    const { data: ledgerRows } = await supabaseAdmin
+      .from('customer_credit_ledger')
+      .select('amount')
+      .eq('customer_id', sale.customer_id)
+    const balance = (ledgerRows || []).reduce((sum: number, r: any) => sum + Number(r.amount), 0)
+    if (amount > balance + 0.5) {
+      return NextResponse.json({ error: `This customer only has ₹${balance.toFixed(2)} of store credit available.` }, { status: 400 })
+    }
   }
 
   const alreadyPaid = Number(sale.amount_paid) || 0
@@ -106,6 +123,16 @@ export async function POST(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  if (body.payment_account === 'Customer Credit' && sale.customer_id) {
+    await supabaseAdmin.from('customer_credit_ledger').insert({
+      customer_id: sale.customer_id,
+      sale_id: id,
+      amount: -amount,
+      reason: `Redeemed against sale ${id}`,
+      created_by: sessionUser.id,
+    })
+  }
 
   const { data: updatedSale } = await supabaseAdmin
     .from('sales')

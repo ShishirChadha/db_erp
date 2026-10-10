@@ -62,6 +62,7 @@ interface Sale {
   sold_by: string | null;
   finalized: boolean;
   is_deleted?: boolean;
+  refund_resolution?: { type: 'refund' | 'credit_note'; amount: number; payment_account?: string | null } | null;
   invoice_number: string | null;
   invoice_date: string | null;
   invoice_id?: string | null;
@@ -213,7 +214,16 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
           )}
         </span>
       ) : sale.is_deleted ? (
-        <span className="text-muted-foreground text-xs">Voided -- not invoiceable</span>
+        <span className="text-muted-foreground text-xs inline-flex flex-col gap-0.5">
+          Voided -- not invoiceable
+          {sale.refund_resolution && (
+            <span>
+              {sale.refund_resolution.type === "refund"
+                ? `Refunded ₹${sale.refund_resolution.amount.toFixed(2)}${sale.refund_resolution.payment_account ? ` via ${sale.refund_resolution.payment_account}` : ""}`
+                : `₹${sale.refund_resolution.amount.toFixed(2)} credit note issued`}
+            </span>
+          )}
+        </span>
       ) : !isOwner ? (
         <span className="text-muted-foreground text-xs">Awaiting invoice</span>
       ) : isExternal ? (

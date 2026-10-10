@@ -257,6 +257,14 @@ function RmaPage() {
   const [vendorId, setVendorId] = useState('')
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
+  // Set once the server rejects a from_customer return with 409 refund_required --
+  // forces a Refund/Credit Note choice before the return can be resubmitted
+  // (lib/rma.ts's processCustomerReturn, same confirm-and-retry shape used
+  // elsewhere for exceeds_sale_total/already_invoiced).
+  const [refundRequiredAmount, setRefundRequiredAmount] = useState<number | null>(null)
+  const [resolutionType, setResolutionType] = useState<'refund' | 'credit_note'>('refund')
+  const [resolutionAmount, setResolutionAmount] = useState(0)
+  const [resolutionAccount, setResolutionAccount] = useState('')
 
   // create-form state (accessory)
   const [accessoryDirection, setAccessoryDirection] = useState<'to_vendor' | 'from_customer'>('to_vendor')
@@ -389,6 +397,10 @@ function RmaPage() {
       alert('Select an asset and enter a reason')
       return
     }
+    if (refundRequiredAmount !== null && resolutionType === 'refund' && !resolutionAccount) {
+      alert('Select which account the refund was paid out of.')
+      return
+    }
     setSaving(true)
     try {
       const res = await apiFetch('/api/rma', {
@@ -399,14 +411,23 @@ function RmaPage() {
           reason,
           vendor_id: direction === 'to_vendor' ? vendorId || null : null,
           notes: notes || null,
+          ...(refundRequiredAmount !== null
+            ? { resolution: { type: resolutionType, amount: resolutionAmount, payment_account: resolutionType === 'refund' ? resolutionAccount : undefined } }
+            : {}),
         }),
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
+        if (err.error_code === 'refund_required') {
+          setRefundRequiredAmount(err.amount_paid || 0)
+          setResolutionAmount(err.amount_paid || 0)
+          return
+        }
         alert(err.error || 'Failed to open RMA')
         return
       }
       setModalOpen(false)
+      setRefundRequiredAmount(null)
       fetchEvents()
     } finally {
       setSaving(false)
@@ -584,7 +605,7 @@ function RmaPage() {
                   <label className="block text-sm font-medium mb-1">Direction</label>
                   <select
                     value={direction}
-                    onChange={(e) => { setDirection(e.target.value as 'to_vendor' | 'from_customer'); setSelectedAsset(null); setAssetResults([]) }}
+                    onChange={(e) => { setDirection(e.target.value as 'to_vendor' | 'from_customer'); setSelectedAsset(null); setAssetResults([]); setRefundRequiredAmount(null) }}
                     className="border p-2 w-full rounded"
                   >
                     <option value="to_vendor">To Vendor (faulty stock)</option>
@@ -599,7 +620,7 @@ function RmaPage() {
                   {selectedAsset ? (
                     <div className="flex items-center justify-between border p-2 rounded bg-muted">
                       <span>{selectedAsset.asset_number} — {selectedAsset.sku_code}</span>
-                      <Button variant="link" size="sm" onClick={() => setSelectedAsset(null)} className="text-destructive text-xs">Change</Button>
+                      <Button variant="link" size="sm" onClick={() => { setSelectedAsset(null); setRefundRequiredAmount(null) }} className="text-destructive text-xs">Change</Button>
                     </div>
                   ) : (
                     <>
@@ -649,8 +670,48 @@ function RmaPage() {
                   <textarea value={notes} onChange={(e) => setNotes(e.target.value)} className="border p-2 w-full rounded" />
                 </div>
 
+                {refundRequiredAmount !== null && (
+                  <div className="mb-4 border rounded p-3 bg-muted space-y-2">
+                    <p className="text-sm font-medium">
+                      ₹{refundRequiredAmount.toFixed(2)} was paid on this sale -- choose how it's being resolved before completing the return.
+                    </p>
+                    <div className="flex gap-4 text-sm">
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" checked={resolutionType === 'refund'} onChange={() => setResolutionType('refund')} />
+                        Refunded
+                      </label>
+                      <label className="flex items-center gap-1.5">
+                        <input type="radio" checked={resolutionType === 'credit_note'} onChange={() => setResolutionType('credit_note')} />
+                        Credit Note
+                      </label>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Amount (₹)</label>
+                        <input
+                          type="number"
+                          value={resolutionAmount}
+                          onChange={(e) => setResolutionAmount(Number(e.target.value))}
+                          className="border p-2 w-full rounded text-right"
+                        />
+                      </div>
+                      {resolutionType === 'refund' && (
+                        <div>
+                          <label className="block text-xs text-muted-foreground mb-1">Refunded From</label>
+                          <select value={resolutionAccount} onChange={(e) => setResolutionAccount(e.target.value)} className="border p-2 w-full rounded">
+                            <option value="">Select account...</option>
+                            <option value="Digitalbluez">Digitalbluez</option>
+                            <option value="Techtenth">Techtenth</option>
+                            <option value="Cash">Cash</option>
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex justify-end gap-2">
-                  <button onClick={() => setModalOpen(false)} className="px-4 py-2 border rounded">Cancel</button>
+                  <button onClick={() => { setModalOpen(false); setRefundRequiredAmount(null) }} className="px-4 py-2 border rounded">Cancel</button>
                   <button
                     onClick={submitRma}
                     disabled={saving}

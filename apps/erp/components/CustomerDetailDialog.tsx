@@ -71,6 +71,7 @@ export function CustomerDetailDialog({
   const [mergeTarget, setMergeTarget] = useState<{ id: string; customer_name: string } | null>(null);
   const [merging, setMerging] = useState(false);
   const [mergeError, setMergeError] = useState("");
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
   const supabase = createClient();
 
   const load = async (id: string) => {
@@ -81,6 +82,12 @@ export function CustomerDetailDialog({
   };
 
   useEffect(() => { load(customerId); }, [customerId]);
+
+  useEffect(() => {
+    apiFetch(`/api/customers/${customerId}/credit`).then(async (res) => {
+      setCreditBalance(res.ok ? (await res.json()).balance ?? 0 : null);
+    });
+  }, [customerId]);
 
   const handleReassign = async (newId: string, newCustomerName: string) => {
     if (!onReassign) return;
@@ -154,6 +161,9 @@ export function CustomerDetailDialog({
               <Field label="Google Review" value={customer.google_review ? "Yes" : "No"} />
               {customer.created_at && (
                 <Field label="Customer Since" value={new Date(customer.created_at).toLocaleDateString()} />
+              )}
+              {!!creditBalance && creditBalance > 0.5 && (
+                <Field label="Credit Available" value={`₹${creditBalance.toFixed(2)}`} />
               )}
             </div>
             <Field

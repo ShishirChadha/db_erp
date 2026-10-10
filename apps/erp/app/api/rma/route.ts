@@ -62,7 +62,7 @@ export async function POST(req: NextRequest) {
   const user = { id: sessionUser.id }
 
   const body = await req.json()
-  const { asset_id, direction, reason, vendor_id, notes, event_date } = body
+  const { asset_id, direction, reason, vendor_id, notes, event_date, resolution } = body
 
   if (!asset_id || !direction || !reason) {
     return NextResponse.json({ error: 'asset_id, direction, and reason are required' }, { status: 400 })
@@ -87,8 +87,14 @@ export async function POST(req: NextRequest) {
       notes,
       userId: user.id,
       eventDate: event_date,
+      resolution,
     })
-    if (result.error) return NextResponse.json({ error: result.error }, { status: result.status || 500 })
+    if (result.error) {
+      return NextResponse.json(
+        { error: result.error, error_code: result.error_code, amount_paid: result.amount_paid },
+        { status: result.status || 500 }
+      )
+    }
 
     const { data: event } = await supabaseAdmin
       .from('asset_rma_events')

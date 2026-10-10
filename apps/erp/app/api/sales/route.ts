@@ -113,7 +113,7 @@ export async function GET(req: NextRequest) {
   if (searchParams.get('credit_owed') === 'true') {
     if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
-    const [{ data: paidSales }, { data: voidedPaidSales, count: voidedCount }] = await Promise.all([
+    const [{ data: paidSales }, { data: voidedPaidSales }, { data: resolvedRefunds }, { data: resolvedCredits }] = await Promise.all([
       withRetry(() =>
         supabaseAdmin
           .from('sales')
@@ -126,21 +126,32 @@ export async function GET(req: NextRequest) {
       withRetry(() =>
         supabaseAdmin
           .from('sales')
-          .select('id, customer_name, sale_total, amount_paid, is_deleted, created_at', { count: 'exact' })
+          .select('id, customer_name, sale_total, amount_paid, is_deleted, created_at')
           .eq('is_deleted', true)
           .gt('amount_paid', 0.5)
           .order('created_at', { ascending: false })
-          .limit(8)
+          .limit(500)
       ),
+      withRetry(() => supabaseAdmin.from('sale_refunds').select('sale_id')),
+      withRetry(() => supabaseAdmin.from('customer_credit_ledger').select('sale_id').not('sale_id', 'is', null)),
     ])
 
+    // A voided return already resolved with a Refund or Credit Note (see
+    // lib/rma.ts's processCustomerReturn) is no longer an open liability -- drop it
+    // from this list the moment it's resolved, instead of leaving it here forever.
+    const resolvedSaleIds = new Set([
+      ...(resolvedRefunds || []).map((r: any) => r.sale_id),
+      ...(resolvedCredits || []).map((r: any) => r.sale_id),
+    ])
+    const unresolvedVoidedPaid = (voidedPaidSales || []).filter((s: any) => !resolvedSaleIds.has(s.id))
+
     const overpaidLive = (paidSales || []).filter((s: any) => Number(s.amount_paid) > Number(s.sale_total) + 0.5)
-    const combined = [...overpaidLive, ...(voidedPaidSales || [])]
+    const combined = [...overpaidLive, ...unresolvedVoidedPaid]
       .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
 
     return NextResponse.json({
       data: combined.slice(0, 8),
-      total: overpaidLive.length + (voidedCount ?? (voidedPaidSales || []).length),
+      total: overpaidLive.length + unresolvedVoidedPaid.length,
     })
   }
 
@@ -290,6 +301,10 @@ export async function GET(req: NextRequest) {
   // invoice_id resolves to the invoice's own invoice_date (ERP-generated or
   // Zoho-recorded) -- distinct from sale_date, which is when the item itself was sold.
   const invoiceIds = [...new Set((data || []).map((s: any) => s.invoice_id).filter(Boolean))]
+  // Only the voided view needs to know what happened to the money (Refund/Credit
+  // Note) -- see lib/rma.ts's processCustomerReturn and the Refund/Credit Note
+  // prompt on the RMA page.
+  const voidedSaleIds = voided ? (data || []).map((s: any) => s.id) : []
 
   // Every lookup below only depends on `data` (already fetched above), not on each
   // other -- run them concurrently rather than as 7 sequential round trips, each of
@@ -307,6 +322,8 @@ export async function GET(req: NextRequest) {
     { data: repairJobs },
     { data: rentalAgreements },
     { data: invoices },
+    { data: saleRefunds },
+    { data: saleCredits },
     paymentDateBySaleId,
   ] = await Promise.all([
     chunkedIn<any>(unfinalizedCustomerIds, chunk =>
@@ -334,6 +351,12 @@ export async function GET(req: NextRequest) {
     chunkedIn<any>(invoiceIds, chunk =>
       supabaseAdmin.from('invoices').select('id, invoice_date').in('id', chunk)
     ),
+    chunkedIn<any>(voidedSaleIds, chunk =>
+      supabaseAdmin.from('sale_refunds').select('sale_id, amount, payment_account').in('sale_id', chunk)
+    ),
+    chunkedIn<any>(voidedSaleIds, chunk =>
+      supabaseAdmin.from('customer_credit_ledger').select('sale_id, amount').in('sale_id', chunk).gt('amount', 0)
+    ),
     // Most recent sale_payments installment date per sale -- shown as "Payment Date"
     // alongside sale_date; a sale with 2+ partial payments shows its latest one.
     latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
@@ -346,6 +369,8 @@ export async function GET(req: NextRequest) {
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
   const rentalAgreementById = new Map((rentalAgreements || []).map((r: any) => [r.id, r]))
   const invoiceDateById = new Map((invoices || []).map((i: any) => [i.id, i.invoice_date]))
+  const refundBySaleId = new Map((saleRefunds || []).map((r: any) => [r.sale_id, r]))
+  const creditBySaleId = new Map((saleCredits || []).map((r: any) => [r.sale_id, r]))
 
   // Include specifications/category so the ledger can surface RAM/SSD directly
   // (specifications.ram / specifications.ssd -- see sku_category_templates field
@@ -392,6 +417,13 @@ export async function GET(req: NextRequest) {
       ? `${s.rental_period_start} to ${s.rental_period_end}` : null
     withName.payment_date = paymentDateBySaleId.get(s.id) || null
     withName.invoice_date = s.invoice_id ? invoiceDateById.get(s.invoice_id) || null : null
+    const refund = refundBySaleId.get(s.id)
+    const credit = creditBySaleId.get(s.id)
+    withName.refund_resolution = refund
+      ? { type: 'refund', amount: refund.amount, payment_account: refund.payment_account }
+      : credit
+        ? { type: 'credit_note', amount: credit.amount }
+        : null
     return withName
   })
 

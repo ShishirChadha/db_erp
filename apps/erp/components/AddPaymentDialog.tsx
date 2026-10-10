@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -23,7 +23,7 @@ import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 
-const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
+const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash", "Customer Credit"];
 
 // Records one installment against a sale via the append-only sale_payments ledger
 // (POST /api/sales/[id]/payments) -- open to any role with sell/live-stock access, not
@@ -33,11 +33,13 @@ const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 export function AddPaymentDialog({
   saleId,
   balanceDue,
+  customerId,
   onClose,
   onSaved,
 }: {
   saleId: string;
   balanceDue: number;
+  customerId?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -46,6 +48,14 @@ export function AddPaymentDialog({
   const [note, setNote] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString().slice(0, 10));
   const [err, setErr] = useState("");
+  const [creditBalance, setCreditBalance] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!customerId) return;
+    apiFetch(`/api/customers/${customerId}/credit`).then(async (res) => {
+      if (res.ok) setCreditBalance((await res.json()).balance ?? 0);
+    });
+  }, [customerId]);
 
   const { run: submit, pending } = useAsyncAction(async () => {
     setErr("");
@@ -100,6 +110,11 @@ export function AddPaymentDialog({
                 {PAYMENT_ACCOUNTS.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)}
               </SelectContent>
             </Select>
+            {paymentAccount === "Customer Credit" && creditBalance !== null && (
+              <p className="text-xs text-muted-foreground mt-1">
+                Available credit: ₹{creditBalance.toFixed(2)}
+              </p>
+            )}
           </div>
           <div>
             <Label>Note (optional)</Label>

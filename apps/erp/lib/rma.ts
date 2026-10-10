@@ -11,10 +11,23 @@ import { logAuditEvent } from './audit-log'
 // asset_rma_events row -- a real physical return needs re-inspection first.
 export async function processCustomerReturn(
   assetId: string,
-  opts: { reason: string; notes?: string | null; userId: string; eventDate?: string }
+  opts: {
+    reason: string
+    notes?: string | null
+    userId: string
+    eventDate?: string
+    // A plain return forces a Refund/Credit Note choice before anything is
+    // committed, once money was actually paid on the old sale. A caller that
+    // already has its own place for that money to go (Replacement Jobs fold it
+    // forward into the new sale) passes skipResolution instead.
+    resolution?: { type: 'refund' | 'credit_note'; amount: number; payment_account?: string; note?: string }
+    skipResolution?: boolean
+  }
 ): Promise<{
   error?: string
   status?: number
+  error_code?: string
+  amount_paid?: number
   saleId?: string
   saleAmountPaid?: number
   saleDate?: string | null
@@ -33,6 +46,36 @@ export async function processCustomerReturn(
     return {
       error: `Only 'sold' assets can have a customer return (current status: ${asset.status})`,
       status: 400,
+    }
+  }
+
+  // Look up the sale that would be voided -- before anything else is written --
+  // so a return that owes money back can be rejected with nothing committed yet,
+  // forcing the caller to supply a resolution and resubmit (same 409-then-retry
+  // shape as the overpayment guard on POST /api/sales/[id]/payments).
+  if (!opts.skipResolution) {
+    const { data: preSale } = await supabaseAdmin
+      .from('sales')
+      .select('amount_paid')
+      .eq('asset_ledger_id', assetId)
+      .eq('is_deleted', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    const preAmountPaid = Number(preSale?.amount_paid) || 0
+    if (preAmountPaid > 0.5 && !opts.resolution) {
+      return {
+        error: `₹${preAmountPaid.toFixed(2)} was paid on this sale. Choose Refund or Credit Note before completing the return.`,
+        status: 409,
+        error_code: 'refund_required',
+        amount_paid: preAmountPaid,
+      }
+    }
+    if (opts.resolution && !(Number(opts.resolution.amount) > 0 && Number(opts.resolution.amount) <= preAmountPaid + 0.5)) {
+      return {
+        error: `Resolution amount must be greater than ₹0 and no more than the ₹${preAmountPaid.toFixed(2)} paid on this sale.`,
+        status: 400,
+      }
     }
   }
 
@@ -76,7 +119,7 @@ export async function processCustomerReturn(
   // decremented as part of that sale and nothing has ever offset them either.
   const { data: saleRow } = await supabaseAdmin
     .from('sales')
-    .select('id, amount_paid, bundled_accessories, finalized, invoice_number, sale_date, original_sold_date')
+    .select('id, customer_id, amount_paid, bundled_accessories, finalized, invoice_number, sale_date, original_sold_date')
     .eq('asset_ledger_id', assetId)
     .eq('is_deleted', false)
     .order('created_at', { ascending: false })
@@ -144,14 +187,33 @@ export async function processCustomerReturn(
     const { error: voidErr } = await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', saleRow.id)
     if (voidErr) return { error: `Return recorded, but failed to void the original sale: ${voidErr.message}. Reconcile manually.`, status: 500 }
     const amountPaid = Number(saleRow.amount_paid) || 0
-    // A void here has no refund mechanism anywhere in the codebase -- the money in
-    // sale_payments just stays attached to a now-voided sale, invisible unless
-    // someone reads this reason directly. Saying it explicitly is the cheapest
-    // possible fix; the Pending Tasks "Customers Owed Money" section is the
-    // proactive surface for it (see GET /api/sales?credit_owed=true).
-    const reason = amountPaid > 0.5
-      ? `Customer return -- ${opts.reason} (₹${amountPaid.toFixed(2)} was paid on this sale -- no refund recorded, reconcile manually)`
-      : `Customer return -- ${opts.reason}`
+    // The pre-check above already forced a resolution when money was paid (unless
+    // skipResolution) -- record it now that the sale is actually being voided, so
+    // the money stops being invisible the moment this return completes.
+    if (opts.resolution && amountPaid > 0.5) {
+      if (opts.resolution.type === 'refund') {
+        await supabaseAdmin.from('sale_refunds').insert({
+          sale_id: saleRow.id,
+          amount: opts.resolution.amount,
+          payment_account: opts.resolution.payment_account || null,
+          note: opts.resolution.note || null,
+          recorded_by: opts.userId,
+        })
+      } else {
+        await supabaseAdmin.from('customer_credit_ledger').insert({
+          customer_id: saleRow.customer_id,
+          sale_id: saleRow.id,
+          amount: opts.resolution.amount,
+          reason: opts.resolution.note || `Credit note from return -- ${opts.reason}`,
+          created_by: opts.userId,
+        })
+      }
+    }
+    const reason = opts.resolution && amountPaid > 0.5
+      ? `Customer return -- ${opts.reason} (₹${opts.resolution.amount.toFixed(2)} ${opts.resolution.type === 'refund' ? `refunded via ${opts.resolution.payment_account || 'unspecified account'}` : 'issued as store credit'})`
+      : amountPaid > 0.5
+        ? `Customer return -- ${opts.reason} (₹${amountPaid.toFixed(2)} was paid on this sale -- no refund recorded, reconcile manually)`
+        : `Customer return -- ${opts.reason}`
     const fieldCorrectionIds = await logFieldCorrections(
       'sales',
       saleRow.id,
