@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import {
@@ -153,6 +154,14 @@ export default function GstClient() {
           <p className="text-sm text-muted-foreground">
             Validate a period before filing. Figures are generated for upload to the GST portal — nothing is filed from here.
           </p>
+          <p className="text-xs text-muted-foreground mt-1">
+            1. Fix every blocker listed under <span className="font-medium">Validation</span> below (each row says what's
+            wrong and links to the record). 2. Upload the Zoho invoice register for this period under{' '}
+            <span className="font-medium">Match uploads</span>. 3. Once "Filing readiness" above says{' '}
+            <span className="font-medium">Ready</span>, the figures under GSTR-1/GSTR-3B are what you copy to the portal.
+            Fixing something elsewhere (e.g. an invoice) doesn't update this page by itself — hit{' '}
+            <span className="font-medium">Refresh</span> after.
+          </p>
         </div>
         <div className="flex gap-2">
           <Select value={entity} onValueChange={setEntity}>
@@ -173,6 +182,9 @@ export default function GstClient() {
               ))}
             </SelectContent>
           </Select>
+          <Button variant="outline" size="icon" onClick={() => load()} disabled={loading} title="Refresh">
+            <RefreshCw className={loading ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+          </Button>
         </div>
       </div>
 
