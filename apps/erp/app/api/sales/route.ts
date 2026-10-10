@@ -323,7 +323,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, purchase_order_items(sku_id)').in('id', chunk)
     ),
     chunkedIn<any>(bundledAccessoryIds, chunk =>
-      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', chunk)
+      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, hsn_code').in('id', chunk)
     ),
     chunkedIn<any>(repairJobIds, chunk =>
       supabaseAdmin.from('repair_jobs').select('id, job_number, problem_description').in('id', chunk)
@@ -378,7 +378,7 @@ export async function GET(req: NextRequest) {
     withName.hsn_code = sku?.hsn_code || null
     withName.bundled_accessories_display = (Array.isArray(s.bundled_accessories) ? s.bundled_accessories : []).map((b: any) => {
       const bsku = bundledSkuById.get(b.accessory_id)
-      return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity, unit_price: b.unit_price || 0 }
+      return { name: bsku?.sku_description || bsku?.full_sku_code || 'Accessory', quantity: b.quantity, unit_price: b.unit_price || 0, hsn_code: bsku?.hsn_code || null }
     })
     const repairJob = s.repair_job_id ? repairJobById.get(s.repair_job_id) : null
     withName.repair_job_number = repairJob?.job_number || null

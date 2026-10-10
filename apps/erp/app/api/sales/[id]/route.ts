@@ -141,7 +141,18 @@ export async function PATCH(
     // existing (unaffected, ledger-derived) amount_paid against the NEW total.
     const amountPaid = existing.amount_paid || 0
     const newTotal = updates.sale_total
-    updates.payment_status = newTotal <= 0 ? 'paid'
+
+    // A ₹0 SERVICE line (repair/rental intake placeholder) is "not priced yet," not
+    // "free, nothing owed" -- it must read 'pending', not 'paid', unlike a genuinely
+    // free accessory/laptop line. See lib/sales-cart.ts's serviceOverride for the same
+    // distinction at creation time.
+    let zeroTotalStatus: 'paid' | 'pending' = 'paid'
+    if (newTotal <= 0 && existing.accessory_id) {
+      const { data: sku } = await supabaseAdmin.from('sku_master').select('category').eq('id', existing.accessory_id).maybeSingle()
+      if (sku?.category === 'SERVICE') zeroTotalStatus = 'pending'
+    }
+
+    updates.payment_status = newTotal <= 0 ? zeroTotalStatus
       : amountPaid <= 0 ? 'pending'
       : amountPaid >= newTotal - 0.5 ? 'paid'
       : 'partial'

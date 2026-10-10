@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
+import { cn } from '@/lib/utils'
 import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { SearchableSelect } from '@/components/SearchableSelect'
@@ -130,7 +131,6 @@ function SellPageInner() {
   // user says which unit it belongs to.
   const [pendingBundleAccessory, setPendingBundleAccessory] = useState<Accessory | null>(null)
   const [accessoryOptions, setAccessoryOptions] = useState<Accessory[]>([])
-  const [browsableAccessories, setBrowsableAccessories] = useState<Accessory[]>([])
 
   // Bundled-accessory search, scoped to one unit line at a time (kept separate from the
   // "add an accessory" search above so the two can't collide when a cart already has
@@ -189,15 +189,6 @@ function SellPageInner() {
 
   const { values: staffNames } = useCustomOptions('staff_names')
   const [soldBy, setSoldBy] = useState('')
-
-  // Browsable list of all sellable accessories, shown up-front in accessory mode
-  // instead of requiring the employee to type before seeing anything.
-  useEffect(() => {
-    if (mode !== 'accessory') return
-    apiFetch(`/api/sku-master?category=${ACCESSORY_CATEGORIES}`).then(res => res.json()).then((data) => {
-      setBrowsableAccessories(Array.isArray(data) ? data.map(mapSkuToAccessory) : [])
-    })
-  }, [mode])
 
   const fetchUnit = async (id: string): Promise<StockUnit | null> => {
     const res = await apiFetch(`/api/stock?id=${id}`)
@@ -433,6 +424,8 @@ function SellPageInner() {
   const validate = () => {
     if (cartItems.length === 0) { setError('Add at least one item to sell.'); return false }
     if (cartItems.some(l => l.salePrice == null || l.salePrice < 0)) { setError('Enter a valid selling price for every item (0 is allowed for a free item).'); return false }
+    const overStock = cartItems.find(l => l.kind === 'accessory' && l.quantity > l.accessory.quantity)
+    if (overStock && overStock.kind === 'accessory') { setError(`Only ${overStock.accessory.quantity} in stock for ${overStock.accessory.accessory_name} — reduce the quantity.`); return false }
     if (!customerId) { setError('Select or add a customer.'); return false }
     if (legsTotal > cartTotal + 0.01) { setError('Payment total cannot exceed the cart total.'); return false }
     return true
@@ -567,7 +560,7 @@ function SellPageInner() {
               </p>
             ) : (
               <p className="text-xs text-muted-foreground mb-1">
-                Sold on its own. Search here, or browse the full list below (also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
+                Sold on its own. Search by name below (full list also on the <a href="/dashboard/accessories" className="underline">Accessories</a> page).
               </p>
             )}
 
@@ -620,20 +613,6 @@ function SellPageInner() {
                 ))}
               </ul>
             )}
-            {!accessorySearch.trim() && browsableAccessories.length > 0 && (
-              <ul className="border rounded mt-2 max-h-64 overflow-y-auto">
-                {browsableAccessories.map(a => (
-                  <li
-                    key={a.id}
-                    onClick={() => addAccessoryLine(a)}
-                    className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 flex justify-between"
-                  >
-                    <span className="font-medium">{a.accessory_name}</span>
-                    <span className="text-xs text-muted-foreground">{a.quantity} in stock</span>
-                  </li>
-                ))}
-              </ul>
-            )}
           </div>
         )}
 
@@ -681,14 +660,19 @@ function SellPageInner() {
                     {line.kind === 'accessory' && (
                       <>
                         <div>
-                          <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+                          <label className="block text-xs text-muted-foreground mb-1">
+                            Quantity ({line.accessory.quantity} in stock)
+                          </label>
                           <input
                             type="number"
                             min={1}
                             max={line.accessory.quantity}
                             value={line.quantity}
                             onChange={(e) => updateAccessoryQty(line.id, Number(e.target.value))}
-                            className="border p-2 w-24 rounded"
+                            className={cn(
+                              'border p-2 w-24 rounded',
+                              line.quantity > line.accessory.quantity && 'border-destructive text-destructive'
+                            )}
                           />
                         </div>
                         <div className="text-sm text-muted-foreground pb-2">
@@ -697,6 +681,12 @@ function SellPageInner() {
                       </>
                     )}
                   </div>
+
+                  {line.kind === 'accessory' && line.quantity > line.accessory.quantity && (
+                    <div className="text-xs text-destructive mt-1">
+                      Only {line.accessory.quantity} in stock — reduce the quantity before recording the sale.
+                    </div>
+                  )}
 
                   {line.kind === 'unit' && (
                     <div className="mt-2">

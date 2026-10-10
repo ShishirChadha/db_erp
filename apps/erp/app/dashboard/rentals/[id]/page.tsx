@@ -13,6 +13,7 @@ import { AddPaymentDialog } from '@/components/AddPaymentDialog'
 import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
 import { RENTAL_STATUS_TONES, RENTAL_ITEM_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { RentalReturnDialog, RentalBuyoutDialog, RentalDepositDialog } from '@/components/RentalActionDialogs'
+import { EditRentalDialog } from '@/components/EditRentalDialog'
 
 function money(n: number | null | undefined) {
   if (n == null) return '—'
@@ -39,6 +40,7 @@ function RentalDetailPage() {
   const [payFor, setPayFor] = useState<any>(null)
   const [invoiceFor, setInvoiceFor] = useState<string[] | null>(null)
   const [showDeposit, setShowDeposit] = useState(false)
+  const [showEdit, setShowEdit] = useState(false)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -90,6 +92,11 @@ function RentalDetailPage() {
         <div className="flex flex-col items-end gap-1">
           <StatusBadge tone={toneFor(RENTAL_STATUS_TONES, data.status)}>{data.status}</StatusBadge>
           {data.is_overdue && <span className="text-xs font-medium text-destructive">Overdue</span>}
+          {canEdit && (
+            <button type="button" onClick={() => setShowEdit(true)} className="text-primary underline text-xs font-medium">
+              Edit
+            </button>
+          )}
         </div>
       </div>
 
@@ -116,6 +123,13 @@ function RentalDetailPage() {
         <span className="text-gray-500">Next bill: <b>{day(data.next_billing_date)}</b></span>
         <span className="text-gray-500">Received into: <b>{data.payment_account || '—'}</b></span>
       </div>
+
+      {data.notes && (
+        <div className="border rounded-lg p-3 bg-card">
+          <div className="text-xs text-gray-500 mb-1">Notes</div>
+          <p className="text-sm whitespace-pre-wrap break-words">{data.notes}</p>
+        </div>
+      )}
 
       {canEdit && data.status === 'active' && (
         <div className="flex flex-wrap gap-2">
@@ -282,6 +296,13 @@ function RentalDetailPage() {
           saleIds={invoiceFor}
           onClose={() => setInvoiceFor(null)}
           onRecorded={() => { setInvoiceFor(null); load() }}
+        />
+      )}
+      {showEdit && (
+        <EditRentalDialog
+          agreementId={id}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); load() }}
         />
       )}
     </div>

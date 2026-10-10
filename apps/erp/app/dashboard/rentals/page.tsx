@@ -20,6 +20,7 @@ import { cn } from '@/lib/utils'
 // Only renders behind a click (gated by a state flag) -- code-split out of the
 // initial bundle rather than shipped unconditionally.
 const NewRentalDialog = dynamic(() => import('@/components/NewRentalDialog').then(m => m.NewRentalDialog), { ssr: false })
+const EditRentalDialog = dynamic(() => import('@/components/EditRentalDialog').then(m => m.EditRentalDialog), { ssr: false })
 
 type SortField = 'start_date' | 'agreement_number' | 'expected_return_date' | 'rent_amount' | 'next_billing_date'
 type SortOrder = 'asc' | 'desc'
@@ -40,6 +41,7 @@ interface RentalAgreement {
   units_on_rent: number
   units_total: number
   is_overdue: boolean
+  notes: string | null
 }
 
 const INTERVAL_LABELS: Record<string, string> = {
@@ -114,11 +116,18 @@ function RentalListItem({ agreement, active, onOpen }: {
 }
 
 // Right-pane detail view -- a solid summary of the agreement (the fields that used
-// to live in the table's remaining columns) plus a prominent link into the existing
-// full agreement page at /dashboard/rentals/[id], which already owns line items,
-// billing cycles, and deposit/return/buyout actions -- not re-implemented here.
-function RentalDetailPane({ agreement, onBack }: { agreement: RentalAgreement; onBack: () => void }) {
+// to live in the table's remaining columns), the full notes/description text
+// in-pane (never truncated), an "Edit" action for the agreement's own fields right
+// here, and a link into the existing full agreement page at /dashboard/rentals/[id]
+// for what this pane doesn't own: unit handover/return/buyout and billing cycles.
+function RentalDetailPane({ agreement, canEdit, onBack, onDone }: {
+  agreement: RentalAgreement
+  canEdit: boolean
+  onBack: () => void
+  onDone: () => void
+}) {
   const a = agreement
+  const [showEdit, setShowEdit] = useState(false)
   return (
     <div className="flex flex-col h-full">
       <div className="flex items-start justify-between gap-3 p-4 border-b border-border">
@@ -132,6 +141,15 @@ function RentalDetailPane({ agreement, onBack }: { agreement: RentalAgreement; o
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <span className="text-xl font-semibold tabular-nums text-foreground">{money(a.rent_amount)}</span>
           <StatusBadge tone={a.is_overdue ? 'danger' : toneFor(RENTAL_STATUS_TONES, a.status)}>{displayStatus(a)}</StatusBadge>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => setShowEdit(true)}
+              className="text-primary underline text-xs font-medium"
+            >
+              Edit
+            </button>
+          )}
         </div>
       </div>
 
@@ -144,6 +162,13 @@ function RentalDetailPane({ agreement, onBack }: { agreement: RentalAgreement; o
         <Field label="Deposit"><span className="tabular-nums">{money(a.security_deposit_amount)}</span></Field>
         <Field label="Received Into">{a.payment_account || '—'}</Field>
         {a.customer_phone && <Field label="Phone">{a.customer_phone}</Field>}
+        <Field label="Notes">
+          {a.notes ? (
+            <p className="whitespace-pre-wrap break-words">{a.notes}</p>
+          ) : (
+            <span className="text-muted-foreground">—</span>
+          )}
+        </Field>
       </div>
 
       <div className="p-4 border-t border-border">
@@ -151,9 +176,17 @@ function RentalDetailPane({ agreement, onBack }: { agreement: RentalAgreement; o
           href={`/dashboard/rentals/${a.id}`}
           className="inline-flex items-center gap-1.5 text-primary underline text-sm font-medium"
         >
-          Open full agreement <ArrowRight className="size-3.5" />
+          Open full agreement (units, billing, deposit) <ArrowRight className="size-3.5" />
         </Link>
       </div>
+
+      {showEdit && (
+        <EditRentalDialog
+          agreementId={a.id}
+          onClose={() => setShowEdit(false)}
+          onSaved={() => { setShowEdit(false); onDone() }}
+        />
+      )}
     </div>
   )
 }
@@ -313,7 +346,12 @@ function RentalsPage() {
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeAgreement && 'hidden md:flex md:items-center md:justify-center')}>
             {activeAgreement ? (
-              <RentalDetailPane agreement={activeAgreement} onBack={() => setActiveId(null)} />
+              <RentalDetailPane
+                agreement={activeAgreement}
+                canEdit={canEdit}
+                onBack={() => setActiveId(null)}
+                onDone={refresh}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">Select a rental agreement to view details.</p>
             )}

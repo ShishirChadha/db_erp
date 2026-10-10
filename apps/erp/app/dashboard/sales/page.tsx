@@ -76,7 +76,7 @@ interface Sale {
   generation?: string | null;
   ram?: string | null;
   ssd?: string | null;
-  bundled_accessories_display?: { name: string; quantity: number; unit_price: number }[];
+  bundled_accessories_display?: { name: string; quantity: number; unit_price: number; hsn_code?: string | null }[];
   payment_date?: string | null;
 }
 
@@ -414,7 +414,10 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
             <div className="space-y-0.5">
               {sale.bundled_accessories_display.map((b, i) => (
                 <div key={i} className="flex items-baseline justify-between gap-2">
-                  <span>{b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}</span>
+                  <span>
+                    {b.name}{b.quantity > 1 ? ` ×${b.quantity}` : ""}
+                    {b.hsn_code && <span className="text-muted-foreground text-xs"> (HSN {b.hsn_code})</span>}
+                  </span>
                   <span className="tabular-nums text-muted-foreground whitespace-nowrap">
                     {b.unit_price > 0 ? `₹${(b.unit_price * b.quantity).toFixed(2)}` : "Free"}
                   </span>

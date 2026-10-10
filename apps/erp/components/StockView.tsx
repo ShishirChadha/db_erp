@@ -122,6 +122,7 @@ interface AccessoryStockRow {
   last_entry_price?: number | null
   last_entry_gst_percentage?: number | null
   last_entry_date?: string | null
+  last_modified_at?: string | null
 }
 
 const CURRENT_STATUSES = ['draft', 'reserved', 'received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_sent', 'rma_returned', 'on_rent']
@@ -1266,6 +1267,11 @@ function AccessoryStockListItem({ sku, active, onOpen }: {
             {!!sku.needs_po_qty && <StatusBadge tone="warning">{sku.needs_po_qty} awaiting PO</StatusBadge>}
           </div>
         </div>
+        {sku.last_modified_at && (
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Updated: {new Date(sku.last_modified_at).toLocaleString()}
+          </p>
+        )}
       </div>
     </button>
   )

@@ -152,6 +152,12 @@ export async function processSingleSaleItem(
   // requires > 0 anyway), so the trigger will never fire to flip it off the 'pending'
   // default. Nothing is owed, so it's set 'paid' directly here -- this can't be wiped
   // out by a later installment the way a real payment could, because none is possible.
+  //
+  // This does NOT apply to a SERVICE-category item (see standalone-line branch below,
+  // which overrides it back to 'pending'): a ₹0 repair/service line is not "free, nothing
+  // owed" -- it's "not priced yet" (e.g. a job opened at intake with a placeholder item
+  // before the fix is diagnosed/confirmed). Showing 'paid' there reads as "nothing to
+  // collect" when the real state is "amount not yet decided."
   const saleRecord = {
     ...base,
     sale_base_price: item.sale_base_price,
@@ -178,9 +184,16 @@ export async function processSingleSaleItem(
       return { ok: false, status: 400, message: `Only ${accessorySku.quantity_in_stock} in stock.` }
     }
 
+    // A SERVICE item billed at ₹0 is a not-yet-priced placeholder (repair/rental intake),
+    // not a genuinely free item -- undo the blanket "zero = paid" default from saleRecord
+    // so it reads as 'pending' until a real price/payment is attached.
+    const serviceOverride = saleTotal <= 0 && accessorySku.category === 'SERVICE'
+      ? { payment_status: 'pending' as const }
+      : {}
+
     const { data: sale, error: saleErr } = await supabaseAdmin
       .from('sales')
-      .insert({ ...saleRecord, accessory_id: item.accessory_id, accessory_quantity: qty })
+      .insert({ ...saleRecord, ...serviceOverride, accessory_id: item.accessory_id, accessory_quantity: qty })
       .select('id')
       .single()
     if (saleErr) return { ok: false, status: 500, message: saleErr.message }

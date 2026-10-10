@@ -26,6 +26,12 @@ import { useAsyncAction } from "@/lib/useAsyncAction";
 import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
 
+// Repair-only display label -- see app/dashboard/repair-jobs/page.tsx's
+// repairPaymentLabel for why 'pending' reads as "Open" here specifically.
+function repairPaymentLabel(status: string) {
+  return status === 'pending' ? 'Open' : status;
+}
+
 const PAYMENT_ACCOUNTS = ["Digitalbluez", "Techtenth", "Cash"];
 const PART_CATEGORIES = ["RAM", "SSD", "CPU", "GPU", "KBD", "MOUSE", "ACC", "ADP", "SERVICE"];
 
@@ -372,7 +378,7 @@ export function EditRepairJobDialog({
                     <span>{p.label} x{p.quantity}</span>
                     <span className="tabular-nums text-muted-foreground">
                       {p.unit_price != null ? `₹${p.unit_price.toFixed(2)} each` : "—"}
-                      {p.payment_status && <span className="ml-2">({p.payment_status})</span>}
+                      {p.payment_status && <span className="ml-2">({repairPaymentLabel(p.payment_status)})</span>}
                     </span>
                   </li>
                 ))}
@@ -443,7 +449,7 @@ export function EditRepairJobDialog({
                       <div>
                         <div>{line.label}</div>
                         <div className="text-xs text-muted-foreground">
-                          ₹{line.sale_total.toFixed(2)} · {line.payment_status} (₹{line.amount_paid.toFixed(2)} paid)
+                          ₹{line.sale_total.toFixed(2)} · {repairPaymentLabel(line.payment_status)} (₹{line.amount_paid.toFixed(2)} paid)
                         </div>
                       </div>
                       <div className="flex items-center gap-2">

@@ -4,7 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { getLastVendorsBySku } from '@/lib/purchase-utils'
-import { getLastEntryVendorsBySku, getUnattachedBacklogBySku } from '@/lib/accessory-movements'
+import { getLastEntryVendorsBySku, getUnattachedBacklogBySku, getLastMovementAtBySku } from '@/lib/accessory-movements'
 import { redactManyForRole } from '@/lib/auth/redact'
 import { withRetry } from '@/lib/db-retry'
 
@@ -28,38 +28,42 @@ export async function GET(req: NextRequest) {
   const baseColumns = 'id, full_sku_code, sku_description, category, brand, model_name, quantity_in_stock, selling_price_default'
   let query = supabaseAdmin
     .from('sku_master')
-    .select(`${baseColumns}, base_cost`, pagination ? { count: 'exact' } : undefined)
+    .select(`${baseColumns}, base_cost`)
     .in('category', NON_SERIALIZED_CATEGORIES)
     .eq('status', 'active')
     .gt('quantity_in_stock', 0)
-    .order('full_sku_code')
 
   if (search) {
     query = query.or(`full_sku_code.ilike.%${search}%,sku_description.ilike.%${search}%,brand.ilike.%${search}%,model_name.ilike.%${search}%`)
   }
-  if (pagination) query = query.range(pagination.from, pagination.to)
 
-  const { data: skus, error, count } = await query
+  // Sorted by last-modified desc below (depends on stock_movements, not a sku_master
+  // column, so pagination's .range() can't apply at this query stage) -- fetched whole
+  // and sliced in memory instead. This list is small (in-stock accessories only).
+  const { data: skus, error } = await query
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  // "Needs PO" backlog + last vendor, cheap to derive alongside since this list is
-  // already small (in-stock accessories only, paginated). Always computed; redacted below.
+  // "Needs PO" backlog + last vendor + last-modified, cheap to derive alongside since
+  // this list is already small. Always computed; redacted below where applicable.
   let backlogBySkuId = new Map<string, number>()
   let lastVendorBySkuId = new Map<string, string>()
   let lastEntryBySkuId = new Map<string, { vendorName: string; unitPrice: number | null; gstPercentage: number | null; purchaseDate: string | null }>()
+  let lastMovementAtBySkuId = new Map<string, string>()
   if (skus && skus.length > 0) {
     const skuIds = skus.map((s: any) => s.id)
 
-    // All three only depend on skuIds -- concurrent rather than 3 sequential round
+    // All four only depend on skuIds -- concurrent rather than sequential round
     // trips, same fix already applied to /api/stock and /api/sales.
-    const [backlog, lastVendors, lastEntries] = await Promise.all([
+    const [backlog, lastVendors, lastEntries, lastMovementAt] = await Promise.all([
       withRetry(() => getUnattachedBacklogBySku(skuIds)),
       withRetry(() => getLastVendorsBySku(skuIds)),
       withRetry(() => getLastEntryVendorsBySku(skuIds)),
+      withRetry(() => getLastMovementAtBySku(skuIds)),
     ])
     backlogBySkuId = backlog
     lastVendorBySkuId = lastVendors
     lastEntryBySkuId = lastEntries
+    lastMovementAtBySkuId = lastMovementAt
   }
 
   const result = (skus || []).map((s: any) => {
@@ -74,11 +78,25 @@ export async function GET(req: NextRequest) {
       last_entry_price: lastEntry?.unitPrice ?? null,
       last_entry_gst_percentage: lastEntry?.gstPercentage ?? null,
       last_entry_date: lastEntry?.purchaseDate || null,
+      last_modified_at: lastMovementAtBySkuId.get(s.id) || null,
     }
   })
 
-  const redacted = await redactManyForRole(result, 'accessories', sessionUser.role)
+  // Most recently touched (any stock movement -- receipt, sale, adjustment, return,
+  // damage) first. A SKU with no movement at all (shouldn't happen for qty > 0, but
+  // kept defensive) sorts last, tiebroken by SKU code for stability.
+  result.sort((a, b) => {
+    if (a.last_modified_at && b.last_modified_at) return a.last_modified_at < b.last_modified_at ? 1 : a.last_modified_at > b.last_modified_at ? -1 : 0
+    if (a.last_modified_at) return -1
+    if (b.last_modified_at) return 1
+    return String(a.full_sku_code).localeCompare(String(b.full_sku_code))
+  })
 
-  if (pagination) return NextResponse.json({ data: redacted, total: count ?? 0 })
+  const total = result.length
+  const paged = pagination ? result.slice(pagination.from, pagination.to + 1) : result
+
+  const redacted = await redactManyForRole(paged, 'accessories', sessionUser.role)
+
+  if (pagination) return NextResponse.json({ data: redacted, total })
   return NextResponse.json(redacted)
 }

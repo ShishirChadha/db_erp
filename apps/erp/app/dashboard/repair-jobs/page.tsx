@@ -20,6 +20,14 @@ import type { RepairJobDetail } from '@/components/EditRepairJobDialog'
 import { REPAIR_JOB_STATUS_TONES, PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { cn } from '@/lib/utils'
 
+// Repair-only display label: 'pending' reads as "Open" here (a job can sit with
+// nothing charged yet while still being diagnosed) rather than "pending", which
+// elsewhere in the app means "charged but not yet paid." The underlying value is
+// still 'pending' -- payments/reporting/other modules are unaffected.
+function repairPaymentLabel(status: string) {
+  return status === 'pending' ? 'Open' : status
+}
+
 // Modal dialogs only render behind a click (gated by a state flag) -- code-split
 // out of the initial bundle rather than shipped unconditionally.
 const EditRepairJobDialog = dynamic(() => import('@/components/EditRepairJobDialog').then(m => m.EditRepairJobDialog), { ssr: false })
@@ -126,7 +134,7 @@ function JobListItem({ job, active, onOpen }: { job: RepairJob; active: boolean;
         </div>
         <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
           <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
-          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{displayPaymentStatus}</StatusBadge>
+          <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{repairPaymentLabel(displayPaymentStatus)}</StatusBadge>
         </div>
       </div>
     </button>
@@ -171,7 +179,7 @@ function JobDetailPane({ job, canEdit, isOwner, onDone, onBack }: {
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <div className="flex items-center gap-1.5">
             <StatusBadge tone={toneFor(REPAIR_JOB_STATUS_TONES, job.status)}>{job.status.replace(/_/g, ' ')}</StatusBadge>
-            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{displayPaymentStatus}</StatusBadge>
+            <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, displayPaymentStatus)}>{repairPaymentLabel(displayPaymentStatus)}</StatusBadge>
           </div>
           {canEdit && (
             <div className="flex items-center gap-3">

@@ -165,6 +165,38 @@ export async function getUnattachedBacklogBySku(skuIds: string[]): Promise<Map<s
   return result
 }
 
+// Most recent stock_movements.created_at per SKU, across every movement_type (receipt,
+// sale, adjustment, return, damage) -- the true "last modified" signal for an accessory
+// row, since sku_master.updated_at is never touched by the quantity-sync trigger
+// (trg_sync_sku_stock only updates quantity_in_stock). Used to default-sort the
+// Live Stock Accessories tab by most-recently-touched first.
+export async function getLastMovementAtBySku(skuIds: string[]): Promise<Map<string, string>> {
+  const result = new Map<string, string>()
+  if (skuIds.length === 0) return result
+
+  // Unlike every other helper here, this one has no movement_type/vendor filter, so it
+  // can easily exceed PostgREST's silent default row cap (1000) once a SKU set's total
+  // movement history grows past that -- an unbounded .select() truncates instead of
+  // erroring, which previously made a real SKU look like it had "no movement" at all
+  // and sorted it (wrongly) to the very bottom. Page through explicitly instead.
+  const PAGE_SIZE = 1000
+  let from = 0
+  while (true) {
+    const { data } = await supabaseAdmin
+      .from('stock_movements')
+      .select('sku_id, created_at')
+      .in('sku_id', skuIds)
+      .range(from, from + PAGE_SIZE - 1)
+    for (const row of data || []) {
+      const current = result.get(row.sku_id)
+      if (!current || row.created_at > current) result.set(row.sku_id, row.created_at)
+    }
+    if (!data || data.length < PAGE_SIZE) break
+    from += PAGE_SIZE
+  }
+  return result
+}
+
 // Employee-entered vendor + unit price + purchase date, captured optionally at receipt
 // time (see docs/decisions.md) -- distinct from the owner-only formal PO-attach cost/
 // vendor on purchase_order_items. Returns the most recent receipt's vendor/price/date per
