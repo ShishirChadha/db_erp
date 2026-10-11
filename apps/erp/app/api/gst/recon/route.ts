@@ -11,6 +11,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { matchZohoInvoices, type ZohoInvoiceRow } from '@/lib/recon/gst-zoho-matcher'
 import { matchGstr2b, parseGstr2bJson } from '@/lib/recon/gst-2b-matcher'
+import { docNumberKey } from '@/lib/recon/gst-doc-key'
 
 const KINDS = ['zoho_invoices', 'gstr2b'] as const
 
@@ -166,7 +167,27 @@ export async function POST(req: NextRequest) {
       if (rows.length === 0) {
         return NextResponse.json({ error: 'That upload has no source rows left to re-check against.' }, { status: 400 })
       }
+
+      // A previous Re-check wiped every resolution/ignore decision on this import,
+      // because it deleted and re-inserted all lines with no memory of what had
+      // already been decided -- an owner who ignored a ₹1.30 rounding diff would
+      // see it reset right back to unresolved the moment they re-checked. Carry
+      // forward any resolution for an invoice number whose verdict is still the
+      // same (same match_status) after re-matching; an invoice whose verdict
+      // actually changed (e.g. a real fix landed) is deliberately left unresolved
+      // again so it gets a fresh look.
+      const { data: priorLines } = await supabaseAdmin
+        .from('gst_recon_lines')
+        .select('doc_number, match_status, resolution, resolution_note, resolved_by, resolved_at')
+        .eq('import_id', source_import_id).not('resolution', 'is', null)
+      const priorByKey = new Map((priorLines ?? []).map((l: any) => [docNumberKey(l.doc_number), l]))
+
       lines = await matchZohoInvoices(entity_key, period_start, period_end, rows)
+      const linesWithCarriedResolutions = lines.map((l) => {
+        const prior = priorByKey.get(docNumberKey(l.doc_number))
+        if (!prior || prior.match_status !== l.match_status) return l
+        return { ...l, resolution: prior.resolution, resolution_note: prior.resolution_note, resolved_by: prior.resolved_by, resolved_at: prior.resolved_at }
+      })
 
       // Update the SAME import in place rather than creating a new one --
       // re-checking is meant to refresh a result, not pile up another row
@@ -175,7 +196,7 @@ export async function POST(req: NextRequest) {
         .from('gst_recon_lines').delete().eq('import_id', source_import_id)
       if (delErr) throw new Error(delErr.message)
       const { error: insErr } = await supabaseAdmin
-        .from('gst_recon_lines').insert(lines.map((l) => ({ ...l, import_id: source_import_id })))
+        .from('gst_recon_lines').insert(linesWithCarriedResolutions.map((l) => ({ ...l, import_id: source_import_id })))
       if (insErr) throw new Error(insErr.message)
 
       const { data: fresh } = await supabaseAdmin
@@ -271,6 +292,13 @@ export async function PATCH(req: NextRequest) {
   const RESOLUTIONS = ['accepted', 'entered_in_erp', 'ignored', 'chase_supplier', 'itc_claimed', 'itc_ineligible']
   if (body.resolution && !RESOLUTIONS.includes(body.resolution)) {
     return NextResponse.json({ error: `resolution must be one of: ${RESOLUTIONS.join(', ')}` }, { status: 400 })
+  }
+  // A resolution with no reason is indistinguishable from "clicked through to
+  // make the warning disappear" -- the column has always existed, nothing ever
+  // required it. Clearing a resolution (body.resolution omitted/null) needs no
+  // reason -- there's nothing left to explain at that point.
+  if (body.resolution && !String(body.resolution_note ?? '').trim()) {
+    return NextResponse.json({ error: 'A reason is required to resolve a row.' }, { status: 400 })
   }
 
   const { data, error } = await supabaseAdmin

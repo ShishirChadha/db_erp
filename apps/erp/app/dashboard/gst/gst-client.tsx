@@ -292,7 +292,7 @@ export default function GstClient() {
                   )}
                 </div>
                 <Button onClick={() => setTab('uploads')}>
-                  {zoho.uploaded ? 'Resolve rows' : 'Upload Zoho register'}
+                  {zoho.uploaded ? 'Go resolve rows →' : 'Upload Zoho register'}
                 </Button>
               </CardContent>
             </Card>
@@ -997,9 +997,27 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
   }
 
   const resolve = async (lineId: string, resolution: string) => {
+    // A resolution with no reason is just a label -- next month (or the next
+    // person looking at this) has no way to tell "checked, genuinely fine"
+    // from "clicked through to make the warning go away." Required, not
+    // optional, since the column already existed but nothing ever asked for it.
+    const note = window.prompt(`Why ${resolution.replace(/_/g, ' ')}? (shown next to this row, and kept for audit)`)
+    if (note === null) return // cancelled
+    if (!note.trim()) { setErr('A reason is required to resolve a row.'); return }
     const r = await apiFetch('/api/gst/recon', {
       method: 'PATCH',
-      body: JSON.stringify({ id: lineId, resolution }),
+      body: JSON.stringify({ id: lineId, resolution, resolution_note: note.trim() }),
+    })
+    if (r.ok && active) openImport(active.id)
+  }
+
+  // Clearing a resolution needs no reason -- there's nothing left to explain
+  // once it's undone (see the PATCH route's own check for the same logic).
+  const unresolve = async (lineId: string) => {
+    if (!window.confirm('Undo this resolution? The row goes back to unresolved.')) return
+    const r = await apiFetch('/api/gst/recon', {
+      method: 'PATCH',
+      body: JSON.stringify({ id: lineId, resolution: null }),
     })
     if (r.ok && active) openImport(active.id)
   }
@@ -1168,7 +1186,23 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
                           </td>
                           <td className="px-3 py-2 text-right">
                             {l.resolution
-                              ? <Badge variant="secondary">{l.resolution.replace(/_/g, ' ')}</Badge>
+                              ? (
+                                <div className="flex flex-col items-end gap-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => unresolve(l.id)}
+                                    title="Click to undo this resolution"
+                                    className="cursor-pointer"
+                                  >
+                                    <Badge variant="secondary" className="hover:bg-destructive/10 hover:text-destructive transition-colors">
+                                      {l.resolution.replace(/_/g, ' ')} ×
+                                    </Badge>
+                                  </button>
+                                  {l.resolution_note && (
+                                    <span className="text-xs text-muted-foreground max-w-[14rem] text-right">{l.resolution_note}</span>
+                                  )}
+                                </div>
+                              )
                               : (
                                 <div className="flex gap-1 justify-end">
                                   {active.kind === 'gstr2b' && l.match_status === 'missing_in_source' && (
