@@ -1,19 +1,22 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import Link from 'next/link'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
 import { Input } from '@/components/ui/input'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select'
 import { apiFetch } from '@/lib/api-client'
-import { formatCurrency } from '@db/shared'
+import { formatCurrency, STATE_CODE_TO_NAME } from '@db/shared'
 import { ErrorBanner } from '@/components/ErrorBanner'
+import { RecordZohoInvoiceDialog } from '@/components/RecordZohoInvoiceDialog'
+import { EditSaleDialog } from '@/components/EditSaleDialog'
+import { GstNewsPanel } from './gst-news-panel'
 import { EmptyTableRow } from '@/components/EmptyTableRow'
 import {
   GST_SECTIONS, sectionCsv, gstCsvFilename, downloadCsv, type GstSectionKey,
@@ -38,6 +41,12 @@ interface ExceptionRow {
   record_id: string | null
   record_label: string | null
   detail: string
+  // Populated only for check_code === 'doc_series_gap' -- what
+  // gst_acknowledge_series_gap needs. record_label can't be split back into
+  // these (series_key and seq are both pure digit runs with nothing between
+  // them once concatenated).
+  series_key: string | null
+  seq: number | null
 }
 
 // BUSY groups its pre-export checks exactly this way, and the grouping maps
@@ -68,12 +77,830 @@ function monthOptions(count = 18) {
   return out
 }
 
+type StepStatus = 'green' | 'yellow' | 'red'
+interface Step {
+  step: number
+  group: 'gstr1' | 'gstr3b'
+  title: string
+  status: StepStatus
+  reason: string | null
+  blockers: number
+  warnings: number
+  fingerprint: string
+  signoff_applicable: boolean
+  signed_off: boolean
+  signed_off_at: string | null
+  signed_off_note: string | null
+  detail: any
+}
+
+const TONE: Record<StepStatus, { box: string; text: string; dot: string; label: string }> = {
+  green: { box: 'border-success/40 bg-success/10', text: 'text-success', dot: 'bg-success', label: 'Done' },
+  yellow: { box: 'border-warning/40 bg-warning/10', text: 'text-warning', dot: 'bg-warning', label: 'Pending' },
+  red: { box: 'border-destructive/40 bg-destructive/10', text: 'text-destructive', dot: 'bg-destructive', label: 'Blocked' },
+}
+
+const STEP_SHORT: Record<number, string> = {
+  1: 'Zoho match', 2: 'Sales', 3: 'Invoices', 4: 'HSN & numbering', 5: 'Tax heads',
+  6: 'Approve', 7: 'File & lock', 8: 'Purchases / ITC', 9: 'Approve 3B', 10: 'File 3B',
+}
+
+// Which exception codes each step shows (mirrors the mapping inside gst_period_steps).
+const STEP_CODES: Record<number, string[]> = {
+  2: ['voided_sale_with_live_invoice'],
+  3: ['zero_gst_on_gst_entity', 'tax_computation_mismatch', 'value_mismatch', 'wrong_tax_type', 'missing_place_of_supply',
+    'eway_bill_missing', 'invalid_gstin_format', 'gstin_state_mismatch', 'gstin_has_whitespace', 'customer_missing_state',
+    'b2b_missing_gstin', 'line_gst_rate_mismatch', 'invoice_customer_gstin_stale', 'invalid_gst_slab_rate'],
+  4: ['missing_hsn', 'hsn_too_short', 'hsn_not_numeric', 'service_without_sac', 'invoice_line_hsn_unresolvable',
+    'hsn_inconsistent_for_sku', 'doc_series_gap', 'invoice_number_too_long', 'invoice_number_bad_chars', 'duplicate_invoice_number'],
+  8: ['rcm_credit_unclaimed'],
+}
+
+const STEP_WHY: Record<number, string> = {
+  1: 'Upload your Zoho invoice register for the month (export Invoices as CSV from Zoho). The ERP checks that every invoice Zoho issued is here with the same value and date. A missing one would be silently under-reported — the portal never complains about an invoice it was never given.',
+  2: 'Every sale this month that carries GST should have its Zoho invoice number recorded here. Under GST law (Sec 31) the tax invoice for goods is due when the goods are delivered, not when you are paid, so a delivered sale with no invoice is a compliance gap, not just a bookkeeping one.',
+  3: 'Checks each invoice and customer: GSTIN valid, CGST+SGST versus IGST correct for the state, the tax matches a real GST rate, totals add up, e-way bill on goods over ₹50,000. Fix blockers at the source record (the Record column links to it). Warnings can be signed off once you have looked at them.',
+  4: 'GSTR-1 Table 12 needs a valid HSN on every item, and Table 13 needs every invoice number accounted for as issued or cancelled. A gap in the numbering is fine only if you can say why — "Mark cancelled (Zoho)" records that and reports it as cancelled in Table 13.',
+  5: 'Same register, deeper check: for each invoice the CGST, SGST and IGST must each agree with Zoho — not just the total. Tax paid under the wrong head cannot be set off against the other; it must be paid again and the first refunded separately. Place of supply is compared too when your export has it.',
+  6: 'Final review before filing. The tables below are what you will enter on the GST portal. Approving freezes these exact figures; if any invoice changes afterwards you will be asked to approve again, so what you file is always what you reviewed.',
+  7: 'File GSTR-1 on the GST portal using the approved figures, then record the ARN here. Locking Sales through month-end stops anyone back-dating a sale into a month you have already filed.',
+  8: 'Upload the GSTR-2B JSON from the portal. Input tax credit may be claimed only for invoices that appear in it (Rule 36(4)). Decide each line: claim, ineligible, or chase the supplier. Credit you have already claimed that the supplier has not filed is the risky case (Rule 88D).',
+  9: 'GSTR-3B Table 3.1 must equal your filed GSTR-1 — the portal fills it from there. Review the other tables, then approve to freeze them.',
+  10: 'Pay the tax (cash and ITC) and file GSTR-3B on the portal, then record the ARN here and lock Purchases through month-end.',
+}
+
+function dueLabel(periodFrom: string, day: number) {
+  const [y, m] = periodFrom.split('-').map(Number)
+  return new Date(y, m, day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+}
+
+function StepTiles({ steps, current, onSelect, periodFrom }: {
+  steps: Step[]; current: number; onSelect: (n: number) => void; periodFrom: string
+}) {
+  const groups: { key: 'gstr1' | 'gstr3b'; label: string }[] = [
+    { key: 'gstr1', label: `GSTR-1 · due ${dueLabel(periodFrom, 11)}` },
+    { key: 'gstr3b', label: `GSTR-3B · due ${dueLabel(periodFrom, 20)}` },
+  ]
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => (
+        <div key={g.key}>
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">{g.label}</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {steps.filter((s) => s.group === g.key).map((s) => {
+              const tone = TONE[s.status]
+              return (
+                <button
+                  key={s.step}
+                  type="button"
+                  onClick={() => onSelect(s.step)}
+                  aria-pressed={current === s.step}
+                  className={`text-left rounded-lg border p-2.5 transition-shadow cursor-pointer ${tone.box} ${current === s.step ? 'ring-2 ring-ring' : 'hover:shadow-sm'}`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <span className={`inline-block size-2 rounded-full ${tone.dot}`} />
+                    <span className="text-xs text-muted-foreground tabular-nums">Step {s.step}</span>
+                  </div>
+                  <p className="text-sm font-medium leading-tight mt-1">{STEP_SHORT[s.step]}</p>
+                  <p className={`text-xs mt-0.5 ${tone.text}`}>{tone.label}</p>
+                </button>
+              )
+            })}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+function SignOffBox({ step, entity, period, itemsPending, onChanged }: {
+  step: Step; entity: string; period: { from: string; to: string }; itemsPending: boolean; onChanged: () => void
+}) {
+  const [note, setNote] = useState('')
+  const [err, setErr] = useState('')
+  const [busy, setBusy] = useState(false)
+  if (!step.signoff_applicable || step.status === 'red') return null
+
+  const signOff = async () => {
+    setBusy(true); setErr('')
+    try {
+      const r = await apiFetch('/api/gst/step-signoffs', {
+        method: 'POST',
+        body: JSON.stringify({ entity_key: entity, period_start: period.from, period_end: period.to, step: step.step, note }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setErr(d?.error || 'Could not sign off'); return }
+      setNote(''); onChanged()
+    } finally { setBusy(false) }
+  }
+  const undo = async () => {
+    if (!window.confirm('Remove this sign-off? The step goes back to pending.')) return
+    const r = await apiFetch(
+      `/api/gst/step-signoffs?entity=${encodeURIComponent(entity)}&period_start=${period.from}&step=${step.step}`,
+      { method: 'DELETE' })
+    if (r.ok) onChanged()
+  }
+
+  if (step.signed_off) {
+    return (
+      <div className="rounded-md border border-success/40 bg-success/10 p-3 text-sm flex items-start justify-between gap-3">
+        <div>
+          <p className="font-medium text-success">Signed off{step.signed_off_at ? ` · ${new Date(step.signed_off_at).toLocaleDateString('en-IN')}` : ''}</p>
+          <p className="text-muted-foreground text-xs mt-0.5">{step.signed_off_note}</p>
+        </div>
+        <Button size="sm" variant="ghost" onClick={undo}>Undo</Button>
+      </div>
+    )
+  }
+  if (!itemsPending) return null
+  return (
+    <div className="rounded-md border p-3 space-y-2">
+      <p className="text-sm font-medium">Reviewed the items above?</p>
+      <p className="text-xs text-muted-foreground">
+        Record why they are acceptable. If a new item appears later, this step goes back to pending on its own.
+      </p>
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      <div className="flex flex-wrap gap-2">
+        <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Reason / what you checked" className="max-w-md" />
+        <Button size="sm" disabled={busy || !note.trim()} onClick={signOff}>Sign off</Button>
+      </div>
+    </div>
+  )
+}
+
+function UninvoicedSales({ entity, period, onChanged }: { entity: string; period: { from: string; to: string }; onChanged: () => void }) {
+  const [rows, setRows] = useState<any[]>([])
+  const [dialogFor, setDialogFor] = useState<string | null>(null)
+  const [editFor, setEditFor] = useState<string | null>(null)
+  const load = useCallback(async () => {
+    const r = await apiFetch(`/api/gst/returns?metric=uninvoiced&entity=${encodeURIComponent(entity)}&from=${period.from}&to=${period.to}`)
+    if (r.ok) setRows(await r.json())
+  }, [entity, period.from, period.to])
+  useEffect(() => { load() }, [load])
+
+  if (rows.length === 0) return <p className="text-sm text-success">Every GST sale this month has an invoice recorded.</p>
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-medium">{rows.length} GST sale{rows.length === 1 ? '' : 's'} without an invoice</p>
+      <p className="text-xs text-muted-foreground">Click a row to edit the sale (customer, price, GST, payments, void) without leaving this page.</p>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Customer</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Item</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Total</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">GST</th>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Payment</th>
+              <th className="px-3 py-2"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((s) => (
+              <tr key={s.id} className="border-t cursor-pointer hover:bg-muted/50" onClick={() => setEditFor(s.id)}>
+                <td className="px-3 py-2 whitespace-nowrap">{s.effective_sale_date}</td>
+                <td className="px-3 py-2">{s.customer_name || '—'}</td>
+                <td className="px-3 py-2 text-xs max-w-[22rem]">
+                  {s.item || '—'}
+                  {(s.item_code || s.unit_ref) && (
+                    <span className="block text-muted-foreground">{[s.item_code, s.unit_ref].filter(Boolean).join(' · ')}</span>
+                  )}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(s.sale_total)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(s.sale_gst)}</td>
+                <td className="px-3 py-2"><Badge variant={s.payment_status === 'paid' ? 'secondary' : 'outline'}>{s.payment_status || 'pending'}</Badge></td>
+                <td className="px-3 py-2 text-right">
+                  <Button size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setDialogFor(s.id) }}>Record Zoho invoice</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {editFor && (
+        <EditSaleDialog saleId={editFor} onClose={() => setEditFor(null)} onSaved={() => { setEditFor(null); load(); onChanged() }} />
+      )}
+      {dialogFor && (
+        <RecordZohoInvoiceDialog
+          saleIds={[dialogFor]}
+          onClose={() => setDialogFor(null)}
+          onRecorded={() => { setDialogFor(null); load(); onChanged() }}
+        />
+      )}
+    </div>
+  )
+}
+
+function SplitAddOn({ lineId, item, gap, onSaved }: {
+  lineId: string
+  item: { accessory_id: string; item: string; hsn: string | null }
+  gap?: number
+  onSaved: () => void
+}) {
+  const [amount, setAmount] = useState(gap && gap > 0 ? String(gap) : '')
+  const [hsn, setHsn] = useState(item.hsn ?? '')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const inFlight = useRef(false)
+  const [done, setDone] = useState(false)
+  const save = async () => {
+    // A ref, not just state: a fast double-click fires before the re-render that disables the button.
+    if (inFlight.current || done) return
+    inFlight.current = true
+    setBusy(true); setMsg('')
+    try {
+      const r = await apiFetch(`/api/invoice-items/${lineId}/split`, {
+        method: 'POST',
+        body: JSON.stringify({ accessory_id: item.accessory_id, description: item.item, hsn_code: hsn.trim(), amount: Number(amount) }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setMsg(d?.error || 'Could not split'); return }
+      setDone(true)
+      onSaved()
+    } finally { setBusy(false); inFlight.current = false }
+  }
+  return (
+    <div className="space-y-1 rounded border border-dashed p-2">
+      <p>Zoho bills <span className="font-medium">{item.item}</span> on its own line? Move it out of this line:</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input value={amount} onChange={(e) => setAmount(e.target.value.replace(/[^0-9.]/g, ''))} className="w-28 h-7" inputMode="decimal" placeholder="₹ before GST" aria-label="Amount before GST" />
+        <Input value={hsn} onChange={(e) => setHsn(e.target.value.replace(/\D/g, '').slice(0, 8))} className="w-28 h-7" inputMode="numeric" placeholder="HSN" aria-label="HSN" />
+        <Button size="sm" variant="outline" disabled={busy || done || !(Number(amount) > 0) || hsn.trim().length < 4} onClick={save}>
+          {busy ? 'Splitting…' : done ? 'Split' : 'Split off'}
+        </Button>
+      </div>
+      <p className="text-muted-foreground">The invoice total and tax stay the same; this amount moves to a new line under that HSN.</p>
+      {msg && <p className="text-destructive">{msg}</p>}
+    </div>
+  )
+}
+
+function HsnLineEditor({ line, suggested, gaps, onSaved }: {
+  line: {
+    line_id: string; number: string; item: string; hsn: string; taxable: number; category: string | null; rule: string | null
+    bundled_into: string | null; siblings: { line_id: string; item: string; taxable: number }[]
+    inline?: { accessory_id: string; item: string; hsn: string | null; qty: number }[]
+  }
+  suggested: string | null
+  gaps?: Record<string, number>
+  onSaved: () => void
+}) {
+  const [code, setCode] = useState(suggested || line.hsn || '')
+  const [alsoSku, setAlsoSku] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState('')
+  const [target, setTarget] = useState('')
+  const bundle = async (principal: string | null) => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await apiFetch(`/api/invoice-items/${line.line_id}/bundle`, {
+        method: 'PATCH', body: JSON.stringify({ principal_line_id: principal }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setMsg(d?.error || 'Could not save'); return }
+      onSaved()
+    } finally { setBusy(false) }
+  }
+  const token = line.taxable <= 5
+  const save = async () => {
+    setBusy(true); setMsg('')
+    try {
+      const r = await apiFetch(`/api/invoice-items/${line.line_id}/hsn`, {
+        method: 'PATCH', body: JSON.stringify({ hsn_code: code.trim(), also_sku: alsoSku }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setMsg(d?.error || 'Could not save'); return }
+      onSaved()
+    } finally { setBusy(false) }
+  }
+  return (
+    <li className="space-y-1">
+      <div>
+        <span className="font-medium">{String(line.number).replace('DBI2026/27-', '')}</span>
+        <span className="text-muted-foreground"> · {line.item} · now {line.hsn}{line.category ? ` (${line.category}${line.rule ? ` → rule ${line.rule}` : ''})` : ''}</span>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} className="w-28 h-7" inputMode="numeric" aria-label="New HSN" />
+        <label className="flex items-center gap-1 text-xs text-muted-foreground">
+          <Checkbox checked={alsoSku} onCheckedChange={(v) => setAlsoSku(v === true)} /> also the SKU
+        </label>
+        <Button size="sm" variant="outline" disabled={busy || code.trim().length < 4 || code.trim() === line.hsn} onClick={save}>
+          {busy ? 'Saving…' : 'Set HSN'}
+        </Button>
+      </div>
+      {line.bundled_into ? (
+        <div className="flex flex-wrap items-center gap-2 text-muted-foreground">
+          Filed as part of another line (that item&apos;s HSN and rate, no quantity of its own).
+          <Button size="sm" variant="ghost" disabled={busy} onClick={() => bundle(null)}>Unbundle</Button>
+        </div>
+      ) : (line.siblings?.length ?? 0) > 0 && (
+        <div className={`flex flex-wrap items-center gap-2 ${token ? '' : 'text-muted-foreground'}`}>
+          <span>{token ? `₹${line.taxable} add-on sold with another item?` : 'Sold in one bundle with another line?'}</span>
+          <Select value={target} onValueChange={setTarget}>
+            <SelectTrigger className="h-7 w-52"><SelectValue placeholder="Bundle into…" /></SelectTrigger>
+            <SelectContent>
+              {(line.siblings ?? []).map((o) => (
+                <SelectItem key={o.line_id} value={o.line_id}>{o.item} · ₹{o.taxable}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" variant="outline" disabled={busy || !target} onClick={() => bundle(target)}>Bundle</Button>
+        </div>
+      )}
+      {(line.inline ?? []).filter((x) => x.accessory_id).map((x) => (
+        <SplitAddOn key={x.accessory_id} lineId={line.line_id} item={x} gap={x.hsn ? gaps?.[x.hsn] : undefined} onSaved={onSaved} />
+      ))}
+      {msg && <p className="text-destructive">{msg}</p>}
+    </li>
+  )
+}
+
+function ZohoGstr1Check({ entity, from, to }: { entity: string; from: string; to: string }) {
+  const [res, setRes] = useState<{ summary: any[]; issues: any[]; hsn_invoices: any[]; hsn_from_zoho_lines: boolean } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  const [fileName, setFileName] = useState('')
+  const [b64, setB64] = useState('')
+  // v2: the saved result shape changed (line siblings / bundle state); old saves must not be reused.
+  const storeKey = `gst-zoho-check:v2:${entity}:${from}`
+
+  // The uploaded file and its result survive a page reload / Back (per entity + month), so a
+  // visit to another page to fix something does not cost a re-upload. Storage may be blocked.
+  useEffect(() => {
+    setRes(null); setErr(''); setFileName(''); setB64('')
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(storeKey) || 'null')
+      if (saved?.res && Array.isArray(saved.res.hsn_invoices)) { setRes(saved.res); setFileName(saved.fileName || ''); setB64(saved.b64 || '') }
+    } catch { /* ignore */ }
+  }, [storeKey])
+
+  const compare = async (b: string, name: string) => {
+    setBusy(true); setErr('')
+    try {
+      const r = await apiFetch('/api/gst/zoho-gstr1', {
+        method: 'POST',
+        body: JSON.stringify({ entity_key: entity, period_start: from, period_end: to, file_b64: b }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setErr(d?.error || 'Could not compare the file'); setRes(null); return }
+      setRes(d); setFileName(name); setB64(b)
+      try { sessionStorage.setItem(storeKey, JSON.stringify({ res: d, fileName: name, b64: b })) } catch { /* too big or blocked */ }
+    } finally { setBusy(false) }
+  }
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return
+    const buf = new Uint8Array(await file.arrayBuffer())
+    let bin = ''
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000))
+    await compare(btoa(bin), file.name)
+  }
+
+  // HSN differences are shown as a plain list of invoices to check; the other rows (B2B, B2C, series)
+  // stay in the table below. Zoho's summary has no invoice numbers, so Zoho-only codes can't be traced.
+  const hsnTraced = (res?.issues ?? []).filter((i) => i.invoices?.length > 0)
+  const hsnUntraced = (res?.issues ?? []).filter((i) => String(i.section).startsWith('HSN') && !(i.invoices?.length > 0))
+  const tableIssues = (res?.issues ?? []).filter((i) => !String(i.section).startsWith('HSN'))
+  const checkInvoices = (() => {
+    const byInv = new Map<string, any[]>()
+    for (const i of hsnTraced) for (const v of i.invoices) {
+      const list = byInv.get(v.number) ?? []
+      if (!list.some((x) => x.line_id === v.line_id)) list.push({ ...v, suggested: i.suggested })
+      byInv.set(v.number, list)
+    }
+    return [...byInv.entries()].sort(([a], [b]) => a.localeCompare(b))
+  })()
+  // Amount Zoho bills under an HSN that the ERP invoice does not carry -- the likely size of a split-off add-on.
+  const hsnGaps = (h: any) => {
+    const g: Record<string, number> = {}
+    for (const z of h.zoho_lines) g[z.hsn] = (g[z.hsn] ?? 0) + Number(z.taxable)
+    for (const e of h.erp_lines) g[e.hsn] = (g[e.hsn] ?? 0) - Number(e.taxable)
+    for (const k of Object.keys(g)) g[k] = Math.round(g[k] * 100) / 100
+    return g
+  }
+  const blockers = tableIssues.filter((i) => i.severity === 'blocker').length
+  const money = (n: number | null) => (n == null ? '—' : formatCurrency(n))
+  const cnt = (n: number | null) => (n == null ? '' : `${n} · `)
+
+  return (
+    <div className="space-y-3 rounded-lg border p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <p className="text-sm font-medium">Match against Zoho's GSTR-1 summary</p>
+          <p className="text-xs text-muted-foreground">
+            In Zoho: Reports → Taxes → Summary of Outward Supplies, set the month, Export as Excel. Compared by the app itself (no AI); nothing is stored.
+          </p>
+        </div>
+        <label className="inline-flex">
+          <input type="file" accept=".xls,.xlsx" className="hidden" disabled={busy}
+            onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = '' }} />
+          <span className={`inline-flex h-8 items-center rounded-md border px-3 text-sm cursor-pointer hover:bg-muted ${busy ? 'opacity-50' : ''}`}>
+            {busy ? 'Comparing…' : res ? 'Upload again' : 'Upload Zoho Excel'}
+          </span>
+        </label>
+      </div>
+      {err && <p className="text-sm text-destructive">{err}</p>}
+
+      {res && (
+        <>
+          <p className="text-xs text-muted-foreground">{fileName}</p>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Section</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Zoho</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">ERP</th>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Result</th>
+                </tr>
+              </thead>
+              <tbody>
+                {res.summary.map((r) => (
+                  <tr key={r.key} className="border-t align-top">
+                    <td className="px-3 py-2">{r.label}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {cnt(r.zoho_count)}{money(r.zoho_taxable)}
+                      {r.zoho_tax != null && <span className="block text-xs text-muted-foreground">tax {money(r.zoho_tax)}</span>}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {cnt(r.erp_count)}{money(r.erp_taxable)}
+                      {r.erp_tax != null && <span className="block text-xs text-muted-foreground">tax {money(r.erp_tax)}</span>}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge variant="outline" className={r.status === 'match' ? 'text-success border-success/30' : 'bg-destructive/10 text-destructive border-destructive/30'}>
+                        {r.status === 'match' ? 'Matches' : 'Differs'}
+                      </Badge>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {res.hsn_from_zoho_lines ? (
+            <div className="space-y-2">
+              <p className="text-sm font-medium">
+                {res.hsn_invoices.length === 0 ? 'HSN codes agree with Zoho on every invoice.' : `${res.hsn_invoices.length} invoice${res.hsn_invoices.length === 1 ? '' : 's'} to check for HSN`}
+              </p>
+              {res.hsn_invoices.length > 0 && (
+                <>
+                  <p className="text-xs text-muted-foreground">
+                    Zoho's lines come from the invoice CSV in step 1; the ERP's from the sales. Decide which side is right: fix the ERP here, or correct the invoice in Zoho and upload again.
+                  </p>
+                  <div className="overflow-x-auto rounded-md border">
+                    <table className="w-full text-sm">
+                      <thead className="bg-muted">
+                        <tr>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Zoho (HSN · amount)</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">ERP (HSN · amount)</th>
+                          <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fix in ERP</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {res.hsn_invoices.map((h: any) => (
+                          <tr key={h.invoice_number} className="border-t align-top">
+                            <td className="px-3 py-2 whitespace-nowrap font-medium">{h.invoice_number}</td>
+                            <td className="px-3 py-2">
+                              <ul className="space-y-0.5">
+                                {h.zoho_lines.map((z: any, k: number) => (
+                                  <li key={k}><span className="font-medium">{z.hsn}</span> <span className="text-muted-foreground">· ₹{z.taxable} · {z.item}</span></li>
+                                ))}
+                              </ul>
+                            </td>
+                            <td className="px-3 py-2">
+                              <ul className="space-y-0.5">
+                                {h.erp_lines.filter((e: any) => Math.abs(e.taxable) > 2).map((e: any) => (
+                                  <li key={e.line_id}>
+                                    <span className="font-medium">{e.hsn}</span> <span className="text-muted-foreground">· ₹{e.taxable} · {e.item}</span>
+                                    {e.inline?.length > 0 && (
+                                      <span className="block text-xs text-muted-foreground">
+                                        includes: {e.inline.map((x: any, k: number) => (
+                                          <span key={k}>{k > 0 ? ', ' : ''}{x.item} <span className="font-medium text-foreground">({x.hsn ? `HSN ${x.hsn}` : 'no HSN'})</span></span>
+                                        ))}
+                                      </span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </td>
+                            <td className="px-3 py-2">
+                              <details>
+                                <summary className="cursor-pointer text-sm underline underline-offset-2">Change here</summary>
+                                <ul className="mt-2 space-y-2 text-xs min-w-[16rem]">
+                                  {h.erp_lines.filter((e: any) => Math.abs(e.taxable) > 2 || e.bundled_into).map((e: any) => (
+                                    <HsnLineEditor key={e.line_id} line={{ ...e, number: h.invoice_number }} suggested={null} gaps={hsnGaps(h)} onSaved={() => compare(b64, fileName)} />
+                                  ))}
+                                </ul>
+                              </details>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : (
+          <div className="space-y-2">
+            <p className="text-sm text-warning">Zoho&apos;s HSN per line is not available yet — re-upload the Zoho invoice CSV in step 1 (it now keeps each line&apos;s HSN/SAC), then upload this Excel again. Until then this list is inferred from the HSN totals.</p>
+            <p className="text-sm font-medium">
+              {checkInvoices.length === 0 ? 'No invoices to check for HSN.' : `${checkInvoices.length} invoice${checkInvoices.length === 1 ? '' : 's'} to check for HSN`}
+            </p>
+            {checkInvoices.length > 0 && (
+              <>
+                <p className="text-xs text-muted-foreground">
+                  The ERP files these lines under a different HSN than Zoho. Open the same invoice in Zoho and in the ERP, find the line, and change whichever is wrong — the ERP side can be fixed right here.
+                </p>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Invoice</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Lines to check</th>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Fix in ERP</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {checkInvoices.map(([number, lines]) => (
+                        <tr key={number} className="border-t align-top">
+                          <td className="px-3 py-2 whitespace-nowrap font-medium">{number}</td>
+                          <td className="px-3 py-2">
+                            <ul className="space-y-0.5">
+                              {lines.map((v: any) => (
+                                <li key={v.line_id}>
+                                  {v.item} <span className="text-muted-foreground">· ₹{v.taxable}</span>
+                                  <span className="block text-xs text-muted-foreground">
+                                    ERP HSN <span className="font-medium text-foreground">{v.hsn}</span>
+                                    {' · '}Zoho HSN {v.zoho_hsn
+                                      ? <span className="font-medium text-foreground">{v.zoho_hsn}</span>
+                                      : <span>not in Zoho&apos;s summary — see the Zoho invoice</span>}
+                                  </span>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                          <td className="px-3 py-2">
+                            <details>
+                              <summary className="cursor-pointer text-sm underline underline-offset-2">Change here</summary>
+                              <ul className="mt-2 space-y-2 text-xs min-w-[16rem]">
+                                {lines.map((v: any) => (
+                                  <HsnLineEditor key={v.line_id} line={v} suggested={v.suggested} onSaved={() => compare(b64, fileName)} />
+                                ))}
+                              </ul>
+                            </details>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+            {hsnUntraced.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {hsnUntraced.length} more HSN difference{hsnUntraced.length === 1 ? '' : 's'} could not be traced to an invoice from Zoho&apos;s summary (a code only Zoho has, or a value split). Once the invoices above are fixed and you upload again, whatever remains points at the cause.
+              </p>
+            )}
+          </div>
+          )}
+
+          {tableIssues.length === 0 ? (
+            <p className="text-sm text-success">B2B, B2C and the invoice series match Zoho.</p>
+          ) : (
+            <div className="space-y-1">
+              <p className="text-sm font-medium">{blockers} to fix{tableIssues.length > blockers ? ` · ${tableIssues.length - blockers} to note` : ''}</p>
+              <div className="overflow-x-auto rounded-md border">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Where</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Problem</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">Zoho</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">ERP</th>
+                      <th className="text-left px-3 py-2 font-medium text-muted-foreground">How to fix</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tableIssues.map((i, n) => (
+                      <tr key={n} className="border-t align-top">
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <Badge variant="outline" className={i.severity === 'blocker' ? 'bg-destructive/10 text-destructive border-destructive/30' : 'bg-warning/10 text-warning border-warning/30'}>
+                            {i.severity === 'blocker' ? 'Fix' : 'Note'}
+                          </Badge>
+                          <span className="block text-xs text-muted-foreground mt-1">{i.section}</span>
+                          {i.invoice_id
+                            ? <a href={`/dashboard/invoices/${i.invoice_id}`} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2">{i.ref}</a>
+                            : <span>{i.ref}</span>}
+                          {i.invoices?.length > 0 && (
+                            <ul className="mt-2 space-y-2 text-xs whitespace-normal min-w-[16rem]">
+                              {i.invoices.map((v: any) => (
+                                <HsnLineEditor key={v.line_id} line={v} suggested={i.suggested} onSaved={() => compare(b64, fileName)} />
+                              ))}
+                            </ul>
+                          )}
+                        </td>
+                        <td className="px-3 py-2">{i.problem}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{i.zoho}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{i.erp}</td>
+                        <td className="px-3 py-2">
+                          {i.suggested && <p className="font-medium">Suggested HSN: {i.suggested}</p>}
+                          {i.fix}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+function HeadTotals({ detail }: { detail: any }) {
+  const heads: [string, string][] = [['cgst', 'CGST'], ['sgst', 'SGST'], ['igst', 'IGST']]
+  return (
+    <div className="space-y-1">
+      <p className="text-sm font-medium">Invoice count and month totals by tax head</p>
+      <div className="overflow-x-auto rounded-md border">
+        <table className="w-full text-sm">
+          <thead className="bg-muted">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium text-muted-foreground">Head</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">ERP</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Zoho</th>
+              <th className="text-right px-3 py-2 font-medium text-muted-foreground">Difference</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr className="border-t bg-muted/30">
+              <td className="px-3 py-2 font-medium">Invoices</td>
+              <td className="px-3 py-2 text-right tabular-nums">{Number(detail?.erp_invoice_count ?? 0)}</td>
+              <td className="px-3 py-2 text-right tabular-nums">{Number(detail?.zoho_invoice_count ?? 0)}</td>
+              <td className={`px-3 py-2 text-right tabular-nums ${Number(detail?.zoho_invoice_count ?? 0) === Number(detail?.erp_invoice_count ?? 0) ? 'text-success' : 'text-destructive'}`}>
+                {Number(detail?.zoho_invoice_count ?? 0) - Number(detail?.erp_invoice_count ?? 0)}
+              </td>
+            </tr>
+            {heads.map(([k, label]) => {
+              const e = Number(detail?.erp?.[k] ?? 0), z = Number(detail?.zoho?.[k] ?? 0), d = z - e
+              const ec = Number(detail?.erp_head_counts?.[k] ?? 0), zc = Number(detail?.zoho_head_counts?.[k] ?? 0), dc = zc - ec
+              return (
+                <tr key={k} className="border-t">
+                  <td className="px-3 py-2">{label}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCurrency(e)}<span className="block text-xs text-muted-foreground">{ec} invoice{ec === 1 ? '' : 's'}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCurrency(z)}<span className="block text-xs text-muted-foreground">{zc} invoice{zc === 1 ? '' : 's'}</span>
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    <span className={Math.abs(d) > 1 ? 'text-destructive' : 'text-success'}>{formatCurrency(d)}</span>
+                    <span className={`block text-xs ${dc === 0 ? 'text-success' : 'text-destructive'}`}>{dc === 0 ? 'same count' : `${dc > 0 ? '+' : ''}${dc} invoice${Math.abs(dc) === 1 ? '' : 's'}`}</span>
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      {Number(detail?.zoho_ignored_tax) > 0 && (
+        <p className="text-xs text-muted-foreground">
+          Excludes {formatCurrency(detail.zoho_ignored_tax)} of tax on Zoho documents you marked as ignored (e.g. cancelled).
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ApprovalAndFiling({ entity, from, to, periodLabel, returnType, lockModule, stage, step, onChanged }: {
+  entity: string; from: string; to: string; periodLabel: string
+  returnType: 'gstr1' | 'gstr3b'; lockModule: 'sales' | 'purchases'
+  stage: 'approve' | 'file'; step: Step; onChanged: () => void
+}) {
+  const [filing, setFiling] = useState<any>(null)
+  const [arn, setArn] = useState('')
+  const [err, setErr] = useState('')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+  const label = returnType === 'gstr1' ? 'GSTR-1' : 'GSTR-3B'
+
+  const refresh = useCallback(async () => {
+    const r = await apiFetch(`/api/gst/filings?entity=${encodeURIComponent(entity)}`)
+    if (r.ok) {
+      const all: any[] = await r.json()
+      setFiling(all.find((f) => f.return_type === returnType && f.period_start === from) ?? null)
+    }
+  }, [entity, returnType, from])
+  useEffect(() => { refresh() }, [refresh, step.status])
+
+  const post = async (status: 'exported' | 'draft' | 'filed') => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const r = await apiFetch('/api/gst/filings', {
+        method: 'POST',
+        body: JSON.stringify({ entity_key: entity, return_type: returnType, period_start: from, period_end: to, status, arn: arn || null }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setErr(d?.error || 'Failed'); return }
+      setMsg(status === 'exported' ? `${label} approved for ${periodLabel}.` : status === 'filed' ? `${label} recorded as filed.` : 'Approval withdrawn.')
+      setArn(''); await refresh(); onChanged()
+    } finally { setBusy(false) }
+  }
+
+  const lockNow = async () => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const r = await apiFetch('/api/gst/period-locks', {
+        method: 'POST',
+        body: JSON.stringify({ entity_key: entity, module: lockModule, locked_through_date: to, reason: `${label} filed for ${periodLabel}` }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok) { setErr(d?.error || 'Failed'); return }
+      setMsg(`${lockModule === 'sales' ? 'Sales' : 'Purchases'} locked through ${to}.`); onChanged()
+    } finally { setBusy(false) }
+  }
+
+  const approved = !!filing && ['exported', 'filed'].includes(filing.status)
+  const filed = filing?.status === 'filed'
+  const locked = !!(lockModule === 'sales' ? step.detail?.sales_locked : step.detail?.purchases_locked)
+
+  return (
+    <div className="space-y-3">
+      {err && <ErrorBanner message={err} />}
+      {msg && <p className="text-sm text-success">{msg}</p>}
+
+      {stage === 'approve' && (
+        <div className="rounded-md border p-3 space-y-2">
+          {approved && step.status === 'green' && (
+            <p className="text-sm text-success">
+              Approved{filing?.updated_at ? ` · ${new Date(filing.updated_at).toLocaleString('en-IN')}` : ''}. These exact figures are frozen.
+            </p>
+          )}
+          {approved && step.status !== 'green' && <p className="text-sm text-warning">{step.reason}</p>}
+          {!approved && <p className="text-sm text-muted-foreground">{step.reason ?? `Review the figures above, then approve ${label}.`}</p>}
+          <div className="flex gap-2">
+            <Button disabled={busy || step.status === 'red' || (approved && step.status === 'green')} onClick={() => post('exported')}>
+              {approved ? `Approve ${label} again` : `Approve ${label}`}
+            </Button>
+            {approved && !filed && <Button variant="outline" disabled={busy} onClick={() => post('draft')}>Withdraw approval</Button>}
+          </div>
+        </div>
+      )}
+
+      {stage === 'file' && (
+        <div className="rounded-md border p-3 space-y-3">
+          {!approved && <p className="text-sm text-muted-foreground">{step.reason ?? `Approve ${label} first.`}</p>}
+          {approved && !filed && (
+            <>
+              <p className="text-sm">
+                Approved. File {label} for {periodLabel} on the GST portal using the approved figures, then enter the ARN the portal gives you.
+              </p>
+              <div className="flex flex-wrap gap-2 items-end">
+                <div>
+                  <label className="text-xs text-muted-foreground block mb-1">ARN</label>
+                  <Input value={arn} onChange={(e) => setArn(e.target.value)} className="w-[260px]" placeholder="e.g. AA090126012345Z" />
+                </div>
+                <Button disabled={busy || !arn.trim()} onClick={() => post('filed')}>Record as filed</Button>
+              </div>
+            </>
+          )}
+          {filed && (
+            <p className="text-sm text-success">
+              Filed{filing.filed_at ? ` on ${new Date(filing.filed_at).toLocaleDateString('en-IN')}` : ''} · ARN <span className="font-mono">{filing.arn}</span>
+            </p>
+          )}
+          {filed && !locked && (
+            <div className="flex items-center gap-3">
+              <p className="text-sm text-warning">{lockModule === 'sales' ? 'Sales' : 'Purchases'} are not locked yet.</p>
+              <Button size="sm" variant="outline" disabled={busy} onClick={lockNow}>
+                Lock {lockModule === 'sales' ? 'sales' : 'purchases'} through {to}
+              </Button>
+            </div>
+          )}
+          {filed && locked && <p className="text-xs text-success">✓ {lockModule === 'sales' ? 'Sales' : 'Purchases'} locked through month-end.</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function GstClient() {
   const months = useMemo(() => monthOptions(), [])
   const [entities, setEntities] = useState<EntityOption[]>([])
-  const [entity, setEntity] = useState<string>('')
-  const [month, setMonth] = useState<string>(months[1]?.value ?? months[0].value)
+  // Entity, month and step live in the URL so Back / refresh returns to the same place.
+  const router = useRouter()
+  const sp = useSearchParams()
+  const urlMonth = sp.get('month')
+  const [entity, setEntity] = useState<string>(sp.get('entity') ?? '')
+  const [month, setMonth] = useState<string>(
+    months.find((m) => m.value === urlMonth)?.value ?? months[1]?.value ?? months[0].value)
   const [readiness, setReadiness] = useState<any>(null)
+  const [steps, setSteps] = useState<Step[]>([])
   const [exceptions, setExceptions] = useState<ExceptionRow[]>([])
   const [papers, setPapers] = useState<{ sections: any; hsn: any; docs: any } | null>(null)
   const [completeness2, setCompleteness2] = useState<any>(null)
@@ -82,7 +909,7 @@ export default function GstClient() {
   const [dash, setDash] = useState<any>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
-  const [tab, setTab] = useState('validation')
+  const [picked, setPicked] = useState<number | null>(Number(sp.get('step')) || null)
 
   const period = months.find((m) => m.value === month) ?? months[0]
 
@@ -104,8 +931,9 @@ export default function GstClient() {
     setError('')
     try {
       const qs = `entity=${encodeURIComponent(entity)}&from=${period.from}&to=${period.to}`
-      const [rRes, eRes, sRes, hRes, dRes, cRes, bRes, vRes, dashRes] = await Promise.all([
+      const [rRes, stRes, eRes, sRes, hRes, dRes, cRes, bRes, vRes, dashRes] = await Promise.all([
         apiFetch(`/api/gst/returns?metric=readiness&${qs}`),
+        apiFetch(`/api/gst/returns?metric=steps&${qs}`),
         apiFetch(`/api/gst/returns?metric=exceptions&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_sections&${qs}`),
         apiFetch(`/api/gst/returns?metric=r1_hsn&${qs}`),
@@ -116,8 +944,11 @@ export default function GstClient() {
         apiFetch(`/api/gst/returns?metric=dashboard&entity=${encodeURIComponent(entity)}&months=12`),
       ]) as any
       if (!rRes.ok) throw new Error((await rRes.json())?.error || 'Failed to load readiness')
+      if (!stRes.ok) throw new Error((await stRes.json())?.error || 'Failed to load steps')
       if (!eRes.ok) throw new Error((await eRes.json())?.error || 'Failed to load exceptions')
       setReadiness(await rRes.json())
+      const st = await stRes.json()
+      setSteps(Array.isArray(st) ? st : [])
       const ex = await eRes.json()
       setExceptions(Array.isArray(ex) ? ex : (ex?.data ?? []))
       setCompleteness2(cRes.ok ? await cRes.json() : null)
@@ -137,35 +968,125 @@ export default function GstClient() {
   }, [entity, period.from, period.to])
 
   useEffect(() => { load() }, [load])
+  // Changing entity or month starts the checklist fresh -- but not on the first render, which
+  // would throw away the step restored from the URL.
+  const firstRender = useRef(true)
+  useEffect(() => {
+    if (firstRender.current) { firstRender.current = false; return }
+    setPicked(null)
+  }, [entity, month])
+  useEffect(() => {
+    if (!entity) return
+    const q = new URLSearchParams({ entity, month })
+    if (picked) q.set('step', String(picked))
+    router.replace(`?${q.toString()}`, { scroll: false })
+  }, [entity, month, picked, router])
 
-  const blockers = readiness?.blockers ?? 0
-  const warnings = readiness?.warnings ?? 0
-  const canGenerate = !!readiness?.can_generate
-  const completeness = readiness?.completeness
-  const outward = readiness?.outward
-  const zoho = readiness?.zoho_register
-  const bank = readiness?.bank_reconciliation
+  const firstPending = steps.find((s) => s.status !== 'green')?.step ?? steps.length
+  const current = picked ?? firstPending
+  const cur = steps.find((s) => s.step === current)
+  const redIn1to5 = steps.filter((s) => s.step <= 5 && s.status === 'red').length
+  const doneCount = steps.filter((s) => s.status === 'green').length
+
+  const rowsFor = (n: number) => exceptions.filter((e) => (STEP_CODES[n] ?? []).includes(e.check_code))
+  const sortedPending = (n: number) => rowsFor(n).length
+
+  const renderPanel = (s: Step) => {
+    const tone = TONE[s.status]
+    const n = s.step
+    return (
+      <Card>
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-3">
+            <CardTitle className="text-base">Step {n} · {s.title}</CardTitle>
+            <Badge variant="outline" className={tone.text}>{tone.label}</Badge>
+          </div>
+          <p className="text-sm text-muted-foreground">{STEP_WHY[n]}</p>
+          {s.reason && <p className={`text-sm font-medium ${tone.text}`}>{s.reason}</p>}
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {n === 2 && (
+            <>
+              <UninvoicedSales entity={entity} period={period} onChanged={load} />
+              {Number(s.detail?.unpaid_count) > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  For information: {s.detail.unpaid_count} GST sale{s.detail.unpaid_count === 1 ? ' is' : 's are'} not fully paid yet. That does not hold up GSTR-1 — tax on goods is due on supply, not receipt.
+                </p>
+              )}
+              {sortedPending(2) > 0 && <ExceptionTable rows={rowsFor(2)} entity={entity} onChanged={load} />}
+              <SignOffBox step={s} entity={entity} period={period} itemsPending={Number(s.detail?.uninvoiced_count) > 0} onChanged={load} />
+            </>
+          )}
+
+          {(n === 3 || n === 4 || n === 8) && (
+            <>
+              {n === 8 && (
+                <MatchUploads entity={entity} from={period.from} to={period.to} kinds={['gstr2b']} onChanged={load} />
+              )}
+              {rowsFor(n).length > 0 && <ExceptionTable rows={rowsFor(n)} entity={entity} onChanged={load} />}
+              {rowsFor(n).length === 0 && n !== 8 && <p className="text-sm text-success">Nothing to fix here.</p>}
+              {n === 4 && <Reconcile data={completeness2} gstin={readiness?.entity?.gstin ?? null} from={period.from} />}
+              <SignOffBox step={s} entity={entity} period={period} itemsPending={s.warnings > 0} onChanged={load} />
+            </>
+          )}
+
+          {n === 1 && (
+            <MatchUploads entity={entity} from={period.from} to={period.to} kinds={['zoho_invoices']} focus="amount" onChanged={load} />
+          )}
+
+          {n === 5 && (
+            <>
+              <HeadTotals detail={s.detail} />
+              <MatchUploads entity={entity} from={period.from} to={period.to} kinds={['zoho_invoices']} focus="heads" onChanged={load} />
+            </>
+          )}
+
+          {n === 6 && (
+            <>
+              <ZohoGstr1Check entity={entity} from={period.from} to={period.to} />
+              <WorkingPapers papers={papers} gstin={readiness?.entity?.gstin ?? null} from={period.from} blockers={redIn1to5} recon={recon} />
+              <ApprovalAndFiling entity={entity} from={period.from} to={period.to} periodLabel={period.label}
+                returnType="gstr1" lockModule="sales" stage="approve" step={s} onChanged={load} />
+            </>
+          )}
+
+          {n === 7 && (
+            <ApprovalAndFiling entity={entity} from={period.from} to={period.to} periodLabel={period.label}
+              returnType="gstr1" lockModule="sales" stage="file" step={s} onChanged={load} />
+          )}
+
+          {n === 9 && (
+            <>
+              <Gstr3b data={r3b} recon={recon} />
+              <ApprovalAndFiling entity={entity} from={period.from} to={period.to} periodLabel={period.label}
+                returnType="gstr3b" lockModule="purchases" stage="approve" step={s} onChanged={load} />
+            </>
+          )}
+
+          {n === 10 && (
+            <ApprovalAndFiling entity={entity} from={period.from} to={period.to} periodLabel={period.label}
+              returnType="gstr3b" lockModule="purchases" stage="file" step={s} onChanged={load} />
+          )}
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-end justify-between gap-3">
+    <div className="space-y-4">
+      <GstNewsPanel />
+
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold">GST Returns</h1>
-          <p className="text-sm text-muted-foreground">
-            Validate a period before filing. Figures are generated for upload to the GST portal — nothing is filed from here.
-          </p>
-          <p className="text-xs text-muted-foreground mt-1">
-            1. Fix every blocker listed under <span className="font-medium">Validation</span> below (each row says what's
-            wrong and links to the record). 2. Upload the Zoho invoice register for this period under{' '}
-            <span className="font-medium">Match uploads</span>. 3. Once "Filing readiness" above says{' '}
-            <span className="font-medium">Ready</span>, the figures under GSTR-1/GSTR-3B are what you copy to the portal.
-            Fixing something elsewhere (e.g. an invoice) doesn't update this page by itself — hit{' '}
-            <span className="font-medium">Refresh</span> after.
+          <p className="text-sm text-muted-foreground mt-1">
+            Pick the month, then work through the steps in order. Each tile turns green when its checks pass.
+            Nothing is filed from here — you file on the GST portal using the approved figures.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 w-full sm:w-auto">
           <Select value={entity} onValueChange={setEntity}>
-            <SelectTrigger className="w-[220px]"><SelectValue placeholder="Entity" /></SelectTrigger>
+            <SelectTrigger className="w-full sm:w-[220px]"><SelectValue placeholder="Entity" /></SelectTrigger>
             <SelectContent>
               {entities.map((e) => (
                 <SelectItem key={e.key} value={e.key}>
@@ -175,7 +1096,7 @@ export default function GstClient() {
             </SelectContent>
           </Select>
           <Select value={month} onValueChange={setMonth}>
-            <SelectTrigger className="w-[180px]"><SelectValue placeholder="Period" /></SelectTrigger>
+            <SelectTrigger className="flex-1 sm:flex-none sm:w-[180px]"><SelectValue placeholder="Month" /></SelectTrigger>
             <SelectContent>
               {months.map((m) => (
                 <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
@@ -197,211 +1118,27 @@ export default function GstClient() {
         </CardContent></Card>
       )}
 
-      {loading && <p className="text-sm text-muted-foreground">Loading…</p>}
+      {loading && steps.length === 0 && <p className="text-sm text-muted-foreground">Loading…</p>}
 
-      {!loading && readiness && !readiness.error && (
+      {steps.length > 0 && (
         <>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Card className={canGenerate ? 'border-success/30' : 'border-destructive/40'}>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Filing readiness</CardTitle></CardHeader>
-              <CardContent>
-                <p className={`text-2xl font-semibold ${canGenerate ? 'text-success' : 'text-destructive'}`}>
-                  {canGenerate ? 'Ready' : 'Blocked'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {blockers} blocker{blockers === 1 ? '' : 's'}, {warnings} warning{warnings === 1 ? '' : 's'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Awaiting a Zoho invoice</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">{completeness?.uninvoiced_sales ?? 0}</p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {formatCurrency(completeness?.uninvoiced_tax ?? 0)} of tax, normal until payment lands
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card className={bank?.unexplained_count > 0 ? 'border-warning/40' : undefined}>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Bank credits</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {bank?.uploaded ? (bank?.unexplained_count ?? 0) : '—'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {!bank?.uploaded
-                    ? 'No bank statement uploaded for this period'
-                    : bank?.unexplained_count > 0
-                      ? <Link href="/dashboard/recon/bank" className="underline">unexplained — reconcile</Link>
-                      : 'all explained'}
-                </p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Taxable value</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">{formatCurrency(outward?.taxable_value ?? 0)}</p>
-                <p className="text-xs text-muted-foreground mt-1">{outward?.invoices ?? 0} invoices</p>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm font-medium text-muted-foreground">Output tax</CardTitle></CardHeader>
-              <CardContent>
-                <p className="text-2xl font-semibold tabular-nums">
-                  {formatCurrency((outward?.cgst ?? 0) + (outward?.sgst ?? 0) + (outward?.igst ?? 0))}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1 tabular-nums">
-                  C {formatCurrency(outward?.cgst ?? 0)} · S {formatCurrency(outward?.sgst ?? 0)} · I {formatCurrency(outward?.igst ?? 0)}
-                </p>
-              </CardContent>
-            </Card>
+          <p className="text-sm text-muted-foreground">
+            {period.label} · <span className="font-medium text-foreground">{doneCount} of {steps.length}</span> steps done
+          </p>
+          <StepTiles steps={steps} current={current} onSelect={setPicked} periodFrom={period.from} />
+          {cur && renderPanel(cur)}
+          <div className="flex justify-between">
+            <Button variant="ghost" size="sm" disabled={current <= 1} onClick={() => setPicked(current - 1)}>← Previous step</Button>
+            <Button variant="ghost" size="sm" disabled={current >= steps.length} onClick={() => setPicked(current + 1)}>Next step →</Button>
           </div>
 
-          {!canGenerate && (
-            <Card className="border-destructive/40">
-              <CardContent className="pt-6 text-sm">
-                <p className="font-medium text-destructive">This period can&apos;t be filed from the ERP yet.</p>
-                <p className="text-muted-foreground mt-1">
-                  Every blocker below has to be cleared first. A return generated with these outstanding would
-                  under-report or be rejected at the portal.
-                </p>
-              </CardContent>
-            </Card>
-          )}
-
-          {zoho && !zoho.reconciled && (
-            <Card className="border-destructive/40">
-              <CardContent className="pt-6 text-sm flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-destructive">
-                    {zoho.uploaded ? 'This period\'s Zoho register has unresolved rows.' : 'No Zoho invoice register uploaded for this period.'}
-                  </p>
-                  <p className="text-muted-foreground mt-1">
-                    Invoices are issued in Zoho, not here, so this is the real check that nothing is missing from
-                    the return. {zoho.reason}
-                  </p>
-                  {zoho.uploaded && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {zoho.source_filename} · {zoho.matched_count}/{zoho.row_count} matched,
-                      uploaded {new Date(zoho.uploaded_at).toLocaleDateString('en-IN')}
-                    </p>
-                  )}
-                </div>
-                <Button onClick={() => setTab('uploads')}>
-                  {zoho.uploaded ? 'Go resolve rows →' : 'Upload Zoho register'}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {zoho?.reconciled && (
-            <p className="text-xs text-success">
-              ✓ Zoho register reconciled — {zoho.matched_count}/{zoho.row_count} invoices matched
-              ({zoho.source_filename}).
-            </p>
-          )}
-
-          {bank && (bank.unexplained_count > 0 || !bank.uploaded) && (
-            <Card className="border-warning/40">
-              <CardContent className="pt-6 text-sm flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-warning">
-                    {bank.uploaded ? 'This period has unexplained bank credits.' : 'No bank statement uploaded for this period.'}
-                  </p>
-                  <p className="text-muted-foreground mt-1">
-                    Money with no ERP sale and no Zoho invoice is the one gap neither of those checks can
-                    see on its own. {bank.reason}
-                  </p>
-                </div>
-                <Button variant="outline" asChild>
-                  <Link href="/dashboard/recon/bank">Go to Bank Reconciliation</Link>
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {bank?.uploaded && bank?.unexplained_count === 0 && (
-            <p className="text-xs text-success">✓ Bank credits reconciled for this period.</p>
-          )}
-
-          <Tabs value={tab} onValueChange={setTab}>
-            <TabsList>
-              <TabsTrigger value="validation">
-                Validation{blockers + warnings > 0 ? ` (${blockers + warnings})` : ''}
-              </TabsTrigger>
-              <TabsTrigger value="papers">GSTR-1 working papers</TabsTrigger>
-              <TabsTrigger value="reconcile">
-                Reconcile{completeness2?.uninvoiced_count ? ` (${completeness2.uninvoiced_count})` : ''}
-              </TabsTrigger>
-              <TabsTrigger value="r3b">GSTR-3B</TabsTrigger>
-              <TabsTrigger value="dashboard">All periods</TabsTrigger>
-              <TabsTrigger value="uploads">Match uploads</TabsTrigger>
-              <TabsTrigger value="filing">Filing &amp; locks</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="validation">
-              <Tabs defaultValue="transactions">
-                <TabsList>
-                  {GROUPS.map((g) => {
-                    const n = exceptions.filter((e) => e.check_group === g.key).length
-                    return (
-                      <TabsTrigger key={g.key} value={g.key}>
-                        {g.label}{n > 0 ? ` (${n})` : ''}
-                      </TabsTrigger>
-                    )
-                  })}
-                </TabsList>
-                {GROUPS.map((g) => (
-                  <TabsContent key={g.key} value={g.key}>
-                    <ExceptionTable rows={exceptions.filter((e) => e.check_group === g.key)} />
-                  </TabsContent>
-                ))}
-              </Tabs>
-            </TabsContent>
-
-            <TabsContent value="reconcile">
-              <Reconcile
-                data={completeness2}
-                gstin={readiness?.entity?.gstin ?? null}
-                from={period.from}
-              />
-            </TabsContent>
-
-            <TabsContent value="r3b">
-              <Gstr3b data={r3b} recon={recon} />
-            </TabsContent>
-
-            <TabsContent value="dashboard">
+          <details className="rounded-md border p-3">
+            <summary className="cursor-pointer text-sm font-medium">All months &amp; period locks</summary>
+            <div className="mt-3 space-y-4">
               <PeriodsTable data={dash} />
-            </TabsContent>
-
-            <TabsContent value="uploads">
-              <MatchUploads entity={entity} from={period.from} to={period.to} />
-            </TabsContent>
-
-            <TabsContent value="filing">
-              <FilingAndLocks
-                entity={entity}
-                from={period.from}
-                to={period.to}
-                periodLabel={period.label}
-                blockers={blockers}
-                onChanged={load}
-              />
-            </TabsContent>
-
-            <TabsContent value="papers">
-              <WorkingPapers
-                papers={papers}
-                gstin={readiness?.entity?.gstin ?? null}
-                from={period.from}
-                blockers={blockers}
-                recon={recon}
-              />
-            </TabsContent>
-          </Tabs>
+              <PeriodLocks entity={entity} from={period.from} to={period.to} periodLabel={period.label} onChanged={load} />
+            </div>
+          </details>
         </>
       )}
     </div>
@@ -425,13 +1162,36 @@ function recordHref(r: ExceptionRow): string | null {
   }
 }
 
-function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
+function ExceptionTable({ rows, entity, onChanged }: { rows: ExceptionRow[]; entity: string; onChanged: () => void }) {
   // Blockers first, then by check so like problems sit together.
   const sorted = [...rows].sort((a, b) =>
     a.severity === b.severity
       ? a.check_code.localeCompare(b.check_code)
       : a.severity === 'blocker' ? -1 : 1
   )
+
+  const acknowledgeGap = async (r: ExceptionRow) => {
+    if (!r.series_key || r.seq == null) return
+    const reason = window.prompt(
+      `Why was ${r.record_label} cancelled? (e.g. "Raised and cancelled in Zoho, never entered in the ERP" -- shown in the audit log and reported as cancelled in Table 13, not omitted)`
+    )
+    if (reason === null) return
+    if (!reason.trim()) { alert('A reason is required.'); return }
+    const res = await apiFetch('/api/gst/void-numbers', {
+      method: 'POST',
+      body: JSON.stringify({ entity_key: entity, series_key: r.series_key, seq: r.seq, reason: reason.trim() }),
+    })
+    if (!res.ok) { alert((await res.json().catch(() => ({}))).error || 'Failed to record.'); return }
+    onChanged()
+  }
+
+  const refreshFromCustomer = async (r: ExceptionRow) => {
+    if (!r.record_id) return
+    const res = await apiFetch('/api/gst/refresh-invoice-customer', { method: 'POST', body: JSON.stringify({ invoice_id: r.record_id }) })
+    if (!res.ok) { alert((await res.json().catch(() => ({}))).error || 'Failed to refresh.'); return }
+    onChanged()
+  }
+
   return (
     <div className="overflow-x-auto rounded-md border">
       <table className="w-full text-sm">
@@ -442,10 +1202,11 @@ function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
             <th className="text-left px-3 py-2 font-medium text-muted-foreground">Check</th>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground">Record</th>
             <th className="text-left px-3 py-2 font-medium text-muted-foreground">What&apos;s wrong</th>
+            <th className="text-left px-3 py-2 font-medium text-muted-foreground"></th>
           </tr>
         </thead>
         <tbody>
-          {sorted.length === 0 && <EmptyTableRow colSpan={5} message="Nothing to fix here." />}
+          {sorted.length === 0 && <EmptyTableRow colSpan={6} message="Nothing to fix here." />}
           {sorted.map((r, i) => (
             <tr key={`${r.check_code}-${r.record_id ?? r.record_label}-${i}`} className="border-t align-top">
               <td className="px-3 py-2 whitespace-nowrap text-muted-foreground">
@@ -462,11 +1223,23 @@ function ExceptionTable({ rows }: { rows: ExceptionRow[] }) {
                   const href = recordHref(r)
                   const label = r.record_label || '—'
                   return href
-                    ? <a href={href} className="underline underline-offset-2 hover:text-foreground">{label}</a>
+                    ? <a href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">{label}</a>
                     : label
                 })()}
               </td>
               <td className="px-3 py-2 text-muted-foreground">{r.detail}</td>
+              <td className="px-3 py-2 whitespace-nowrap">
+                {r.check_code === 'doc_series_gap' && (
+                  <Button variant="outline" size="sm" onClick={() => acknowledgeGap(r)}>
+                    Mark cancelled (Zoho)
+                  </Button>
+                )}
+                {r.check_code === 'invoice_customer_gstin_stale' && (
+                  <Button variant="outline" size="sm" onClick={() => refreshFromCustomer(r)}>
+                    Refresh from customer
+                  </Button>
+                )}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -502,6 +1275,24 @@ function WorkingPapers({
     downloadCsv(gstCsvFilename(k, gstin, from), sectionCsv(k, payloadFor(k)))
 
   const downloadAll = () => keys.forEach((k) => download(k))
+
+  // Table 12 carries the portal's own HSN-master description per code, so fetch those first.
+  const downloadPortalJson = async (only?: string) => {
+    const codes = [...new Set([...(papers.hsn?.hsn_b2b ?? []), ...(papers.hsn?.hsn_b2c ?? [])].map((r: any) => String(r.hsn_sc)))]
+    let hsnMaster: Record<string, string> = {}
+    try {
+      const r = await apiFetch('/api/gst/hsn-descriptions', { method: 'POST', body: JSON.stringify({ codes }) })
+      if (r.ok) hsnMaster = await r.json()
+    } catch { /* falls back to our own description */ }
+    downloadJson(
+      gstr1JsonFilename(gstin!, from).replace('.json', only ? `_${only}.json` : '.json'),
+      buildGstr1Json({
+        gstin: gstin!, periodFrom: from,
+        sections: papers.sections, hsn: papers.hsn, docs: papers.docs, hsnMaster,
+        ...(only ? { only: [only] } : {}),
+      })
+    )
+  }
 
   // Table 12 has to tie to the section totals -- the portal cross-validates it.
   const sectionTx = ['b2b', 'b2cl', 'b2cs'].reduce((sum, k) => {
@@ -551,18 +1342,17 @@ function WorkingPapers({
           </div>
           <div className="flex gap-2">
             <Button variant="outline" onClick={downloadAll}>All sections (CSV)</Button>
-            <Button
-              disabled={!gstin}
-              onClick={() => downloadJson(
-                gstr1JsonFilename(gstin!, from),
-                buildGstr1Json({
-                  gstin: gstin!, periodFrom: from,
-                  sections: papers.sections, hsn: papers.hsn, docs: papers.docs,
-                })
-              )}
-            >
+            <Button disabled={!gstin} onClick={() => downloadPortalJson()}>
               Portal JSON
             </Button>
+          </div>
+          <div className="basis-full text-xs text-muted-foreground flex flex-wrap items-center gap-2">
+            Portal says &quot;File could not be uploaded&quot;? Upload one table at a time to find which one it rejects:
+            {([['b2b', 'B2B'], ['b2cs', 'B2C small'], ['hsn', 'HSN'], ['doc_issue', 'Documents']] as const).map(([key, label]) => (
+              <Button key={key} size="sm" variant="outline" disabled={!gstin} onClick={() => downloadPortalJson(key)}>
+                {label} only
+              </Button>
+            ))}
           </div>
         </CardContent>
       </Card>
@@ -620,8 +1410,7 @@ function Reconcile({ data, gstin, from }: { data: any; gstin: string | null; fro
   // was removed -- invoices are issued in Zoho, not here, and a sale is
   // deliberately left uninvoiced until payment is secured, so this is no
   // longer something to chase per-row from the ERP. Protection against
-  // under-reporting is the Zoho register (Match Uploads tab) and bank-credit
-  // reconciliation (the banner above), not this worksheet.
+  // under-reporting is the Zoho register match (steps 1 and 5), not this worksheet.
   const gaps: any[] = data.series_gaps ?? []
 
   const dl = () => downloadCsv(worksheetFilename('gaps', gstin, from), worksheetCsv('gaps', data))
@@ -947,7 +1736,34 @@ const BUCKETS: { key: string; label: string; tone: 'ok' | 'warn' | 'bad' }[] = [
   { key: 'matched', label: 'Matched', tone: 'ok' },
 ]
 
-function MatchUploads({ entity, from, to }: { entity: string; from: string; to: string }) {
+// A diff entry as a sentence, so "tax_heads: {"source":{...},"erp":{...}}" is readable.
+function formatDiff(k: string, v: any): string {
+  const money = (n: any) => formatCurrency(Number(n) || 0)
+  if (k === 'tax_heads') {
+    return 'Tax heads — ' + (['cgst', 'sgst', 'igst'] as const)
+      .filter((h) => Math.abs((Number(v?.source?.[h]) || 0) - (Number(v?.erp?.[h]) || 0)) > 1)
+      .map((h) => `${h.toUpperCase()}: Zoho ${money(v?.source?.[h])} vs ERP ${money(v?.erp?.[h])}`).join('; ')
+  }
+  if (k === 'place_of_supply') {
+    const name = (c: string) => `${STATE_CODE_TO_NAME[c] ?? c} (${c})`
+    return `Place of supply — Zoho ${name(v?.source)} vs ERP ${name(v?.erp)}`
+  }
+  if (typeof v === 'object' && v && 'source' in v && 'erp' in v) {
+    const label = ({ taxable_value: 'Taxable value', doc_value: 'Invoice total', tax: 'Total tax', doc_date: 'Date' } as Record<string, string>)[k] ?? k
+    return k === 'doc_date' ? `${label} — Zoho ${v.source} vs ERP ${v.erp}` : `${label} — Zoho ${money(v.source)} vs ERP ${money(v.erp)}`
+  }
+  if (k === 'erp_voided') return 'Voided in the ERP but live in Zoho'
+  return `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`
+}
+
+const HEAD_KEYS = ['tax_heads', 'place_of_supply']
+
+function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
+  entity: string; from: string; to: string
+  kinds?: ('zoho_invoices' | 'gstr2b')[]
+  focus?: 'amount' | 'heads'
+  onChanged?: () => void
+}) {
   const [imports, setImports] = useState<any[]>([])
   const [active, setActive] = useState<any>(null)
   const [lines, setLines] = useState<any[]>([])
@@ -959,6 +1775,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
     const r = await apiFetch(`/api/gst/recon?entity=${encodeURIComponent(entity)}`)
     if (r.ok) setImports(await r.json())
   }, [entity])
+  const changed = () => { onChanged?.() }
 
   useEffect(() => { loadImports() }, [loadImports])
 
@@ -968,6 +1785,16 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
     if (!r.ok) { setErr('Could not load that reconciliation.'); return }
     const d = await r.json()
     setActive(d.import); setLines(d.lines ?? [])
+  }
+
+  // Lines this step is responsible for: step 1 hides head-only mismatches (step 5 owns them).
+  const inFocus = (l: any) => {
+    const keys = Object.keys(l.diff ?? {})
+    const headOnly = keys.length > 0 && keys.every((k) => HEAD_KEYS.includes(k))
+    const hasHead = keys.some((k) => HEAD_KEYS.includes(k))
+    if (focus === 'amount') return !(l.match_status === 'value_mismatch' && headOnly)
+    if (focus === 'heads') return l.match_status === 'value_mismatch' && hasHead
+    return true
   }
 
   const upload = async (kind: string, file: File) => {
@@ -989,6 +1816,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
       setMsg(`Read ${d.rows} rows from ${file.name}.`)
       await loadImports()
       await openImport(d.import.id)
+      changed()
     } catch (e: any) {
       setErr(e?.message || 'Upload failed')
     } finally {
@@ -1008,7 +1836,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
       method: 'PATCH',
       body: JSON.stringify({ id: lineId, resolution, resolution_note: note.trim() }),
     })
-    if (r.ok && active) openImport(active.id)
+    if (r.ok && active) { await openImport(active.id); changed() }
   }
 
   // Clearing a resolution needs no reason -- there's nothing left to explain
@@ -1019,7 +1847,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
       method: 'PATCH',
       body: JSON.stringify({ id: lineId, resolution: null }),
     })
-    if (r.ok && active) openImport(active.id)
+    if (r.ok && active) { await openImport(active.id); changed() }
   }
 
   const recheckImport = async (imp: any) => {
@@ -1038,6 +1866,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
       setMsg(`Re-checked against current ERP data — ${d.rows} rows.`)
       await loadImports()
       await openImport(d.import.id)
+      changed()
     } catch (e: any) {
       setErr(e?.message || 'Re-check failed')
     } finally {
@@ -1057,6 +1886,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
     if (active?.id === id) { setActive(null); setLines([]) }
     setMsg('Upload deleted.')
     await loadImports()
+    changed()
   }
 
   return (
@@ -1064,8 +1894,8 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
       {err && <ErrorBanner message={err} />}
       {msg && <p className="text-sm text-success">{msg}</p>}
 
-      <div className="grid gap-4 md:grid-cols-2">
-        {UPLOAD_KINDS.map((k) => (
+      <div className={`grid gap-4 ${kinds && kinds.length === 1 ? '' : 'md:grid-cols-2'}`}>
+        {UPLOAD_KINDS.filter((k) => !kinds || kinds.includes(k.kind)).map((k) => (
           <Card key={k.kind}>
             <CardHeader className="pb-2"><CardTitle className="text-base">{k.label}</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -1086,7 +1916,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
         ))}
       </div>
 
-      {imports.length > 0 && (
+      {imports.filter((i) => !kinds || kinds.includes(i.kind)).length > 0 && (
         <div>
           <h3 className="text-sm font-medium mb-2">Previous uploads</h3>
           <div className="overflow-x-auto rounded-md border">
@@ -1103,7 +1933,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
                 </tr>
               </thead>
               <tbody>
-                {imports.map((i) => {
+                {imports.filter((i) => !kinds || kinds.includes(i.kind)).map((i) => {
                   const problems = i.mismatch_count + i.missing_in_erp_count + i.missing_in_source_count
                   return (
                     <tr key={i.id} className="border-t">
@@ -1144,7 +1974,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
             {active.notes && <span className="ml-2 text-xs text-warning">{active.notes}</span>}
           </h3>
           {BUCKETS.map((b) => {
-            const rows = lines.filter((l) => l.match_status === b.key)
+            const rows = lines.filter((l) => l.match_status === b.key && inFocus(l))
             if (rows.length === 0) return null
             return (
               <div key={b.key}>
@@ -1179,9 +2009,7 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
                           </td>
                           <td className="px-3 py-2 text-xs text-muted-foreground max-w-[22rem]">
                             {l.diff ? Object.entries(l.diff).map(([k, v]: any) => (
-                              <span key={k} className="block">
-                                {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-                              </span>
+                              <span key={k} className="block">{formatDiff(k, v)}</span>
                             )) : '—'}
                           </td>
                           <td className="px-3 py-2 text-right">
@@ -1239,16 +2067,13 @@ const LOCK_MODULES = [
   { key: 'accounts', label: 'Accounts — journals, tax entries' },
 ]
 
-function FilingAndLocks({
-  entity, from, to, periodLabel, blockers, onChanged,
+function PeriodLocks({
+  entity, from, to, periodLabel, onChanged,
 }: {
   entity: string; from: string; to: string; periodLabel: string
-  blockers: number; onChanged: () => void
+  onChanged: () => void
 }) {
-  const [filings, setFilings] = useState<any[]>([])
   const [locks, setLocks] = useState<any[]>([])
-  const [arn, setArn] = useState('')
-  const [returnType, setReturnType] = useState('gstr1')
   const [lockModule, setLockModule] = useState('sales')
   const [lockThrough, setLockThrough] = useState(to)
   const [lockReason, setLockReason] = useState('')
@@ -1257,36 +2082,11 @@ function FilingAndLocks({
   const [busy, setBusy] = useState(false)
 
   const refresh = useCallback(async () => {
-    const [f, l] = await Promise.all([
-      apiFetch(`/api/gst/filings?entity=${encodeURIComponent(entity)}`),
-      apiFetch('/api/gst/period-locks'),
-    ])
-    if (f.ok) setFilings(await f.json())
+    const l = await apiFetch('/api/gst/period-locks')
     if (l.ok) setLocks(await l.json())
   }, [entity])
 
   useEffect(() => { refresh() }, [refresh])
-
-  const record = async (status: string, force = false) => {
-    setBusy(true); setErr(''); setMsg('')
-    try {
-      const r = await apiFetch('/api/gst/filings', {
-        method: 'POST',
-        body: JSON.stringify({
-          entity_key: entity, return_type: returnType,
-          period_start: from, period_end: to,
-          status, arn: arn || null, force,
-        }),
-      })
-      const d = await r.json()
-      if (!r.ok) { setErr(d?.error || 'Failed'); return }
-      setMsg(status === 'filed'
-        ? `Recorded ${returnType.toUpperCase()} for ${periodLabel} as filed.`
-        : `Snapshot captured for ${periodLabel}.`)
-      setArn('')
-      await refresh(); onChanged()
-    } finally { setBusy(false) }
-  }
 
   const setLock = async () => {
     setBusy(true); setErr(''); setMsg('')
@@ -1301,7 +2101,7 @@ function FilingAndLocks({
       const d = await r.json()
       if (!r.ok) { setErr(d?.error || 'Failed'); return }
       setMsg(`${lockModule} locked through ${lockThrough}.`)
-      setLockReason(''); await refresh()
+      setLockReason(''); await refresh(); onChanged()
     } finally { setBusy(false) }
   }
 
@@ -1328,76 +2128,6 @@ function FilingAndLocks({
     <div className="space-y-5">
       {err && <ErrorBanner message={err} />}
       {msg && <p className="text-sm text-success">{msg}</p>}
-
-      <Card>
-        <CardHeader className="pb-2"><CardTitle className="text-base">Record a filing — {periodLabel}</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <p className="text-xs text-muted-foreground">
-            This records what you filed; it does not file anything at the portal. The point is the frozen
-            snapshot of the figures — without it, an edit made after filing is undetectable.
-          </p>
-          <div className="flex flex-wrap items-end gap-2">
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">Return</label>
-              <Select value={returnType} onValueChange={setReturnType}>
-                <SelectTrigger className="w-[140px]"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="gstr1">GSTR-1</SelectItem>
-                  <SelectItem value="gstr3b">GSTR-3B</SelectItem>
-                  <SelectItem value="gstr1a">GSTR-1A</SelectItem>
-                  <SelectItem value="gstr9">GSTR-9</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-xs text-muted-foreground block mb-1">ARN (from the portal)</label>
-              <Input value={arn} onChange={(e) => setArn(e.target.value)} placeholder="optional" className="w-[220px]" />
-            </div>
-            <Button variant="outline" disabled={busy} onClick={() => record('exported')}>Snapshot as exported</Button>
-            <Button disabled={busy} onClick={() => record('filed')}>Mark filed</Button>
-          </div>
-          {blockers > 0 && (
-            <p className="text-xs text-destructive">
-              {blockers} blocker{blockers === 1 ? '' : 's'} outstanding — marking this period filed will be
-              refused. Clear the Validation tab first.
-            </p>
-          )}
-        </CardContent>
-      </Card>
-
-      {filings.length > 0 && (
-        <div>
-          <h3 className="text-sm font-medium mb-2">Recorded filings</h3>
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted">
-                <tr>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Period</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Return</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Status</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">ARN</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Filed</th>
-                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Snapshot</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filings.map((f) => (
-                  <tr key={f.id} className="border-t">
-                    <td className="px-3 py-2 whitespace-nowrap">{f.period_start}</td>
-                    <td className="px-3 py-2 uppercase text-xs font-mono">{f.return_type}</td>
-                    <td className="px-3 py-2"><Badge variant={f.status === 'filed' ? 'secondary' : 'outline'}>{f.status}</Badge></td>
-                    <td className="px-3 py-2 font-mono text-xs">{f.arn || '—'}</td>
-                    <td className="px-3 py-2 text-muted-foreground text-xs">
-                      {f.filed_at ? new Date(f.filed_at).toLocaleDateString('en-IN') : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">{f.snapshot ? 'captured' : '—'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       <Card>
         <CardHeader className="pb-2"><CardTitle className="text-base">Period locks</CardTitle></CardHeader>

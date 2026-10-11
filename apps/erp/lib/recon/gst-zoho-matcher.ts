@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { docNumberKey, docNumberSeq, withinTolerance } from './gst-doc-key'
+import { normalizePlaceOfSupply } from './gst-pos'
 
 /**
  * Zoho invoice register vs the ERP's invoices.
@@ -28,8 +29,13 @@ export interface ZohoInvoiceRow {
   igst?: number | null
   cess?: number | null
   doc_value?: number | null
+  place_of_supply?: string | null
+  // The item lines Zoho printed on the invoice (one CSV row each), so the GST page can show the HSN
+  // Zoho used per line. Optional: an upload read before this existed has none.
+  lines?: ZohoItemLine[]
   raw?: any
 }
+export interface ZohoItemLine { item: string; qty: number | null; rate: number | null; hsn: string | null }
 
 export interface ReconLine {
   doc_number: string | null
@@ -43,6 +49,7 @@ export interface ReconLine {
   igst: number | null
   cess: number | null
   doc_value: number | null
+  place_of_supply?: string | null
   match_status: 'matched' | 'value_mismatch' | 'missing_in_erp' | 'missing_in_source'
   matched_type: 'invoice' | 'purchase_order' | 'purchase_order_item' | null
   matched_id: string | null
@@ -61,12 +68,32 @@ export async function matchZohoInvoices(
   // "missing from Zoho" would be wrong.
   const { data: erpInvoices, error } = await supabaseAdmin
     .from('invoices')
-    .select('id, invoice_number, invoice_date, customer_name, customer_gst, subtotal, total_gst, grand_total, is_deleted')
+    .select('id, invoice_number, invoice_date, customer_name, customer_gst, subtotal, total_gst, grand_total, is_deleted, place_of_supply')
     .eq('entity_key', entityKey)
     .eq('invoice_type', 'sales')
     .gte('invoice_date', periodStart)
     .lte('invoice_date', periodEnd)
   if (error) throw new Error(`Could not load ERP invoices: ${error.message}`)
+
+  // Per-head tax from the invoice lines. Total tax alone cannot see a CGST+SGST vs IGST
+  // mix-up; tax paid under the wrong head is not offsettable and has to be paid again
+  // and refunded separately, so it is worth catching before filing.
+  const headsByInvoice = new Map<string, { cgst: number; sgst: number; igst: number }>()
+  const invoiceIds = (erpInvoices ?? []).map((i: any) => i.id)
+  if (invoiceIds.length) {
+    const { data: items, error: itemsErr } = await supabaseAdmin
+      .from('invoice_items')
+      .select('invoice_id, cgst_amount, sgst_amount, igst_amount')
+      .in('invoice_id', invoiceIds)
+    if (itemsErr) throw new Error(`Could not load ERP invoice lines: ${itemsErr.message}`)
+    for (const it of items ?? []) {
+      const h = headsByInvoice.get(it.invoice_id) ?? { cgst: 0, sgst: 0, igst: 0 }
+      h.cgst += Number(it.cgst_amount) || 0
+      h.sgst += Number(it.sgst_amount) || 0
+      h.igst += Number(it.igst_amount) || 0
+      headsByInvoice.set(it.invoice_id, h)
+    }
+  }
 
   const byKey = new Map<string, any>()
   const bySeq = new Map<number, any>()
@@ -97,6 +124,7 @@ export async function matchZohoInvoices(
     existing.sgst = (Number(existing.sgst) || 0) + (Number(r.sgst) || 0)
     existing.igst = (Number(existing.igst) || 0) + (Number(r.igst) || 0)
     existing.cess = (Number(existing.cess) || 0) + (Number(r.cess) || 0)
+    if (r.lines?.length) existing.lines = [...(existing.lines ?? []), ...r.lines]
   }
   const groupedRows = [...grouped.values()]
 
@@ -119,9 +147,10 @@ export async function matchZohoInvoices(
       taxable_value: r.taxable_value ?? null,
       cgst: r.cgst ?? null, sgst: r.sgst ?? null, igst: r.igst ?? null, cess: r.cess ?? null,
       doc_value: r.doc_value ?? null,
+      place_of_supply: normalizePlaceOfSupply(r.place_of_supply),
       match_status: 'missing_in_erp',
       matched_type: null, matched_id: null, diff: null,
-      raw: r.raw ?? r,
+      raw: { ...(r.raw ?? r), lines: r.lines ?? [] },
     }
 
     if (!erp) { out.push(base); continue }
@@ -135,6 +164,19 @@ export async function matchZohoInvoices(
     if ((r.cgst != null || r.sgst != null || r.igst != null) &&
         !withinTolerance(srcTax, erp.total_gst, AMOUNT_TOLERANCE)) {
       diffs.tax = { source: srcTax, erp: Number(erp.total_gst) }
+    }
+    if (r.cgst != null || r.sgst != null || r.igst != null) {
+      const eh = headsByInvoice.get(erp.id) ?? { cgst: 0, sgst: 0, igst: 0 }
+      const sh = { cgst: Number(r.cgst) || 0, sgst: Number(r.sgst) || 0, igst: Number(r.igst) || 0 }
+      if (!withinTolerance(sh.cgst, eh.cgst, AMOUNT_TOLERANCE) ||
+          !withinTolerance(sh.sgst, eh.sgst, AMOUNT_TOLERANCE) ||
+          !withinTolerance(sh.igst, eh.igst, AMOUNT_TOLERANCE)) {
+        diffs.tax_heads = { source: sh, erp: eh }
+      }
+    }
+    const srcPos = normalizePlaceOfSupply(r.place_of_supply)
+    if (srcPos && erp.place_of_supply && srcPos !== erp.place_of_supply) {
+      diffs.place_of_supply = { source: srcPos, erp: erp.place_of_supply }
     }
     if (r.doc_value != null && !withinTolerance(r.doc_value, erp.grand_total, AMOUNT_TOLERANCE)) {
       diffs.doc_value = { source: Number(r.doc_value), erp: Number(erp.grand_total) }

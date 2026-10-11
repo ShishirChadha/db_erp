@@ -8,7 +8,7 @@ import { sendEmail } from './email'
 // notify() -- the digest route sends its own rich HTML email as a separate channel
 // (gated by the subscription's own channel toggles), so it doesn't want notify()'s
 // generic plain-text emailBestEffort() firing a second, duller email alongside it.
-export type NotificationType = 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready' | 'digest'
+export type NotificationType = 'task_assigned' | 'task_reassigned' | 'task_watched' | 'comment_added' | 'mention' | 'status_changed' | 'due_soon' | 'overdue' | 'backup_ready' | 'digest' | 'gst_news'
 
 interface NotifyInput {
   recipientId: string
@@ -32,6 +32,7 @@ const TYPE_SUBJECT: Record<NotificationType, string> = {
   overdue: 'Task overdue',
   backup_ready: 'Backup ready', // never sent via notify() -- see comment on NotificationType above
   digest: 'Report digest', // never sent via notify() -- see comment on NotificationType above
+  gst_news: 'GST update needs your attention',
 }
 
 // Best-effort email -- never throws, never blocks the caller. The in-app

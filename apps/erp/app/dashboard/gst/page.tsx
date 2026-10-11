@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import RequireOwner from '@/components/RequireOwner'
 import GstClient from './gst-client'
 
@@ -8,7 +9,9 @@ export default function GstReturnsPage() {
   // server-side on every metric.
   return (
     <RequireOwner>
-      <GstClient />
+      <Suspense fallback={null}>
+        <GstClient />
+      </Suspense>
     </RequireOwner>
   )
 }

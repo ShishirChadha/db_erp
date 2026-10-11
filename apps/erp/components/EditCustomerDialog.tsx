@@ -69,6 +69,7 @@ export default function EditCustomerDialog({
   const [formData, setFormData] = useState<Partial<Customer>>({});
   const [gstFetching, setGstFetching] = useState(false);
   const [gstError, setGstError] = useState("");
+  const [pincodeError, setPincodeError] = useState("");
   const [duplicateError, setDuplicateError] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState("");
   const supabase = createClient();
@@ -81,6 +82,7 @@ export default function EditCustomerDialog({
     const needsAddressFallback = !customer.address_line1 && !customer.address_line2 && !customer.city && !customer.pincode && customer.address;
     setFormData(needsAddressFallback ? { ...customer, address_line1: customer.address } : customer);
     setGstError("");
+    setPincodeError("");
     setDuplicateError("");
     setDuplicateWarning("");
   }, [customer]);
@@ -135,6 +137,12 @@ export default function EditCustomerDialog({
         setGstError(err);
         return;
       }
+    }
+
+    setPincodeError("");
+    if (!/^\d{6}$/.test((formData.pincode || "").trim())) {
+      setPincodeError("Pincode is required (6 digits) -- it's what place of supply gets guessed from when recording a Zoho invoice.");
+      return;
     }
 
     const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
@@ -281,11 +289,15 @@ export default function EditCustomerDialog({
               />
             </div>
             <div>
-              <Label>Pincode</Label>
+              <Label>Pincode *</Label>
               <Input
+                required
+                pattern="\d{6}"
+                title="6-digit PIN code"
                 value={formData.pincode || ""}
                 onChange={(e) => handleChange("pincode", e.target.value)}
               />
+              {pincodeError && <p className="text-xs text-destructive mt-1">{pincodeError}</p>}
             </div>
             <div>
               <Label>Phone</Label>

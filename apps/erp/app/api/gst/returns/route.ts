@@ -11,9 +11,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
+import { resolveEntityKey } from '@/lib/invoice-finalize'
 
-const METRICS = ['readiness', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs',
-  'completeness', 'r3b', 'books_vs_return', 'dashboard'] as const
+const METRICS = ['readiness', 'steps', 'exceptions', 'entities', 'r1_sections', 'r1_hsn', 'r1_docs',
+  'completeness', 'r3b', 'books_vs_return', 'dashboard', 'uninvoiced'] as const
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -57,9 +58,42 @@ export async function GET(req: NextRequest) {
 
     if (!from || !to) return NextResponse.json({ error: 'from and to are required' }, { status: 400 })
 
+    // GST sales in the period with no invoice recorded yet (guided-filing step 1). Filtered by the
+    // same entity rule the SQL uses, so the list always matches the step's count.
+    if (metric === 'uninvoiced') {
+      const { data, error } = await supabaseAdmin
+        .from('sales')
+        .select('id, customer_name, effective_sale_date, sale_total, sale_gst, payment_status, payment_account, accessory_id, asset_ledger_id')
+        .or('is_deleted.is.null,is_deleted.eq.false')
+        .is('invoice_id', null).eq('sale_type', 'GST')
+        .gte('effective_sale_date', from).lte('effective_sale_date', to)
+        .order('effective_sale_date', { ascending: false })
+      if (error) throw error
+      const rows = (data ?? []).filter((s: any) => resolveEntityKey(s.payment_account) === entity)
+      // Name the item: an accessory sale points at its SKU; a unit sale at its asset, whose
+      // current SKU (after any reassignment) wins over the as-purchased one.
+      const assetIds = [...new Set(rows.map((s: any) => s.asset_ledger_id).filter(Boolean))]
+      const { data: assets } = assetIds.length
+        ? await supabaseAdmin.from('asset_ledger').select('id, sku_id, current_sku_id, asset_number, serial_number').in('id', assetIds)
+        : { data: [] as any[] }
+      const assetById = new Map((assets ?? []).map((a: any) => [a.id, a]))
+      const skuIds = [...new Set(rows.map((s: any) => s.accessory_id || (assetById.get(s.asset_ledger_id) as any)?.current_sku_id || (assetById.get(s.asset_ledger_id) as any)?.sku_id).filter(Boolean))]
+      const { data: skus } = skuIds.length
+        ? await supabaseAdmin.from('sku_master').select('id, sku_description, full_sku_code').in('id', skuIds)
+        : { data: [] as any[] }
+      const skuById = new Map((skus ?? []).map((k: any) => [k.id, k]))
+      return NextResponse.json(rows.map((s: any) => {
+        const a: any = assetById.get(s.asset_ledger_id)
+        const sku: any = skuById.get(s.accessory_id || a?.current_sku_id || a?.sku_id)
+        const { accessory_id, asset_ledger_id, ...rest } = s
+        return { ...rest, item: sku?.sku_description || null, item_code: sku?.full_sku_code || null, unit_ref: a?.asset_number || a?.serial_number || null }
+      }))
+    }
+
     // Each working-paper metric is one RPC; the aggregation never happens here.
     const RPC_BY_METRIC: Record<string, string> = {
       readiness: 'gst_return_readiness',
+      steps: 'gst_period_steps',
       r1_sections: 'gst_r1_sections',
       r1_hsn: 'gst_r1_hsn_summary',
       r1_docs: 'gst_r1_docs_issued',

@@ -1,10 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Loader2, Upload } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { useBodyScrollLock } from '@/lib/useBodyScrollLock'
+import { createClient } from '@/lib/supabase/client'
+import { stateCodeFromPincode } from '@/lib/pincode-state'
+import { STATE_CODE_TO_NAME } from '@db/shared'
 
 // Records a Zoho (external) invoice number against one or more sales during the
 // transition -- the ERP stores the real number verbatim and never mints its own.
@@ -25,6 +28,41 @@ export function RecordZohoInvoiceDialog({
   const [file, setFile] = useState<File | null>(null)
   const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState('')
+  const [placeOfSupply, setPlaceOfSupply] = useState('')
+  const [placeOfSupplySource, setPlaceOfSupplySource] = useState('')
+
+  // Prefilled from whatever the customer record already knows -- GSTIN state
+  // (most reliable, B2B) -> state_code on file -> a best-effort guess from
+  // their pincode -> left blank (falls back to the entity's own state,
+  // i.e. a counter/walk-in sale, same as before this field existed). Always
+  // editable: none of these beat a human who actually knows this invoice.
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const saleRes = await apiFetch(`/api/sales/${saleIds[0]}`)
+        if (!saleRes.ok) return
+        const sale = await saleRes.json()
+        if (!sale?.customer_id) return
+        const supabase = createClient()
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('gst_number, state_code, pincode')
+          .eq('id', sale.customer_id)
+          .single()
+        if (cancelled || !customer) return
+        const gstState = customer.gst_number?.trim().slice(0, 2) || null
+        const pinState = !gstState && !customer.state_code ? stateCodeFromPincode(customer.pincode) : null
+        const code = gstState || customer.state_code || pinState || ''
+        setPlaceOfSupply(code)
+        setPlaceOfSupplySource(gstState ? 'their GSTIN' : customer.state_code ? 'their state on file' : pinState ? 'their pincode' : '')
+      } catch {
+        // Prefill is a convenience, not a requirement -- leave the field blank on failure.
+      }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const uploadPdf = async (): Promise<string[]> => {
     if (!file) return []
@@ -54,7 +92,10 @@ export function RecordZohoInvoiceDialog({
     }
     const res = await apiFetch('/api/sales/record-external-invoice', {
       method: 'POST',
-      body: JSON.stringify({ sale_ids: saleIds, invoice_number: invoiceNumber.trim(), invoice_date: invoiceDate, attachment_urls }),
+      body: JSON.stringify({
+        sale_ids: saleIds, invoice_number: invoiceNumber.trim(), invoice_date: invoiceDate, attachment_urls,
+        place_of_supply: placeOfSupply.trim(),
+      }),
     })
     if (!res.ok) {
       setErr((await res.json().catch(() => ({}))).error || 'Failed to record invoice.')
@@ -89,6 +130,21 @@ export function RecordZohoInvoiceDialog({
         <div>
           <label className="block text-xs font-medium mb-1">Invoice Date</label>
           <input type="date" value={invoiceDate} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setInvoiceDate(e.target.value)} className="border p-2 w-full rounded" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium mb-1">Place of Supply (2-digit state code)</label>
+          <input
+            value={placeOfSupply}
+            onChange={(e) => { setPlaceOfSupply(e.target.value.replace(/\D/g, '').slice(0, 2)); setPlaceOfSupplySource('') }}
+            placeholder="Defaults to your own state if left blank"
+            className="border p-2 w-full rounded"
+            maxLength={2}
+          />
+          <p className="text-xs text-muted-foreground mt-1">
+            {placeOfSupply && STATE_CODE_TO_NAME[placeOfSupply]
+              ? `${STATE_CODE_TO_NAME[placeOfSupply]}${placeOfSupplySource ? ` -- guessed from ${placeOfSupplySource}, change it if this invoice went somewhere else` : ''}`
+              : 'Where the goods were actually delivered -- a walk-in counter sale is your own state, even if the customer lives elsewhere.'}
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium mb-1">Zoho PDF (optional)</label>

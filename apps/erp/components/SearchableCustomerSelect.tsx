@@ -38,6 +38,20 @@ export function SearchableCustomerSelect({
   // even though the query that would have found it already ran and returned.
   const latestRequestId = useRef(0);
 
+  // The list above is only the first 20 matches, so the chosen customer is often not in it
+  // (e.g. editing an existing sale) -- which left the trigger blank even though the value was
+  // set. Resolve the selected customer by id on its own.
+  const [selectedName, setSelectedName] = useState<string | null>(null);
+  useEffect(() => {
+    if (!value) { setSelectedName(null); return; }
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase.from("customers").select("customer_name").eq("id", value).maybeSingle();
+      if (!cancelled) setSelectedName((data as { customer_name?: string } | null)?.customer_name ?? null);
+    })();
+    return () => { cancelled = true; };
+  }, [value, supabase]);
+
   useEffect(() => {
     const requestId = ++latestRequestId.current;
     const timer = setTimeout(async () => {
@@ -81,7 +95,7 @@ export function SearchableCustomerSelect({
     <AsyncCombobox<Customer>
       open={open}
       onOpenChange={setOpen}
-      triggerLabel={value ? customers.find((c) => c.id === value)?.customer_name : "Select customer..."}
+      triggerLabel={value ? (customers.find((c) => c.id === value)?.customer_name ?? selectedName ?? "Loading…") : "Select customer..."}
       popoverWidthClassName="w-[400px]"
       searchPlaceholder="Search customers..."
       searchTerm={searchTerm}

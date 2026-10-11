@@ -47,25 +47,78 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `status must be one of: ${STATUSES.join(', ')}` }, { status: 400 })
   }
 
-  // Marking a period filed with blockers outstanding would record a figure the
-  // ERP itself says is wrong, so it is refused rather than warned about.
-  if (nextStatus === 'filed') {
+  // GSTR-1 and GSTR-3B follow the guided flow: "exported" IS the owner's single approval
+  // (steps green, figures frozen with a content hash), and "filed" is only allowed against an
+  // approval whose hash still matches the live data -- so what is filed (by hand today, by an
+  // automated submit later) is exactly what was reviewed. There is deliberately no force flag.
+  const guided = return_type === 'gstr1' || return_type === 'gstr3b'
+  let snapshotHash: string | null = null
+  let keepExisting: any = null
+  if (guided && nextStatus !== 'draft') {
+    const range = { p_entity_key: entity_key, p_from: period_start, p_to: period_end }
+    const [{ data: steps, error: sErr }, { data: liveHash, error: hErr }] = await Promise.all([
+      supabaseAdmin.rpc('gst_period_steps', range),
+      supabaseAdmin.rpc(return_type === 'gstr1' ? 'gst_gstr1_fingerprint' : 'gst_gstr3b_fingerprint', range),
+    ])
+    if (sErr || hErr) return NextResponse.json({ error: (sErr || hErr)!.message }, { status: 500 })
+    const st = (n: number) => (steps as any[] | null)?.find((x) => x.step === n)
+
+    if (nextStatus === 'exported') {
+      if (return_type === 'gstr1') {
+        const notGreen = [1, 2, 3, 4, 5].map(st).filter((x) => x && x.status !== 'green')
+        if (notGreen.length) {
+          return NextResponse.json({
+            error: `Steps ${notGreen.map((x) => x.step).join(', ')} are not green yet: ${notGreen.map((x) => `${x.title} (${x.reason ?? x.status})`).join('; ')}`,
+            error_code: 'steps_not_green',
+          }, { status: 409 })
+        }
+      } else {
+        const { data: g1 } = await supabaseAdmin.from('gst_filings').select('status')
+          .eq('entity_key', entity_key).eq('return_type', 'gstr1').eq('period_start', period_start).maybeSingle()
+        if (g1?.status !== 'filed') {
+          return NextResponse.json({ error: 'File GSTR-1 for this month first -- the portal builds 3B liability from the filed GSTR-1.', error_code: 'gstr1_not_filed' }, { status: 409 })
+        }
+        if (st(8)?.status !== 'green') {
+          return NextResponse.json({ error: `Finish the purchases / GSTR-2B step first: ${st(8)?.reason ?? ''}`, error_code: 'steps_not_green' }, { status: 409 })
+        }
+        if (st(9)?.status === 'red') {
+          return NextResponse.json({ error: st(9).reason, error_code: 'steps_not_green' }, { status: 409 })
+        }
+      }
+      snapshotHash = liveHash as string
+    } else if (nextStatus === 'filed') {
+      const { data: existing } = await supabaseAdmin.from('gst_filings').select('*')
+        .eq('entity_key', entity_key).eq('return_type', return_type).eq('period_start', period_start).maybeSingle()
+      if (!existing || existing.status === 'draft') {
+        return NextResponse.json({ error: 'Approve this return first. Filing is only recorded against an approved set of figures.', error_code: 'not_approved' }, { status: 409 })
+      }
+      if (existing.snapshot_hash && existing.snapshot_hash !== liveHash) {
+        return NextResponse.json({ error: 'The figures changed after you approved them. Review and approve again before recording the filing.', error_code: 'stale_approval' }, { status: 409 })
+      }
+      if (!String(arn || '').trim()) {
+        return NextResponse.json({ error: 'Enter the ARN the portal gave you -- it is the proof this was filed.', error_code: 'arn_required' }, { status: 400 })
+      }
+      keepExisting = existing
+      snapshotHash = existing.snapshot_hash
+    }
+  } else if (nextStatus === 'filed') {
+    // gstr1a / gstr9 keep the plain rule: nothing outstanding.
     const { data: readiness, error: rErr } = await supabaseAdmin.rpc('gst_return_readiness', {
       p_entity_key: entity_key, p_from: period_start, p_to: period_end,
     })
     if (rErr) return NextResponse.json({ error: rErr.message }, { status: 500 })
     const blockers = (readiness as any)?.blockers ?? 0
-    if (blockers > 0 && !body.force) {
+    if (blockers > 0) {
       return NextResponse.json({
-        error: `This period still has ${blockers} blocker(s). Clear them, or pass force:true to record the filing anyway.`,
+        error: `This period still has ${blockers} blocker(s). Clear them first.`,
         error_code: 'blockers_outstanding', blockers,
       }, { status: 409 })
     }
   }
 
-  // Snapshot the figures AS FILED. Recomputing later would hide drift, which is
-  // the one thing this row exists to make visible.
-  let snapshot: any = body.snapshot ?? null
+  // Snapshot the figures AS APPROVED/FILED. Recomputing later would hide drift, which is
+  // the one thing this row exists to make visible. Filing keeps the approval's snapshot.
+  let snapshot: any = keepExisting?.snapshot ?? body.snapshot ?? null
   if (!snapshot && nextStatus !== 'draft') {
     const [sections, hsn, docs, r3b] = await Promise.all([
       supabaseAdmin.rpc('gst_r1_sections', { p_entity_key: entity_key, p_from: period_start, p_to: period_end }),
@@ -85,6 +138,7 @@ export async function POST(req: NextRequest) {
     arn: arn || null,
     notes: notes || null,
     snapshot,
+    snapshot_hash: snapshotHash,
     filed_at: nextStatus === 'filed' ? new Date().toISOString() : null,
     filed_by: nextStatus === 'filed' ? sessionUser!.id : null,
     created_by: sessionUser!.id,

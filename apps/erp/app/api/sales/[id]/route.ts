@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { snapGstRate } from '@/lib/gst-slabs'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logFieldCorrections } from '@/lib/field-corrections'
@@ -58,6 +59,14 @@ export async function GET(
       unitSkuDescription = unitSku?.sku_description || null
       unitFullSkuCode = unitSku?.full_sku_code || null
     }
+  }
+
+  // Accessory sales point at their SKU directly; without this the dialog could not say what was sold.
+  if (!data.asset_ledger_id && data.accessory_id) {
+    const { data: accSku } = await supabaseAdmin
+      .from('sku_master').select('full_sku_code, sku_description').eq('id', data.accessory_id).maybeSingle()
+    unitSkuDescription = accSku?.sku_description || null
+    unitFullSkuCode = accSku?.full_sku_code || null
   }
 
   let invoiceDate: string | null = null
@@ -235,11 +244,27 @@ export async function PATCH(
     if (item) {
       const newRate = data.sale_base_price
       const newTax = data.sale_gst
-      const isInterState = Number(item.igst_amount) > 0
+      // Inter- vs intra-state comes from the invoice's own place of supply, not
+      // the line's current IGST: a line that was zero-priced (a bundled free
+      // accessory) has no tax of either kind yet, and would otherwise be split
+      // CGST+SGST even on an inter-state invoice.
+      const { data: inv } = await supabaseAdmin
+        .from('invoices').select('place_of_supply, entity_key').eq('id', existing.invoice_id).single()
+      const { data: ent } = inv?.entity_key
+        ? await supabaseAdmin.from('business_profiles').select('state_code').eq('key', inv.entity_key).single()
+        : { data: null }
+      const isInterState = inv?.place_of_supply && ent?.state_code
+        ? inv.place_of_supply !== ent.state_code
+        : Number(item.igst_amount) > 0
+      // Same formula as buildInvoiceItemRow(). Left stale, a line that gains tax
+      // after being priced at 0 stays at gst_rate 0 and GSTR-3B files its tax
+      // under "nil/exempt" (found on DBI2026/27-00726, Sept 2026).
+      const gstRate = newRate > 0 ? snapGstRate(Math.round((newTax / newRate) * 10000) / 100) : 0
       await supabaseAdmin
         .from('invoice_items')
         .update({
           rate: newRate,
+          gst_rate: gstRate,
           amount: data.sale_total,
           cgst_amount: isInterState ? 0 : Math.round((newTax / 2) * 100) / 100,
           sgst_amount: isInterState ? 0 : newTax - Math.round((newTax / 2) * 100) / 100,

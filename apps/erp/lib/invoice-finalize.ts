@@ -1,5 +1,6 @@
 import { supabaseAdmin } from './supabase/service'
 import { resolveEffectiveSkuId } from './effective-sku'
+import { snapGstRate } from './gst-slabs'
 
 // Leasing of computers is SAC 997315 (a supply of SERVICE, not goods). Declared here
 // rather than imported from lib/rentals.ts, which imports resolveEntityKey from this
@@ -46,9 +47,14 @@ export function classifyGst(
   customerStateCode: string | null | undefined,
   saleBasePrice: number,
   saleGst: number,
-  saleTotal: number
+  saleTotal: number,
+  // A human-confirmed place of supply (e.g. typed/edited in
+  // RecordZohoInvoiceDialog) wins over every silent fallback below -- it's
+  // the one case where someone actually looked and knows better than the
+  // GSTIN/state_code/entity-state chain can.
+  placeOfSupplyOverride?: string | null
 ): GstClassification {
-  const placeOfSupplyStateCode = customerGstNumber?.trim().slice(0, 2) || customerStateCode || entity.state_code || null
+  const placeOfSupplyStateCode = placeOfSupplyOverride || customerGstNumber?.trim().slice(0, 2) || customerStateCode || entity.state_code || null
   const isIntraState = !!entity.state_code && entity.state_code === placeOfSupplyStateCode
 
   const subtotal = entity.is_gst_registered ? saleBasePrice : saleTotal
@@ -256,8 +262,9 @@ export async function createInvoiceFromSales(opts: {
   attachmentUrls?: string[] | null
   invoiceNumber?: string
   mintNumber?: () => Promise<string>
+  placeOfSupplyOverride?: string | null
 }): Promise<CreateInvoiceResult> {
-  const { sales, entityKey, source, invoiceDate, userId, attachmentUrls } = opts
+  const { sales, entityKey, source, invoiceDate, userId, attachmentUrls, placeOfSupplyOverride } = opts
   if (!sales.length) return { ok: false, error: 'No sales provided.', status: 400 }
 
   const customerId = sales[0].customer_id
@@ -285,7 +292,7 @@ export async function createInvoiceFromSales(opts: {
   }
 
   const gstBySale = new Map(sales.map((s) => [
-    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total),
+    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total, placeOfSupplyOverride),
   ]))
   const subtotal = sales.reduce((a, s) => a + gstBySale.get(s.id)!.subtotal, 0)
   const totalGst = sales.reduce((a, s) => a + gstBySale.get(s.id)!.totalGst, 0)
@@ -368,8 +375,9 @@ export async function appendSalesToInvoice(opts: {
   entityKey: string
   userId: string
   attachmentUrls?: string[] | null
+  placeOfSupplyOverride?: string | null
 }): Promise<CreateInvoiceResult> {
-  const { invoiceId, sales, entityKey, userId, attachmentUrls } = opts
+  const { invoiceId, sales, entityKey, userId, attachmentUrls, placeOfSupplyOverride } = opts
   if (!sales.length) return { ok: false, error: 'No sales provided.', status: 400 }
 
   const { data: invoice } = await supabaseAdmin.from('invoices').select('*').eq('id', invoiceId).single()
@@ -401,7 +409,7 @@ export async function appendSalesToInvoice(opts: {
   }
 
   const gstBySale = new Map(sales.map((s) => [
-    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total),
+    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total, placeOfSupplyOverride),
   ]))
   const addedSubtotal = sales.reduce((a, s) => a + gstBySale.get(s.id)!.subtotal, 0)
   const addedGst = sales.reduce((a, s) => a + gstBySale.get(s.id)!.totalGst, 0)
@@ -456,7 +464,7 @@ export async function appendSalesToInvoice(opts: {
 // sale's GST classification.
 export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: EntityInfo, gst: GstClassification, descriptor: Awaited<ReturnType<typeof resolveSaleItemDescriptor>>) {
   const gstRate = entity.is_gst_registered && sale.sale_base_price > 0
-    ? Math.round((sale.sale_gst / sale.sale_base_price) * 10000) / 100
+    ? snapGstRate(Math.round((sale.sale_gst / sale.sale_base_price) * 10000) / 100)
     : 0
 
   return {

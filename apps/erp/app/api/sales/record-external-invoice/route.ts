@@ -19,6 +19,7 @@ export async function POST(req: NextRequest) {
   const invoiceNumber: string = (body.invoice_number || '').trim()
   const invoiceDate = body.invoice_date || new Date().toISOString().slice(0, 10)
   const attachmentUrls: string[] = Array.isArray(body.attachment_urls) ? body.attachment_urls : []
+  const placeOfSupply: string | null = (body.place_of_supply || '').trim() || null
 
   if (saleIds.length === 0) return NextResponse.json({ error: 'Provide at least one sale_id.' }, { status: 400 })
   if (!invoiceNumber) return NextResponse.json({ error: 'The Zoho invoice number is required.' }, { status: 400 })
@@ -82,6 +83,7 @@ export async function POST(req: NextRequest) {
       entityKey,
       userId: sessionUser.id,
       attachmentUrls,
+      placeOfSupplyOverride: placeOfSupply,
     })
     if (!appendResult.ok) return NextResponse.json({ error: appendResult.error }, { status: appendResult.status })
 
@@ -112,6 +114,7 @@ export async function POST(req: NextRequest) {
     userId: sessionUser.id,
     attachmentUrls,
     invoiceNumber, // recorded verbatim -- no minting, counter untouched
+    placeOfSupplyOverride: placeOfSupply,
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })

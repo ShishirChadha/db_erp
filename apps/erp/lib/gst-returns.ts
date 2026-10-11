@@ -271,6 +271,10 @@ export function jsonDate(value: string | null | undefined): string {
 
 const r2 = (v: any) => Math.round((Number(v) || 0) * 100) / 100
 
+// Offline Tool schema version the portal expects in the file. Unverified against the live portal -- see
+// docs/current-progress.md; replace with the value from a file the GST Offline Tool itself generates.
+export const GSTR1_JSON_VERSION = 'GST3.2.4'
+
 export interface Gstr1JsonInput {
   gstin: string
   /** Period start, ISO (YYYY-MM-DD). Converted to the portal's MMYYYY. */
@@ -282,16 +286,35 @@ export interface Gstr1JsonInput {
   sections: any
   hsn: any
   docs: any
+  /** Portal HSN-master description per HSN code (from /api/gst/hsn-descriptions). */
+  hsnMaster?: Record<string, string>
+  /** Build only these top-level tables (b2b, b2cl, b2cs, cdnr, cdnur, hsn, doc_issue) -- for finding which one the portal rejects. */
+  only?: string[]
 }
+
+// Table 12: the portal rejects a services code (SAC, starts with 99) that carries a goods UQC; services use
+// UQC "NA" with no quantity. Descriptions are limited to plain characters (a stray '*' or '(' is a known cause of
+// "File could not be uploaded"), 30 characters at most.
+function hsnUqc(code: string, uqc: any) {
+  if (code.startsWith('99')) return 'NA'
+  return String(uqc ?? '').split('-')[0].trim() || 'OTH'
+}
+function hsnDesc(d: any) { return String(d ?? '').replace(/[^A-Za-z0-9 ./&_@-]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 30) }
 
 export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
   const [y, m] = input.periodFrom.split('-')
   const out: Record<string, any> = {
     gstin: input.gstin,
     fp: `${m}${y}`,
+    // Exactly the header the GST Offline Tool (3.2.4) writes: version, hash, no filing_typ. The portal rejects
+    // anything else with "File could not be uploaded! Download the latest version of Offline tool...".
+    version: GSTR1_JSON_VERSION,
+    hash: 'hash',
   }
   if (input.grossTurnover != null) out.gt = r2(input.grossTurnover)
   if (input.currentTurnover != null) out.cur_gt = r2(input.currentTurnover)
+  // The Offline Tool omits gt/cur_gt except for FY 2017-18 (its release notes, 2.2.5), so they are only
+  // written when the caller passes them explicitly.
 
   // b2b: grouped by recipient GSTIN, then by invoice, then items by rate.
   const b2bRows: any[] = input.sections?.b2b ?? []
@@ -307,6 +330,8 @@ export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
         })
       }
       const inv = invs.get(r.inum)!
+      // A free item (nothing taxable, no tax) adds nothing to the return; it stays in Table 12 only.
+      if (!r2(r.txval) && !r2(r.iamt) && !r2(r.camt) && !r2(r.samt) && !r2(r.csamt)) continue
       inv.itms.push({
         num: inv.itms.length + 1,
         itm_det: {
@@ -401,11 +426,17 @@ export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
   const hsnB2b: any[] = input.hsn?.hsn_b2b ?? []
   const hsnB2c: any[] = input.hsn?.hsn_b2c ?? []
   if (hsnB2b.length || hsnB2c.length) {
-    const map = (rows: any[]) => rows.map((r, i) => ({
-      num: i + 1, hsn_sc: String(r.hsn_sc), desc: String(r.descr ?? '').slice(0, 30),
-      uqc: r.uqc, qty: r2(r.qty), rt: Number(r.rt), txval: r2(r.txval),
-      iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
-    }))
+    // Shape copied from the Offline Tool's own Table 12 output: uqc is the code before the hyphen ("NOS", not
+    // "NOS-NUMBERS"; "NA" stays "NA"), `desc` is the portal HSN-master description and `user_desc` ours.
+    const map = (rows: any[]) => rows.map((r, i) => {
+      const code = String(r.hsn_sc)
+      return {
+        num: i + 1, hsn_sc: code, user_desc: hsnDesc(r.descr),
+        desc: input.hsnMaster?.[code] ?? hsnDesc(r.descr),
+        uqc: hsnUqc(code, r.uqc), qty: code.startsWith('99') ? 0 : r2(r.qty), rt: Number(r.rt), txval: r2(r.txval),
+        iamt: r2(r.iamt), camt: r2(r.camt), samt: r2(r.samt), csamt: r2(r.csamt),
+      }
+    })
     out.hsn = {}
     if (hsnB2b.length) out.hsn.hsn_b2b = map(hsnB2b)
     if (hsnB2c.length) out.hsn.hsn_b2c = map(hsnB2c)
@@ -417,6 +448,7 @@ export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
     out.doc_issue = {
       doc_det: docRows.map((r) => ({
         doc_num: r.doc_num,
+        doc_typ: r.doc_typ ?? 'Invoices for outward supply',
         docs: [{
           num: 1, from: String(r.from), to: String(r.to),
           totnum: Number(r.totnum), cancel: Number(r.cancel), net_issue: Number(r.net_issue),
@@ -425,6 +457,11 @@ export function buildGstr1Json(input: Gstr1JsonInput): Record<string, any> {
     }
   }
 
+  if (input.only?.length) {
+    for (const k of ['b2b', 'b2cl', 'b2cs', 'cdnr', 'cdnur', 'hsn', 'doc_issue']) {
+      if (!input.only.includes(k)) delete out[k]
+    }
+  }
   return out
 }
 

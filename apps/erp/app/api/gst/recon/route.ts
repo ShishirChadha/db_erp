@@ -12,6 +12,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { matchZohoInvoices, type ZohoInvoiceRow } from '@/lib/recon/gst-zoho-matcher'
 import { matchGstr2b, parseGstr2bJson } from '@/lib/recon/gst-2b-matcher'
 import { docNumberKey } from '@/lib/recon/gst-doc-key'
+import { normalizePlaceOfSupply } from '@/lib/recon/gst-pos'
 
 const KINDS = ['zoho_invoices', 'gstr2b'] as const
 
@@ -66,6 +67,11 @@ const ZOHO_ALIASES: Record<string, string[]> = {
   doc_value: ['invoicevalue', 'total', 'grandtotal', 'invoicetotal', 'amount'],
 }
 
+// Optional: not every Zoho export carries it, so it is kept out of ZOHO_ALIASES (whose
+// missing entries are reported to the user as unmapped).
+const ITEM_ALIASES = { item: ['itemname', 'itemdesc'], desc: ['itemdesc'], qty: ['quantity'], rate: ['itemprice'], hsn: ['hsnsac', 'hsn', 'sac'] }
+const POS_ALIASES = ['placeofsupply', 'placeofsupplywithstatecode', 'pos', 'placeofsupplystatecode', 'supplystate']
+
 const norm = (h: string) => h.toLowerCase().replace(/[^a-z0-9]/g, '')
 const num = (v: any) => {
   if (v === null || v === undefined || v === '') return null
@@ -99,6 +105,9 @@ function parseZohoCsv(text: string): { rows: ZohoInvoiceRow[]; unmapped: string[
     if (hit) map[field] = hit
   }
   const unmapped = Object.keys(ZOHO_ALIASES).filter((f) => !map[f])
+  const posHeader = headers.find((h) => POS_ALIASES.includes(norm(h)))
+  const hdr = (names: string[]) => headers.find((h) => names.includes(norm(h)))
+  const itemH = hdr(['itemname']), descH = hdr(ITEM_ALIASES.desc), qtyH = hdr(ITEM_ALIASES.qty), rateH = hdr(ITEM_ALIASES.rate), hsnH = hdr(ITEM_ALIASES.hsn)
 
   const rows: ZohoInvoiceRow[] = []
   for (const r of parsed.data) {
@@ -112,6 +121,10 @@ function parseZohoCsv(text: string): { rows: ZohoInvoiceRow[]; unmapped: string[
       taxable_value: num(r[map.taxable_value]),
       cgst: num(r[map.cgst]), sgst: num(r[map.sgst]), igst: num(r[map.igst]), cess: num(r[map.cess]),
       doc_value: num(r[map.doc_value]),
+      place_of_supply: posHeader ? normalizePlaceOfSupply(r[posHeader]) : null,
+      lines: hsnH
+        ? [{ item: (itemH ? String(r[itemH] ?? '').trim() : '') || (descH ? String(r[descH] ?? '').trim() : ''), qty: qtyH ? num(r[qtyH]) : null, rate: rateH ? num(r[rateH]) : null, hsn: String(r[hsnH] ?? '').trim() || null }]
+        : [],
       raw: r,
     })
   }
@@ -155,14 +168,15 @@ export async function POST(req: NextRequest) {
       // are ERP invoices the Zoho upload never mentioned, not Zoho rows.
       const { data: srcLines, error: sErr } = await supabaseAdmin
         .from('gst_recon_lines')
-        .select('doc_number, doc_date, counterparty_name, counterparty_gstin, taxable_value, cgst, sgst, igst, cess, doc_value')
+        .select('doc_number, doc_date, counterparty_name, counterparty_gstin, taxable_value, cgst, sgst, igst, cess, doc_value, place_of_supply, raw')
         .eq('import_id', source_import_id).neq('match_status', 'missing_in_source')
       if (sErr) throw new Error(sErr.message)
       const rows: ZohoInvoiceRow[] = (srcLines ?? []).map((l: any) => ({
         doc_number: l.doc_number, doc_date: l.doc_date,
         counterparty_name: l.counterparty_name, counterparty_gstin: l.counterparty_gstin,
         taxable_value: l.taxable_value, cgst: l.cgst, sgst: l.sgst, igst: l.igst, cess: l.cess,
-        doc_value: l.doc_value,
+        doc_value: l.doc_value, place_of_supply: l.place_of_supply,
+        lines: Array.isArray(l.raw?.lines) ? l.raw.lines : [],
       }))
       if (rows.length === 0) {
         return NextResponse.json({ error: 'That upload has no source rows left to re-check against.' }, { status: 400 })
@@ -198,6 +212,10 @@ export async function POST(req: NextRequest) {
       const { error: insErr } = await supabaseAdmin
         .from('gst_recon_lines').insert(linesWithCarriedResolutions.map((l) => ({ ...l, import_id: source_import_id })))
       if (insErr) throw new Error(insErr.message)
+
+      // Stamp that this import now includes the CGST/SGST/IGST + place-of-supply comparison;
+      // the guided Zoho tax-head step stays yellow for an upload that was matched before it.
+      await supabaseAdmin.from('gst_recon_imports').update({ matcher_version: 2 }).eq('id', source_import_id)
 
       const { data: fresh } = await supabaseAdmin
         .from('gst_recon_imports').select('*').eq('id', source_import_id).single()
@@ -275,6 +293,7 @@ export async function POST(req: NextRequest) {
         entity_key, kind, period_start, period_end,
         document_id: document_id || null,
         source_filename: source_filename || null,
+        matcher_version: kind === 'zoho_invoices' ? 2 : 1,
         uploaded_by: sessionUser!.id,
         notes: unmapped.length ? `Columns not found in the upload: ${unmapped.join(', ')}` : null,
       })

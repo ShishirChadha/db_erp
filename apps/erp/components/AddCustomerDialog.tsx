@@ -61,6 +61,7 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
   const [open, setOpen] = useState(false);
   const [gstFetching, setGstFetching] = useState(false);
   const [gstError, setGstError] = useState("");
+  const [pincodeError, setPincodeError] = useState("");
   const [formData, setFormData] = useState(emptyForm);
   const [duplicateError, setDuplicateError] = useState("");
   const [duplicateWarning, setDuplicateWarning] = useState("");
@@ -121,6 +122,12 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
         setGstError(gstErr);
         return;
       }
+    }
+
+    setPincodeError("");
+    if (!/^\d{6}$/.test(formData.pincode.trim())) {
+      setPincodeError("Pincode is required (6 digits) -- it's what place of supply gets guessed from when recording a Zoho invoice.");
+      return;
     }
 
     const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
@@ -194,7 +201,11 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
             <div className="col-span-2"><Label>Address Line 1</Label><Input value={formData.address_line1} onChange={(e) => handleChange("address_line1", e.target.value)} /></div>
             <div className="col-span-2"><Label>Address Line 2</Label><Input value={formData.address_line2} onChange={(e) => handleChange("address_line2", e.target.value)} /></div>
             <div><Label>City</Label><Input value={formData.city} onChange={(e) => handleChange("city", e.target.value)} /></div>
-            <div><Label>Pincode</Label><Input value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} /></div>
+            <div>
+              <Label>Pincode *</Label>
+              <Input required pattern="\d{6}" title="6-digit PIN code" value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} />
+              {pincodeError && <p className="text-xs text-destructive mt-1">{pincodeError}</p>}
+            </div>
             <div>
               <Label>Phone</Label>
               <Input value={formData.phone} onChange={(e) => { handleChange("phone", e.target.value); setDuplicateError(""); }} />

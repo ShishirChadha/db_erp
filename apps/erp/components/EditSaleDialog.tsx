@@ -287,6 +287,12 @@ export function EditSaleDialog({
           <DialogTitle>Edit Sale</DialogTitle>
           <DialogDescription>
             {sale?.asset_number || (sale?.serial_number ? `SN: ${sale.serial_number}` : "Accessory sale")}
+            {(sale?.unit_sku_description || sale?.unit_full_sku_code) && (
+              <span className="block text-foreground">
+                {sale.unit_sku_description || sale.unit_full_sku_code}
+                {sale.unit_sku_description && sale.unit_full_sku_code && <span className="text-muted-foreground"> · {sale.unit_full_sku_code}</span>}
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
