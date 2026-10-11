@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { gstValidationError } from '@/lib/gst-validation'
 
 const VALID_KEYS = ['digitalbluez', 'techtenth', 'cash']
 
@@ -23,12 +24,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ ke
     invoicing_mode,
   } = body
 
+  if (is_gst_registered) {
+    const err = gstValidationError(gstin || '', state_code)
+    if (err) return NextResponse.json({ error: err }, { status: 400 })
+  }
+
   const updates: Record<string, any> = { updated_at: new Date().toISOString() }
   if (legal_name !== undefined) updates.legal_name = legal_name
   if (address !== undefined) updates.address = address
   if (state !== undefined) updates.state = state
   if (state_code !== undefined) updates.state_code = state_code
-  if (gstin !== undefined) updates.gstin = gstin
+  if (gstin !== undefined) updates.gstin = is_gst_registered ? gstin.trim().toUpperCase() : gstin
   if (is_gst_registered !== undefined) updates.is_gst_registered = is_gst_registered
   if (logo_url !== undefined) updates.logo_url = logo_url
   if (signature_url !== undefined) updates.signature_url = signature_url

@@ -23,6 +23,7 @@ import { Pagination } from '@/components/Pagination'
 import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
 import { withRetry } from '@/lib/db-retry'
 import { cn } from '@/lib/utils'
+import { gstValidationError } from '@/lib/gst-validation'
 
 // Only renders behind a click (gated by a state flag) -- code-split out of the
 // initial bundle rather than shipped unconditionally.
@@ -315,6 +316,13 @@ function VendorsPage() {
       setError('Company Name is required.')
       return
     }
+    if (form.has_gst === 'true') {
+      const gstErr = gstValidationError(form.gst_number)
+      if (gstErr) {
+        setError(gstErr)
+        return
+      }
+    }
 
     const payload = {
       company_name: form.company_name,
@@ -329,7 +337,7 @@ function VendorsPage() {
       pincode: form.pincode,
       email: form.email,
       has_gst: form.has_gst === 'true',
-      gst_number: form.gst_number,
+      gst_number: form.has_gst === 'true' ? form.gst_number.trim().toUpperCase() : '',
       gst_company_name: form.gst_company_name,
       remarks: form.remarks,
       supplies_accessories: form.supplies_accessories,

@@ -24,6 +24,7 @@ import { Plus, Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
+import { gstValidationError } from "@/lib/gst-validation";
 
 const emptyForm = {
   customer_name: "",
@@ -112,6 +113,15 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
     e.preventDefault();
     setDuplicateError("");
     setDuplicateWarning("");
+    setGstError("");
+
+    if (formData.type === "Business" && formData.has_gst) {
+      const gstErr = gstValidationError(formData.gst_number || "", formData.state_code);
+      if (gstErr) {
+        setGstError(gstErr);
+        return;
+      }
+    }
 
     const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
       customer_name: formData.customer_name,
@@ -125,7 +135,11 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
       setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different phone number. Continuing will create a separate customer.`);
     }
 
-    const payload = { ...formData, address: composeAddress(formData) };
+    const payload = {
+      ...formData,
+      gst_number: formData.has_gst ? formData.gst_number.trim().toUpperCase() : "",
+      address: composeAddress(formData),
+    };
     const { data, error } = await supabase.from("customers").insert([payload]).select().single();
     if (error) {
       console.error(error);
@@ -134,7 +148,7 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
       if ((error as any).code === "23505") {
         setDuplicateError("A customer with this phone number already exists.");
       } else {
-        alert("Failed to add customer.");
+        alert(error.message || "Failed to add customer.");
       }
     } else {
       setOpen(false);

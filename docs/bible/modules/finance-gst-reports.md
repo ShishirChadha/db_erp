@@ -26,7 +26,8 @@ sources:
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/sales-cart.ts
   - apps/erp/lib/gst-returns.ts
-updated: 2026-10-06
+  - apps/erp/app/api/sales/[id]/route.ts
+updated: 2026-10-11
 ---
 
 ## The single reporting dispatcher
@@ -267,6 +268,41 @@ Resolutions are **stored, not recomputed**, so next month starts from a known
 baseline. An `itc_claimed`/`itc_ineligible` decision writes through to
 `purchase_order_items.itc_status`, which is what makes it reach 3B Table 4 —
 otherwise the reconciliation would change nothing.
+
+**A CSV row is not always an invoice.** Some Zoho exports are line-item level
+(one row per invoice *line*, not per invoice), so a multi-line invoice
+produces several rows sharing a document number before matching even starts.
+`matchZohoInvoices()` groups those rows by normalised doc number first. The
+two totals-shaped columns and the four tax columns behave oppositely on a
+grouped row, confirmed against a real multi-line invoice PDF
+(`DBI2026/27-00731`): SubTotal/Total are **invoice-level figures repeated
+identically on every line** — summing them multiplies the total by the line
+count — while CGST/SGST/IGST/Cess are genuinely **per-line** and must be
+summed, or only one line's tax gets reported as the whole invoice's. Getting
+either half wrong reads as a real mismatch that doesn't exist.
+
+**Resolving a row (Resolve rows / Ignore) requires a typed reason**
+(`resolution_note`, shown under the row and kept for audit) — `PATCH
+/api/gst/recon` rejects setting a `resolution` without one. A resolution is
+reversible: clicking the resolved badge calls the same PATCH with
+`resolution: null`, no reason needed to undo. "Ignored" doesn't mean excluded
+from GSTR-1 — it only clears the row from the reconciliation's open-problems
+list; the underlying invoice is still reported normally. The "Problems" count
+on `gst_recon_imports` (`mismatch_count`/`missing_in_erp_count`/
+`missing_in_source_count`, kept in sync by the `sync_gst_recon_counts()`
+trigger) only counts rows with `resolution is null` — a resolved/ignored row
+stops counting as a problem without needing to be deleted.
+
+**Re-checking one import** (`POST /api/gst/recon` with `source_import_id`
+instead of a new `content` upload) re-runs the matcher against that import's
+own already-normalised lines — not the original raw CSV — and updates the
+same `gst_recon_imports` row in place rather than creating a new one. Both
+Recheck and a plain re-upload for the same entity/period/kind carry forward
+any prior resolution whose `match_status` hasn't changed, keyed by doc
+number, so fixing an invoice and refreshing doesn't wipe out every Ignore
+decision made so far — only rows whose verdict actually changed lose their
+old resolution, which is correct (a mismatch that's now fixed should surface
+again if it reappears for a different reason).
 
 ## Filing state and the period lock
 

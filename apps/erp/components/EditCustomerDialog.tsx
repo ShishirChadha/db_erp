@@ -23,6 +23,7 @@ import { Loader2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
+import { gstValidationError } from "@/lib/gst-validation";
 
 interface Customer {
   id: string;
@@ -126,6 +127,15 @@ export default function EditCustomerDialog({
     e.preventDefault();
     setDuplicateError("");
     setDuplicateWarning("");
+    setGstError("");
+
+    if (formData.type === "Business" && formData.has_gst) {
+      const err = gstValidationError(formData.gst_number || "", formData.state_code);
+      if (err) {
+        setGstError(err);
+        return;
+      }
+    }
 
     const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
       customer_name: formData.customer_name || "",
@@ -140,8 +150,31 @@ export default function EditCustomerDialog({
       setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different phone number.`);
     }
 
-    const { id, ...updateData } = formData;
-    const payload = { ...updateData, address: composeAddress(formData) };
+    // Built as an explicit allow-list, not a spread of `formData` -- the `customer`
+    // prop comes from a query that joins `customer_profiles(id, created_at)` (for the
+    // "registered on website" badge), and that nested field riding along into the
+    // update payload makes PostgREST reject the whole request with PGRST204
+    // ("Could not find the 'customer_profiles' column"), silently breaking every edit.
+    const payload = {
+      customer_name: formData.customer_name,
+      type: formData.type,
+      contact_person: formData.contact_person,
+      has_gst: formData.has_gst,
+      gst_number: formData.has_gst ? (formData.gst_number || "").trim().toUpperCase() : "",
+      phone: formData.phone,
+      email: formData.email,
+      alt_email: formData.alt_email,
+      source: formData.source,
+      google_review: formData.google_review,
+      social_following: formData.social_following,
+      state: formData.state,
+      state_code: formData.state_code,
+      address_line1: formData.address_line1,
+      address_line2: formData.address_line2,
+      city: formData.city,
+      pincode: formData.pincode,
+      address: composeAddress(formData),
+    };
     const { error } = await supabase
       .from("customers")
       .update(payload)
@@ -153,7 +186,7 @@ export default function EditCustomerDialog({
       if ((error as any).code === "23505") {
         setDuplicateError("A customer with this phone number already exists.");
       } else {
-        alert("Update failed.");
+        alert(error.message || "Update failed.");
       }
     } else {
       onOpenChange(false);

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Papa from 'papaparse'
-import { Loader2, Upload, Plus } from 'lucide-react'
+import { Loader2, Upload, Plus, Sparkles, RefreshCw, Check, Trash2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import RequireOwner from '@/components/RequireOwner'
@@ -27,6 +27,31 @@ const TARGET_FIELDS = [
 interface BankAccount { id: string; entity_key: string; label: string; bank_name: string | null; account_number_last4: string | null }
 interface Txn { id: string; txn_date: string; narration: string; reference: string | null; debit: number | null; credit: number | null; running_balance: number | null; recon_status: string }
 
+interface BankExtractionTxn { txn_date: string; value_date?: string | null; narration: string; reference?: string | null; debit?: number | null; credit?: number | null; running_balance?: number | null }
+interface BankExtraction { account_number_last4: string | null; period_start: string; period_end: string; opening_balance: number | null; closing_balance: number | null; transactions: BankExtractionTxn[] }
+interface PdfDoc {
+  id: string
+  file_name: string
+  extraction_tier: string | null
+  extraction_status: string
+  page_count: number | null
+  text_layer_chars: number | null
+  validation_errors: any
+  raw_extraction: BankExtraction | null
+  created_at: string
+}
+
+// Mirrors the vendor-recon page's status tones -- same `uploaded_documents.extraction_status`
+// enum drives both pipelines.
+const DOC_STATUS_TONE: Record<string, 'success' | 'warning' | 'danger' | 'info' | 'neutral'> = {
+  probed: 'info',
+  parsed: 'success',
+  needs_review: 'warning',
+  ai_pending_approval: 'warning',
+  failed: 'danger',
+  confirmed: 'success',
+}
+
 function BankReconPage() {
   const [accounts, setAccounts] = useState<BankAccount[]>([])
   const [activeAccountId, setActiveAccountId] = useState<string | null>(null)
@@ -45,6 +70,18 @@ function BankReconPage() {
   const [openingBalance, setOpeningBalance] = useState<number | ''>('')
   const [closingBalance, setClosingBalance] = useState<number | ''>('')
   const [saveMapping, setSaveMapping] = useState(true)
+  const [importMode, setImportMode] = useState<'csv' | 'pdf'>('csv')
+
+  // PDF upload/extraction state (Tier 0 probe -> Tier 1 template -> Tier 2 AI,
+  // same pipeline the vendor-invoice recon page already uses).
+  const [pdfDocs, setPdfDocs] = useState<PdfDoc[]>([])
+  const [activePdfDoc, setActivePdfDoc] = useState<PdfDoc | null>(null)
+  const [pdfFile, setPdfFile] = useState<File | null>(null)
+  const [pdfPeriodStart, setPdfPeriodStart] = useState('')
+  const [pdfPeriodEnd, setPdfPeriodEnd] = useState('')
+  const [pdfOpeningBalance, setPdfOpeningBalance] = useState<number | ''>('')
+  const [pdfClosingBalance, setPdfClosingBalance] = useState<number | ''>('')
+  const [pdfTargetAccountId, setPdfTargetAccountId] = useState<string | null>(null)
 
   const loadAccounts = useCallback(async () => {
     const res = await apiFetch('/api/bank-accounts')
@@ -61,6 +98,13 @@ function BankReconPage() {
     if (res.ok) setTxns((await res.json()).data)
   }, [])
   useEffect(() => { if (activeAccountId) loadTxns(activeAccountId) }, [activeAccountId, loadTxns])
+  useEffect(() => { if (activeAccountId && !pdfTargetAccountId) setPdfTargetAccountId(activeAccountId) }, [activeAccountId, pdfTargetAccountId])
+
+  const loadPdfDocs = useCallback(async () => {
+    const res = await apiFetch('/api/documents?doc_kind=bank_statement')
+    if (res.ok) setPdfDocs(await res.json())
+  }, [])
+  useEffect(() => { loadPdfDocs() }, [loadPdfDocs])
 
   const { run: addAccount, pending: addingAccount } = useAsyncAction(async () => {
     setErr('')
@@ -210,11 +254,126 @@ function BankReconPage() {
     await loadTxns(activeAccountId)
   })
 
+  const openPdfDoc = useCallback((doc: PdfDoc) => {
+    setErr('')
+    setActivePdfDoc(doc)
+    const ext = doc.raw_extraction
+    setPdfPeriodStart(ext?.period_start || '')
+    setPdfPeriodEnd(ext?.period_end || '')
+    setPdfOpeningBalance(ext?.opening_balance ?? '')
+    setPdfClosingBalance(ext?.closing_balance ?? '')
+    if (activeAccountId) setPdfTargetAccountId(activeAccountId)
+  }, [activeAccountId])
+
+  const { run: uploadPdf, pending: uploadingPdf } = useAsyncAction(async () => {
+    setErr('')
+    if (!pdfFile) { setErr('Choose a PDF statement to upload.'); return }
+
+    const upRes = await apiFetch('/api/storage/upload-url', {
+      method: 'POST',
+      body: JSON.stringify({ fileName: pdfFile.name, contentType: pdfFile.type, folder: 'bank-statements', fileType: 'statement', bucket: 'documents' }),
+    })
+    if (!upRes.ok) { setErr('Could not get an upload URL.'); return }
+    const { uploadUrl, key } = await upRes.json()
+    const putRes = await fetch(uploadUrl, { method: 'PUT', body: pdfFile, headers: { 'Content-Type': pdfFile.type } })
+    if (!putRes.ok) { setErr('File upload failed.'); return }
+
+    const regRes = await apiFetch('/api/documents', {
+      method: 'POST',
+      body: JSON.stringify({ key, file_name: pdfFile.name, mime_type: pdfFile.type, doc_kind: 'bank_statement' }),
+    })
+    const regJson = await regRes.json()
+    if (!regRes.ok) { setErr(regJson.error || 'Failed to register document.'); return }
+    if (regJson.duplicate) {
+      setErr(`This exact file was already uploaded (${regJson.document.file_name}, status: ${regJson.document.extraction_status}).`)
+      await loadPdfDocs()
+      return
+    }
+
+    setPdfFile(null)
+    await loadPdfDocs()
+
+    // Tier 1 -- free, always attempted before ever surfacing the AI option.
+    await apiFetch(`/api/documents/${regJson.document.id}/parse`, { method: 'POST' })
+    const refreshed: PdfDoc[] = await apiFetch('/api/documents?doc_kind=bank_statement').then((r) => r.json())
+    const updatedDoc = refreshed.find((d) => d.id === regJson.document.id) || regJson.document
+    setPdfDocs(refreshed)
+    openPdfDoc(updatedDoc)
+  })
+
+  const { run: readWithAi, pending: aiPending } = useAsyncAction(async () => {
+    if (!activePdfDoc) return
+    setErr('')
+    const res = await apiFetch(`/api/documents/${activePdfDoc.id}/parse-ai`, { method: 'POST', body: JSON.stringify({ confirm: true }) })
+    const json = await res.json()
+    if (!res.ok) { setErr(json.error || 'AI extraction failed.'); return }
+    await loadPdfDocs()
+    openPdfDoc(json.document)
+  })
+
+  const { run: confirmPdfReview, pending: confirmingPdf } = useAsyncAction(async () => {
+    if (!activePdfDoc) return
+    setErr('')
+    const res = await apiFetch(`/api/documents/${activePdfDoc.id}`, { method: 'PATCH', body: JSON.stringify({ confirm_review: true }) })
+    const json = await res.json()
+    if (!res.ok) { setErr(json.error || 'Could not confirm this extraction.'); return }
+    await loadPdfDocs()
+    openPdfDoc(json.document)
+  })
+
+  const { run: deletePdfDoc, pending: deletingPdf } = useAsyncAction(async (doc: PdfDoc) => {
+    if (!confirm(`Delete "${doc.file_name}"? This cannot be undone.`)) return
+    setErr('')
+    const res = await apiFetch(`/api/documents/${doc.id}`, { method: 'DELETE' })
+    const json = await res.json().catch(() => ({}))
+    if (!res.ok) { setErr(json.error || 'Could not delete this document.'); return }
+    if (activePdfDoc?.id === doc.id) setActivePdfDoc(null)
+    await loadPdfDocs()
+  })
+
+  const pdfExtraction = activePdfDoc?.raw_extraction
+  const pdfMappedRows = (pdfExtraction?.transactions || [])
+    .map((t) => ({
+      txn_date: t.txn_date || null,
+      value_date: t.value_date || null,
+      narration: (t.narration || '').trim(),
+      reference: t.reference || null,
+      debit: t.debit ?? null,
+      credit: t.credit ?? null,
+      running_balance: t.running_balance ?? null,
+    }))
+    .filter((r) => r.txn_date && r.narration)
+
+  const { run: importPdfStatement, pending: importingPdf } = useAsyncAction(async () => {
+    if (!activePdfDoc || !pdfTargetAccountId) return
+    setErr('')
+    if (!pdfPeriodStart || !pdfPeriodEnd) { setErr('Set the statement period start/end.'); return }
+    const res = await apiFetch('/api/bank-statements', {
+      method: 'POST',
+      body: JSON.stringify({
+        bank_account_id: pdfTargetAccountId, period_start: pdfPeriodStart, period_end: pdfPeriodEnd,
+        opening_balance: pdfOpeningBalance === '' ? null : pdfOpeningBalance,
+        closing_balance: pdfClosingBalance === '' ? null : pdfClosingBalance,
+        transactions: pdfMappedRows,
+        document_id: activePdfDoc.id,
+      }),
+    })
+    const json = await res.json()
+    if (!res.ok) { setErr(json.error || 'Import failed.'); return }
+
+    let msg = `Imported ${json.inserted_count} new rows (${json.duplicate_count} already present).`
+    if (json.continuity_status !== 'ok') msg += `\n\nContinuity check: ${json.continuity_status}. ${JSON.stringify(json.continuity_notes)}`
+    alert(msg)
+    setActivePdfDoc(null)
+    await loadPdfDocs()
+    await loadTxns(pdfTargetAccountId)
+  })
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Bank Reconciliation</h1>
-        <p className="text-sm text-muted-foreground">Import a bank statement CSV. Map columns once per account — every later statement from that account reuses the mapping.</p>
+        <p className="text-sm text-muted-foreground">Import a bank statement as a CSV export or a PDF — a PDF is read via a text-layer template first (free), with AI-assisted extraction as a fallback for layouts that aren't recognized yet.</p>
       </div>
 
       {err && <div className="text-destructive text-sm border border-destructive/20 bg-destructive/10 rounded p-3 whitespace-pre-wrap">{err}</div>}
@@ -250,8 +409,16 @@ function BankReconPage() {
 
         <div className="space-y-4">
           {activeAccountId && (
+            <div className="flex gap-1 text-sm">
+              <button onClick={() => setImportMode('csv')} className={`px-3 py-1.5 rounded-t border-b-2 ${importMode === 'csv' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}>CSV</button>
+              <button onClick={() => setImportMode('pdf')} className={`px-3 py-1.5 rounded-t border-b-2 ${importMode === 'pdf' ? 'border-primary font-medium' : 'border-transparent text-muted-foreground'}`}>PDF</button>
+            </div>
+          )}
+
+          {activeAccountId && importMode === 'csv' && (
             <div className="border rounded p-4 space-y-3">
               <h2 className="font-medium">Import statement (CSV)</h2>
+              <p className="text-xs text-muted-foreground">Map columns once per account — every later statement from that account reuses the mapping.</p>
               <input type="file" accept=".csv" onChange={(e) => e.target.files?.[0] && parseFile(e.target.files[0])} className="text-sm" />
 
               {csvHeaders.length > 0 && (
@@ -302,6 +469,124 @@ function BankReconPage() {
                     {importing && <Loader2 className="size-4 animate-spin mr-1" />}
                     <Upload className="size-4 mr-1" /> Import {mappedRows.length} rows
                   </Button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeAccountId && importMode === 'pdf' && (
+            <div className="border rounded p-4 space-y-3">
+              <h2 className="font-medium">Import statement (PDF)</h2>
+              <p className="text-xs text-muted-foreground">Upload the bank's PDF export. A text-layer PDF (not a scan) parses deterministically; otherwise AI-assisted extraction is offered as an explicit, confirm-gated step.</p>
+              <div className="flex items-center gap-3">
+                <input type="file" accept="application/pdf" onChange={(e) => setPdfFile(e.target.files?.[0] || null)} className="text-sm" />
+                <Button size="sm" onClick={() => uploadPdf()} disabled={uploadingPdf || !pdfFile}>
+                  {uploadingPdf && <Loader2 className="size-4 animate-spin mr-1" />}
+                  <Upload className="size-4 mr-1" /> Upload &amp; Parse
+                </Button>
+              </div>
+
+              {pdfDocs.length > 0 && (
+                <div className="border rounded divide-y max-h-40 overflow-y-auto">
+                  {pdfDocs.map((d) => (
+                    <div key={d.id} className={`group flex items-center justify-between px-2 py-1.5 text-sm ${activePdfDoc?.id === d.id ? 'bg-muted' : ''}`}>
+                      <button onClick={() => openPdfDoc(d)} className="flex-1 text-left min-w-0">
+                        <span className="truncate">{d.file_name}</span>
+                        <span className="text-xs text-muted-foreground ml-2">{d.created_at?.slice(0, 10)}</span>
+                      </button>
+                      <StatusBadge tone={DOC_STATUS_TONE[d.extraction_status] || 'neutral'}>{d.extraction_status.replace(/_/g, ' ')}</StatusBadge>
+                      <button onClick={() => deletePdfDoc(d)} disabled={deletingPdf} title="Delete" className="p-1.5 text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100">
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {activePdfDoc && (
+                <div className="border-t pt-3 space-y-3">
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>{activePdfDoc.page_count ?? '—'} page(s) · {activePdfDoc.text_layer_chars ?? 0} chars extracted · tier {activePdfDoc.extraction_tier || 'none yet'}</span>
+                    <StatusBadge tone={DOC_STATUS_TONE[activePdfDoc.extraction_status] || 'neutral'}>{activePdfDoc.extraction_status.replace(/_/g, ' ')}</StatusBadge>
+                  </div>
+
+                  {activePdfDoc.extraction_status === 'ai_pending_approval' && (
+                    <div className="border border-primary/20 bg-info/15 rounded p-3 text-sm flex items-center justify-between gap-3">
+                      <span>No saved layout matched this statement.</span>
+                      <Button size="sm" onClick={() => readWithAi()} disabled={aiPending}>
+                        {aiPending && <Loader2 className="size-4 animate-spin mr-1" />}
+                        <Sparkles className="size-4 mr-1" /> Read with AI
+                      </Button>
+                    </div>
+                  )}
+
+                  {activePdfDoc.extraction_status === 'failed' && (
+                    <div className="border border-destructive/20 bg-destructive/10 rounded p-3 text-sm flex items-center justify-between gap-3">
+                      <span>{activePdfDoc.validation_errors?.[0]?.message || 'The AI read of this statement failed.'}</span>
+                      <Button size="sm" variant="outline" onClick={() => readWithAi()} disabled={aiPending}>
+                        {aiPending && <Loader2 className="size-4 animate-spin mr-1" />}
+                        <RefreshCw className="size-4 mr-1" /> Retry
+                      </Button>
+                    </div>
+                  )}
+
+                  {activePdfDoc.extraction_status === 'needs_review' && activePdfDoc.validation_errors && (
+                    <div className="border border-warning/20 bg-warning/15 rounded p-3 text-sm space-y-2">
+                      <div className="font-medium">This extraction's own balances don't add up — review before trusting it:</div>
+                      <ul className="list-disc pl-5 space-y-0.5">
+                        {activePdfDoc.validation_errors.map((issue: any, i: number) => (
+                          <li key={i}>{issue.field}: expected ₹{issue.expected?.toFixed?.(2)}, extracted ₹{issue.extracted?.toFixed?.(2)}</li>
+                        ))}
+                      </ul>
+                      <div className="flex justify-end gap-2">
+                        <Button size="sm" onClick={() => readWithAi()} disabled={aiPending}>
+                          {aiPending && <Loader2 className="size-4 animate-spin mr-1" />}
+                          <Sparkles className="size-4 mr-1" /> Read with AI instead
+                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => confirmPdfReview()} disabled={confirmingPdf}>
+                          {confirmingPdf && <Loader2 className="size-4 animate-spin mr-1" />}
+                          <Check className="size-4 mr-1" /> Reviewed — this is correct
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  {pdfExtraction && (
+                    <div className="space-y-3">
+                      <div className="grid sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="text-xs text-muted-foreground block">Import into account</label>
+                          <select value={pdfTargetAccountId || ''} onChange={(e) => setPdfTargetAccountId(e.target.value)} className="border rounded px-2 py-1 text-sm w-full">
+                            {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}{a.account_number_last4 ? ` (...${a.account_number_last4})` : ''}</option>)}
+                          </select>
+                        </div>
+                        <div className="text-xs text-muted-foreground self-end pb-1">
+                          Statement A/C: {pdfExtraction.account_number_last4 ? `...${pdfExtraction.account_number_last4}` : 'not printed'}
+                        </div>
+                      </div>
+
+                      <div className="grid sm:grid-cols-4 gap-2">
+                        <div><label className="text-xs text-muted-foreground block">Period start</label><input type="date" value={pdfPeriodStart} onChange={(e) => setPdfPeriodStart(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                        <div><label className="text-xs text-muted-foreground block">Period end</label><input type="date" value={pdfPeriodEnd} onChange={(e) => setPdfPeriodEnd(e.target.value)} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                        <div><label className="text-xs text-muted-foreground block">Opening balance</label><input type="number" value={pdfOpeningBalance} onChange={(e) => setPdfOpeningBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                        <div><label className="text-xs text-muted-foreground block">Closing balance</label><input type="number" value={pdfClosingBalance} onChange={(e) => setPdfClosingBalance(e.target.value === '' ? '' : Number(e.target.value))} className="border rounded px-2 py-1 text-sm w-full" /></div>
+                      </div>
+
+                      <div className="text-xs text-muted-foreground">
+                        Preview: {pdfMappedRows.length} of {pdfExtraction.transactions.length} rows read successfully.
+                        <div className="border rounded mt-1 max-h-40 overflow-y-auto">
+                          {pdfMappedRows.slice(0, 5).map((r, i) => (
+                            <div key={i} className="p-1.5 border-b last:border-0">{r.txn_date} · {r.narration} · Dr ₹{r.debit ?? '—'} · Cr ₹{r.credit ?? '—'}</div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <Button onClick={() => importPdfStatement()} disabled={importingPdf || !pdfTargetAccountId || pdfMappedRows.length === 0}>
+                        {importingPdf && <Loader2 className="size-4 animate-spin mr-1" />}
+                        <Upload className="size-4 mr-1" /> Import {pdfMappedRows.length} rows
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </div>

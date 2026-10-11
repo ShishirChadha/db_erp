@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { Loader2, Upload, Eye } from 'lucide-react'
 import { Checkbox } from '@/components/ui/checkbox'
+import { gstValidationError } from '@/lib/gst-validation'
 
 interface BusinessProfile {
   key: string
@@ -98,12 +99,20 @@ export default function BusinessProfileManager() {
   // a duplicate request.
   const handleSave = async (key: string) => {
     if (savingRef.current.has(key)) return
+    const profile = edits[key] || {}
+    if (profile.is_gst_registered) {
+      const err = gstValidationError(profile.gstin || '', profile.state_code)
+      if (err) { alert(err); return }
+    }
     savingRef.current.add(key)
     setSaving(key)
     try {
       const res = await apiFetch(`/api/business-profiles/${key}`, {
         method: 'PATCH',
-        body: JSON.stringify(edits[key]),
+        body: JSON.stringify({
+          ...edits[key],
+          gstin: profile.is_gst_registered ? (profile.gstin || '').trim().toUpperCase() : profile.gstin,
+        }),
       })
       if (res.ok) {
         await fetchProfiles()

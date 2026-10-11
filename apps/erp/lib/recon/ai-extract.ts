@@ -37,13 +37,14 @@ async function extractViaTool<T>(params: {
   toolDescription: string
   schema: z.ZodType<T>
   content: Anthropic.MessageParam['content']
+  maxTokens?: number
 }): Promise<AiExtractResult<T>> {
   const client = getClient()
   const inputSchema = z.toJSONSchema(params.schema, { target: 'draft-7' }) as Anthropic.Tool.InputSchema
 
   const message = await client.messages.create({
     model: MODEL,
-    max_tokens: 4096,
+    max_tokens: params.maxTokens ?? 4096,
     tools: [{ name: params.toolName, description: params.toolDescription, input_schema: inputSchema }],
     tool_choice: { type: 'tool', name: params.toolName },
     messages: [{ role: 'user', content: params.content }],
@@ -90,12 +91,20 @@ export async function extractVendorInvoiceFromPdf(pdfBase64: string): Promise<Ai
   })
 }
 
+// A multi-page statement can run to 100+ rows -- well past what the invoice path's
+// 4096-token default leaves room for as forced tool-use JSON (every row repeats its
+// field names, not a compact tuple). A cap this generous costs nothing unless the
+// model actually needs it, but without it a long statement truncates mid-JSON and
+// fails schema parsing instead of simply running longer.
+const STATEMENT_MAX_TOKENS = 16384
+
 export async function extractBankStatementFromText(text: string): Promise<AiExtractResult<BankStatementExtraction>> {
   return extractViaTool({
     toolName: 'record_statement_extraction',
     toolDescription: 'Record the structured contents of a bank statement, transcribed exactly as printed. Do not compute or correct any balances -- transcribe every row exactly as it appears.',
     schema: BankStatementExtractionSchema,
     content: `Transcribe this bank statement's text into the record_statement_extraction tool. Every row and balance must be copied exactly as printed -- do not calculate or "correct" anything.\n\n---\n${text}`,
+    maxTokens: STATEMENT_MAX_TOKENS,
   })
 }
 
@@ -108,5 +117,6 @@ export async function extractBankStatementFromPdf(pdfBase64: string): Promise<Ai
       { type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: pdfBase64 } },
       { type: 'text', text: 'Transcribe this bank statement into the record_statement_extraction tool. Every row and balance must be copied exactly as printed -- do not calculate or "correct" anything.' },
     ],
+    maxTokens: STATEMENT_MAX_TOKENS,
   })
 }

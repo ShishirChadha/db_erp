@@ -6,6 +6,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { VendorFormFields, emptyVendorForm, type VendorFormState } from '@/components/VendorFormFields'
+import { gstValidationError } from '@/lib/gst-validation'
 
 export interface Vendor {
   id: string
@@ -55,6 +56,10 @@ export function AddVendorDialog({
   const { run: submit, pending: busy } = useAsyncAction(async () => {
     setErr('')
     if (!form.company_name.trim()) { setErr('Company Name is required.'); return }
+    if (form.has_gst === 'true') {
+      const gstErr = gstValidationError(form.gst_number)
+      if (gstErr) { setErr(gstErr); return }
+    }
     const res = await apiFetch('/api/vendors', {
       method: 'POST',
       body: JSON.stringify({
@@ -70,7 +75,7 @@ export function AddVendorDialog({
         pincode: form.pincode,
         email: form.email,
         has_gst: form.has_gst === 'true',
-        gst_number: form.gst_number,
+        gst_number: form.has_gst === 'true' ? form.gst_number.trim().toUpperCase() : '',
         gst_company_name: form.gst_company_name,
         remarks: form.remarks,
       }),
