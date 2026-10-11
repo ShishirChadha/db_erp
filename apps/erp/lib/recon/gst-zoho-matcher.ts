@@ -78,27 +78,17 @@ export async function matchZohoInvoices(
 
   // Some Zoho exports are line-item level (one CSV row per invoice LINE, not
   // per invoice) -- a 2-line invoice then produces 2 rows with the same
-  // invoice number. Left ungrouped, that invoice gets matched TWICE: once
-  // against a line whose amount happens to equal the invoice total (->
-  // 'matched') and once against a line that doesn't (-> 'value_mismatch'),
-  // so every multi-line invoice looks like it both matched AND has an
-  // unresolved mismatch. Collapsing every CSV row sharing an invoice number
-  // into one summed row before matching is what keeps this to one verdict
-  // per invoice regardless of which Zoho export granularity was uploaded.
+  // invoice number. Crucially, Zoho repeats the INVOICE-LEVEL totals
+  // (SubTotal/Tax/Total) identically on every one of those rows -- it is not
+  // splitting the amount across lines -- so summing them (an earlier version
+  // of this fix did exactly that) multiplies every multi-line invoice's
+  // total by its line count instead of fixing anything. The correct
+  // collapse is to keep the first row per invoice number and discard the
+  // rest, since each one already carries the invoice's full totals.
   const grouped = new Map<string, ZohoInvoiceRow>()
   for (const r of rows) {
     const gkey = docNumberKey(r.doc_number) || r.doc_number || Math.random().toString()
-    const existing = grouped.get(gkey)
-    if (!existing) { grouped.set(gkey, { ...r }); continue }
-    existing.taxable_value = (Number(existing.taxable_value) || 0) + (Number(r.taxable_value) || 0)
-    existing.cgst = (Number(existing.cgst) || 0) + (Number(r.cgst) || 0)
-    existing.sgst = (Number(existing.sgst) || 0) + (Number(r.sgst) || 0)
-    existing.igst = (Number(existing.igst) || 0) + (Number(r.igst) || 0)
-    existing.cess = (Number(existing.cess) || 0) + (Number(r.cess) || 0)
-    existing.doc_value = (Number(existing.doc_value) || 0) + (Number(r.doc_value) || 0)
-    existing.doc_date ??= r.doc_date
-    existing.counterparty_name ??= r.counterparty_name
-    existing.counterparty_gstin ??= r.counterparty_gstin
+    if (!grouped.has(gkey)) grouped.set(gkey, r)
   }
   const groupedRows = [...grouped.values()]
 

@@ -1004,6 +1004,20 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
     if (r.ok && active) openImport(active.id)
   }
 
+  const deleteImport = async (id: string) => {
+    if (!window.confirm('Delete this upload and all its reconciliation rows? This cannot be undone.')) return
+    setErr(''); setMsg('')
+    const r = await apiFetch(`/api/gst/recon?import_id=${id}`, { method: 'DELETE' })
+    if (!r.ok) {
+      const d = await r.json().catch(() => null)
+      setErr(d?.error || 'Delete failed')
+      return
+    }
+    if (active?.id === id) { setActive(null); setLines([]) }
+    setMsg('Upload deleted.')
+    await loadImports()
+  }
+
   return (
     <div className="space-y-4">
       {err && <ErrorBanner message={err} />}
@@ -1061,7 +1075,12 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
                         {problems > 0 ? <span className="text-destructive">{problems}</span> : <span className="text-success">0</span>}
                       </td>
                       <td className="px-3 py-2 text-right">
-                        <Button variant="outline" size="sm" onClick={() => openImport(i.id)}>Open</Button>
+                        <div className="flex gap-1 justify-end">
+                          <Button variant="outline" size="sm" onClick={() => openImport(i.id)}>Open</Button>
+                          <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteImport(i.id)}>
+                            Delete
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   )

@@ -251,3 +251,34 @@ export async function PATCH(req: NextRequest) {
 
   return NextResponse.json(data)
 }
+
+// Removes an upload entirely (its lines cascade) -- for a duplicate/stale
+// re-upload sitting in "Previous uploads" that's just confusing clutter, not
+// something worth keeping as history. gst_zoho_register_status() already only
+// ever reads the most recent import for a period, so deleting an old one
+// never changes which import is authoritative -- it only removes the dead
+// one from the list.
+export async function DELETE(req: NextRequest) {
+  const sessionUser = await getSessionUser(req)
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const importId = req.nextUrl.searchParams.get('import_id')
+  if (!importId) return NextResponse.json({ error: 'import_id is required' }, { status: 400 })
+
+  const { data: imp, error: fErr } = await supabaseAdmin
+    .from('gst_recon_imports').select('*').eq('id', importId).single()
+  if (fErr || !imp) return NextResponse.json({ error: 'Upload not found' }, { status: 404 })
+
+  const { error } = await supabaseAdmin.from('gst_recon_imports').delete().eq('id', importId)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'hard_delete', module: 'gst', tableName: 'gst_recon_imports',
+    recordId: importId, recordLabel: `${imp.kind} ${imp.period_start}`,
+    metadata: { entity_key: imp.entity_key, source_filename: imp.source_filename, row_count: imp.row_count },
+  })
+
+  return NextResponse.json({ success: true })
+}
