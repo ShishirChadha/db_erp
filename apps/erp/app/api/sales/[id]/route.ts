@@ -218,6 +218,57 @@ export async function PATCH(
   const { data, error } = await supabaseAdmin.from('sales').update(updates).eq('id', id).select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
+  // 2026-10-11: a price correction on an already-invoiced sale used to warn and then
+  // leave the invoice silently stale forever once the owner confirmed anyway -- this
+  // is exactly what produced an invoice whose GSTR-1 figures disagreed with its own
+  // linked sales by the time of filing. Best-effort, not fatal to the sale save: an
+  // invoice item is only found for sales invoiced after sale_id started being stamped
+  // (2026-09-28) -- an older invoice with no match is left for a manual correction,
+  // same as it always was.
+  if (existing.finalized && existing.invoice_id &&
+      (updates.sale_base_price !== undefined || updates.sale_gst !== undefined || updates.sale_total !== undefined)) {
+    const { data: item } = await supabaseAdmin
+      .from('invoice_items')
+      .select('id, igst_amount')
+      .eq('invoice_id', existing.invoice_id).eq('sale_id', id)
+      .maybeSingle()
+    if (item) {
+      const newRate = data.sale_base_price
+      const newTax = data.sale_gst
+      const isInterState = Number(item.igst_amount) > 0
+      await supabaseAdmin
+        .from('invoice_items')
+        .update({
+          rate: newRate,
+          amount: data.sale_total,
+          cgst_amount: isInterState ? 0 : Math.round((newTax / 2) * 100) / 100,
+          sgst_amount: isInterState ? 0 : newTax - Math.round((newTax / 2) * 100) / 100,
+          igst_amount: isInterState ? newTax : 0,
+        })
+        .eq('id', item.id)
+
+      const { data: allItems } = await supabaseAdmin
+        .from('invoice_items')
+        .select('rate, quantity, cgst_amount, sgst_amount, igst_amount, amount')
+        .eq('invoice_id', existing.invoice_id)
+      const newSubtotal = (allItems || []).reduce((a, r) => a + Number(r.rate) * Number(r.quantity), 0)
+      const newTotalGst = (allItems || []).reduce((a, r) => a + Number(r.cgst_amount || 0) + Number(r.sgst_amount || 0) + Number(r.igst_amount || 0), 0)
+      const newGrandTotal = (allItems || []).reduce((a, r) => a + Number(r.amount), 0)
+
+      const { data: invoiceSales } = await supabaseAdmin.from('sales').select('payment_status').eq('invoice_id', existing.invoice_id)
+      const allPaid = (invoiceSales || []).length > 0 && (invoiceSales || []).every((s: any) => s.payment_status === 'paid')
+
+      await supabaseAdmin
+        .from('invoices')
+        .update({
+          subtotal: newSubtotal, total_gst: newTotalGst, grand_total: newGrandTotal,
+          total_amount: newSubtotal, gst_total: newTotalGst,
+          payment_status: allPaid ? 'paid' : 'pending',
+        })
+        .eq('id', existing.invoice_id)
+    }
+  }
+
   // Live Stock/Main Stock's Sold tab displays asset_ledger.sold_at, not sales.sale_date
   // -- they're set together at sale time (lib/sales-cart.ts) but are separate columns,
   // so a sale_date correction here must also push asset_ledger.sold_at or the Sold tab

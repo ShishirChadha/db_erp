@@ -1004,6 +1004,29 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
     if (r.ok && active) openImport(active.id)
   }
 
+  const recheckImport = async (imp: any) => {
+    setBusy(true); setErr(''); setMsg('')
+    try {
+      const r = await apiFetch('/api/gst/recon', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity_key: entity, kind: imp.kind,
+          period_start: imp.period_start, period_end: imp.period_end,
+          source_import_id: imp.id,
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok) { setErr(d?.error || 'Re-check failed'); return }
+      setMsg(`Re-checked against current ERP data — ${d.rows} rows.`)
+      await loadImports()
+      await openImport(d.import.id)
+    } catch (e: any) {
+      setErr(e?.message || 'Re-check failed')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const deleteImport = async (id: string) => {
     if (!window.confirm('Delete this upload and all its reconciliation rows? This cannot be undone.')) return
     setErr(''); setMsg('')
@@ -1077,6 +1100,11 @@ function MatchUploads({ entity, from, to }: { entity: string; from: string; to: 
                       <td className="px-3 py-2 text-right">
                         <div className="flex gap-1 justify-end">
                           <Button variant="outline" size="sm" onClick={() => openImport(i.id)}>Open</Button>
+                          {i.kind === 'zoho_invoices' && (
+                            <Button variant="outline" size="sm" disabled={busy} onClick={() => recheckImport(i)} title="Re-run the match against current ERP data, using the same uploaded rows">
+                              Re-check
+                            </Button>
+                          )}
                           <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => deleteImport(i.id)}>
                             Delete
                           </Button>

@@ -125,7 +125,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
 
-  const { entity_key, kind, period_start, period_end, content, source_filename, document_id } = body
+  const { entity_key, kind, period_start, period_end, content, source_filename, document_id, source_import_id } = body
   if (!entity_key || !kind || !period_start || !period_end) {
     return NextResponse.json(
       { error: 'entity_key, kind, period_start and period_end are required' }, { status: 400 })
@@ -133,13 +133,63 @@ export async function POST(req: NextRequest) {
   if (!(KINDS as readonly string[]).includes(kind)) {
     return NextResponse.json({ error: `kind must be one of: ${KINDS.join(', ')}` }, { status: 400 })
   }
-  if (!content) return NextResponse.json({ error: 'content (the file text) is required' }, { status: 400 })
+  // source_import_id re-runs the match using the rows already parsed from a
+  // previous upload (stored per-line in `raw`) against *current* ERP data --
+  // for re-checking after fixing an invoice without having to re-export and
+  // re-upload the same Zoho CSV just to see the fix reflected.
+  if (!content && !source_import_id) {
+    return NextResponse.json({ error: 'content (the file text) or source_import_id is required' }, { status: 400 })
+  }
 
   try {
     let lines
     let unmapped: string[] = []
 
-    if (kind === 'zoho_invoices') {
+    if (kind === 'zoho_invoices' && source_import_id) {
+      // Re-use the already-normalized columns stored on each line -- NOT the
+      // `raw` column (that holds Zoho's original, un-normalized CSV row with
+      // Zoho's own header names like "Invoice Number", which has no
+      // `doc_number` field and was silently producing a blank/unmatched
+      // result for every single row). Exclude missing_in_source rows -- those
+      // are ERP invoices the Zoho upload never mentioned, not Zoho rows.
+      const { data: srcLines, error: sErr } = await supabaseAdmin
+        .from('gst_recon_lines')
+        .select('doc_number, doc_date, counterparty_name, counterparty_gstin, taxable_value, cgst, sgst, igst, cess, doc_value')
+        .eq('import_id', source_import_id).neq('match_status', 'missing_in_source')
+      if (sErr) throw new Error(sErr.message)
+      const rows: ZohoInvoiceRow[] = (srcLines ?? []).map((l: any) => ({
+        doc_number: l.doc_number, doc_date: l.doc_date,
+        counterparty_name: l.counterparty_name, counterparty_gstin: l.counterparty_gstin,
+        taxable_value: l.taxable_value, cgst: l.cgst, sgst: l.sgst, igst: l.igst, cess: l.cess,
+        doc_value: l.doc_value,
+      }))
+      if (rows.length === 0) {
+        return NextResponse.json({ error: 'That upload has no source rows left to re-check against.' }, { status: 400 })
+      }
+      lines = await matchZohoInvoices(entity_key, period_start, period_end, rows)
+
+      // Update the SAME import in place rather than creating a new one --
+      // re-checking is meant to refresh a result, not pile up another row
+      // in "Previous uploads" every time.
+      const { error: delErr } = await supabaseAdmin
+        .from('gst_recon_lines').delete().eq('import_id', source_import_id)
+      if (delErr) throw new Error(delErr.message)
+      const { error: insErr } = await supabaseAdmin
+        .from('gst_recon_lines').insert(lines.map((l) => ({ ...l, import_id: source_import_id })))
+      if (insErr) throw new Error(insErr.message)
+
+      const { data: fresh } = await supabaseAdmin
+        .from('gst_recon_imports').select('*').eq('id', source_import_id).single()
+
+      await logAuditEvent({
+        actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+        actionType: 'update', module: 'gst', tableName: 'gst_recon_imports',
+        recordId: source_import_id, recordLabel: `re-check ${kind} ${period_start}`,
+        metadata: { entity_key, rows: lines.length },
+      })
+
+      return NextResponse.json({ import: fresh, rows: lines.length, unmapped_fields: [] }, { status: 200 })
+    } else if (kind === 'zoho_invoices') {
       const parsed = parseZohoCsv(String(content))
       if (parsed.rows.length === 0) {
         return NextResponse.json({
