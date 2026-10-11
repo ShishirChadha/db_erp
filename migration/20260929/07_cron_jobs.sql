@@ -28,3 +28,4 @@ select cron.schedule('scan-attendance-days', '15 22 * * *', $$select public.scan
 -- serving six-day-old data. Rescheduled 2026-10-03. Pruning is already handled
 -- (prune_cron_history covers website_health_checks).
 select cron.schedule('website-health-check', '*/10 * * * *', $$select public.run_website_health_check();$$);
+select cron.schedule('gst-news-fetch',                '30 2 * * *',    $$select public.dispatch_gst_news();$$);

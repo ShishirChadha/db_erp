@@ -27,7 +27,15 @@ sources:
   - apps/erp/lib/sales-cart.ts
   - apps/erp/lib/gst-returns.ts
   - apps/erp/app/api/sales/[id]/route.ts
-updated: 2026-10-11
+  - apps/erp/app/api/gst/void-numbers/route.ts
+  - apps/erp/lib/pincode-state.ts
+  - apps/erp/lib/recon/gst-pos.ts
+  - apps/erp/lib/ai/structured.ts
+  - apps/erp/app/api/gst/step-signoffs/route.ts
+  - apps/erp/app/api/gst/news/route.ts
+  - apps/erp/app/api/gst/news/run/route.ts
+  - apps/erp/app/dashboard/gst/gst-news-panel.tsx
+updated: 2026-10-12
 ---
 
 ## The single reporting dispatcher
@@ -168,6 +176,113 @@ date and also sidesteps the `sale_date` vs `effective_sale_date` drift that
 affects the rest of reporting. The completeness check, which looks at sales with
 *no* invoice, uses `effective_sale_date` instead.
 
+### The page is a guided monthly checklist (since 2026-10-12)
+
+`/dashboard/gst` is ten ordered steps, not a set of tabs -- the tab layout let a
+blocker sit in a sub-tab nobody opened. Pick the month, then each step shows a
+green / yellow / red tile computed by **one SQL function, `gst_period_steps()`**
+(the single source of truth; the page, the filing API and a future auto-submit all
+read it).
+
+| # | Step | Red when | Yellow when |
+|---|------|----------|-------------|
+| 1 | Zoho register match | unresolved missing/mismatched amount or date | no register for the whole month; ERP invoices not in Zoho |
+| 2 | Sales complete | voided sale with a live invoice | GST sales with no invoice and no sign-off |
+| 3 | Invoice & customer checks | any tax/GSTIN/POS blocker, incl. `line_gst_rate_mismatch` | warnings not signed off |
+| 4 | HSN & numbering | HSN, series-gap, duplicate/format blockers | `hsn_inconsistent_for_sku` not signed off |
+| 5 | Zoho tax-head match | unresolved CGST/SGST/IGST or place-of-supply difference | no register, or upload predates the head comparison |
+| 6 | Review & approve GSTR-1 | figures changed after filing | not approved / data changed since approval |
+| 7 | File GSTR-1 & lock sales | figures changed after filing | approved but not filed, or filed but sales not locked |
+| 8 | Purchases & ITC (GSTR-2B) | ITC marked claimed for a purchase not in 2B | no 2B upload, open lines, unsigned RCM warnings |
+| 9 | Review & approve GSTR-3B | 3.1 does not tie to GSTR-1, or GSTR-1 changed after filing | GSTR-1 not filed yet, or not approved |
+| 10 | File GSTR-3B | figures changed after filing | approved but not filed, or purchases not locked |
+
+GSTR-1 (steps 1-7) is due the 11th, GSTR-3B (8-10) the 20th. Order is advisory
+except for four gates: approving GSTR-1 needs steps 1-5 green (Zoho register first, since invoices originate there and its upload shows which "uninvoiced" sales already have an invoice); filing needs an
+approval; approving 3B needs GSTR-1 *filed* (the portal builds 3B liability from
+the filed GSTR-1) and step 8 green; filing 3B needs an approval.
+
+**Sign-off** (steps 2, 3, 4, 8 only) is for warning-level items: owner + note +
+a **fingerprint** of exactly the items reviewed (`gst_step_signoffs`). A new item
+later changes the fingerprint, so the step returns to yellow with no extra
+mechanism. A blocker can never be signed off. Uninvoiced sales are yellow, not red
+(a decision): s.31 CGST requires the invoice at delivery rather than payment, so the
+panel says so, but a sign-off with a reason (e.g. goods not yet delivered) is allowed.
+
+**Approval is a content hash, not a button.** "Approve" (`gst_filings.status =
+'exported'`) stores `snapshot_hash` = md5 of the GSTR-1 sections + HSN + docs
+(`gst_gstr1_fingerprint()`) or of the 3B summary (`gst_gstr3b_fingerprint()`).
+"Filed" is only accepted against an approval whose hash still matches the live data,
+and requires the ARN. Drift **before** filing turns the step yellow (re-approve);
+drift **after** filing turns it red (amendment territory). There is deliberately no
+`force` flag. This is the hook for the later Zoho/GSP auto-submit: it can send only
+what the owner approved, and refuses if anything moved.
+
+**Tax heads are compared, not just the total.** The Zoho matcher
+(`gst-zoho-matcher.ts`) compares CGST, SGST and IGST per invoice (±Rs 1) and place
+of supply when the export has it (`gst-pos.ts` normalises "UP", "Uttar Pradesh",
+"Uttar Pradesh (09)" ...). A same-total CGST+SGST-vs-IGST mix-up used to pass
+silently; tax paid under the wrong head cannot be set off against the other and has
+to be paid again and refunded separately. `gst_recon_imports.matcher_version` (2 =
+heads compared) keeps step 5 yellow for an upload matched before this existed until
+it is Re-checked. Zoho documents the owner ignored (e.g. a cancelled invoice) are
+excluded from the head totals and shown separately.
+
+**`line_gst_rate_mismatch`** (blocker, step 2) compares each invoice line's tax with
+`rate x quantity x gst_rate`, with a Rs 1 tolerance per line (a percentage test
+false-positives on tiny lines). Returns bucket lines by `gst_rate` (3B 3.1(a) takes
+rate > 0, 3.1(c) nil/exempt takes rate = 0), so a line charging 18% with a stored rate
+of 0 had its tax filed as nil/exempt -- found on DBI2026/27-00726, where it made 3B
+3.1 understate tax by Rs 881.70 versus GSTR-1. The sale-edit sync
+(`api/sales/[id]`) now sets `gst_rate` and derives inter-state from the invoice's
+place of supply, not from the line's current IGST.
+
+### Step 6 — Zoho GSTR-1 summary match (since 2026-10-12)
+
+Step 6 has an **Upload Zoho Excel** box. Export Zoho's *Reports → Taxes → Summary of Outward Supplies* for the month as Excel and upload it. `POST /api/gst/zoho-gstr1` parses it with plain code (`lib/recon/zoho-gstr1-compare.ts`, SheetJS `xlsx`) — **no AI, nothing stored** — and compares it with `gst_r1_sections` / `gst_r1_hsn_summary` / `gst_r1_docs_issued`. It returns a section summary (B2B, B2C large/small, credit notes, HSN B2B/B2C, invoices issued) and a row-level "to fix" list: B2B invoices per number (missing on a side, GSTIN, place of supply, taxable; ₹2 rounding tolerance), B2C small by state+rate, HSN per code, and the Table 13 series. An invoice that Zoho files as B2B but the ERP files as B2C is named as a missing customer GSTIN. When the step-1 Zoho invoice CSV has been read with its item lines (the matcher keeps each line's `HSN/SAC`, item, quantity and price in `gst_recon_lines.raw.lines`, from 2026-10-13), the list compares **Zoho's lines against the ERP's per invoice** — Zoho HSN · amount beside ERP HSN · amount, flagging an invoice when any code's amount differs by more than ₹2 (an ERP line that has accessories sold inside it gets a **Split off** form per accessory — `POST /api/invoice-items/[id]/split`, owner-only, audited, refused for a filed or locked month — that moves an amount (pre-filled with what Zoho bills under that HSN) and its tax at the same rate into a new line under the accessory's HSN, leaving the invoice's taxable value, tax and total unchanged; the ERP stores only the combined price, so this is how a separately billed add-on is reproduced. After a split, editing the sale in the Sales Ledger re-syncs the unit line and does not know about the new line. It shows "includes: …" with each accessory's SKU HSN, since the ERP stores one combined price and Zoho may bill them apart) — so Zoho's real code is shown, not inferred. An older upload has no lines; step 6 then says to re-upload the CSV and falls back to the code-total inference. HSN differences are shown as a plain **list of invoices to check** (each with its lines and a "Change here" fold-out), not as HSN-code rows; the old per-code rows were replaced because Zoho's summary has no invoice numbers and the codes confused more than they helped. The list is built from the ERP invoices carrying each mismatched code, and suggest the code your own lookup gives — the item's SKU category default in Settings → SKU Categories (`sku_category_templates.default_hsn_code`) — so you decide per item whether to fix Zoho (then re-upload) or the ERP. Each ERP line has a **Set HSN** box (with "also the SKU" ticked by default) that calls `PATCH /api/invoice-items/[id]/hsn`: owner-only, audited (`field_corrections` + audit log), and refused for a filed or locked month. Line HSN is a snapshot taken from the SKU at invoicing, so editing the SKU alone never repairs existing lines; this is the supported path. The uploaded file and result are kept in `sessionStorage` per entity+month, and the page keeps entity, month and step in the URL so Back returns to the same place. It is a check, not a gate: it does not block approval.
+
+### Invoice copy of customer GSTIN goes stale (guarded since 2026-10-12)
+
+An invoice keeps its own copy of the customer's name and GSTIN (`invoices.customer_name/customer_gst`), and GSTR-1 reads that copy, not the live customer. Correcting a customer afterwards used to leave the invoice filed as B2C. Two guards, both limited to months that are **not** filed or locked: the trigger `trg_sync_invoice_customer_snapshot` on `customers` refreshes that customer's open-month invoices when GSTIN or name change, and the step-3 check `invoice_customer_gstin_stale` (blocker when the invoice has no GSTIN but the customer does, warning when they differ) offers a **Refresh from customer** button (`POST /api/gst/refresh-invoice-customer`). A filed or locked month is never changed.
+
+### Bundled add-ons and non-slab rates (since 2026-10-13)
+
+A free or token-priced item sold in one bundle with another item (a monitor "with" a desktop on one Zoho line) is **one supply, filed under the principal item's HSN and rate with no quantity of its own**; an item priced and sold separately keeps its own HSN. The ERP creates a separate invoice line for a bundled unit, so `invoice_items.bundled_into_item_id` marks it, and `v_gst_outward_lines` then reports the principal's HSN/rate and quantity 0 for it (taxable value and tax are unchanged, so section totals do not move). The owner sets it from step 6: each ERP line in the HSN rows has a **Bundle into…** select (`PATCH /api/invoice-items/[id]/bundle`, owner-only, audited, refused for a filed or locked month; **Unbundle** undoes it). New sales do not auto-bundle yet. Line `gst_rate` is snapped to the nearest standard slab when within 0.5 pt (`lib/gst-slabs.ts`; a ₹1 price gave 17.65%), and the blocker check `invalid_gst_slab_rate` (step 3) catches any line still off-slab, since the portal rejects it.
+
+### Portal JSON: what is guarded, and finding a rejection (since 2026-10-13)
+
+`buildGstr1Json` (`lib/gst-returns.ts`) writes the portal upload JSON in the shape the GST Offline Tool 3.2.4 itself writes (read from the tool's source): header `gstin, fp, version "GST3.2.4", hash "hash"`; Table 12 rows carry `user_desc` (ours) and `desc` (the portal's HSN-master description, from `lib/gst/hsn-master.json` via `POST /api/gst/hsn-descriptions`), `uqc` as the code only (`NOS`, `OTH`; services — codes starting `99` — use `NA` with quantity 0); Table 13 carries `doc_typ`. Before this, every upload was rejected with "File could not be uploaded". On the live portal the B2B upload then processed 22 of 25 invoices: the three it dropped (726, 736, 741) were exactly the ones whose lines had CGST and SGST a paisa or two apart, so `v_gst_outward_lines` now reports equal CGST/SGST on an intra-state line when they differ only by rounding (both = rate-based half-tax, within 5 paise), and `buildGstr1Json` leaves zero-value items out of the B2B tables (they stay in Table 12). The portal's message names no field, so step 6's working papers also offer **B2B / B2C small / HSN / Documents only** downloads to upload one table at a time. The ERP's JSON is unverified on the live portal until a retry succeeds — see `docs/current-progress.md`.
+
+### GST news feed
+
+A strip above the steps shows recent official GST updates. `gst_news_sources`
+(owner-editable) are fetched daily by pg_cron `gst-news-fetch` (02:30 UTC = 08:00 IST)
+-> `dispatch_gst_news()` -> `POST /api/gst/news/run` (auth: `x-cron-secret` checked
+against `gst_news_config.dispatch_secret`, or an owner session via "Check now").
+Claude lists genuine updates from each page against a business profile (UP-registered
+regular filer; refurbished computers HSN 8471; rental SAC 997315; repair SAC 998713),
+then reads each linked PDF and writes a specific summary, impact
+(`action_required` / `review` / `info`), suggested ERP action and effective date.
+Safeguards: the model may only cite URLs that literally appear in the fetched page; the
+first read of a source is a baseline filed as *seen*; a source that returns no readable
+text is recorded as `empty` (never silently quiet); every card says "AI summary --
+verify against the official notice"; it distinguishes a Council *recommendation* from a
+notified change. `action_required` notifies the owner (`gst_news`). The GST Portal's
+own News & Updates page is a JavaScript app that returns nothing to a server fetch, so
+it is seeded **inactive** until a working feed is found. The cron needs
+`gst_news_config.dispatch_url`/`dispatch_secret` set once, or it no-ops (like the digest
+job).
+
+### Security note
+
+The GST tables (`gst_filings`, `gst_recon_*`, `gst_void_invoice_numbers`,
+`period_locks`, sign-offs, news) are service-role-only: RLS is **on with no
+policies**. They were created with Supabase's default grants (anon/authenticated get
+full DML) and RLS off, which let the public anon key read and write customer names,
+GSTINs, invoice numbers and amounts through PostgREST (found and fixed 2026-10-12).
+Every route uses `supabaseAdmin`, so nothing changed for the app. Any new table
+needs `enable row level security` in its own migration.
+
 ### Validation comes before export, not after
 
 `v_gst_exceptions` is a live view — derived, never stored, the same principle as
@@ -304,13 +419,44 @@ decision made so far — only rows whose verdict actually changed lose their
 old resolution, which is correct (a mismatch that's now fixed should surface
 again if it reappears for a different reason).
 
+## A series gap that was genuinely cancelled outside the ERP
+
+`doc_series_gap` (a missing number inside a series, Document Summary tab)
+used to have no resolution path at all -- unlike `gst_recon_lines`, which can
+be Resolved/Ignored, a gap just sat there forever even when it was a real,
+known case: a number Zoho raised and then cancelled before it ever got a row
+in the ERP, not even a soft-deleted one. **Mark cancelled (Zoho)** on that
+row (owner-only, requires a typed reason, same pattern as Resolve/Ignore)
+calls `gst_acknowledge_series_gap()`, which writes to
+`gst_void_invoice_numbers` and:
+- excludes that exact `(series_key, seq)` from `v_gst_exceptions` going
+  forward, clearing the blocker, and
+- folds it into `gst_r1_docs_issued()`'s `cancel`/`totnum` counts for Table
+  13, so the number is reported as **cancelled**, not silently omitted —
+  omitting it would under-count `totnum` for that series and make Table 13
+  unreconcilable against the numbers actually consumed.
+
+It is reversible (`DELETE /api/gst/void-numbers?id=`), same as Resolve/Ignore.
+`period_month` is computed once at acknowledgment time using the same "month
+of the preceding invoice in this series" rule `series_gaps` already applies
+when first surfacing the gap — not recomputed on every read.
+
+This is distinct from a `voided_sale_with_live_invoice` blocker: that one is
+for a sale void where the ERP's own invoice is still live (needs a credit
+note). `doc_series_gap` is for a number the ERP never held an invoice row
+for at all.
+
 ## Filing state and the period lock
 
 `gst_filings` records one row per entity x return type x period. **"filed" is a
 local state transition only** — nothing here files at the portal, and clearing
 it does not unfile there. The value is the frozen `snapshot`: without it an edit
 made after filing is undetectable, and an amendment has nothing to diff against.
-Marking a period filed while blockers stand is **refused**, not warned about.
+For GSTR-1 and GSTR-3B, `exported` is the owner's **approval** (steps green, figures
+frozen with `snapshot_hash`) and `filed` is refused unless it follows an approval whose
+hash still matches the live data, with the ARN entered -- see the guided-checklist
+section above. (Before 2026-10-12 this only checked the blocker count and had a
+`force` bypass; both are gone.) GSTR-1A / GSTR-9 keep the plain rule: no blockers.
 
 `period_locks` blocks writes **by transaction date, not entry date**. That
 distinction is the whole feature: entry-date locking still lets someone insert a
@@ -372,26 +518,17 @@ zero production rows ever used it). `gst_sale_not_invoiced` is a **neutral,
 zero-severity count** in `gst_return_readiness()`'s `completeness` block --
 visible, but not a blocker or a warning, and not part of `can_generate`.
 
-Protection against under-reporting comes from two independent reconciliations
-instead of per-sale tracking:
+Protection against under-reporting is **the Zoho invoice register**
+(`gst_zoho_register_status()`, guided steps 4-5): has the register for this period
+been uploaded (covering the *whole* period -- a partial upload is rejected outright)
+and has every row been matched or explicitly resolved. A partial check must never
+silently pass as complete.
 
-1. **The Zoho invoice register** (`gst_zoho_register_status()`) -- has the
-   register for this period been uploaded (covering the *whole* period -- a
-   partial upload is rejected outright) and has every row been matched or
-   explicitly resolved. This is a **blocker**: it gates `can_generate`.
-2. **Bank-credit reconciliation** (`gst_bank_credit_status()`) -- the "dead
-   sure" safety net for money that arrived with *no* paper trail anywhere, no
-   ERP sale and no Zoho invoice. Reuses the existing Bank Reconciliation
-   module's own tables (`bank_accounts`/`bank_statements`/`bank_transactions`,
-   already trigger-maintained via `recon_status`) rather than a second upload
-   flow -- the GST page only reads that state and links out to
-   `/dashboard/recon/bank`. This is a **warning**, not a blocker: surfaced
-   clearly, does not stop filing.
-
-Both checks share the same full-period-coverage shape: a bank statement or
-Zoho register covering only part of the requested period counts as not
-uploaded, exactly like the other -- a partial check must never silently pass
-as complete.
+A second safety net, **bank-credit reconciliation** (money that arrived with no sale
+and no Zoho invoice), existed from 2026-10-05 and was **removed from the GST module
+on 2026-10-12** -- the owner judged it too complex for now (`gst_bank_credit_status()`
+and its two exception checks are dropped). The Bank Reconciliation module itself is
+untouched and can be re-attached later as a guided step.
 
 ## Related
 

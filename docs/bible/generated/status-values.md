@@ -79,13 +79,20 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | gst_filings | period_end | gst_filings_period_check | `CHECK ((period_end >= period_start))` |
 | gst_filings | return_type | gst_filings_return_type_check | `CHECK ((return_type = ANY (ARRAY['gstr1'::text, 'gstr3b'::text, 'gstr1a'::text, 'gstr9'::text])))` |
 | gst_filings | status | gst_filings_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'exported'::text, 'filed'::text])))` |
+| gst_news_config | id | gst_news_config_id_check | `CHECK (id)` |
+| gst_news_items | impact | gst_news_items_impact_check | `CHECK ((impact = ANY (ARRAY['action_required'::text, 'review'::text, 'info'::text])))` |
+| gst_news_items | status | gst_news_items_status_check | `CHECK ((status = ANY (ARRAY['new'::text, 'seen'::text, 'actioned'::text, 'dismissed'::text])))` |
 | gst_recon_imports | kind | gst_recon_imports_kind_check | `CHECK ((kind = ANY (ARRAY['zoho_invoices'::text, 'gstr2b'::text])))` |
 | gst_recon_imports | period_end | gst_recon_imports_period_check | `CHECK ((period_end >= period_start))` |
 | gst_recon_imports | status | gst_recon_imports_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'completed'::text])))` |
 | gst_recon_lines | match_status | gst_recon_lines_match_status_check | `CHECK ((match_status = ANY (ARRAY['matched'::text, 'value_mismatch'::text, 'missing_in_erp'::text, 'missing_in_source'::text])))` |
 | gst_recon_lines | matched_type | gst_recon_lines_matched_type_check | `CHECK (((matched_type IS NULL) OR (matched_type = ANY (ARRAY['invoice'::text, 'purchase_order'::text, 'purchase_order_item'::text]))))` |
 | gst_recon_lines | resolution | gst_recon_lines_resolution_check | `CHECK (((resolution IS NULL) OR (resolution = ANY (ARRAY['accepted'::text, 'entered_in_erp'::text, 'ignored'::text, 'chase_supplier'::text, 'itc_claimed'::text, 'itc_ineligible'::text]))))` |
+| gst_step_signoffs | note | gst_step_signoffs_note_check | `CHECK ((length(TRIM(BOTH FROM note)) > 0))` |
+| gst_step_signoffs | step | gst_step_signoffs_step_check | `CHECK (((step >= 1) AND (step <= 10)))` |
+| gst_void_invoice_numbers | doc_type | gst_void_invoice_numbers_doc_type_check | `CHECK ((doc_type = ANY (ARRAY['sales'::text, 'credit_note'::text])))` |
 | homepage_banners | theme | homepage_banners_theme_check | `CHECK ((theme = ANY (ARRAY['default'::text, 'diwali'::text, 'christmas'::text, 'sale'::text, 'custom'::text])))` |
+| invoice_items | bundled_into_item_id | invoice_items_bundle_not_self | `CHECK (((bundled_into_item_id IS NULL) OR (bundled_into_item_id <> id)))` |
 | invoice_items | gst_type | invoice_items_gst_type_check | `CHECK ((gst_type = ANY (ARRAY['IGST'::text, 'CGST_SGST'::text])))` |
 | invoice_items | item_type | invoice_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['asset'::text, 'accessory'::text, 'custom'::text, 'repair'::text, 'rental'::text])))` |
 | invoices | invoice_type | invoices_invoice_type_check | `CHECK ((invoice_type = ANY (ARRAY['sales'::text, 'purchase'::text, 'credit_note'::text])))` |

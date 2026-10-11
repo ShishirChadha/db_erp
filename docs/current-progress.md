@@ -1,6 +1,6 @@
-# Current Progress
+Last updated: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS. Prior entry: # Current Progress
 
-Last updated: 2026-10-06 — Leads / Calling Lists module shipped (owner-assignable "Lead Sets" for sales-pitch calling, CSV import with auto-detected column mapping, transfer-with-history vs. fresh-copy clone reassignment, per-lead remarks + follow-up date reusing the Activity Hub's due-date/notification machinery, status and follow-up filters, manual single-lead entry for referrals). Prior entry: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
+2026-10-06 — Leads / Calling Lists module shipped (owner-assignable "Lead Sets" for sales-pitch calling, CSV import with auto-detected column mapping, transfer-with-history vs. fresh-copy clone reassignment, per-lead remarks + follow-up date reusing the Activity Hub's due-date/notification machinery, status and follow-up filters, manual single-lead entry for referrals). Prior entry: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
 
 
 
@@ -1906,3 +1906,36 @@ CSV export/download (an explicit security choice — reduces the risk of a depar
 taking a list with them; the existing Customers page has no export either, so this isn't even
 a feature regression), per-lead reassignment (Set-level only, matching every real example
 given), and a dedicated stale-lead reminder cron beyond the generic due-date one.
+
+## GST guided filing — COMPLETE (2026-10-12)
+Full plan: `/Users/shishirchadha/.claude/plans/hey-i-want-to-hidden-pixel.md`. Decision record: `docs/decisions.md` (2026-10-12). Bible: `docs/bible/modules/finance-gst-reports.md`.
+`/dashboard/gst` is ten ordered steps (GSTR-1: Zoho register, sales, invoice/customer checks, HSN & numbering, Zoho tax heads, approve, file & lock sales; GSTR-3B: purchases/ITC via 2B, approve, file & lock purchases), each tile green/yellow/red from one SQL function.
+
+### Schema
+Migrations `20261012_gst_guided_steps.sql`, `..._fixes.sql`, `20261012_gst_news_enriched.sql`: `gst_period_steps()`, `gst_gstr1_fingerprint()`/`gst_gstr3b_fingerprint()`, `gst_step_signoffs`, `gst_filings.snapshot_hash`, `gst_recon_lines.place_of_supply`, `gst_recon_imports.matcher_version`, `line_gst_rate_mismatch` check, news tables + `dispatch_gst_news()` + cron `gst-news-fetch`; bank checks and `gst_bank_credit_status()` dropped; RLS on all GST tables.
+
+### Key invariants
+- Approval = `snapshot_hash`; filing needs a matching approval and the ARN; no `force`. Approving GSTR-1 needs steps 1-5 green; approving 3B needs GSTR-1 filed and step 8 green.
+- Sign-offs apply to steps 2, 3, 4, 8 only and never to blockers; fingerprint-scoped so new items un-sign.
+- New GST tables must enable RLS in their own migration (service-role-only).
+
+### Reminders
+- `gst_news_config.dispatch_url` / `dispatch_secret` must be set once for the daily news cron to fire (it no-ops otherwise).
+- An upload matched before 2026-10-12 shows step 5 yellow until it is Re-checked.
+- The two RAM/SSD lines of DBI2026/27-00726 need `gst_rate = 18` (production data fix, handed to the owner).
+- Outside GST scope but found unprotected (RLS off): `customer_credit_ledger`, `repair_job_counter`, `sale_refunds`.
+- Disposable test owner `zz-gst-ui-test@example.com` is banned, not deleted (audit_log rows reference it).
+
+### Verification
+See the decision record. `npx tsc --noEmit` clean for apps/erp; a full `next build` was not run because the dev server was running.
+
+### Not built
+Live Zoho API pull and GSP/portal auto-submission (the approval hash and the `gst_recon_imports` source are the intended hooks); bank-credit reconciliation as an optional step; auto-acknowledging Zoho 'Void' rows as cancelled series numbers.
+
+
+
+## 2026-10-13 — GSTR-1 portal JSON upload rejected: fixed against the Offline Tool's own code (needs a portal retry)
+
+All four uploads of the ERP's GSTR-1 JSON on 11 Oct 2026 failed with "File could not be uploaded! Download the latest version of Offline tool…", including single-table files — so the fault was in what every file shares. The owner supplied the GST Offline Tool installer (`gst_offline_tool/`, a Windows Inno Setup package that is really a Node app); it was unpacked with `innoextract` and its JSON writer read (`utility/common.js`, `utility/returnStructure.js`, `service/offline.js`). `buildGstr1Json` now matches it: header `gstin, fp, version "GST3.2.4", hash "hash"` (no `filing_typ`, no `gt`/`cur_gt`); Table 12 rows `{num, hsn_sc, user_desc, desc (portal HSN-master description), uqc as the code only ("NOS"/"OTH", "NA" for services), qty, rt, txval, iamt, camt, samt, csamt}`; Table 13 `doc_det` carries `doc_typ`. The master is `apps/erp/lib/gst/hsn-master.json` (from the tool's `public/data/HSN.json`), served by `POST /api/gst/hsn-descriptions`. Not yet confirmed on the live portal.
+
+**Update 2026-10-13:** the portal accepted the header/HSN/Documents/B2C-small files; B2B processed 22 of 25 invoices. The three dropped (726, 736, 741) were exactly those with CGST != SGST on a line (paise rounding). Fixed in `v_gst_outward_lines` (`supabase/migrations/20261013_gst_cgst_sgst_equal.sql`, applied) and zero-value B2B items are omitted. Owner to re-upload the B2B-only JSON and confirm 25 on the portal tile. Also noted: portal trade names differ from ERP names for 09ABBFV3056H1Z2 (portal "NEEV MOBILITY", ERP "VeroTrade LLP") and 09FPBPK2743M1ZJ (portal "Java Value", ERP "AKANKSHA KUMARI") — worth confirming the buyers.
