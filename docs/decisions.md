@@ -936,3 +936,9 @@ Verified: the full lifecycle (baseline, sign-off, approve, drift before/after fi
 ## 2026-10-13 — Bundled add-ons follow the principal item's HSN and rate; non-slab line rates blocked
 
 **Decision:** a free/token-priced add-on sold in one bundle is filed under the principal line's HSN and rate with quantity 0 (`invoice_items.bundled_into_item_id`, applied in `v_gst_outward_lines`, set by the owner in step 6); separately priced items keep their own HSN. Line `gst_rate` snaps to the nearest slab within 0.5 pt, and `invalid_gst_slab_rate` blocks anything else. **Why:** Zoho files "desktop with monitor, wifi, adaptor" as one line, the ERP split it into per-SKU lines with different HSNs, and a ₹1 add-on produced a 17.65% line the portal would reject. **Not done:** auto-bundling at sale time (needs a link on `sales` and cart changes).
+
+## 2026-10-14 — Accessories grouped under their unit for display only; ₹0 repair parts are not sales
+
+**Decision:** `sales.bundled_with_sale_id` links a standalone accessory line to the unit sold in the same cart (only when the cart has exactly one unit) so the Sales Ledger shows them together. It is a **view link only** — each accessory stays its own sale row and its own GST line; filing treatment is still decided per row in GST step 6 (`invoice_items.bundled_into_item_id`). Separately, a repair part with no price (free replacement, or the ₹0 "Service and Maintenance Labor" placeholder) no longer creates a sales row: stock still moves for physical parts and the job keeps its `repair_job_parts` row (`sale_id` null); the labor charge is created at Mark Done only when `amount_charged > 0`.
+
+**Why:** the owner wants one visible group per Zoho invoice without any change to what is filed, and a ₹0 ledger row for a repair that may never be chargeable is noise.

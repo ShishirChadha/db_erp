@@ -267,6 +267,15 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Sale(s) were created but recording payment failed: ${phaseCFailure}. The whole cart was rolled back.` }, { status: 500 })
   }
 
+  // Group for display: standalone accessory lines sold in the same cart as exactly one
+  // unit belong to that unit (several units = ambiguous, left ungrouped). This is a view
+  // link only -- GST filing is untouched (see invoice_items.bundled_into_item_id).
+  const unitSales = committed.filter((c) => c.saleRow.asset_ledger_id)
+  const looseAccessories = committed.filter((c) => !c.saleRow.asset_ledger_id && c.saleRow.accessory_id)
+  if (unitSales.length === 1 && looseAccessories.length > 0) {
+    await supabaseAdmin.from('sales').update({ bundled_with_sale_id: unitSales[0].id }).in('id', looseAccessories.map((c) => c.id))
+  }
+
   await markSourceDocumentItemConverted(source_document_item_id, committed[0].id)
 
   const saleIds = committed.map((c) => c.id)

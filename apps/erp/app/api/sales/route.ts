@@ -427,6 +427,38 @@ export async function GET(req: NextRequest) {
     return withName
   })
 
+  // Display grouping (sales.bundled_with_sale_id): attach each unit's linked accessory
+  // rows, and each accessory's unit, so the ledger can show them together. View-only --
+  // every row stays its own sale and its own GST line.
+  {
+    const pageIds = result.map((r: any) => r.id)
+    const parentIds = [...new Set(result.map((r: any) => r.bundled_with_sale_id).filter(Boolean))] as string[]
+    const [{ data: childRows }, { data: parentRows }] = await Promise.all([
+      chunkedIn<any>(pageIds, chunk =>
+        supabaseAdmin.from('sales').select('id, bundled_with_sale_id, accessory_id, accessory_quantity, sale_total, is_deleted').in('bundled_with_sale_id', chunk)
+      ),
+      chunkedIn<any>(parentIds, chunk =>
+        supabaseAdmin.from('sales').select('id, asset_number, serial_number').in('id', chunk)
+      ),
+    ])
+    const childSkuIds = [...new Set((childRows || []).map((c: any) => c.accessory_id).filter(Boolean))] as string[]
+    const { data: childSkus } = await chunkedIn<any>(childSkuIds, chunk =>
+      supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description').in('id', chunk)
+    )
+    const childSkuById = new Map((childSkus || []).map((x: any) => [x.id, x]))
+    const parentById = new Map((parentRows || []).map((x: any) => [x.id, x]))
+    for (const r of result as any[]) {
+      r.bundle_children = (childRows || [])
+        .filter((c: any) => c.bundled_with_sale_id === r.id && !c.is_deleted)
+        .map((c: any) => {
+          const k: any = childSkuById.get(c.accessory_id)
+          return { id: c.id, name: k?.sku_description || k?.full_sku_code || 'Accessory', quantity: c.accessory_quantity || 1, sale_total: c.sale_total || 0 }
+        })
+      const par: any = r.bundled_with_sale_id ? parentById.get(r.bundled_with_sale_id) : null
+      r.bundle_parent = par ? { id: par.id, label: par.asset_number || (par.serial_number ? `SN: ${par.serial_number}` : 'main item') } : null
+    }
+  }
+
   // sold_by is already a plain name (see custom_options 'staff_names') -- no join needed.
   // Only re-sort in JS when the DB couldn't already do it above (a derived/enriched
   // column) -- a native-column sort was already applied and paginated in SQL.

@@ -79,6 +79,8 @@ interface Sale {
   ssd?: string | null;
   bundled_accessories_display?: { name: string; quantity: number; unit_price: number; hsn_code?: string | null }[];
   payment_date?: string | null;
+  bundle_children?: { id: string; name: string; quantity: number; sale_total: number }[];
+  bundle_parent?: { id: string; label: string } | null;
 }
 
 // An asset_number only ever exists once a real PO has been attached (see
@@ -419,6 +421,21 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
         </Field>
         {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
         <Field label="E-way Bill"><EwayBillField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
+        {sale.bundle_parent && (
+          <Field label="Sold With">{sale.bundle_parent.label}</Field>
+        )}
+        {sale.bundle_children && sale.bundle_children.length > 0 && (
+          <Field label="Also on this sale">
+            <div className="space-y-0.5">
+              {sale.bundle_children.map((c) => (
+                <div key={c.id} className="flex items-baseline justify-between gap-2">
+                  <span>{c.name}{c.quantity > 1 ? ` ×${c.quantity}` : ""}</span>
+                  <span className="tabular-nums text-muted-foreground whitespace-nowrap">{c.sale_total > 0 ? `₹${c.sale_total.toFixed(2)}` : "Free"}</span>
+                </div>
+              ))}
+            </div>
+          </Field>
+        )}
         {sale.bundled_accessories_display && sale.bundled_accessories_display.length > 0 && (
           <Field label="Bundled Accessories">
             <div className="space-y-0.5">
@@ -482,7 +499,11 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
           <p className="text-xs text-muted-foreground truncate">{sale.customer_summary.contact_person}</p>
         )}
         <div className="flex items-baseline justify-between gap-2 mt-1">
-          <p className="text-xs text-muted-foreground truncate">{item(sale)}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {item(sale)}
+            {sale.bundle_parent && <span> · with {sale.bundle_parent.label}</span>}
+            {sale.bundle_children && sale.bundle_children.length > 0 && <span> · +{sale.bundle_children.length} accessor{sale.bundle_children.length === 1 ? "y" : "ies"}</span>}
+          </p>
           <div className="flex items-center gap-1.5 shrink-0">
             {accountAbbrev(sale.payment_account) && (
               <span className="text-[10px] font-semibold tracking-wide px-1.5 py-0.5 rounded bg-muted text-muted-foreground" title={sale.payment_account ?? undefined}>

@@ -3,6 +3,7 @@ import { resolveEntityKey } from './invoice-finalize'
 import { reverseSaleInventoryEffects } from './sales-entry'
 import { CartItemInput, BaseSaleFields, validateCartItems, processSingleSaleItem } from './sales-cart'
 import { insertAccessoryMovement } from './accessory-movements'
+import { NON_STOCK_CATEGORIES } from './sku-categories'
 
 export async function generateRepairJobNumber(): Promise<string> {
   const { data, error } = await supabaseAdmin.rpc('generate_repair_job_number')
@@ -53,8 +54,40 @@ export async function consumeRepairParts(input: {
   | { ok: true; saleIds: string[] }
   | { ok: false; status: number; message: string; itemErrors?: Array<{ index: number; error: string }> }
 > {
-  const { jobId, jobNumber, customerId, customerName, paymentAccount, gstPercent, saleDate, parts, sessionUserId } = input
+  const { jobId, jobNumber, customerId, customerName, paymentAccount, gstPercent, saleDate, sessionUserId } = input
+  let parts = input.parts
   if (parts.length === 0) return { ok: true, saleIds: [] }
+
+  // A part with no price (a free replacement, or the ₹0 "Service and Maintenance Labor"
+  // placeholder) is not a sale -- a ₹0 Sales Ledger row would only be noise, and the
+  // labor charge itself is created at Mark Done from amount_charged. Stock still moves
+  // for a physical part, and the job's history keeps the row (sale_id null), exactly
+  // like the internal no-customer path below. Only priced parts continue as sales.
+  const unbilled = parts.filter((p) => !(p.unit_price > 0))
+  if (unbilled.length > 0) {
+    const { data: skuRows } = await supabaseAdmin.from('sku_master').select('id, category').in('id', unbilled.map((p) => p.sku_id))
+    const categoryById = new Map((skuRows || []).map((s: any) => [s.id, s.category]))
+    for (const p of unbilled) {
+      if (!NON_STOCK_CATEGORIES.includes(categoryById.get(p.sku_id))) {
+        const { error: moveErr } = await insertAccessoryMovement({
+          skuId: p.sku_id,
+          movementType: 'adjustment',
+          quantityChange: -p.quantity,
+          notes: `Used in repair job ${jobNumber} (no charge)`,
+          createdBy: sessionUserId,
+        })
+        if (moveErr) return { ok: false, status: 400, message: moveErr.message }
+      }
+      await supabaseAdmin.from('repair_job_parts').insert({
+        repair_job_id: jobId,
+        sku_id: p.sku_id,
+        quantity: p.quantity,
+        sale_id: null,
+      })
+    }
+    parts = parts.filter((p) => p.unit_price > 0)
+    if (parts.length === 0) return { ok: true, saleIds: [] }
+  }
 
   const cartItems: CartItemInput[] = parts.map((p) => ({
     accessory_id: p.sku_id,
