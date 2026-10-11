@@ -241,6 +241,34 @@ export async function POST(req: NextRequest) {
       lines = await matchGstr2b(entity_key, period_start, period_end, rows)
     }
 
+    // A plain re-upload creates a brand new import (unlike Recheck, which
+    // updates one in place) -- so without this, every re-upload reset every
+    // Resolve/Ignore decision on the period, the same bug Recheck had before
+    // it carried resolutions forward. Look up the most recent PRIOR import
+    // for this exact entity/period/kind and carry forward any resolution
+    // whose invoice still has the same verdict; a verdict that changed is
+    // left unresolved for a fresh look, same rule as Recheck.
+    const { data: priorImport } = await supabaseAdmin
+      .from('gst_recon_imports')
+      .select('id')
+      .eq('entity_key', entity_key).eq('kind', kind)
+      .eq('period_start', period_start).eq('period_end', period_end)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (priorImport) {
+      const { data: priorLines } = await supabaseAdmin
+        .from('gst_recon_lines')
+        .select('doc_number, match_status, resolution, resolution_note, resolved_by, resolved_at')
+        .eq('import_id', priorImport.id).not('resolution', 'is', null)
+      const priorByKey = new Map((priorLines ?? []).map((l: any) => [docNumberKey(l.doc_number), l]))
+      lines = lines.map((l: any) => {
+        const prior = priorByKey.get(docNumberKey(l.doc_number))
+        if (!prior || prior.match_status !== l.match_status) return l
+        return { ...l, resolution: prior.resolution, resolution_note: prior.resolution_note, resolved_by: prior.resolved_by, resolved_at: prior.resolved_at }
+      })
+    }
+
     const { data: imp, error: iErr } = await supabaseAdmin
       .from('gst_recon_imports')
       .insert({

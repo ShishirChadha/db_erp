@@ -78,17 +78,25 @@ export async function matchZohoInvoices(
 
   // Some Zoho exports are line-item level (one CSV row per invoice LINE, not
   // per invoice) -- a 2-line invoice then produces 2 rows with the same
-  // invoice number. Crucially, Zoho repeats the INVOICE-LEVEL totals
-  // (SubTotal/Tax/Total) identically on every one of those rows -- it is not
-  // splitting the amount across lines -- so summing them (an earlier version
-  // of this fix did exactly that) multiplies every multi-line invoice's
-  // total by its line count instead of fixing anything. The correct
-  // collapse is to keep the first row per invoice number and discard the
-  // rest, since each one already carries the invoice's full totals.
+  // invoice number. Two DIFFERENT things are true about what's repeated on
+  // those rows, confirmed against a real multi-line invoice PDF
+  // (DBI2026/27-00731, 4 items): SubTotal and Total are the INVOICE-LEVEL
+  // figures, printed identically on every row -- summing them (an earlier
+  // version of this fix did) multiplies the total by the line count. But
+  // IGST/CGST/SGST/Cess are PER-LINE amounts (₹5,220 / ₹5,940 / ₹3,420 /
+  // ₹450 on that invoice) that only add up to the real ₹15,030 total tax
+  // when summed -- taking just the first row's tax (a later version of this
+  // fix did) silently reports only one line's tax as the whole invoice's.
+  // So: first row's subtotal/total, but every row's tax summed.
   const grouped = new Map<string, ZohoInvoiceRow>()
   for (const r of rows) {
     const gkey = docNumberKey(r.doc_number) || r.doc_number || Math.random().toString()
-    if (!grouped.has(gkey)) grouped.set(gkey, r)
+    const existing = grouped.get(gkey)
+    if (!existing) { grouped.set(gkey, { ...r }); continue }
+    existing.cgst = (Number(existing.cgst) || 0) + (Number(r.cgst) || 0)
+    existing.sgst = (Number(existing.sgst) || 0) + (Number(r.sgst) || 0)
+    existing.igst = (Number(existing.igst) || 0) + (Number(r.igst) || 0)
+    existing.cess = (Number(existing.cess) || 0) + (Number(r.cess) || 0)
   }
   const groupedRows = [...grouped.values()]
 
