@@ -13,7 +13,7 @@ sources:
   - apps/web/lib/order-to-sale.ts
   - apps/web/lib/upgrades.ts
   - apps/web/components/UpgradeSelector.tsx
-updated: 2026-10-06
+updated: 2026-10-12
 ---
 
 ## What this is
