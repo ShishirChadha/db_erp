@@ -15,6 +15,17 @@ export const BUSINESS_ADDRESS_LINES = [
 export const BUSINESS_ADDRESS_SINGLE_LINE =
   "9th Floor, T-3 Building, Golden I, Unit No. 915, Plot No. 11, opposite D-Mart, Tech Zone IV, Greater Noida, Uttar Pradesh 201306";
 
+// Structured form of the address above, for schema.org markup -- one place, so
+// the Organization and LocalBusiness JSON-LD can never disagree with the footer.
+export const BUSINESS_POSTAL_ADDRESS = {
+  "@type": "PostalAddress",
+  streetAddress: "9th Floor, T-3 Building, Golden I, Unit No. 915, Plot No. 11, opposite D-Mart, Tech Zone IV",
+  addressLocality: "Greater Noida",
+  addressRegion: "Uttar Pradesh",
+  postalCode: "201306",
+  addressCountry: "IN",
+} as const;
+
 export const GOOGLE_MAPS_EMBED_SRC =
   "https://maps.google.com/maps?q=" +
   encodeURIComponent("Golden I, Tech Zone IV, Greater Noida West") +

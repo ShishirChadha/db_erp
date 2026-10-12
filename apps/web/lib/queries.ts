@@ -202,6 +202,26 @@ export const getCategoryProductCounts = cache(async (): Promise<Record<string, n
   return counts
 })
 
+// Every published product's photos, primary first -- for the Merchant Center
+// feed (which wants the main image plus extras for all products at once).
+export const getAllProductImages = cache(async (): Promise<Record<string, string[]>> => {
+  const supabase = createPublicSupabaseClient()
+  const bySku: Record<string, string[]> = {}
+  const pageSize = 1000
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await supabase
+      .from('public_product_images')
+      .select('sku_id, storage_path')
+      .order('is_primary', { ascending: false })
+      .order('sort_order', { ascending: true })
+      .range(from, from + pageSize - 1)
+    const batch = (data ?? []) as { sku_id: string; storage_path: string }[]
+    for (const row of batch) (bySku[row.sku_id] ??= []).push(row.storage_path)
+    if (batch.length < pageSize) break
+  }
+  return bySku
+})
+
 export const getProductBySlug = cache(async (slug: string): Promise<PublicProduct | null> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase

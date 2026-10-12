@@ -14,6 +14,8 @@ sources:
   - apps/erp/app/api/website-seo/revisions/route.ts
   - apps/web/lib/seo-data.ts
   - apps/web/lib/collections.ts
+  - apps/web/app/feeds/google.xml/route.ts
+  - apps/web/app/contact/page.tsx
   - apps/erp/app/api/website-seo/collections/route.ts
   - apps/erp/app/api/website-seo/images/bulk-fill/route.ts
 updated: 2026-10-12
@@ -53,6 +55,16 @@ unlock any of it.
   **Fill all missing with a default** gives each one "product name - photo N of M" and never overwrites existing text.
 - **History** — the version before every change or removal; Restore puts it back (and the current version is kept, so
   a restore can be undone).
+
+## Google Merchant Center feed
+
+`https://www.digitalbluez.com/feeds/google.xml` is a standard product feed (refreshed hourly) for Merchant Center's
+**Scheduled fetch** — no API access is needed to use it. It lists only **in-stock laptops, desktops, monitors and tablets**,
+all as `condition: refurbished`. Left out on purpose: accessories (the ERP doesn't record whether a cable or UPS is new
+or used, and the feed requires a condition), sold-out items, any sale/MRP price, and GTIN/MPN (`identifier_exists: no`).
+Shipping and return policies are not in the feed; set them in the Merchant Center account once the real policies exist.
+The `/contact` page carries `ComputerStore` markup with only the verified name, address, phone, email and links — opening
+hours, coordinates and ratings are intentionally absent until confirmed.
 
 ## Rules that matter
 

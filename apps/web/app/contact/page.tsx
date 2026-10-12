@@ -1,7 +1,15 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
 import { StoreLocation } from "@/components/StoreLocation";
-import { BUSINESS_EMAIL, WHATSAPP_NUMBER } from "@/lib/business-info";
+import {
+  BUSINESS_EMAIL,
+  BUSINESS_NAME,
+  BUSINESS_PHONE_TEL,
+  BUSINESS_POSTAL_ADDRESS,
+  SOCIAL_LINKS,
+  WHATSAPP_NUMBER,
+} from "@/lib/business-info";
+import { SITE_URL } from "@/lib/site-url";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
@@ -18,9 +26,27 @@ export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/contact");
 }
 
+// Only facts already published on this page. Deliberately NOT included until
+// the owner confirms them: opening hours, geo coordinates, price range. No
+// rating either -- self-published ratings are not eligible for rich results.
+const storeJsonLd = {
+  "@context": "https://schema.org",
+  "@type": "ComputerStore",
+  "@id": `${SITE_URL}/contact#store`,
+  name: BUSINESS_NAME,
+  url: SITE_URL,
+  logo: `${SITE_URL}/dbz-logo.png`,
+  image: `${SITE_URL}/dbz-logo.png`,
+  telephone: BUSINESS_PHONE_TEL,
+  email: BUSINESS_EMAIL,
+  address: BUSINESS_POSTAL_ADDRESS,
+  sameAs: [SOCIAL_LINKS.instagram, SOCIAL_LINKS.facebook, SOCIAL_LINKS.linkedin],
+};
+
 export default function ContactPage() {
   return (
     <main className="mx-auto max-w-4xl px-4 py-10 sm:px-6 lg:px-8">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(storeJsonLd) }} />
       <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Contact us</h1>
       <p className="mt-1 text-sm text-muted-foreground">We usually reply within a few hours.</p>
 

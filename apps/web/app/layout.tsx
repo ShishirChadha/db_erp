@@ -7,7 +7,7 @@ import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { SiteThemeAccent } from "@/components/SiteThemeAccent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { BUSINESS_PHONE_TEL, SOCIAL_LINKS } from "@/lib/business-info";
+import { BUSINESS_PHONE_TEL, BUSINESS_POSTAL_ADDRESS, SOCIAL_LINKS } from "@/lib/business-info";
 import { SITE_URL } from "@/lib/site-url";
 import { RecoveryRedirect } from "@/components/RecoveryRedirect";
 import { getSeoSettings } from "@/lib/seo-data";
@@ -84,14 +84,7 @@ const organizationJsonLd = {
   url: SITE_URL,
   logo: `${SITE_URL}/dbz-logo.png`,
   description: "Quality-checked refurbished laptops, desktops, monitors and accessories.",
-  address: {
-    "@type": "PostalAddress",
-    streetAddress: "9th Floor, T-3 Building, Golden I, Unit No. 915, Plot No. 11, opposite D-Mart, Tech Zone IV",
-    addressLocality: "Greater Noida",
-    addressRegion: "Uttar Pradesh",
-    postalCode: "201306",
-    addressCountry: "IN",
-  },
+  address: BUSINESS_POSTAL_ADDRESS,
   sameAs: [SOCIAL_LINKS.instagram, SOCIAL_LINKS.facebook, SOCIAL_LINKS.linkedin],
   contactPoint: {
     "@type": "ContactPoint",
