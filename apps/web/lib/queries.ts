@@ -52,6 +52,9 @@ export const getPublishedProducts = cache(async (opts: {
   search?: string
   limit?: number
   excludeId?: string
+  // Recommendation rails (related, cross-sell, home) should never point a
+  // visitor at something they cannot buy.
+  excludeSoldOut?: boolean
 } = {}): Promise<PublicProduct[]> => {
   const supabase = createPublicSupabaseClient()
   let query = supabase
@@ -71,6 +74,7 @@ export const getPublishedProducts = cache(async (opts: {
     )
   }
   if (opts.excludeId) query = query.neq('id', opts.excludeId)
+  if (opts.excludeSoldOut) query = query.neq('availability_bucket', 'sold_out')
   if (opts.limit) query = query.limit(opts.limit)
 
   const { data } = await query
@@ -154,8 +158,48 @@ export const getSiblingConfigurations = cache(async (opts: {
     .eq('brand', opts.brand)
     .eq('model_name', opts.modelName)
     .neq('id', opts.excludeId)
+    .neq('availability_bucket', 'sold_out')
     .order('web_price', { ascending: true })
   return (data ?? []) as unknown as PublicProduct[]
+})
+
+// PostgREST caps a single response at 1000 rows, so anything that must see the
+// whole catalogue (sitemap, category counts) pages through it instead of
+// silently truncating once the catalogue grows past that.
+async function fetchAllPublicProductRows<T>(columns: string): Promise<T[]> {
+  const supabase = createPublicSupabaseClient()
+  const pageSize = 1000
+  const rows: T[] = []
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await supabase
+      .from('public_products')
+      .select(columns)
+      .order('published_at', { ascending: false })
+      .range(from, from + pageSize - 1)
+    const batch = (data ?? []) as unknown as T[]
+    rows.push(...batch)
+    if (batch.length < pageSize) break
+  }
+  return rows
+}
+
+export interface SitemapProduct {
+  web_slug: string | null
+  published_at: string
+  availability_bucket: PublicProduct['availability_bucket']
+}
+
+export const getSitemapProducts = cache(async (): Promise<SitemapProduct[]> =>
+  fetchAllPublicProductRows<SitemapProduct>('web_slug, published_at, availability_bucket')
+)
+
+// Number of published products per category code -- used to keep empty
+// categories out of the sitemap and the footer.
+export const getCategoryProductCounts = cache(async (): Promise<Record<string, number>> => {
+  const rows = await fetchAllPublicProductRows<{ category: string }>('category')
+  const counts: Record<string, number> = {}
+  for (const row of rows) counts[row.category] = (counts[row.category] ?? 0) + 1
+  return counts
 })
 
 export const getProductBySlug = cache(async (slug: string): Promise<PublicProduct | null> => {

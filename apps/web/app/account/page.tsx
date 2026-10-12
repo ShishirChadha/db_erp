@@ -2,6 +2,9 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { getCustomerSession } from '@/lib/customer-session'
 import { LogoutButton } from '@/components/LogoutButton'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("My account");
 
 export default async function AccountPage() {
   const session = await getCustomerSession()

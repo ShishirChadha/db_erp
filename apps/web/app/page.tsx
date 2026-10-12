@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { getPublishedProducts, getCategories, getActiveBanners } from "@/lib/queries";
 import { categoryToSlug } from "@/lib/categories";
@@ -10,6 +11,19 @@ import { StoreLocation } from "@/components/StoreLocation";
 import { HomeBanners } from "@/components/HomeBanners";
 
 export const revalidate = 60;
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: {
+    siteName: "DigitalBluez",
+    type: "website",
+    locale: "en_IN",
+    url: "/",
+    title: "DigitalBluez — Refurbished Laptops, Desktops & Monitors",
+    description: "Quality-checked refurbished laptops, desktops, monitors and accessories, backed by warranty.",
+    images: [{ url: "/dbz-logo.png", alt: "DigitalBluez" }],
+  },
+};
 
 const HERO_CATEGORIES = [
   { code: "LAP", label: "Laptops" },
@@ -31,7 +45,7 @@ function discountPercent(price: number, marketPrice: number | null): number {
 
 export default async function HomePage() {
   const [products, templates, banners] = await Promise.all([
-    getPublishedProducts({ limit: 24 }),
+    getPublishedProducts({ limit: 24, excludeSoldOut: true }),
     getCategories(),
     getActiveBanners(),
   ]);
@@ -59,7 +73,7 @@ export default async function HomePage() {
           <p className="animate-fade-up inline-flex items-center rounded-full border border-brand-orange/30 bg-brand-orange/10 px-3 py-1 text-xs font-semibold text-brand-orange-dark">
             Quality-checked · 6-month warranty
           </p>
-          <h1 className="animate-fade-up mt-4 max-w-2xl text-4xl font-bold tracking-tight text-foreground sm:text-5xl" style={{ animationDelay: "60ms" }}>
+          <h1 className="mt-4 max-w-2xl text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
             Great tech, <span className="text-brand-orange">without</span> the new price.
           </h1>
           <p className="animate-fade-up mt-4 max-w-xl text-base text-muted-foreground sm:text-lg" style={{ animationDelay: "120ms" }}>

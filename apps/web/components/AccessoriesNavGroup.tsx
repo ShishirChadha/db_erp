@@ -49,8 +49,10 @@ export function AccessoriesNavGroup() {
           <path d="M6 9l6 6 6-6" />
         </svg>
       </button>
-      {open && (
-        <div className="absolute left-0 top-full z-50 mt-2 w-52 rounded-xl border border-border bg-card py-1.5 shadow-lg">
+      {/* Always rendered (just hidden while closed) so the accessory category
+          links exist in the server-rendered HTML for crawlers. */}
+      {(
+        <div className={`${open ? 'block' : 'hidden'} absolute left-0 top-full z-50 mt-2 w-52 rounded-xl border border-border bg-card py-1.5 shadow-lg`}>
           {ACCESSORY_LINKS.map((c) => (
             <Link
               key={c.code}

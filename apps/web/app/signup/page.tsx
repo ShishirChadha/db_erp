@@ -1,4 +1,7 @@
 import { SignupForm } from "@/components/SignupForm";
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Create account");
 
 export default function SignupPage() {
   return (

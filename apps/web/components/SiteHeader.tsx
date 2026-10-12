@@ -23,7 +23,7 @@ export function SiteHeader() {
       <div className="mx-auto flex max-w-6xl items-center gap-6 px-4 py-3 sm:px-6 lg:px-8">
         <MobileNav />
         <Link href="/" className="flex shrink-0 items-center gap-2">
-          <Image src="/dbz-mark.png" alt="" width={30} height={30} className="h-[30px] w-[30px]" priority />
+          <Image src="/dbz-mark.png" alt="" width={30} height={30} className="h-[30px] w-[30px]" />
           <span className="font-heading text-lg font-bold tracking-tight text-foreground">
             Digital<span className="text-brand-orange">Bluez</span>
           </span>

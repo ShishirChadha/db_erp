@@ -20,12 +20,38 @@ declare global {
 // here, so this warns the moment it is wrong in development.
 const GA_ID_SHAPE = /^G-[A-Z0-9]{10}$/;
 
+const CONSENT_GRANTED = {
+  analytics_storage: "granted",
+  ad_storage: "granted",
+  ad_user_data: "granted",
+  ad_personalization: "granted",
+};
+
+// Consent Mode update. Prefers the real window.gtag; if the inline script that
+// defines it has not run yet, falls back to pushing an `arguments` object onto
+// dataLayer (the only shape gtag.js interprets -- see handleAccept below).
+function grantConsent() {
+  if (typeof window.gtag === "function") {
+    window.gtag("consent", "update", CONSENT_GRANTED);
+    return;
+  }
+  window.dataLayer = window.dataLayer || [];
+  (function (..._args: unknown[]) {
+    // eslint-disable-next-line prefer-rest-params
+    window.dataLayer.push(arguments);
+  })("consent", "update", CONSENT_GRANTED);
+}
+
 export function Analytics() {
   const [consent, setConsent] = useState<"accepted" | "declined" | null>(null);
 
   useEffect(() => {
     const stored = localStorage.getItem(CONSENT_KEY);
     if (stored === "accepted" || stored === "declined") setConsent(stored);
+    // A returning visitor who already accepted must be re-granted on every
+    // page load: the default above is always 'denied', and the stored choice
+    // alone never told gtag about it.
+    if (stored === "accepted") grantConsent();
   }, []);
 
   const handleAccept = () => {
@@ -38,7 +64,7 @@ export function Analytics() {
     // entries, so the consent grant was silently discarded and every visitor
     // stayed in the cookieless/denied state even after clicking Accept. That
     // is why demographics never populated. Do not reintroduce a local shim.
-    window.gtag?.("consent", "update", { analytics_storage: "granted", ad_storage: "granted" });
+    grantConsent();
   };
 
   const handleDecline = () => {
@@ -72,7 +98,7 @@ export function Analytics() {
       <Script id="ga-consent-default" strategy="beforeInteractive">
         {`window.dataLayer = window.dataLayer || [];
 function gtag(){dataLayer.push(arguments);}
-gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied' });`}
+gtag('consent', 'default', { analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied' });`}
       </Script>
       <Script
         src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}

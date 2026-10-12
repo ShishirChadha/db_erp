@@ -7,6 +7,7 @@ import { apiFetch } from '@/lib/api-client'
 import { downscaleImageFile } from '@/lib/client-image'
 import { SimpleModal } from '@/components/SimpleModal'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
+import { cleanSpecifications } from '@db/shared'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 
 const CONDITION_GRADES = ['Excellent', 'Very Good', 'Good', 'Fair']
@@ -70,7 +71,9 @@ export function SkuWebPublishDialog({
   const [warrantyLabel, setWarrantyLabel] = useState('')
   const { values: warrantyOptions } = useCustomOptions('warranty_label')
 
-  const defaultTitle = buildConfigSummary(sku.category, sku.specifications, templates) ||
+  // "No"/"N/A" specs are left out of the website title; the ERP's own
+  // summary elsewhere is unchanged.
+  const defaultTitle = buildConfigSummary(sku.category, cleanSpecifications(sku.specifications), templates) ||
     [sku.brand, sku.model_name].filter(Boolean).join(' ')
 
   useEffect(() => {

@@ -7,6 +7,9 @@ import { productDisplayTitle } from '@/lib/product-title'
 import { CheckoutForm } from '@/components/CheckoutForm'
 import { GuestCheckoutSummary } from '@/components/GuestCheckoutSummary'
 import { BuyNowCheckoutSummary } from '@/components/BuyNowCheckoutSummary'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Checkout");
 
 export const dynamic = 'force-dynamic'
 

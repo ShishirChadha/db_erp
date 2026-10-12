@@ -3,6 +3,9 @@ import Link from 'next/link'
 import { createServerSupabaseClient } from '@db/db/server'
 import { getCustomerSession } from '@/lib/customer-session'
 import { formatCurrency } from '@db/shared'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("My orders");
 
 export const dynamic = 'force-dynamic'
 

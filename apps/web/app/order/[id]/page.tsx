@@ -7,6 +7,9 @@ import { formatCurrency } from '@db/shared'
 import { OrderStatusPoller } from '@/components/OrderStatusPoller'
 import { ReservationCountdown } from '@/components/ReservationCountdown'
 import { TrackPurchase } from '@/components/TrackPurchase'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Your order");
 
 export const dynamic = 'force-dynamic'
 

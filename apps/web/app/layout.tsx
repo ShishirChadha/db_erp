@@ -7,7 +7,8 @@ import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { SiteThemeAccent } from "@/components/SiteThemeAccent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { BUSINESS_PHONE_TEL, GOOGLE_RATING, GOOGLE_REVIEW_COUNT, SOCIAL_LINKS } from "@/lib/business-info";
+import { BUSINESS_PHONE_TEL, SOCIAL_LINKS } from "@/lib/business-info";
+import { SITE_URL } from "@/lib/site-url";
 import { getActiveBanners } from "@/lib/queries";
 import { resolveSiteAccent } from "@/lib/banner-themes";
 import { WishlistProvider } from "@/components/WishlistProvider";
@@ -29,8 +30,6 @@ const ibmPlexSans = IBM_Plex_Sans({
   weight: ["400", "500", "600"],
 });
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
-
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
@@ -42,9 +41,12 @@ export const metadata: Metadata = {
   openGraph: {
     siteName: "DigitalBluez",
     type: "website",
+    locale: "en_IN",
+    images: [{ url: "/dbz-logo.png", alt: "DigitalBluez" }],
   },
   twitter: {
     card: "summary_large_image",
+    images: ["/dbz-logo.png"],
   },
   // Only rendered if the env var is set (Next.js omits the meta tag when the
   // value is undefined) -- set once from the HTML-tag value Search Console
@@ -73,11 +75,6 @@ const organizationJsonLd = {
     postalCode: "201306",
     addressCountry: "IN",
   },
-  aggregateRating: {
-    "@type": "AggregateRating",
-    ratingValue: GOOGLE_RATING,
-    reviewCount: GOOGLE_REVIEW_COUNT,
-  },
   sameAs: [SOCIAL_LINKS.instagram, SOCIAL_LINKS.facebook, SOCIAL_LINKS.linkedin],
   contactPoint: {
     "@type": "ContactPoint",
@@ -91,11 +88,6 @@ const websiteJsonLd = {
   "@type": "WebSite",
   name: "DigitalBluez",
   url: SITE_URL,
-  potentialAction: {
-    "@type": "SearchAction",
-    target: `${SITE_URL}/search?q={search_term_string}`,
-    "query-input": "required name=search_term_string",
-  },
 };
 
 export default async function RootLayout({
@@ -107,7 +99,7 @@ export default async function RootLayout({
   const siteAccent = resolveSiteAccent(activeBanners);
 
   return (
-    <html lang="en" className={`${archivo.variable} ${ibmPlexSans.variable} h-full antialiased`}>
+    <html lang="en-IN" className={`${archivo.variable} ${ibmPlexSans.variable} h-full antialiased`}>
       <body className="flex min-h-full flex-col bg-background font-sans text-foreground">
         <script
           type="application/ld+json"

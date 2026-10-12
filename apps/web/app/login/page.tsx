@@ -1,4 +1,7 @@
 import { LoginForm } from "@/components/LoginForm";
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Log in");
 
 export default function LoginPage() {
   return (

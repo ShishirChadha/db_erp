@@ -17,6 +17,8 @@ import {
 import { productImageUrl } from "@/lib/image-url";
 import { productDisplayTitle } from "@/lib/product-title";
 import { categoryToSlug } from "@/lib/categories";
+import { SITE_URL, absoluteUrl } from "@/lib/site-url";
+import { isPlaceholderValue, isRefurbishedMachine } from "@/lib/seo";
 import { ProductGallery } from "@/components/ProductGallery";
 import { PriceTag } from "@/components/PriceTag";
 import { AvailabilityBadge } from "@/components/AvailabilityBadge";
@@ -46,8 +48,6 @@ export async function generateStaticParams() {
   return products.filter((p) => p.web_slug).map((p) => ({ slug: p.web_slug as string }));
 }
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
-
 const SCHEMA_AVAILABILITY: Record<string, string> = {
   in_stock: "https://schema.org/InStock",
   low_stock: "https://schema.org/LimitedAvailability",
@@ -60,7 +60,7 @@ function specRows(specifications: Record<string, unknown> | null, fieldSchema: a
   return fields
     .filter((f: any) => f.name !== "brand" && f.name !== "model")
     .map((f: any) => ({ label: f.label || f.name, value: specs[f.name] }))
-    .filter((row: any) => row.value !== undefined && row.value !== null && row.value !== "");
+    .filter((row: any) => !isPlaceholderValue(row.value));
 }
 
 export async function generateMetadata({
@@ -74,15 +74,28 @@ export async function generateMetadata({
 
   const templates = await getCategories();
   const title = productDisplayTitle(product, templates);
+  // The display title already says "Certified Refurbished" for machines, so
+  // don't prefix the fallback description with a second "Refurbished".
   const description =
-    product.web_description || `Refurbished ${title}, quality-checked and backed by warranty.`;
+    product.web_description ||
+    `${title}, quality-checked and backed by warranty. Buy online from DigitalBluez, Greater Noida.`;
   const ogImage = product.primary_image_path ? [productImageUrl(product.primary_image_path)] : undefined;
 
   return {
     title,
     description,
     alternates: { canonical: `/product/${slug}` },
-    openGraph: { title, description, images: ogImage },
+    // openGraph here replaces the root layout's object entirely, so siteName
+    // and type have to be restated.
+    openGraph: {
+      title,
+      description,
+      siteName: "DigitalBluez",
+      type: "website",
+      locale: "en_IN",
+      url: `/product/${slug}`,
+      images: ogImage,
+    },
   };
 }
 
@@ -95,7 +108,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     getProductImages(product.id),
     getCategories(),
     isSerializedCategory(product.category) ? getProductUnits(product.id) : Promise.resolve([]),
-    getPublishedProducts({ category: product.category, excludeId: product.id, limit: 8 }),
+    getPublishedProducts({ category: product.category, excludeId: product.id, limit: 8, excludeSoldOut: true }),
     getCrossSellCategories(product.category),
     product.brand && product.model_name
       ? getSiblingConfigurations({
@@ -110,7 +123,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   // Owner-configured category->category mapping (Settings -> Website Admin ->
   // Cross-sell), replacing a hardcoded category='ACC' pull.
   const accessories = crossSellCategories.length > 0
-    ? await getPublishedProducts({ category: crossSellCategories, excludeId: product.id, limit: 4 })
+    ? await getPublishedProducts({ category: crossSellCategories, excludeId: product.id, limit: 4, excludeSoldOut: true })
     : [];
 
   const template = templates.find((t) => t.category === product.category);
@@ -158,6 +171,10 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   const relatedOthers = related.filter((p) => p.brand !== product.brand);
   const relatedProducts = [...relatedSameBrand, ...relatedOthers].slice(0, 4);
 
+  // Every photo (primary first), absolute -- JSON-LD must not use relative URLs.
+  const imageUrls = images.map((img) => productImageUrl(img.storage_path));
+  if (imageUrls.length === 0 && product.primary_image_path) imageUrls.push(productImageUrl(product.primary_image_path));
+
   const productJsonLd = {
     "@context": "https://schema.org",
     "@type": "Product",
@@ -165,8 +182,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     description: product.web_description || undefined,
     sku: product.full_sku_code,
     brand: product.brand ? { "@type": "Brand", name: product.brand } : undefined,
-    image: product.primary_image_path ? productImageUrl(product.primary_image_path) : undefined,
-    itemCondition: "https://schema.org/RefurbishedCondition",
+    image: imageUrls.length > 0 ? imageUrls : undefined,
     additionalProperty: rows.map((row: { label: string; value: unknown }) => ({
       "@type": "PropertyValue",
       name: row.label,
@@ -176,8 +192,11 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
       "@type": "Offer",
       priceCurrency: "INR",
       price: product.web_price,
+      // Only whole machines are sold as refurbished; accessories/components
+      // omit the condition rather than claim one that is not established.
+      ...(isRefurbishedMachine(product.category) ? { itemCondition: "https://schema.org/RefurbishedCondition" } : {}),
       availability: SCHEMA_AVAILABILITY[product.availability_bucket],
-      url: `/product/${slug}`,
+      url: productUrl,
     },
   };
 
@@ -185,9 +204,9 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "/" },
-      { "@type": "ListItem", position: 2, name: template?.display_name || product.category, item: `/${categorySlug}` },
-      { "@type": "ListItem", position: 3, name: title, item: `/product/${slug}` },
+      { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") },
+      { "@type": "ListItem", position: 2, name: template?.display_name || product.category, item: absoluteUrl(`/${categorySlug}`) },
+      { "@type": "ListItem", position: 3, name: title, item: productUrl },
     ],
   };
 
@@ -287,14 +306,14 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             {rows.length > 0 && (
               <div className="mt-8">
                 <h2 className="mb-3 text-sm font-bold text-foreground">Specifications</h2>
-                <div className="grid grid-cols-2 gap-2">
+                <dl className="grid grid-cols-2 gap-2">
                   {rows.map((row: any) => (
                     <div key={row.label} className="rounded-lg border border-border bg-secondary/30 px-3 py-2.5">
                       <dt className="text-xs text-muted-foreground">{row.label}</dt>
                       <dd className="mt-0.5 text-sm font-semibold text-foreground">{String(row.value)}</dd>
                     </div>
                   ))}
-                </div>
+                </dl>
               </div>
             )}
 

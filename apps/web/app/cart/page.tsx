@@ -7,6 +7,9 @@ import { productDisplayTitle } from '@/lib/product-title'
 import { CartItemRow } from '@/components/CartItemRow'
 import { TrackViewCart } from '@/components/TrackViewCart'
 import { GuestCart } from '@/components/GuestCart'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Your cart");
 
 export const dynamic = 'force-dynamic'
 

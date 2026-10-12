@@ -9,6 +9,8 @@ import { ListingToolbar } from "@/components/ListingToolbar";
 import { Pagination } from "@/components/Pagination";
 import { getFilterFacets, filterProducts, applySort, parseSort, parseFiltersFromSearchParams } from "@/lib/product-filters";
 import { productDisplayTitle } from "@/lib/product-title";
+import { absoluteUrl } from "@/lib/site-url";
+import { categoryHeading, categoryPluralLabel } from "@/lib/seo";
 
 export const revalidate = 60;
 
@@ -38,17 +40,30 @@ async function resolveCategory(categorySlug: string) {
 
 export async function generateMetadata({
   params,
+  searchParams,
 }: {
   params: Promise<{ categorySlug: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }): Promise<Metadata> {
   const { categorySlug } = await params;
+  const { page } = await searchParams;
   const category = await resolveCategory(categorySlug);
   if (!category) return {};
 
+  const heading = categoryHeading(category.code, category.displayName);
+  const rawPage = Array.isArray(page) ? page[0] : page;
+  const pageNumber = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
+  const isMachine = heading.startsWith("Refurbished");
+
   return {
-    title: `Refurbished ${category.displayName}s`,
-    description: `Browse quality-checked refurbished ${category.displayName.toLowerCase()}s, backed by warranty.`,
-    alternates: { canonical: `/${categorySlug}` },
+    // Paginated pages get their own title and a self-referencing canonical, so
+    // products that only appear on page 2+ stay discoverable. Sort/filter
+    // parameters are still folded into the base canonical.
+    title: pageNumber > 1 ? `${heading} — Page ${pageNumber}` : heading,
+    description: isMachine
+      ? `Browse quality-checked ${heading.toLowerCase()}, tested and backed by warranty. Buy online from DigitalBluez, Greater Noida.`
+      : `Browse ${heading.toLowerCase()} from DigitalBluez, Greater Noida. Quality-checked stock, backed by warranty.`,
+    alternates: { canonical: pageNumber > 1 ? `/${categorySlug}?page=${pageNumber}` : `/${categorySlug}` },
   };
 }
 
@@ -106,13 +121,19 @@ export default async function CategoryPage({
 
   const facets = isFilterable ? getFilterFacets(allProducts) : null;
   const totalPages = Math.max(1, Math.ceil(totalCount / LISTING_PAGE_SIZE));
+  const heading = categoryHeading(category.code, category.displayName);
+  const label = categoryPluralLabel(category.code, category.displayName);
+
+  // A page number past the end is a soft 404 (200 + "no products"); return a
+  // real 404 instead. Page 1 of an empty category is still a valid page.
+  if (currentPage > totalPages) notFound();
 
   const breadcrumbJsonLd = {
     "@context": "https://schema.org",
     "@type": "BreadcrumbList",
     itemListElement: [
-      { "@type": "ListItem", position: 1, name: "Home", item: "/" },
-      { "@type": "ListItem", position: 2, name: `${category.displayName}s`, item: `/${categorySlug}` },
+      { "@type": "ListItem", position: 1, name: "Home", item: absoluteUrl("/") },
+      { "@type": "ListItem", position: 2, name: label, item: absoluteUrl(`/${categorySlug}`) },
     ],
   };
 
@@ -122,7 +143,7 @@ export default async function CategoryPage({
     itemListElement: products.map((product, i) => ({
       "@type": "ListItem",
       position: i + 1,
-      url: `/product/${product.web_slug}`,
+      url: absoluteUrl(`/product/${product.web_slug}`),
       name: productDisplayTitle(product, category.templates),
     })),
   };
@@ -144,11 +165,11 @@ export default async function CategoryPage({
       <nav className="mb-4 text-sm text-muted-foreground">
         <Link href="/" className="hover:text-brand-orange">Home</Link>
         <span className="mx-1.5">/</span>
-        <span className="text-foreground">{category.displayName}s</span>
+        <span className="text-foreground">{label}</span>
       </nav>
       <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-border pb-5">
         <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          Refurbished {category.displayName}s
+          {heading}
         </h1>
         <div className="flex items-center gap-4">
           <p className="text-sm text-muted-foreground">{totalCount} product{totalCount !== 1 ? "s" : ""}</p>
@@ -164,13 +185,13 @@ export default async function CategoryPage({
             <p className="rounded-md border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
               {isFilterable && allProducts.length > 0
                 ? "No products match your selected filters — try clearing one or two."
-                : `No ${category.displayName.toLowerCase()}s published yet — check back soon.`}
+                : `No ${label.toLowerCase()} available right now — check back soon.`}
             </p>
           ) : (
             <>
               <div className="stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4">
-                {products.map((product) => (
-                  <ProductCard key={product.id} product={product} templates={category.templates} />
+                {products.map((product, index) => (
+                  <ProductCard key={product.id} product={product} templates={category.templates} priority={index < 4} />
                 ))}
               </div>
               <Pagination

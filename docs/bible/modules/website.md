@@ -112,6 +112,10 @@ laptops/desktops/monitors/tablets (skipped if `web_title` already says
 *not* applied to GA4 `item_name` (keeps historical analytics comparable) or
 to invoices (a tax document, not a marketing surface).
 
+Customer-facing titles, alt text and JSON-LD drop placeholder spec values ("No", "N/A") via `@db/shared`'s `placeholder-values.ts`, and the helper also cleans an older stored `web_title` that was auto-filled with them. Accessories are never labelled "Certified Refurbished" or marked `RefurbishedCondition` in JSON-LD; only LAP/DES/MON/TAB are.
+
+The sitemap (`apps/web/app/sitemap.ts`) lists only categories that have a mapped slug in `lib/categories.ts` and at least one published product, and includes `/blog` only once a post exists. Cart, checkout, login, signup, account and order pages are `noindex`.
+
 ## Search: products, then blog, then related — in that order
 
 `GET /api/search` backs the header suggestion panel and `/search`. Always

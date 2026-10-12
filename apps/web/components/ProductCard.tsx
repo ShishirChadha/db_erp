@@ -12,9 +12,12 @@ import { WishlistButton } from './WishlistButton'
 export function ProductCard({
   product,
   templates,
+  priority = false,
 }: {
   product: PublicProduct
   templates: ConfigSummaryTemplate[]
+  // First row(s) of a listing are above the fold and likely the LCP element.
+  priority?: boolean
 }) {
   const title = productDisplayTitle(product, templates)
 
@@ -35,6 +38,8 @@ export function ProductCard({
             alt={title}
             fill
             sizes="(min-width: 1280px) 25vw, (min-width: 640px) 33vw, 50vw"
+            loading={priority ? 'eager' : undefined}
+            fetchPriority={priority ? 'high' : undefined}
             className="object-contain transition-transform duration-300 group-hover:scale-[1.04]"
           />
         ) : (

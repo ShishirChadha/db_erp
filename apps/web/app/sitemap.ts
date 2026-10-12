@@ -1,18 +1,16 @@
 import type { MetadataRoute } from "next";
-import { getPublishedProducts, getCategories, getPublishedBlogPosts } from "@/lib/queries";
-import { categoryToSlug } from "@/lib/categories";
+import { getSitemapProducts, getCategoryProductCounts, getPublishedBlogPosts } from "@/lib/queries";
+import { CATEGORY_SLUGS } from "@/lib/categories";
+import { SITE_URL } from "@/lib/site-url";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3001";
-
-// Was frozen at build time (no revalidate = never regenerated between deploys),
-// so newly-published/sold-out products silently drifted from what's actually
-// live. Matches the 60s ISR window the product/category pages themselves use.
+// Regenerated at most hourly; product/category pages themselves use a 60s ISR
+// window, so the sitemap can lag a new listing by up to an hour.
 export const revalidate = 3600;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [products, categories, posts] = await Promise.all([
-    getPublishedProducts(),
-    getCategories(),
+  const [products, categoryCounts, posts] = await Promise.all([
+    getSitemapProducts(),
+    getCategoryProductCounts(),
     getPublishedBlogPosts(),
   ]);
 
@@ -20,8 +18,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: SITE_URL, changeFrequency: "daily", priority: 1 },
     { url: `${SITE_URL}/about`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/contact`, changeFrequency: "monthly", priority: 0.5 },
-    { url: `${SITE_URL}/blog`, changeFrequency: "weekly", priority: 0.5 },
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.5 },
+    // The blog index is only worth crawling once it has something on it.
+    ...(posts.length > 0 ? [{ url: `${SITE_URL}/blog`, changeFrequency: "weekly" as const, priority: 0.5 }] : []),
   ];
 
   const blogEntries: MetadataRoute.Sitemap = posts.map((p) => ({
@@ -31,11 +30,17 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     priority: 0.4,
   }));
 
-  const categoryEntries: MetadataRoute.Sitemap = categories.map((c) => ({
-    url: `${SITE_URL}/${categoryToSlug(c.category)}`,
-    changeFrequency: "daily",
-    priority: 0.8,
-  }));
+  // Only categories that have a real route (a mapped slug) AND at least one
+  // published product. Previously every public_categories row was emitted,
+  // which put empty categories and unmapped codes (e.g. /service, a 404) in
+  // the sitemap.
+  const categoryEntries: MetadataRoute.Sitemap = Object.entries(CATEGORY_SLUGS)
+    .filter(([code]) => (categoryCounts[code] ?? 0) > 0)
+    .map(([, slug]) => ({
+      url: `${SITE_URL}/${slug}`,
+      changeFrequency: "daily",
+      priority: 0.8,
+    }));
 
   const productEntries: MetadataRoute.Sitemap = products
     .filter((p) => p.web_slug)

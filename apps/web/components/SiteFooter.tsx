@@ -1,6 +1,8 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { categoryToSlug } from '@/lib/categories'
+import { categoryToSlug, CATEGORY_SLUGS } from '@/lib/categories'
+import { categoryPluralLabel } from '@/lib/seo'
+import { getCategoryProductCounts } from '@/lib/queries'
 import { NewsletterForm } from './NewsletterForm'
 import {
   BUSINESS_ADDRESS_LINES,
@@ -11,14 +13,9 @@ import {
   SOCIAL_LINKS,
 } from '@/lib/business-info'
 
-const SHOP_LINKS = [
-  { code: 'LAP', label: 'Laptops' },
-  { code: 'DES', label: 'Desktops' },
-  { code: 'MON', label: 'Monitors' },
-  { code: 'TAB', label: 'Tablets' },
-  { code: 'ACC', label: 'Accessories' },
-  { code: 'ADP', label: 'Adapters / Chargers' },
-]
+// Whole machines first, then everything else; only categories that currently
+// have published products are linked, so no empty page is ever advertised.
+const SHOP_ORDER = ['LAP', 'DES', 'MON', 'TAB', 'ACC', 'ADP', 'RAM', 'SSD', 'KBD', 'MOUSE', 'CPU', 'GPU', 'CCTV', 'OTHER']
 
 const SOCIAL_ICONS = [
   {
@@ -49,7 +46,12 @@ const SOCIAL_ICONS = [
   },
 ]
 
-export function SiteFooter() {
+export async function SiteFooter() {
+  const counts = await getCategoryProductCounts()
+  const SHOP_LINKS = SHOP_ORDER.filter((code) => code in CATEGORY_SLUGS && (counts[code] ?? 0) > 0).map((code) => ({
+    code,
+    label: categoryPluralLabel(code, code),
+  }))
   return (
     <footer id="site-footer" className="mt-16 border-t border-border bg-secondary/40">
       <div className="border-b border-border">

@@ -1,4 +1,4 @@
-import { buildConfigSummary, type ConfigSummaryTemplate } from '@db/shared'
+import { buildConfigSummary, cleanSpecifications, stripPlaceholderSegments, type ConfigSummaryTemplate } from '@db/shared'
 
 // Categories that get the "Certified Refurbished" prefix on the storefront.
 // Owner's call (2026-10-06): laptops/desktops/monitors/tablets, not
@@ -29,8 +29,12 @@ export function productDisplayTitle(
   templates: ConfigSummaryTemplate[] = []
 ): string {
   const base =
-    product.web_title ||
-    buildConfigSummary(product.category, product.specifications, templates) ||
+    // A stored web_title may have been auto-filled with "... / No / ..." by the
+    // ERP publish dialog before placeholders were filtered there.
+    (product.web_title ? stripPlaceholderSegments(product.web_title) : '') ||
+    // "No"/"N/A" placeholder specs are dropped on the storefront only -- the
+    // ERP's own summary (shared builder) is unchanged.
+    buildConfigSummary(product.category, cleanSpecifications(product.specifications), templates) ||
     [product.brand, product.model_name].filter(Boolean).join(' ') ||
     'Product'
 

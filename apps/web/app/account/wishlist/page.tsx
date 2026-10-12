@@ -3,6 +3,9 @@ import { createServerSupabaseClient } from '@db/db/server'
 import { getCustomerSession } from '@/lib/customer-session'
 import { getCategories, type PublicProduct } from '@/lib/queries'
 import { ProductCard } from '@/components/ProductCard'
+import { privatePageMetadata } from "@/lib/seo";
+
+export const metadata = privatePageMetadata("Wishlist");
 
 export const dynamic = 'force-dynamic'
 
