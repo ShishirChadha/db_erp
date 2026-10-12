@@ -1,12 +1,22 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
 import { WHATSAPP_NUMBER, BUSINESS_EMAIL, BUYBACK_PERCENT, BUYBACK_WINDOW_MONTHS } from "@/lib/business-info";
 
-export const metadata: Metadata = {
+// Metadata can be overridden from the ERP (Settings -> Website SEO), so this
+// page is re-rendered periodically instead of frozen at build time.
+export const revalidate = 60;
+
+const baseMetadata: Metadata = {
   title: "Frequently Asked Questions",
   description: "Answers to common questions about buying refurbished laptops and desktops from DigitalBluez — warranty, returns, buyback, and payment.",
   alternates: { canonical: "/faq" },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/faq");
+}
 
 const FAQS = [
   {

@@ -1,14 +1,20 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
 import { getPublishedBlogPosts } from "@/lib/queries";
 
 export const revalidate = 60;
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   title: "Blog",
   description: "Buying guides and news from DigitalBluez.",
   alternates: { canonical: "/blog" },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/blog");
+}
 
 export default async function BlogPage() {
   const posts = await getPublishedBlogPosts();

@@ -9,7 +9,7 @@ sources:
   - apps/erp/next.config.ts
   - apps/web/next.config.ts
   - packages/db/src/**
-updated: 2026-10-01
+updated: 2026-10-12
 ---
 
 ## 1. System context

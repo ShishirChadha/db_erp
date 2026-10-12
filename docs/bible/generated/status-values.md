@@ -152,12 +152,21 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | replacement_jobs | status | replacement_jobs_status_check | `CHECK ((status = ANY (ARRAY['intake'::text, 'in_progress'::text, 'done'::text, 'cancelled'::text])))` |
 | sale_payments | amount | sale_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
 | sale_refunds | amount | sale_refunds_amount_check | `CHECK ((amount > (0)::numeric))` |
+| sales | bundled_with_sale_id | sales_bundled_with_not_self | `CHECK (((bundled_with_sale_id IS NULL) OR (bundled_with_sale_id <> id)))` |
 | sales | payment_account | sales_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | sales | payment_status | sales_payment_status_check | `CHECK ((payment_status = ANY (ARRAY['pending'::text, 'partial'::text, 'paid'::text])))` |
 | sales | sale_type | sales_sale_type_check | `CHECK ((sale_type = ANY (ARRAY['Cash'::text, 'GST'::text])))` |
 | sales_document_items | item_type | sales_document_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['sku'::text, 'accessory'::text, 'custom'::text])))` |
 | sales_documents | doc_type | sales_documents_doc_type_check | `CHECK ((doc_type = ANY (ARRAY['quotation'::text, 'proforma'::text])))` |
 | sales_documents | status | sales_documents_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'accepted'::text, 'rejected'::text, 'expired'::text, 'void'::text])))` |
+| seo_overrides | entity_type | seo_overrides_entity_type_check | `CHECK ((entity_type = ANY (ARRAY['product'::text, 'category'::text, 'static'::text, 'blog'::text])))` |
+| seo_overrides | status | seo_overrides_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
+| seo_redirects | from_path | seo_redirects_from_path_check | `CHECK ((from_path ~~ '/%'::text))` |
+| seo_redirects | from_path | seo_redirects_not_self | `CHECK ((from_path <> to_path))` |
+| seo_redirects | source | seo_redirects_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'auto'::text])))` |
+| seo_redirects | to_path | seo_redirects_to_path_check | `CHECK (((to_path ~~ '/%'::text) OR (to_path ~~ 'https://%'::text)))` |
+| seo_revisions | action | seo_revisions_action_check | `CHECK ((action = ANY (ARRAY['upsert'::text, 'delete'::text])))` |
+| seo_settings | id | seo_settings_id_check | `CHECK (id)` |
 | server_boot_events | shutdown_kind | server_boot_events_shutdown_kind_check | `CHECK ((shutdown_kind = ANY (ARRAY['power_loss'::text, 'clean_reboot'::text, 'clean_shutdown'::text, 'crash'::text, 'unknown'::text, 'first_boot'::text])))` |
 | server_commands | command | server_commands_command_check | `CHECK ((command = ANY (ARRAY['restart'::text, 'shutdown'::text])))` |
 | server_commands | status | server_commands_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'acknowledged'::text, 'done'::text, 'failed'::text])))` |

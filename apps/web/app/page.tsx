@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
 import { getPublishedProducts, getCategories, getActiveBanners } from "@/lib/queries";
 import { categoryToSlug } from "@/lib/categories";
@@ -12,7 +13,7 @@ import { HomeBanners } from "@/components/HomeBanners";
 
 export const revalidate = 60;
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   alternates: { canonical: "/" },
   openGraph: {
     siteName: "DigitalBluez",
@@ -24,6 +25,11 @@ export const metadata: Metadata = {
     images: [{ url: "/dbz-logo.png", alt: "DigitalBluez" }],
   },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/");
+}
 
 const HERO_CATEGORIES = [
   { code: "LAP", label: "Laptops" },

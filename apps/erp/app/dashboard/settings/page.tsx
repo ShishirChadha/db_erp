@@ -22,6 +22,7 @@ const ActiveSessionsManager = dynamic(() => import('@/components/ActiveSessionsM
 const BusinessProfileManager = dynamic(() => import('@/components/BusinessProfileManager'), { ssr: false })
 const TagsManager = dynamic(() => import('@/components/TagsManager'), { ssr: false })
 const WebsiteAdminManager = dynamic(() => import('@/components/WebsiteAdminManager'), { ssr: false })
+const WebsiteSeoManager = dynamic(() => import('@/components/WebsiteSeoManager'), { ssr: false })
 const FieldRedactionManager = dynamic(() => import('@/components/FieldRedactionManager'), { ssr: false })
 const DigestsManager = dynamic(() => import('@/components/DigestsManager'), { ssr: false })
 const MarketingSettingsManager = dynamic(() => import('@/components/MarketingSettingsManager'), { ssr: false })
@@ -67,6 +68,7 @@ const CATEGORIES = [
   { key: 'activity_tags', label: 'Activity Tags', ownerOnly: true },
   { key: 'attendance', label: 'Attendance & Staff', ownerOnly: true },
   { key: 'website_admin', label: 'Website Admin', ownerOnly: true },
+  { key: 'website_seo', label: 'Website SEO', ownerOnly: true },
   { key: 'field_redaction', label: 'Field Redaction', ownerOnly: true },
   { key: 'digests', label: 'Digests', ownerOnly: true },
   { key: 'marketing', label: 'Marketing', ownerOnly: true },
@@ -285,6 +287,7 @@ function SettingsPage() {
           {category === 'active_sessions' && <ActiveSessionsManager />}
           {category === 'activity_tags' && <TagsManager />}
           {category === 'website_admin' && <WebsiteAdminManager />}
+          {category === 'website_seo' && <WebsiteSeoManager />}
           {category === 'field_redaction' && <FieldRedactionManager />}
           {category === 'digests' && <DigestsManager />}
           {category === 'marketing' && <MarketingSettingsManager />}

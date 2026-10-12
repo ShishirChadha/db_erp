@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import { isSerializedCategory, formatCurrency } from "@db/shared";
 import { WHATSAPP_NUMBER } from "@/lib/business-info";
@@ -19,6 +19,7 @@ import { productDisplayTitle } from "@/lib/product-title";
 import { categoryToSlug } from "@/lib/categories";
 import { SITE_URL, absoluteUrl } from "@/lib/site-url";
 import { isPlaceholderValue, isRefurbishedMachine } from "@/lib/seo";
+import { getSeoSettings, getRedirectTarget, renderTemplate, withSeoOverride } from "@/lib/seo-data";
 import { ProductGallery } from "@/components/ProductGallery";
 import { PriceTag } from "@/components/PriceTag";
 import { AvailabilityBadge } from "@/components/AvailabilityBadge";
@@ -76,12 +77,21 @@ export async function generateMetadata({
   const title = productDisplayTitle(product, templates);
   // The display title already says "Certified Refurbished" for machines, so
   // don't prefix the fallback description with a second "Refurbished".
+  const settings = await getSeoSettings();
+  const template =
+    settings.product_description_template ||
+    "{title}, quality-checked and backed by warranty. Buy online from DigitalBluez, Greater Noida.";
   const description =
     product.web_description ||
-    `${title}, quality-checked and backed by warranty. Buy online from DigitalBluez, Greater Noida.`;
+    renderTemplate(template, {
+      title,
+      brand: product.brand,
+      model: product.model_name,
+      price: formatCurrency(product.web_price),
+    });
   const ogImage = product.primary_image_path ? [productImageUrl(product.primary_image_path)] : undefined;
 
-  return {
+  return withSeoOverride({
     title,
     description,
     alternates: { canonical: `/product/${slug}` },
@@ -96,13 +106,18 @@ export async function generateMetadata({
       url: `/product/${slug}`,
       images: ogImage,
     },
-  };
+  }, "product", product.id);
 }
 
 export default async function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const product = await getProductBySlug(slug);
-  if (!product) notFound();
+  if (!product) {
+    // A renamed or retired product may have a redirect set up in the ERP.
+    const target = await getRedirectTarget(`/product/${slug}`);
+    if (target) permanentRedirect(target);
+    notFound();
+  }
 
   const [images, templates, units, related, crossSellCategories, siblings] = await Promise.all([
     getProductImages(product.id),

@@ -1,12 +1,22 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import { StoreLocation } from "@/components/StoreLocation";
 import { BUSINESS_EMAIL, WHATSAPP_NUMBER } from "@/lib/business-info";
 
-export const metadata: Metadata = {
+// Metadata can be overridden from the ERP (Settings -> Website SEO), so this
+// page is re-rendered periodically instead of frozen at build time.
+export const revalidate = 60;
+
+const baseMetadata: Metadata = {
   title: "Contact Us",
   description: "Get in touch with DigitalBluez — Greater Noida, Uttar Pradesh.",
   alternates: { canonical: "/contact" },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/contact");
+}
 
 export default function ContactPage() {
   return (

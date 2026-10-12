@@ -15,7 +15,7 @@ updated: 2026-10-03
 All owner-only configuration, tab by tab: Asset Numbering, Dropdown Options
 (`custom_options`, see **inventory-sku**), SKU Category Templates (see
 **inventory-sku**), Business Profiles, Users (roles + page/edit grants, see
-**roles-permissions**), Activity Tags, Website Admin (see **website**), Field
+**roles-permissions**), Activity Tags, Website Admin (see **website**), Website SEO (see **website-seo**), Field
 Redaction (see **roles-permissions**), Digests.
 
 ## Generic owner-curated dropdown pattern

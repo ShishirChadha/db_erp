@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/supabase/service.ts
   - apps/erp/lib/chunked-in.ts
   - packages/db/src/**
-updated: 2026-10-01
+updated: 2026-10-12
 ---
 
 ## What this system is
@@ -196,3 +196,5 @@ The hosted Supabase project still exists, frozen (`REVOKE` on all writes) with i
 Rolling back is: revert the three environment variables in both Vercel projects, rebuild without cache, then re-`GRANT` writes and restore cron on hosted from `07_cron_jobs.sql`.
 
 **The point of no return has passed** — real writes have landed on self-hosted, so a rollback now means dumping self-hosted back into hosted first.
+
+Each app sets its own Supabase auth cookie name (`NEXT_PUBLIC_SUPABASE_COOKIE_NAME`, set per app) so the ERP and storefront never share one session cookie and rotate each other's refresh token.

@@ -1,11 +1,21 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import { LegalDraftNotice } from "@/components/LegalDraftNotice";
 import { WHATSAPP_NUMBER, BUSINESS_EMAIL } from "@/lib/business-info";
 
-export const metadata: Metadata = {
+// Metadata can be overridden from the ERP (Settings -> Website SEO), so this
+// page is re-rendered periodically instead of frozen at build time.
+export const revalidate = 60;
+
+const baseMetadata: Metadata = {
   title: "Return Policy",
   robots: { index: false },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/return-policy");
+}
 
 export default function ReturnPolicyPage() {
   return (

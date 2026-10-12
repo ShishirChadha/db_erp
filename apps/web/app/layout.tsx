@@ -9,6 +9,8 @@ import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BUSINESS_PHONE_TEL, SOCIAL_LINKS } from "@/lib/business-info";
 import { SITE_URL } from "@/lib/site-url";
+import { getSeoSettings } from "@/lib/seo-data";
+import { productImageUrl } from "@/lib/image-url";
 import { getActiveBanners } from "@/lib/queries";
 import { resolveSiteAccent } from "@/lib/banner-themes";
 import { WishlistProvider } from "@/components/WishlistProvider";
@@ -30,7 +32,7 @@ const ibmPlexSans = IBM_Plex_Sans({
   weight: ["400", "500", "600"],
 });
 
-export const metadata: Metadata = {
+const baseMetadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: {
     default: "DigitalBluez — Refurbished Laptops, Desktops & Monitors",
@@ -59,6 +61,20 @@ export const metadata: Metadata = {
     apple: "/apple-touch-icon.png",
   },
 };
+
+export async function generateMetadata(): Promise<Metadata> {
+  const settings = await getSeoSettings();
+  if (!settings.default_description && !settings.default_og_image_path) return baseMetadata;
+  const ogImage = settings.default_og_image_path
+    ? [{ url: productImageUrl(settings.default_og_image_path), alt: "DigitalBluez" }]
+    : undefined;
+  return {
+    ...baseMetadata,
+    description: settings.default_description ?? baseMetadata.description,
+    openGraph: { ...baseMetadata.openGraph, ...(ogImage ? { images: ogImage } : {}) },
+    twitter: { ...baseMetadata.twitter, ...(ogImage ? { images: [ogImage[0].url] } : {}) },
+  };
+}
 
 const organizationJsonLd = {
   "@context": "https://schema.org",

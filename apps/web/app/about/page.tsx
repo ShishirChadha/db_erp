@@ -1,12 +1,22 @@
 import type { Metadata } from "next";
+import { withSeoOverride } from "@/lib/seo-data";
 import { GoogleReviews } from "@/components/GoogleReviews";
 import { TrustBadges } from "@/components/TrustBadges";
 
-export const metadata: Metadata = {
+// Metadata can be overridden from the ERP (Settings -> Website SEO), so this
+// page is re-rendered periodically instead of frozen at build time.
+export const revalidate = 60;
+
+const baseMetadata: Metadata = {
   title: "About Us",
   description: "DigitalBluez is a One Stop IT Solutions store for refurbished laptops, desktops and IT support in Greater Noida.",
   alternates: { canonical: "/about" },
 };
+
+
+export async function generateMetadata(): Promise<Metadata> {
+  return withSeoOverride(baseMetadata, "static", "/about");
+}
 
 export default function AboutPage() {
   return (

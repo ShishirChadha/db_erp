@@ -6,6 +6,7 @@ import { getSessionUser, isOwner, canEditPage } from '@/lib/auth/session'
 import { redactForRole } from '@/lib/auth/redact'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent, AuditActionType } from '@/lib/audit-log'
+import { addRedirect } from '@/lib/seo-admin'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -215,6 +216,25 @@ export async function PUT(
     fieldCorrectionIds,
     restoreStatus,
   })
+
+  // A live product whose slug just changed would otherwise turn its old,
+  // possibly indexed/linked URL into a 404 -- leave a permanent redirect.
+  // Best-effort: a failure here must not fail the (already committed) edit.
+  const oldSlug = (before as any)?.web_slug as string | null | undefined
+  if ('web_slug' in updatable && oldSlug && data?.web_slug && oldSlug !== data.web_slug && data.is_published) {
+    try {
+      await addRedirect({
+        from: `/product/${oldSlug}`,
+        to: `/product/${data.web_slug}`,
+        source: 'auto',
+        note: `Slug changed on ${data.full_sku_code}`,
+        userId: sessionUser.id,
+        targetIsLive: true,
+      })
+    } catch {
+      /* ignore */
+    }
+  }
 
   return NextResponse.json(data)
 }

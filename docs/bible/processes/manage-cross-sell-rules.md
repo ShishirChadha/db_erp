@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/cross-sell-rules/[id]/route.ts
   - apps/web/lib/queries.ts
   - apps/web/app/product/[slug]/page.tsx
-updated: 2026-10-06
+updated: 2026-10-12
 ---
 
 ## What this is
@@ -77,4 +77,7 @@ Owner-only. Settings → Website Admin → Cross-sell tab.
 - **"Does this affect Marketing's suggestions?"** No — this only drives the
   website's "Complete your setup" section. The Marketing Content Studio
   (`/dashboard/marketing`) has no concept of cross-sell rules; it works off
-  its own category/brand/CPU filters over current stock.
+  its own category/brand/CPU filters over current stock.Sold-out products are never shown in "Complete your setup" (nor in "You may also like" or the home rails), even if a
+rule matches them — the storefront queries with `excludeSoldOut`.
+
+

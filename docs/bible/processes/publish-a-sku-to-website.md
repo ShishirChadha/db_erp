@@ -8,7 +8,7 @@ routes: [/dashboard/sku-master]
 keywords: [publish, website, online, list on site, digitalbluez.com, web price, unpublish]
 sources:
   - apps/erp/components/SkuWebPublishDialog.tsx
-updated: 2026-10-06
+updated: 2026-10-12
 ---
 
 ## What this is
@@ -26,6 +26,10 @@ nothing is ever published automatically.
    the public storage bucket).
 4. Save. `published_at` is set server-side on the publish transition — never
    client-supplied.
+
+The default **title** pre-filled in the dialog leaves out "No" / "N/A" spec values (the storefront also strips them
+from titles already saved). Changing the **web address (slug)** of a *published* product automatically adds a permanent
+redirect from the old address, so it keeps working — see **website-seo**.
 
 ## What the website shows without any extra work
 

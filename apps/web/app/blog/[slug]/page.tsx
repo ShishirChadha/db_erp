@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import { getBlogPostBySlug, getPublishedBlogPosts } from "@/lib/queries";
+import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
 
 export const revalidate = 60;
 
@@ -22,17 +23,25 @@ export async function generateMetadata({
   const { slug } = await params;
   const post = await getBlogPostBySlug(slug);
   if (!post) return {};
-  return {
-    title: post.title,
-    description: post.excerpt || undefined,
-    alternates: { canonical: `/blog/${slug}` },
-  };
+  return withSeoOverride(
+    {
+      title: post.title,
+      description: post.excerpt || undefined,
+      alternates: { canonical: `/blog/${slug}` },
+    },
+    "blog",
+    slug
+  );
 }
 
 export default async function BlogPostPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params;
   const post = await getBlogPostBySlug(slug);
-  if (!post) notFound();
+  if (!post) {
+    const target = await getRedirectTarget(`/blog/${slug}`);
+    if (target) permanentRedirect(target);
+    notFound();
+  }
 
   const jsonLd = {
     "@context": "https://schema.org",

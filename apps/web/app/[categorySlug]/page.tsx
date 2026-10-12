@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import { getPublishedProducts, getPublishedProductsPage, getCategories, LISTING_PAGE_SIZE } from "@/lib/queries";
 import { CATEGORY_SLUGS, slugToCategory } from "@/lib/categories";
@@ -10,6 +10,7 @@ import { Pagination } from "@/components/Pagination";
 import { getFilterFacets, filterProducts, applySort, parseSort, parseFiltersFromSearchParams } from "@/lib/product-filters";
 import { productDisplayTitle } from "@/lib/product-title";
 import { absoluteUrl } from "@/lib/site-url";
+import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
 import { categoryHeading, categoryPluralLabel } from "@/lib/seo";
 
 export const revalidate = 60;
@@ -55,7 +56,7 @@ export async function generateMetadata({
   const pageNumber = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const isMachine = heading.startsWith("Refurbished");
 
-  return {
+  return withSeoOverride({
     // Paginated pages get their own title and a self-referencing canonical, so
     // products that only appear on page 2+ stay discoverable. Sort/filter
     // parameters are still folded into the base canonical.
@@ -64,7 +65,7 @@ export async function generateMetadata({
       ? `Browse quality-checked ${heading.toLowerCase()}, tested and backed by warranty. Buy online from DigitalBluez, Greater Noida.`
       : `Browse ${heading.toLowerCase()} from DigitalBluez, Greater Noida. Quality-checked stock, backed by warranty.`,
     alternates: { canonical: pageNumber > 1 ? `/${categorySlug}?page=${pageNumber}` : `/${categorySlug}` },
-  };
+  }, "category", category.code);
 }
 
 export default async function CategoryPage({
@@ -76,7 +77,12 @@ export default async function CategoryPage({
 }) {
   const { categorySlug } = await params;
   const category = await resolveCategory(categorySlug);
-  if (!category) notFound();
+  if (!category) {
+    // Not a category (e.g. the retired /service) -- the ERP may redirect it.
+    const target = await getRedirectTarget(`/${categorySlug}`);
+    if (target) permanentRedirect(target);
+    notFound();
+  }
 
   const resolvedSearchParams = await searchParams;
   const rawPage = Array.isArray(resolvedSearchParams.page) ? resolvedSearchParams.page[0] : resolvedSearchParams.page;
