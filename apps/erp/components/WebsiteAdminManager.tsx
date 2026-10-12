@@ -972,7 +972,9 @@ function BlogSection() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium mb-1">Body</label>
+            <label className="block text-xs font-medium mb-1">
+              Body <span className="text-muted-foreground">(Markdown: ## heading, - list, **bold**, [text](/laptops), ![alt](https://…))</span>
+            </label>
             <textarea
               value={form.body}
               onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}

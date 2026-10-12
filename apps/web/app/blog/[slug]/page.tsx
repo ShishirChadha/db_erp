@@ -3,6 +3,8 @@ import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import { getBlogPostBySlug, getPublishedBlogPosts } from "@/lib/queries";
 import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
+import { MarkdownBody } from "@/lib/markdown";
+import { SITE_URL } from "@/lib/site-url";
 
 export const revalidate = 60;
 
@@ -49,7 +51,10 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
     headline: post.title,
     description: post.excerpt || undefined,
     datePublished: post.published_at || undefined,
-    author: { "@type": "Organization", name: "DigitalBluez" },
+    dateModified: post.updated_at || post.published_at || undefined,
+    mainEntityOfPage: { "@type": "WebPage", "@id": `${SITE_URL}/blog/${slug}` },
+    author: { "@type": "Organization", name: "DigitalBluez", url: SITE_URL },
+    publisher: { "@type": "Organization", name: "DigitalBluez", logo: { "@type": "ImageObject", url: `${SITE_URL}/dbz-logo.png` } },
   };
 
   return (
@@ -68,7 +73,7 @@ export default async function BlogPostPage({ params }: { params: Promise<{ slug:
           {new Date(post.published_at).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
         </p>
       )}
-      <div className="mt-8 space-y-4 whitespace-pre-line text-sm leading-relaxed text-foreground">{post.body}</div>
+      <MarkdownBody source={post.body} />
     </main>
   );
 }

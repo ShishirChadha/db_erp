@@ -257,13 +257,14 @@ export interface BlogPost {
   excerpt: string | null
   body: string
   published_at: string | null
+  updated_at: string | null
 }
 
 export const getPublishedBlogPosts = cache(async (): Promise<BlogPost[]> => {
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
-    .select('id, slug, title, excerpt, body, published_at')
+    .select('id, slug, title, excerpt, body, published_at, updated_at')
     .eq('status', 'published')
     .order('published_at', { ascending: false })
   return (data ?? []) as BlogPost[]
@@ -273,7 +274,7 @@ export const getBlogPostBySlug = cache(async (slug: string): Promise<BlogPost | 
   const supabase = createPublicSupabaseClient()
   const { data } = await supabase
     .from('blog_posts')
-    .select('id, slug, title, excerpt, body, published_at')
+    .select('id, slug, title, excerpt, body, published_at, updated_at')
     .eq('slug', slug)
     .eq('status', 'published')
     .maybeSingle()

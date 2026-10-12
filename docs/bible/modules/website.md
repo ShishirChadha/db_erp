@@ -147,6 +147,11 @@ screen (`BlogSection` in `WebsiteAdminManager.tsx`, `POST`/`PATCH`/`DELETE
 the actual draft→published transition — same convention as
 `sku_master.published_at`.
 
+Post bodies are rendered as Markdown by `apps/web/lib/markdown.tsx` (headings, lists, bold/italic, quotes, links, images). It
+builds React elements rather than HTML strings and only allows https:, mailto: and site-relative URLs, so a post can
+link to products and categories but cannot inject script. Plain-text posts written before this still render the same.
+The `BlogPosting` markup includes `dateModified`, `mainEntityOfPage` and a publisher.
+
 ## Listings: in-stock filter and sort, everywhere
 
 `availability_bucket` (computed on `public_products`) used to be display-only
