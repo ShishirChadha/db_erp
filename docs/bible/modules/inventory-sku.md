@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-10-01
+updated: 2026-10-12
 ---
 
 ## What this covers
@@ -60,6 +60,12 @@ A unit on rent stays an ordinary `asset_ledger`/`sku_master` row with
 second quantity mechanism. It leaves stock through the normal `stock_movements` ledger
 (an `adjustment` of −1) and comes back the same way, so `quantity_in_stock` stays
 honest throughout. See **rentals**.
+
+## Website address (slug) changes
+
+A SKU's `web_slug` is part of its public product URL. Editing it on a **published** SKU through
+`PUT /api/sku-master/[id]` also writes a permanent redirect from the old address to the new one
+(`seo_redirects`, see **website-seo**), so existing links and search listings keep working.
 
 ## Related
 

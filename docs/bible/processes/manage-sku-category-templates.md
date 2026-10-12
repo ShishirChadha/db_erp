@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/SkuCategoryTemplatesManager.tsx
   - apps/erp/app/dashboard/settings/page.tsx
   - apps/erp/app/dashboard/sku-master/page.tsx
-updated: 2026-09-16
+updated: 2026-10-12
 ---
 
 ## What this is
