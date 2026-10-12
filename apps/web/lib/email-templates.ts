@@ -23,6 +23,25 @@ export function setPasswordEmailHtml({ name, actionLink }: { name: string; actio
   `
 }
 
+export function passwordResetEmailHtml({ actionLink }: { actionLink: string }): string {
+  return `
+    <div style="font-family: -apple-system, Helvetica, Arial, sans-serif; max-width: 480px; margin: 0 auto; color: #1a1a1a;">
+      <p>Hi,</p>
+      <p>We got a request to reset the password for your DigitalBluez account.</p>
+      <p style="margin: 28px 0;">
+        <a href="${actionLink}" style="background: #f2672a; color: #ffffff; padding: 12px 24px; border-radius: 999px; text-decoration: none; font-weight: 600; display: inline-block;">
+          Choose a new password
+        </a>
+      </p>
+      <p style="color: #666; font-size: 13px;">
+        This link works once and expires after a while. If it has stopped working, request a new one from the
+        "Forgot password" link on the login page.
+      </p>
+      <p style="color: #666; font-size: 13px;">If you didn't ask for this, you can ignore this email — your password hasn't changed.</p>
+    </div>
+  `
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
 }

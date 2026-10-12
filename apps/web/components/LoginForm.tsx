@@ -50,6 +50,7 @@ function LoginFormInner() {
           <label className="mb-1 block text-xs text-muted-foreground">Password</label>
           <input required type="password" value={password} onChange={(e) => setPassword(e.target.value)} className="w-full rounded-lg border border-input px-3 py-2 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/25" />
         </div>
+        <p className="-mt-2 text-right text-xs"><Link href="/forgot-password" className="text-brand-orange underline">Forgot password?</Link></p>
         <button type="submit" disabled={submitting} className="w-full rounded-full bg-brand-orange px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50">
           {submitting ? 'Logging in…' : 'Log in'}
         </button>

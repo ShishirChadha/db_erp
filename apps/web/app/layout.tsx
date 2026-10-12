@@ -9,6 +9,7 @@ import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { BUSINESS_PHONE_TEL, SOCIAL_LINKS } from "@/lib/business-info";
 import { SITE_URL } from "@/lib/site-url";
+import { RecoveryRedirect } from "@/components/RecoveryRedirect";
 import { getSeoSettings } from "@/lib/seo-data";
 import { productImageUrl } from "@/lib/image-url";
 import { getActiveBanners } from "@/lib/queries";
@@ -127,6 +128,7 @@ export default async function RootLayout({
           // eslint-disable-next-line react/no-danger
           dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }}
         />
+        <RecoveryRedirect />
         <SiteThemeAccent accentColor={siteAccent} />
         <CustomerSessionProvider>
           <SiteHeader />

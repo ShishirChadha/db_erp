@@ -14,7 +14,7 @@ sources:
   - apps/web/lib/email.ts
   - apps/erp/app/api/website-admin/**
   - apps/erp/app/api/web-orders/**
-updated: 2026-10-06
+updated: 2026-10-12
 ---
 
 ## The ERP is the single source of truth — the website never gets a copy
@@ -115,6 +115,15 @@ to invoices (a tax document, not a marketing surface).
 Customer-facing titles, alt text and JSON-LD drop placeholder spec values ("No", "N/A") via `@db/shared`'s `placeholder-values.ts`, and the helper also cleans an older stored `web_title` that was auto-filled with them. Accessories are never labelled "Certified Refurbished" or marked `RefurbishedCondition` in JSON-LD; only LAP/DES/MON/TAB are.
 
 The sitemap (`apps/web/app/sitemap.ts`) lists only categories that have a mapped slug in `lib/categories.ts` and at least one published product, and includes `/blog` only once a post exists. Cart, checkout, login, signup, account and order pages are `noindex`.
+
+## Forgotten passwords
+
+Customers reset a password at `/forgot-password`. `POST /api/auth/forgot-password` always answers the same way (so it can't
+reveal who has an account) and emails a recovery link through Resend, so email only works once `RESEND_API_KEY` and
+`RESEND_FROM_EMAIL` are set in apps/web. The link is generated server-side, so it also works on a different device. GoTrue
+sends it back to its configured site URL (the apex domain; `/reset-password` is not on its redirect allow-list), so
+`components/RecoveryRedirect.tsx` forwards any page that receives a `type=recovery` hash to `/reset-password`, where the
+customer picks a new password. The guest-checkout "set your password" email uses the same link.
 
 ## Search: products, then blog, then related — in that order
 
