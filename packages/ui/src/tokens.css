@@ -285,6 +285,50 @@
   --sidebar-ring: oklch(0.556 0 0);
 }
 
+/* ---------- Zoho ---------- mirrors Zoho Books' own look: near-black sidebar
+   with a bright green active/selected highlight, light content area, green
+   primary buttons/links throughout. Unlike Navy below (which only layers a
+   dark sidebar on top of whichever base theme is active), this is a complete
+   standalone theme -- picking it changes --primary everywhere, not just the
+   sidebar, matching Zoho's green "+New"/action buttons across the whole app. */
+[data-theme="zoho"] {
+  --background: oklch(0.99 0.002 95);
+  --foreground: oklch(0.2 0.01 250);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.01 250);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.01 250);
+  --primary: oklch(0.64 0.19 150);
+  --primary-foreground: oklch(0.99 0 0);
+  --secondary: oklch(0.96 0.005 240);
+  --secondary-foreground: oklch(0.25 0.01 250);
+  --muted: oklch(0.96 0.005 240);
+  --muted-foreground: oklch(0.52 0.01 250);
+  --accent: oklch(0.93 0.04 150);
+  --accent-foreground: oklch(0.25 0.01 250);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.9 0.006 240);
+  --input: oklch(0.9 0.006 240);
+  --ring: oklch(0.64 0.19 150);
+  --chart-1: oklch(0.64 0.19 150);
+  --chart-2: oklch(0.55 0.14 210);
+  --chart-3: oklch(0.65 0.16 75);
+  --chart-4: oklch(0.577 0.245 27.325);
+  --chart-5: oklch(0.5 0.2 310);
+  --chart-6: oklch(0.42 0.12 155);
+  --chart-7: oklch(0.62 0.17 50);
+  --chart-8: oklch(0.52 0.01 250);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.2 0.015 250);
+  --sidebar-foreground: oklch(0.93 0.005 240);
+  --sidebar-primary: oklch(0.64 0.19 150);
+  --sidebar-primary-foreground: oklch(0.99 0 0);
+  --sidebar-accent: oklch(0.27 0.015 250);
+  --sidebar-accent-foreground: oklch(0.96 0 0);
+  --sidebar-border: oklch(1 0 0 / 8%);
+  --sidebar-ring: oklch(0.64 0.19 150);
+}
+
 /* ---------- Navy ---------- only overrides the sidebar tokens, so the left
    nav pane gets a navy background with a green "selected" highlight and white
    text, while the rest of the app keeps whatever base theme's own colors

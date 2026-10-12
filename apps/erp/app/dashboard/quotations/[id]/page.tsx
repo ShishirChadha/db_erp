@@ -12,9 +12,20 @@ import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import PdfPreviewDialog from '@/components/PdfPreviewDialog'
 import { downloadPdfFromResponse, previewablePdfUrl } from '@/lib/download-pdf'
 import { EditSalesDocumentDialog } from '@/components/SalesDocumentForm'
+import { CornerRibbon } from '@/components/CornerRibbon'
+import type { Tone } from '@/lib/status-styles'
 
 function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`
+}
+
+// Only the statuses worth a banner-level callout -- draft/sent already read
+// fine from the StatusBadge pill in the header band just below.
+const DOC_RIBBONS: Record<string, { label: string; tone: Tone }> = {
+  accepted: { label: 'Accepted', tone: 'success' },
+  rejected: { label: 'Rejected', tone: 'danger' },
+  expired: { label: 'Expired', tone: 'warning' },
+  void: { label: 'Void', tone: 'neutral' },
 }
 
 // `docId`/`embedded` let this exact component be reused inline inside the
@@ -141,7 +152,10 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated }: { docId?: 
       </div>
 
       {/* ---------- Document sheet ---------- */}
-      <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
+      <div className="relative border rounded-xl bg-card shadow-sm overflow-hidden">
+        {DOC_RIBBONS[doc.status] && (
+          <CornerRibbon label={DOC_RIBBONS[doc.status].label} tone={DOC_RIBBONS[doc.status].tone} />
+        )}
         {/* Header band */}
         <div className="p-5 md:p-6 border-b bg-muted/30">
           <div className="flex flex-wrap justify-between items-start gap-4">

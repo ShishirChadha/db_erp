@@ -17,10 +17,21 @@ import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 import { useRole } from "@/lib/auth/useRole";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 import { SimpleModal } from "@/components/SimpleModal";
+import { CornerRibbon } from "@/components/CornerRibbon";
+import type { Tone } from "@/lib/status-styles";
 
 function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`;
 }
+
+// Only the statuses worth a banner-level "glance across the room" callout --
+// the rest (draft/sent/pending_approval/approved) already read fine from the
+// StatusBadge pill in the header band just below.
+const INVOICE_RIBBONS: Record<string, { label: string; tone: Tone }> = {
+  paid: { label: "Paid", tone: "success" },
+  overdue: { label: "Overdue", tone: "danger" },
+  void: { label: "Void", tone: "neutral" },
+};
 
 // `invoiceId`/`embedded` let this exact component be reused inline inside the
 // Invoices list page's detail pane instead of duplicating this rendering logic
@@ -247,7 +258,10 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
       )}
 
       {/* ---------- Document sheet ---------- */}
-      <div className="border rounded-xl bg-card shadow-sm overflow-hidden">
+      <div className="relative border rounded-xl bg-card shadow-sm overflow-hidden">
+        {INVOICE_RIBBONS[invoice.status] && (
+          <CornerRibbon label={INVOICE_RIBBONS[invoice.status].label} tone={INVOICE_RIBBONS[invoice.status].tone} />
+        )}
         {/* Header band */}
         <div className="p-5 md:p-6 border-b bg-muted/30">
           <div className="flex flex-wrap justify-between items-start gap-4">
