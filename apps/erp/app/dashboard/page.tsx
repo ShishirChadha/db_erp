@@ -4,7 +4,7 @@ import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck, Ca
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { getLayoutSessionUser } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod } from '@/lib/reports'
+import { monthToDate, lastMonthToDate, fyToDate, lastYearToDate, prevPeriod } from '@/lib/reports'
 import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
 import { PunchWidget } from '@/components/PunchWidget'
 
@@ -17,11 +17,10 @@ const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
 // truth), and the period is chosen via a plain ?preset= link so switching ranges
 // needs no client JS -- same presets as Dashboard -> Reports.
 const PRESETS: Record<string, { label: string; range: () => { from: string; to: string } }> = {
-  mtd: { label: 'Month to Date', range: monthToDate },
-  l7: { label: 'Last 7 Days', range: last7Days },
-  l15: { label: 'Last 15 Days', range: last15Days },
-  lm: { label: 'Last Month', range: lastMonthFull },
-  fy: { label: 'FY to Date', range: fyToDate },
+  mtd: { label: 'MTD', range: monthToDate },
+  lmt: { label: 'LMT', range: lastMonthToDate },
+  ytd: { label: 'YTD', range: fyToDate },
+  lytd: { label: 'LYTD', range: lastYearToDate },
 }
 
 function fmt(n: number | null | undefined): string {

@@ -104,6 +104,26 @@ export function fyToDate(ref = new Date()): { from: string; to: string } {
   return { from: toDateStr(from), to: toDateStr(ref) }
 }
 
+// Last Month to-date: 1st of the previous month through the same day-of-month
+// as `ref` (clamped to that month's last day, e.g. Jan 31 -> Feb 28), for an
+// apples-to-apples "how far we'd gotten by this point last month" comparison --
+// deliberately not lastMonthFull(), which is the whole closed month.
+export function lastMonthToDate(ref = new Date()): { from: string; to: string } {
+  const from = new Date(ref.getFullYear(), ref.getMonth() - 1, 1)
+  const daysInLastMonth = new Date(ref.getFullYear(), ref.getMonth(), 0).getDate()
+  const to = new Date(ref.getFullYear(), ref.getMonth() - 1, Math.min(ref.getDate(), daysInLastMonth))
+  return { from: toDateStr(from), to: toDateStr(to) }
+}
+
+// Last FY to-date: same Apr 1 -> same calendar day, one financial year earlier --
+// the YTD figure's year-over-year comparison.
+export function lastYearToDate(ref = new Date()): { from: string; to: string } {
+  const fyStartYear = parseInt(financialYear(ref).split('-')[0], 10) - 1
+  const from = new Date(fyStartYear, 3, 1) // April 1, prior FY
+  const to = new Date(ref.getFullYear() - 1, ref.getMonth(), ref.getDate())
+  return { from: toDateStr(from), to: toDateStr(to) }
+}
+
 export function prevPeriod(from: string, to: string): { from: string; to: string } {
   const f = new Date(from)
   const t = new Date(to)
