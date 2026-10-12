@@ -14,6 +14,11 @@ sources:
   - apps/erp/app/api/website-seo/revisions/route.ts
   - apps/web/lib/seo-data.ts
   - apps/web/lib/collections.ts
+  - apps/web/app/api/seo/404/route.ts
+  - apps/erp/lib/seo-crawl.ts
+  - apps/erp/components/WebsiteSeoData.tsx
+  - apps/erp/app/api/website-seo/keywords/route.ts
+  - apps/erp/app/api/website-seo/crawl/route.ts
   - apps/web/app/feeds/google.xml/route.ts
   - apps/web/app/contact/page.tsx
   - apps/erp/app/api/website-seo/collections/route.ts
@@ -47,6 +52,16 @@ unlock any of it.
   quality heuristics, not Google thresholds). Otherwise it is `noindex,follow`. Draft collections and collections matching
   nothing at all are a 404. The list shows live counts and exactly what is blocking indexing. Two collections with the same
   filter are refused; renaming a published one adds a redirect, and deleting one redirects to its category (never the home page).
+- **Keywords** — the keyword → target-page map (cluster, intent, area, priority). Numbers are stored **only** with a named
+  source: import a Search Console Queries export (clicks, impressions, position), a Keyword Planner download or a Trends
+  CSV, choosing where it came from and its date; the database refuses a search volume without a source, so nothing is
+  estimated. A cluster aimed at more than one page is flagged as possible overlap. Export returns everything as CSV.
+- **Crawl & 404s** — upload a Screaming Frog *Internal → All* CSV (steps are on the tab). Only HTML pages are kept (the
+  newest 3 uploads are retained) and problems are derived on demand by `lib/seo-crawl.ts`: broken/redirecting/slow
+  pages, missing or long titles/descriptions/H1s, duplicates, thin pages, and a comparison with the **live sitemap**
+  (listed but not 200, not indexable, never found, orphaned). Below it, a log of addresses that showed the 404 page, recorded
+  from visitors' browsers (`POST /api/seo/404` → `log_404()`; capped at 5,000 distinct paths, assets ignored). Crawlers
+  that don't run scripts won't appear there — Search Console's Pages report covers those.
 - **Redirects** — old address → live page, permanent (308). Chains are flattened and loops rejected on save, so the
   storefront does one lookup. Changing a **published** product's web address creates one automatically
   (`PUT /api/sku-master/[id]`). The storefront consults redirects before returning 404 for a product, category-level

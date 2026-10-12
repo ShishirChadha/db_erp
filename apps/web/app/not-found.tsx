@@ -3,6 +3,7 @@ import Link from "next/link";
 import { getCategoryProductCounts } from "@/lib/queries";
 import { CATEGORY_SLUGS } from "@/lib/categories";
 import { categoryPluralLabel } from "@/lib/seo";
+import { NotFoundLogger } from "@/components/NotFoundLogger";
 
 export const metadata: Metadata = {
   title: "Page not found",
@@ -16,6 +17,7 @@ export default async function NotFound() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-20 text-center sm:px-6">
+      <NotFoundLogger />
       <p className="text-sm font-semibold text-brand-orange">404</p>
       <h1 className="mt-2 text-3xl font-bold tracking-tight text-foreground">We can&apos;t find that page</h1>
       <p className="mt-3 text-sm text-muted-foreground">

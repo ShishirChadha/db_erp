@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { CrawlSection, KeywordsSection } from '@/components/WebsiteSeoData'
 
 // Owner-only Settings -> Website SEO. Everything here is stored in the seo_*
 // tables (migration 20261015) and read by apps/web through public_seo_* views,
@@ -10,14 +11,16 @@ import { apiFetch } from '@/lib/api-client'
 
 const SITE = 'https://www.digitalbluez.com'
 
-type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'redirects' | 'images' | 'history'
+type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'history'
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'defaults', label: 'Site defaults' },
   { key: 'overrides', label: 'Page metadata' },
   { key: 'collections', label: 'Collections' },
+  { key: 'keywords', label: 'Keywords' },
   { key: 'redirects', label: 'Redirects' },
   { key: 'images', label: 'Image alt text' },
+  { key: 'crawl', label: 'Crawl & 404s' },
   { key: 'history', label: 'History' },
 ]
 
@@ -1028,8 +1031,10 @@ export default function WebsiteSeoManager() {
       {tab === 'defaults' && <DefaultsSection />}
       {tab === 'overrides' && <OverridesSection />}
       {tab === 'collections' && <CollectionsSection />}
+      {tab === 'keywords' && <KeywordsSection />}
       {tab === 'redirects' && <RedirectsSection />}
       {tab === 'images' && <ImagesSection />}
+      {tab === 'crawl' && <CrawlSection />}
       {tab === 'history' && <HistorySection />}
     </div>
   )

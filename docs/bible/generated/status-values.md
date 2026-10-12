@@ -165,6 +165,10 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | seo_collections | min_products | seo_collections_min_products_check | `CHECK ((min_products >= 1))` |
 | seo_collections | slug | seo_collections_slug_check | `CHECK (((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text) AND (length(slug) <= 60)))` |
 | seo_collections | status | seo_collections_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
+| seo_keywords | intent | seo_keywords_intent_check | `CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['informational'::text, 'commercial'::text, 'transactional'::text, 'navigational'::text, 'local'::text]))))` |
+| seo_keywords | priority | seo_keywords_priority_check | `CHECK (((priority IS NULL) OR ((priority >= 1) AND (priority <= 3))))` |
+| seo_keywords | volume | seo_keywords_volume_check | `CHECK (((volume IS NULL) OR (volume >= 0)))` |
+| seo_keywords | volume | seo_keywords_volume_needs_source | `CHECK (((volume IS NULL) OR (volume_source IS NOT NULL)))` |
 | seo_overrides | entity_type | seo_overrides_entity_type_check | `CHECK ((entity_type = ANY (ARRAY['product'::text, 'category'::text, 'static'::text, 'blog'::text])))` |
 | seo_overrides | status | seo_overrides_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | seo_redirects | from_path | seo_redirects_from_path_check | `CHECK ((from_path ~~ '/%'::text))` |
