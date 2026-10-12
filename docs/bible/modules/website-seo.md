@@ -13,6 +13,7 @@ sources:
   - apps/erp/app/api/website-seo/settings/route.ts
   - apps/erp/app/api/website-seo/revisions/route.ts
   - apps/web/lib/seo-data.ts
+  - apps/erp/app/api/website-seo/images/bulk-fill/route.ts
 updated: 2026-10-12
 ---
 
@@ -38,6 +39,7 @@ unlock any of it.
   (`PUT /api/sku-master/[id]`). The storefront consults redirects before returning 404 for a product, category-level
   (single-segment) path or blog post only.
 - **Image alt text** — published products' photos with no alt text (edits go through the existing images route).
+  **Fill all missing with a default** gives each one "product name - photo N of M" and never overwrites existing text.
 - **History** — the version before every change or removal; Restore puts it back (and the current version is kept, so
   a restore can be undone).
 

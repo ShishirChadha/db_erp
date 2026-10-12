@@ -157,6 +157,13 @@ Sort control (Featured/Newest/Price asc/desc). The two filterable categories
 everywhere else it's real SQL (`.neq('availability_bucket','sold_out')`,
 `.order()`) via `getPublishedProductsPage()`.
 
+## How product photos are resized
+
+Photos are re-encoded to webp at upload time in the ERP, and the storefront serves each one at the size the page needs
+through `apps/web/lib/image-loader.ts`, a custom `next/image` loader that points at the self-hosted storage's render
+endpoint (`/storage/v1/render/image/public/...?width=`). Cloudflare caches every size. This deliberately does **not**
+use Vercel's Image Optimization, whose free quota ran out twice (`docs/decisions.md`, 2026-09-28).
+
 ## Product photos are never cropped
 
 A photo that isn't square used to get **cropped** by `object-cover` — the

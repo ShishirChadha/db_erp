@@ -604,6 +604,23 @@ function ImagesSection() {
   }, [])
   useEffect(() => { load() }, [load])
 
+  const [filling, setFilling] = useState(false)
+  const [fillMsg, setFillMsg] = useState('')
+
+  const fillAll = async () => {
+    setError(''); setFillMsg('')
+    const dry = await apiFetch('/api/website-seo/images/bulk-fill', { method: 'POST', body: JSON.stringify({ dry_run: true }) })
+    if (!dry.ok) { setError(await errorOf(dry, 'Could not count photos')); return }
+    const { would_update } = await dry.json()
+    if (!would_update) { setFillMsg('Nothing to fill.'); return }
+    if (!confirm(`Give ${would_update} photos a default description ("product name - photo N of M")? Photos that already have alt text are left alone.`)) return
+    setFilling(true)
+    const res = await apiFetch('/api/website-seo/images/bulk-fill', { method: 'POST', body: JSON.stringify({}) })
+    if (res.ok) { const d = await res.json(); setFillMsg(`Filled ${d.updated} photos.`); await load() }
+    else setError(await errorOf(res, 'Bulk fill failed'))
+    setFilling(false)
+  }
+
   const suggestion = (r: ImageRow) =>
     [r.sku_master.brand, r.sku_master.model_name].filter(Boolean).join(' ') || r.sku_master.full_sku_code
 
@@ -624,6 +641,10 @@ function ImagesSection() {
         Photos of published products that have no description for screen readers and image search. Describe what the photo
         shows (&quot;Dell Latitude 5410 laptop, open, front view&quot;), not just the product name. Showing the first 100.
       </p>
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <button className={btnGhost} onClick={fillAll} disabled={filling}>{filling ? 'Filling…' : 'Fill all missing with a default'}</button>
+        {fillMsg && <span className="text-sm text-green-700">{fillMsg}</span>}
+      </div>
       {error && <div className="text-destructive text-sm mb-2">{error}</div>}
       {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : rows.length === 0 ? (
         <div className="text-sm text-muted-foreground">Every published photo has alt text.</div>

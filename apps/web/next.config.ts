@@ -24,20 +24,14 @@ const nextConfig: NextConfig = {
         pathname: "/storage/v1/object/public/**",
       },
     ],
-    // unoptimized: narrowing deviceSizes/imageSizes (below) only got Vercel's
-    // Image Optimization Transformations quota (5,000/mo free) down to ~75%
-    // usage before it hit 100% again and broke every product image on the
-    // site. productImageUrl() already resolves to a plain, publicly-served
-    // Supabase Storage URL -- it costs nothing to serve as-is, so there's no
-    // reason to route it through Vercel's metered optimizer at all. Actual
-    // image weight is now handled at upload time in the ERP (sharp resize +
-    // webp re-encode, see apps/erp/lib/image-process.ts) instead of at view
-    // time here. Do not remove this without re-solving the quota problem
-    // first -- see docs/decisions.md.
-    unoptimized: true,
+    // Resizing happens through lib/image-loader.ts (self-hosted storage render
+    // endpoint behind Cloudflare), NOT Vercel's metered optimizer -- do not
+    // switch back to the default loader without re-solving the Image
+    // Optimization quota problem (docs/decisions.md, 2026-09-28).
+    loader: "custom",
+    loaderFile: "./lib/image-loader.ts",
     deviceSizes: [640, 828, 1080, 1920],
     imageSizes: [40, 64, 96, 128, 256],
-    formats: ["image/webp"],
   },
 };
 
