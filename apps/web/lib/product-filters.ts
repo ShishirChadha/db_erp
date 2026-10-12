@@ -1,34 +1,24 @@
 import type { PublicProduct } from './queries'
+import {
+  EMPTY_FILTERS,
+  filterProducts,
+  gpuType,
+  normalizeFilterKey,
+  specValue,
+  type FilterKey,
+  type SelectedFilters,
+} from '@db/shared'
+
+// Matching rules live in @db/shared (product-filter-core.ts) so the ERP's
+// collection previews and these pages can never disagree. Re-exported so
+// existing imports from './product-filters' keep working.
+export { EMPTY_FILTERS, filterProducts, gpuType }
+export type { FilterKey, SelectedFilters }
 
 // Only used on category pages small enough to fetch in full and filter in
 // application code (Laptops/Desktops top out around 200 published SKUs each
 // today) -- avoids composing brittle per-field jsonb SQL for messy free-text
 // spec values ("16GB" vs "16 GB", "i7" vs "Core i7", etc).
-
-export type FilterKey = 'brand' | 'cpu' | 'ram' | 'ssd' | 'gpuType' | 'os' | 'warranty'
-
-export interface SelectedFilters {
-  brand: string[]
-  cpu: string[]
-  ram: string[]
-  ssd: string[]
-  gpuType: string[]
-  os: string[]
-  warranty: string[]
-  minPrice: number | null
-  maxPrice: number | null
-  // A single on/off toggle, not a multi-select facet like the others above --
-  // availability_bucket is a fixed 3-value enum computed server-side
-  // (public_products view), and "hide sold out" is the one distinction a
-  // shopper actually wants here. Shared by every listing/search surface via
-  // ListingToolbar.tsx, not just the two filterable categories.
-  inStockOnly: boolean
-}
-
-export const EMPTY_FILTERS: SelectedFilters = {
-  brand: [], cpu: [], ram: [], ssd: [], gpuType: [], os: [], warranty: [],
-  minPrice: null, maxPrice: null, inStockOnly: false,
-}
 
 // Sort options shown on every listing/search surface. 'featured' is the
 // existing default (published_at desc) left exactly as-is -- there was no
@@ -63,25 +53,7 @@ export function applySort(products: PublicProduct[], sort: SortKey): PublicProdu
   return products // 'featured' -- already published_at desc from the query itself
 }
 
-// Groups values that only differ by whitespace/case ("16GB" / "16 GB" / "16gb")
-// under one canonical display label -- the most common (or first-seen) raw
-// spelling wins as the label shown in the filter UI.
-function normalizeKey(value: string): string {
-  return value.trim().toLowerCase().replace(/\s+/g, '')
-}
-
-const INTEGRATED_GPU_PATTERNS = /^(|-|none|n\/a|integrated|onboard|intel (uhd|iris|hd) graphics.*)$/i
-
-export function gpuType(gpuValue: unknown): 'Integrated' | 'Dedicated' | null {
-  const v = typeof gpuValue === 'string' ? gpuValue.trim() : ''
-  if (!v) return 'Integrated'
-  return INTEGRATED_GPU_PATTERNS.test(v) ? 'Integrated' : 'Dedicated'
-}
-
-function specValue(p: PublicProduct, field: string): string | null {
-  const v = (p.specifications as Record<string, unknown> | null)?.[field]
-  return typeof v === 'string' && v.trim() ? v.trim() : typeof v === 'number' ? String(v) : null
-}
+const normalizeKey = normalizeFilterKey
 
 interface Facet {
   value: string
@@ -132,29 +104,6 @@ export function getFilterFacets(products: PublicProduct[]): ProductFacets {
     inStockCount: products.filter((p) => p.availability_bucket !== 'sold_out').length,
     totalCount: products.length,
   }
-}
-
-function matchesAny(selected: string[], raw: string | null): boolean {
-  if (selected.length === 0) return true
-  if (!raw) return false
-  const key = normalizeKey(raw)
-  return selected.some((s) => normalizeKey(s) === key)
-}
-
-export function filterProducts(products: PublicProduct[], filters: SelectedFilters): PublicProduct[] {
-  return products.filter((p) => {
-    if (filters.inStockOnly && p.availability_bucket === 'sold_out') return false
-    if (filters.minPrice != null && p.web_price < filters.minPrice) return false
-    if (filters.maxPrice != null && p.web_price > filters.maxPrice) return false
-    if (!matchesAny(filters.brand, p.brand)) return false
-    if (!matchesAny(filters.cpu, specValue(p, 'cpu'))) return false
-    if (!matchesAny(filters.ram, specValue(p, 'ram'))) return false
-    if (!matchesAny(filters.ssd, specValue(p, 'ssd'))) return false
-    if (!matchesAny(filters.gpuType, gpuType(specValue(p, 'gpu')))) return false
-    if (!matchesAny(filters.os, specValue(p, 'os'))) return false
-    if (!matchesAny(filters.warranty, p.warranty_label)) return false
-    return true
-  })
 }
 
 // Parses the page's searchParams (repeated ?brand=X&brand=Y or comma-joined,

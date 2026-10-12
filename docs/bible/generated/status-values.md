@@ -159,6 +159,12 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | sales_document_items | item_type | sales_document_items_item_type_check | `CHECK ((item_type = ANY (ARRAY['sku'::text, 'accessory'::text, 'custom'::text])))` |
 | sales_documents | doc_type | sales_documents_doc_type_check | `CHECK ((doc_type = ANY (ARRAY['quotation'::text, 'proforma'::text])))` |
 | sales_documents | status | sales_documents_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'sent'::text, 'accepted'::text, 'rejected'::text, 'expired'::text, 'void'::text])))` |
+| seo_collections | category | seo_collections_category_check | `CHECK ((category = ANY (ARRAY['LAP'::text, 'DES'::text])))` |
+| seo_collections | kind | seo_collections_kind_check | `CHECK ((kind = ANY (ARRAY['brand'::text, 'budget'::text, 'spec'::text, 'use_case'::text])))` |
+| seo_collections | min_intro_words | seo_collections_min_intro_words_check | `CHECK ((min_intro_words >= 0))` |
+| seo_collections | min_products | seo_collections_min_products_check | `CHECK ((min_products >= 1))` |
+| seo_collections | slug | seo_collections_slug_check | `CHECK (((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text) AND (length(slug) <= 60)))` |
+| seo_collections | status | seo_collections_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | seo_overrides | entity_type | seo_overrides_entity_type_check | `CHECK ((entity_type = ANY (ARRAY['product'::text, 'category'::text, 'static'::text, 'blog'::text])))` |
 | seo_overrides | status | seo_overrides_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | seo_redirects | from_path | seo_redirects_from_path_check | `CHECK ((from_path ~~ '/%'::text))` |

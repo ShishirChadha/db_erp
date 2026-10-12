@@ -13,6 +13,8 @@ sources:
   - apps/erp/app/api/website-seo/settings/route.ts
   - apps/erp/app/api/website-seo/revisions/route.ts
   - apps/web/lib/seo-data.ts
+  - apps/web/lib/collections.ts
+  - apps/erp/app/api/website-seo/collections/route.ts
   - apps/erp/app/api/website-seo/images/bulk-fill/route.ts
 updated: 2026-10-12
 ---
@@ -34,6 +36,15 @@ unlock any of it.
   (home, about, policies…), a category, a single product (keyed by SKU id so it survives a slug change) or a blog post.
   **Draft** rows are stored but never reach the website; only **Published** rows do. This is how a policy page is made
   indexable once its text is real (the pages ship `noindex` until then).
+- **Collections** — owner-written pages for a saved filter, e.g. `/laptops/dell` or `/laptops/under-20000` (laptops and
+  desktops only). Each has a name, heading, search title/description, a Markdown intro, optional questions and the filter
+  (brand, CPU, RAM, SSD, graphics, price range — the same matching code as the storefront's own filters, shared via
+  `@db/shared`). A **published** collection is always reachable, but it is only *indexable* — `index,follow`, in the sitemap,
+  linked as "Shop by" on its category page — while it has at least `min_products` **available** (not sold-out) products
+  **and** at least `min_intro_words` words of intro (defaults 3 and 120; the owner sets them per collection — they are
+  quality heuristics, not Google thresholds). Otherwise it is `noindex,follow`. Draft collections and collections matching
+  nothing at all are a 404. The list shows live counts and exactly what is blocking indexing. Two collections with the same
+  filter are refused; renaming a published one adds a redirect, and deleting one redirects to its category (never the home page).
 - **Redirects** — old address → live page, permanent (308). Chains are flattened and loops rejected on save, so the
   storefront does one lookup. Changing a **published** product's web address creates one automatically
   (`PUT /api/sku-master/[id]`). The storefront consults redirects before returning 404 for a product, category-level

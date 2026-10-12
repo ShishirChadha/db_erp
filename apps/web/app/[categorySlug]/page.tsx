@@ -11,6 +11,7 @@ import { getFilterFacets, filterProducts, applySort, parseSort, parseFiltersFrom
 import { productDisplayTitle } from "@/lib/product-title";
 import { absoluteUrl } from "@/lib/site-url";
 import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
+import { collectionPath, getIndexableCollections } from "@/lib/collections";
 import { categoryHeading, categoryPluralLabel } from "@/lib/seo";
 
 export const revalidate = 60;
@@ -125,6 +126,9 @@ export default async function CategoryPage({
     totalCount = total;
   }
 
+  // Curated collection pages for this category (only ones currently passing
+  // their indexing gate) -- real server-rendered links for crawlers and shoppers.
+  const collections = (await getIndexableCollections()).filter((c) => c.category === category.code);
   const facets = isFilterable ? getFilterFacets(allProducts) : null;
   const totalPages = Math.max(1, Math.ceil(totalCount / LISTING_PAGE_SIZE));
   const heading = categoryHeading(category.code, category.displayName);
@@ -182,6 +186,17 @@ export default async function CategoryPage({
           <ListingToolbar showAvailability={!isFilterable} />
         </div>
       </div>
+
+      {collections.length > 0 && (
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <span className="text-sm text-muted-foreground">Shop by:</span>
+          {collections.map((c) => (
+            <Link key={c.slug} href={collectionPath(c)} className="rounded-full border border-border px-3 py-1 text-sm hover:border-brand-orange hover:text-brand-orange">
+              {c.name}
+            </Link>
+          ))}
+        </div>
+      )}
 
       <div className="mt-6 flex flex-col gap-6 lg:flex-row">
         {facets && <ProductFilters facets={facets} />}

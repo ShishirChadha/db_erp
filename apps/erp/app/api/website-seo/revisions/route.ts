@@ -56,6 +56,16 @@ export async function POST(req: NextRequest) {
       .from('seo_overrides')
       .upsert({ ...row, updated_at: new Date().toISOString(), updated_by: sessionUser.id }, { onConflict: 'entity_type,entity_key' })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else if (rev.entity_type === 'collection') {
+    const row = Object.fromEntries(
+      ['category', 'slug', 'kind', 'name', 'h1', 'meta_title', 'meta_description', 'intro_md', 'faq', 'filter', 'min_products', 'min_intro_words', 'status'].map((f) => [f, snap[f] ?? null])
+    )
+    const { data: current } = await supabaseAdmin.from('seo_collections').select('*').eq('category', row.category).eq('slug', row.slug).maybeSingle()
+    if (current) await recordRevision('collection', rev.entity_key, 'upsert', current, sessionUser.id)
+    const { error } = await supabaseAdmin
+      .from('seo_collections')
+      .upsert({ ...row, updated_at: new Date().toISOString(), updated_by: sessionUser.id }, { onConflict: 'category,slug' })
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   } else if (rev.entity_type === 'redirect') {
     const { error } = await supabaseAdmin
       .from('seo_redirects')
@@ -72,7 +82,7 @@ export async function POST(req: NextRequest) {
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
     actionType: 'restore',
     module: 'settings',
-    tableName: `seo_${rev.entity_type === 'settings' ? 'settings' : rev.entity_type === 'override' ? 'overrides' : 'redirects'}`,
+    tableName: `seo_${rev.entity_type === 'settings' ? 'settings' : rev.entity_type === 'override' ? 'overrides' : rev.entity_type === 'collection' ? 'collections' : 'redirects'}`,
     recordLabel: rev.entity_key,
     metadata: { revision_id: id },
   })

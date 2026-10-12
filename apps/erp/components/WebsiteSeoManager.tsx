@@ -10,11 +10,12 @@ import { apiFetch } from '@/lib/api-client'
 
 const SITE = 'https://www.digitalbluez.com'
 
-type TabKey = 'overview' | 'defaults' | 'overrides' | 'redirects' | 'images' | 'history'
+type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'redirects' | 'images' | 'history'
 const TABS: { key: TabKey; label: string }[] = [
   { key: 'overview', label: 'Overview' },
   { key: 'defaults', label: 'Site defaults' },
   { key: 'overrides', label: 'Page metadata' },
+  { key: 'collections', label: 'Collections' },
   { key: 'redirects', label: 'Redirects' },
   { key: 'images', label: 'Image alt text' },
   { key: 'history', label: 'History' },
@@ -490,6 +491,271 @@ function OverridesSection() {
   )
 }
 
+
+// ---------------------------------------------------------------- Collections
+
+interface Collection {
+  id: string
+  category: 'LAP' | 'DES'
+  slug: string
+  kind: 'brand' | 'budget' | 'spec' | 'use_case'
+  name: string
+  h1: string | null
+  meta_title: string | null
+  meta_description: string | null
+  intro_md: string | null
+  faq: { q: string; a: string }[]
+  filter: Record<string, any>
+  min_products: number
+  min_intro_words: number
+  status: 'draft' | 'published'
+  matching: number
+  available: number
+  intro_words: number
+  indexable: boolean
+  gate: { published: boolean; enough_products: boolean; enough_text: boolean }
+  url: string
+}
+
+const emptyCollection = {
+  id: '' as string,
+  category: 'LAP' as 'LAP' | 'DES',
+  slug: '',
+  kind: 'brand' as Collection['kind'],
+  name: '',
+  h1: '',
+  meta_title: '',
+  meta_description: '',
+  intro_md: '',
+  faq: [] as { q: string; a: string }[],
+  brand: '',
+  cpu: '',
+  ram: '',
+  ssd: '',
+  gpuType: '',
+  minPrice: '',
+  maxPrice: '',
+  min_products: 3,
+  min_intro_words: 120,
+}
+
+const csv = (v: string) => v.split(',').map((x) => x.trim()).filter(Boolean)
+
+function CollectionsSection() {
+  const [rows, setRows] = useState<Collection[]>([])
+  const [form, setForm] = useState(emptyCollection)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const [warnings, setWarnings] = useState<string[]>([])
+  const [note, setNote] = useState('')
+
+  const load = useCallback(async () => {
+    const res = await apiFetch('/api/website-seo/collections')
+    if (res.ok) setRows(await res.json())
+    setLoading(false)
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  const reset = () => { setForm(emptyCollection); setError(''); setWarnings([]) }
+
+  const edit = (c: Collection) => {
+    setForm({
+      id: c.id, category: c.category, slug: c.slug, kind: c.kind, name: c.name,
+      h1: c.h1 ?? '', meta_title: c.meta_title ?? '', meta_description: c.meta_description ?? '', intro_md: c.intro_md ?? '',
+      faq: c.faq ?? [],
+      brand: (c.filter.brand ?? []).join(', '), cpu: (c.filter.cpu ?? []).join(', '), ram: (c.filter.ram ?? []).join(', '),
+      ssd: (c.filter.ssd ?? []).join(', '), gpuType: (c.filter.gpuType ?? [])[0] ?? '',
+      minPrice: c.filter.minPrice != null ? String(c.filter.minPrice) : '', maxPrice: c.filter.maxPrice != null ? String(c.filter.maxPrice) : '',
+      min_products: c.min_products, min_intro_words: c.min_intro_words,
+    })
+    setError(''); setWarnings([]); setNote('')
+  }
+
+  const save = async (status: 'draft' | 'published') => {
+    setError(''); setWarnings([]); setNote('')
+    setSaving(true)
+    const filter: Record<string, unknown> = {}
+    for (const k of ['brand', 'cpu', 'ram', 'ssd'] as const) if (csv(form[k]).length) filter[k] = csv(form[k])
+    if (form.gpuType) filter.gpuType = [form.gpuType]
+    if (form.minPrice !== '') filter.minPrice = Number(form.minPrice)
+    if (form.maxPrice !== '') filter.maxPrice = Number(form.maxPrice)
+    const res = await apiFetch('/api/website-seo/collections', {
+      method: 'PUT',
+      body: JSON.stringify({
+        id: form.id || undefined, category: form.category, slug: form.slug, kind: form.kind, name: form.name,
+        h1: form.h1, meta_title: form.meta_title, meta_description: form.meta_description, intro_md: form.intro_md,
+        faq: form.faq, filter, min_products: form.min_products, min_intro_words: form.min_intro_words, status,
+      }),
+    })
+    if (res.ok) {
+      const d = await res.json()
+      setWarnings(d.warnings ?? [])
+      if (d.redirected) setNote('The old address now redirects to the new one.')
+      await load()
+      if (!(d.warnings ?? []).length) reset()
+    } else {
+      setError(await errorOf(res, 'Failed to save'))
+    }
+    setSaving(false)
+  }
+
+  const remove = async (c: Collection) => {
+    if (!confirm(`Delete "${c.name}"? ${c.status === 'published' ? 'Its address will redirect to the category page. ' : ''}You can restore it from History.`)) return
+    await apiFetch(`/api/website-seo/collections?id=${c.id}`, { method: 'DELETE' })
+    await load()
+  }
+
+  const words = form.intro_md.trim().split(/\s+/).filter(Boolean).length
+  const setFaq = (i: number, patch: Partial<{ q: string; a: string }>) =>
+    setForm((f) => ({ ...f, faq: f.faq.map((x, j) => (j === i ? { ...x, ...patch } : x)) }))
+
+  return (
+    <div>
+      <p className="text-sm text-muted-foreground mb-4">
+        A collection is a saved search with your own wording, shown as its own page such as <b>/laptops/dell</b> or{' '}
+        <b>/laptops/under-20000</b>. It only appears in search results while it has <b>enough available products</b> and{' '}
+        <b>enough original text</b> (both thresholds are yours to set); otherwise visitors can still open it, but it is hidden
+        from Google. Write the intro yourself — copying text between collections or from other sites is what gets pages ignored.
+      </p>
+
+      <div className="border rounded-lg p-4 mb-4 space-y-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">Category</label>
+            <select className={inputCls} value={form.category} onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as 'LAP' | 'DES' }))}>
+              <option value="LAP">Laptops</option><option value="DES">Desktops</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Type</label>
+            <select className={inputCls} value={form.kind} onChange={(e) => setForm((f) => ({ ...f, kind: e.target.value as Collection['kind'] }))}>
+              <option value="brand">Brand</option><option value="budget">Budget</option><option value="spec">Specification</option><option value="use_case">Use case</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Name (shown on chips)</label>
+            <input className={inputCls} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} placeholder="Dell" />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">Web address</label>
+            <input className={inputCls} value={form.slug} onChange={(e) => setForm((f) => ({ ...f, slug: e.target.value.toLowerCase() }))} placeholder="dell" />
+          </div>
+        </div>
+
+        <div>
+          <div className="text-xs font-medium mb-1">Which products belong <span className="text-muted-foreground">(comma-separate several values; at least one filter is required)</span></div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <input className={inputCls} placeholder="Brand: Dell, HP" value={form.brand} onChange={(e) => setForm((f) => ({ ...f, brand: e.target.value }))} />
+            <input className={inputCls} placeholder="CPU: i5, i7" value={form.cpu} onChange={(e) => setForm((f) => ({ ...f, cpu: e.target.value }))} />
+            <input className={inputCls} placeholder="RAM: 16GB" value={form.ram} onChange={(e) => setForm((f) => ({ ...f, ram: e.target.value }))} />
+            <input className={inputCls} placeholder="SSD: 512GB" value={form.ssd} onChange={(e) => setForm((f) => ({ ...f, ssd: e.target.value }))} />
+            <input className={inputCls} type="number" min={0} placeholder="Min price ₹" value={form.minPrice} onChange={(e) => setForm((f) => ({ ...f, minPrice: e.target.value }))} />
+            <input className={inputCls} type="number" min={0} placeholder="Max price ₹" value={form.maxPrice} onChange={(e) => setForm((f) => ({ ...f, maxPrice: e.target.value }))} />
+            <select className={inputCls} value={form.gpuType} onChange={(e) => setForm((f) => ({ ...f, gpuType: e.target.value }))}>
+              <option value="">Any graphics</option><option value="Integrated">Integrated</option><option value="Dedicated">Dedicated</option>
+            </select>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">Page heading <span className="text-muted-foreground">(empty = “Refurbished {'{name}'} Laptops”)</span></label>
+            <input className={inputCls} value={form.h1} onChange={(e) => setForm((f) => ({ ...f, h1: e.target.value }))} />
+          </div>
+          <div>
+            <div className="flex justify-between"><label className="block text-xs font-medium mb-1">Search title</label><Counter value={form.meta_title} warn={60} max={70} /></div>
+            <input className={inputCls} value={form.meta_title} onChange={(e) => setForm((f) => ({ ...f, meta_title: e.target.value }))} />
+          </div>
+        </div>
+        <div>
+          <div className="flex justify-between"><label className="block text-xs font-medium mb-1">Search description</label><Counter value={form.meta_description} warn={160} max={200} /></div>
+          <textarea rows={2} className={inputCls} value={form.meta_description} onChange={(e) => setForm((f) => ({ ...f, meta_description: e.target.value }))} />
+        </div>
+
+        <div>
+          <div className="flex justify-between">
+            <label className="block text-xs font-medium mb-1">Intro text <span className="text-muted-foreground">(Markdown; what to look for, who it suits, what the units here are like)</span></label>
+            <span className={`text-xs ${words >= form.min_intro_words ? 'text-green-700' : 'text-amber-600'}`}>{words}/{form.min_intro_words} words</span>
+          </div>
+          <textarea rows={8} className={`${inputCls} font-mono`} value={form.intro_md} onChange={(e) => setForm((f) => ({ ...f, intro_md: e.target.value }))} />
+        </div>
+
+        <div>
+          <div className="text-xs font-medium mb-1">Common questions <span className="text-muted-foreground">(optional, max 10)</span></div>
+          {form.faq.map((f, i) => (
+            <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_2fr_auto] gap-2 mb-2">
+              <input className={inputCls} placeholder="Question" value={f.q} onChange={(e) => setFaq(i, { q: e.target.value })} />
+              <input className={inputCls} placeholder="Answer" value={f.a} onChange={(e) => setFaq(i, { a: e.target.value })} />
+              <button type="button" className="text-destructive text-sm" onClick={() => setForm((x) => ({ ...x, faq: x.faq.filter((_, j) => j !== i) }))}>Remove</button>
+            </div>
+          ))}
+          {form.faq.length < 10 && (
+            <button type="button" className="text-sm text-primary" onClick={() => setForm((f) => ({ ...f, faq: [...f.faq, { q: '', a: '' }] }))}>+ Add a question</button>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 max-w-md">
+          <div>
+            <label className="block text-xs font-medium mb-1">Hide from Google below this many available products</label>
+            <input className={inputCls} type="number" min={1} max={50} value={form.min_products} onChange={(e) => setForm((f) => ({ ...f, min_products: Number(e.target.value) }))} />
+          </div>
+          <div>
+            <label className="block text-xs font-medium mb-1">…or below this many intro words</label>
+            <input className={inputCls} type="number" min={0} max={1000} value={form.min_intro_words} onChange={(e) => setForm((f) => ({ ...f, min_intro_words: Number(e.target.value) }))} />
+          </div>
+        </div>
+
+        {error && <div className="text-destructive text-sm">{error}</div>}
+        {note && <div className="text-sm text-green-700">{note}</div>}
+        {warnings.length > 0 && <ul className="text-sm text-amber-700 list-disc pl-5">{warnings.map((w) => <li key={w}>{w}</li>)}</ul>}
+        <div className="flex flex-wrap gap-2">
+          <button className={btnPrimary} onClick={() => save('published')} disabled={saving}>{form.id ? 'Save & publish' : 'Publish'}</button>
+          <button className={btnGhost} onClick={() => save('draft')} disabled={saving}>Save as draft</button>
+          <button className={btnGhost} onClick={reset} disabled={saving}>{form.id ? 'Cancel edit' : 'Clear'}</button>
+        </div>
+      </div>
+
+      {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : rows.length === 0 ? (
+        <div className="text-sm text-muted-foreground">No collections yet.</div>
+      ) : (
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/50 text-left">
+              <tr>
+                <th className="p-2">Page</th><th className="p-2">Status</th>
+                <th className="p-2 text-right">Available</th><th className="p-2 text-right">Intro words</th>
+                <th className="p-2">In Google?</th><th className="p-2" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((c) => (
+                <tr key={c.id} className="border-t">
+                  <td className="p-2"><div className="font-medium">{c.name}</div><div className="text-xs text-muted-foreground break-all">{c.url}</div></td>
+                  <td className="p-2">{c.status}</td>
+                  <td className="p-2 text-right tabular-nums">{c.available} <span className="text-muted-foreground">/ {c.min_products} needed</span></td>
+                  <td className="p-2 text-right tabular-nums">{c.intro_words} <span className="text-muted-foreground">/ {c.min_intro_words}</span></td>
+                  <td className="p-2">
+                    {c.indexable ? <span className="text-green-700">Yes</span> : (
+                      <span className="text-amber-700">
+                        No — {[!c.gate.published && 'draft', !c.gate.enough_products && 'too few products', !c.gate.enough_text && 'intro too short'].filter(Boolean).join(', ')}
+                      </span>
+                    )}
+                  </td>
+                  <td className="p-2 text-right whitespace-nowrap">
+                    <button className="text-primary mr-3" onClick={() => edit(c)}>Edit</button>
+                    <button className="text-destructive" onClick={() => remove(c)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---------------------------------------------------------------- Redirects
 
 interface Redirect { id: string; from_path: string; to_path: string; source: 'manual' | 'auto'; note: string | null; created_at: string }
@@ -761,6 +1027,7 @@ export default function WebsiteSeoManager() {
       {tab === 'overview' && <OverviewSection go={setTab} />}
       {tab === 'defaults' && <DefaultsSection />}
       {tab === 'overrides' && <OverridesSection />}
+      {tab === 'collections' && <CollectionsSection />}
       {tab === 'redirects' && <RedirectsSection />}
       {tab === 'images' && <ImagesSection />}
       {tab === 'history' && <HistorySection />}
