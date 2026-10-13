@@ -23,7 +23,7 @@ sources:
   - apps/web/app/contact/page.tsx
   - apps/erp/app/api/website-seo/collections/route.ts
   - apps/erp/app/api/website-seo/images/bulk-fill/route.ts
-updated: 2026-10-12
+updated: 2026-10-13
 ---
 
 ## What it is
@@ -78,8 +78,8 @@ unlock any of it.
 all as `condition: refurbished`. Left out on purpose: accessories (the ERP doesn't record whether a cable or UPS is new
 or used, and the feed requires a condition), sold-out items, any sale/MRP price, and GTIN/MPN (`identifier_exists: no`).
 Shipping and return policies are not in the feed; set them in the Merchant Center account once the real policies exist.
-The `/contact` page carries `ComputerStore` markup with only the verified name, address, phone, email and links — opening
-hours, coordinates and ratings are intentionally absent until confirmed.
+The `/contact` page carries `ComputerStore` markup with only verified facts: name, address, phone, email, links and the
+opening hours (every day, 9 AM–8 PM, confirmed by the owner 2026-10-13). Coordinates and ratings are intentionally absent.
 
 ## Rules that matter
 

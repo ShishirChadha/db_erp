@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/cross-sell-rules/[id]/route.ts
   - apps/web/lib/queries.ts
   - apps/web/app/product/[slug]/page.tsx
-updated: 2026-10-12
+updated: 2026-10-13
 ---
 
 ## What this is
