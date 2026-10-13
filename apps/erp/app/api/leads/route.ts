@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { withRetry } from '@/lib/db-retry'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -112,12 +112,20 @@ export async function GET(req: NextRequest) {
 // ---------- POST: add one lead to an existing Set ----------
 // The common real case is a referral -- an existing lead/customer mentions
 // someone else worth pitching mid-call -- so this needs to be fast to use
-// from inside the detail view, not just a bulk CSV. Same "only the current
-// holder (or manager/owner) may write" rule as every other mutation here.
+// from inside the detail view, not just a bulk CSV.
+//
+// Deliberately gated on view access (hasPageAccess) rather than the page's
+// edit grant (canEditPage): the owner wants a narrower "can add a lead"
+// right, without handing out edit on existing leads (status changes,
+// remarks, deletes, conversion). Same shape as the accessory-vendor-creation
+// exception in business-rules -- creating something new is a lower-stakes
+// action than editing/deleting what's already there, and both stay narrow
+// via isCurrentHolderOrManager below: only into a Set actually assigned to
+// this person (or any Set, for manager/owner).
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid body.' }, { status: 400 })

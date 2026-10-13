@@ -1,4 +1,6 @@
-Last updated: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS. Prior entry: # Current Progress
+# Current Progress
+
+Last updated: 2026-10-13 — Leads module follow-up fixes: a real-world CSV with a blank header row crashed the import dialog (Radix Select forbids an empty-string item value), the New Lead Set dialog was clipped on desktop (shadcn's built-in `sm:max-w-sm` beating an unprefixed override), and "Add Lead" is now gated on view access instead of the edit grant so an owner can hand out a narrower "can add, can't edit" right. Prior entry: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS.
 
 2026-10-06 — Leads / Calling Lists module shipped (owner-assignable "Lead Sets" for sales-pitch calling, CSV import with auto-detected column mapping, transfer-with-history vs. fresh-copy clone reassignment, per-lead remarks + follow-up date reusing the Activity Hub's due-date/notification machinery, status and follow-up filters, manual single-lead entry for referrals). Prior entry: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
 
@@ -1939,3 +1941,33 @@ Live Zoho API pull and GSP/portal auto-submission (the approval hash and the `gs
 All four uploads of the ERP's GSTR-1 JSON on 11 Oct 2026 failed with "File could not be uploaded! Download the latest version of Offline tool…", including single-table files — so the fault was in what every file shares. The owner supplied the GST Offline Tool installer (`gst_offline_tool/`, a Windows Inno Setup package that is really a Node app); it was unpacked with `innoextract` and its JSON writer read (`utility/common.js`, `utility/returnStructure.js`, `service/offline.js`). `buildGstr1Json` now matches it: header `gstin, fp, version "GST3.2.4", hash "hash"` (no `filing_typ`, no `gt`/`cur_gt`); Table 12 rows `{num, hsn_sc, user_desc, desc (portal HSN-master description), uqc as the code only ("NOS"/"OTH", "NA" for services), qty, rt, txval, iamt, camt, samt, csamt}`; Table 13 `doc_det` carries `doc_typ`. The master is `apps/erp/lib/gst/hsn-master.json` (from the tool's `public/data/HSN.json`), served by `POST /api/gst/hsn-descriptions`. Not yet confirmed on the live portal.
 
 **Update 2026-10-13:** the portal accepted the header/HSN/Documents/B2C-small files; B2B processed 22 of 25 invoices. The three dropped (726, 736, 741) were exactly those with CGST != SGST on a line (paise rounding). Fixed in `v_gst_outward_lines` (`supabase/migrations/20261013_gst_cgst_sgst_equal.sql`, applied) and zero-value B2B items are omitted. Owner to re-upload the B2B-only JSON and confirm 25 on the portal tile. Also noted: portal trade names differ from ERP names for 09ABBFV3056H1Z2 (portal "NEEV MOBILITY", ERP "VeroTrade LLP") and 09FPBPK2743M1ZJ (portal "Java Value", ERP "AKANKSHA KUMARI") — worth confirming the buyers.
+
+## Leads module fixes and a permission carve-out (2026-10-13)
+
+Three follow-ups from real usage after the module shipped (2026-10-06):
+
+1. **Import crash on a real-world CSV**: a file with a genuinely blank row before
+   its real header row (and ~700 blank trailing rows) made `BulkImportDialog`
+   trust Papa's literal first line as the header, producing a batch of empty-
+   string column names — rendering those into the mapping dropdown crashed the
+   page, because Radix's `Select` explicitly forbids an empty-string item
+   value. Fixed by parsing headerless (`header: false`, `skipEmptyLines:
+   'greedy'`) and scanning for the first row with ≥2 non-blank cells as the
+   real header (`extractHeaderAndRows()`), dropping blank-named columns and
+   de-duplicating repeated ones. Also added a `customerno` phone alias (another
+   real file used "CUSTOMER NO." as its phone column).
+2. **Dialog width**: shadcn's `DialogContent` ships a built-in `sm:max-w-sm`;
+   an unprefixed `max-w-2xl` override doesn't reliably beat it at the same
+   breakpoint, which was clipping the mapping grid's right side on desktop.
+   Fixed with `sm:max-w-2xl` (same variant, which tailwind-merge actually
+   dedupes) plus a `max-w-[95vw]` mobile floor.
+3. **Permission carve-out for "Add Lead"**: the owner wanted Sanjana able to
+   add a referral lead without granting her the full Leads edit right.
+   `POST /api/leads` (single-lead add only) now checks `hasPageAccess`
+   instead of `canEditPage` — view access plus being the Set's current holder
+   is enough to add, matching the accessory-vendor-creation exception in
+   **business-rules**. Every other mutation (edit, delete, remarks, follow-up
+   date, convert, Set rename/delete) still requires the edit grant. No DB
+   change was needed since Sanjana already had view access; this was a pure
+   authorization-logic change. Documented in `docs/bible/modules/leads.md`
+   and the "Leads" section of `docs/bible/rules/roles-permissions.md`.

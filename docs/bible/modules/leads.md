@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/dashboard/leads/**
   - apps/erp/lib/leads.ts
   - apps/erp/components/BulkImportDialog.tsx
-updated: 2026-10-06
+updated: 2026-10-13
 ---
 
 ## What this covers
@@ -139,17 +139,25 @@ to the existing record instead of creating a duplicate.
 
 ## Who can do what
 
-- **Upload a new Set / add a single lead / log a remark / set a follow-up date / edit
-  a lead's fields / rename or delete a Set** — whoever currently holds that Set, or
-  manager/owner. Self-serve, immediately real, no approval gate — same posture as
-  every other operational entry point in this app.
+- **Add a single lead to a Set (the referral case)** — needs only **view** access
+  to the `leads` page (`hasPageAccess`), not the edit grant, as long as the Set is
+  currently assigned to that person (or they're manager/owner). This is a
+  deliberate, narrower carve-out (added 2026-10-13 after an owner explicitly
+  asked for "add lead rights" without the full edit grant) — same shape as the
+  accessory-vendor-creation exception in **business-rules**: creating something
+  new is lower-stakes than editing or deleting what's already there.
+- **Upload a new Set / log a remark / set a follow-up date / edit a lead's
+  fields / delete a lead or a Set / convert to customer / rename a Set** —
+  requires the `leads` **edit grant** (`canEditPage`), in addition to being the
+  Set's current holder (or manager/owner).
 - **Reassign a Set (transfer-with-history)** — manager or above.
 - **Clone a Set (fresh copy) / create a Set from existing customers** — owner, and
   owner/manager respectively; cloning is the more consequential "start a fresh
   campaign" decision.
 - Page access and edit grant are the ordinary `leads` key, set in
   **Settings → Users & Access** like any other page — see **manage-users-and-access**
-  and **roles-permissions**.
+  and **roles-permissions**. View access alone is enough for the single-lead-add
+  case above; everything else needs the edit grant too.
 
 ## Not covered yet
 

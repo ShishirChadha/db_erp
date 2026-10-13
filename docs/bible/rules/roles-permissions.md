@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/RequirePageAccess.tsx
   - apps/erp/app/dashboard/home/page.tsx
   - apps/erp/lib/leads.ts
-updated: 2026-10-06
+updated: 2026-10-13
 ---
 
 ## The three roles
@@ -186,15 +186,31 @@ and manage every Set regardless of assignment, via the same
 `isCurrentHolderOrManager()` (`apps/erp/lib/leads.ts`) is the one place this
 check lives, called by every route under `/api/lead-sets` and `/api/leads`.
 
-So "give Sanjana the Leads module" is two different things, and both matter:
+So "give Sanjana the Leads module" is two or three different things, and all
+of them matter:
 
-1. **Grant the page** — Settings → Users & Access → tick `leads` (and its
-   "Can edit" box) for Sanjana's account, same as any other page.
-2. **Assign her a Set** — granting the page alone shows her an empty list.
+1. **Grant the page** — Settings → Users & Access → tick `leads` for
+   Sanjana's account, same as any other page. This alone is enough for her
+   to **view** a Set assigned to her and **add a new lead to it**
+   (`POST /api/leads` checks `hasPageAccess`, not `canEditPage` — see below).
+2. **Grant edit, separately, if she should also edit/delete leads, log
+   remarks, set follow-up dates, or convert a lead to a customer** — tick the
+   "Can edit" box too. View and edit are independently grantable here, same
+   as everywhere else, but Leads is the one module (so far) where an owner
+   has explicitly wanted the narrower "can add, can't edit" split.
+3. **Assign her a Set** — granting the page alone shows her an empty list.
    She needs at least one Lead Set actually assigned to her
    (`current_assignee_id`), either because she uploaded/created it herself
    (auto-assigns to the creator) or because a manager/owner reassigned an
    existing Set to her from the Leads page.
+
+**Adding a single lead is deliberately the one write action gated on view
+access alone, not the edit grant** (2026-10-13) — the same shape as the
+accessory-vendor-creation exception in **business-rules**: creating something
+new is lower-stakes than editing or deleting what's already there. Every
+other mutation in this module (`PATCH`/`DELETE` on a lead, notes, convert-to-
+customer, Set rename/delete) still requires the edit grant on top of being
+the Set's current holder.
 
 **Reassigning a Set is manager-or-above; cloning it (a fresh copy with no
 history) is owner-only.** This is one notch stricter than the plain
