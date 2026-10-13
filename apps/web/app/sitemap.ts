@@ -21,6 +21,9 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: `${SITE_URL}/about`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/contact`, changeFrequency: "monthly", priority: 0.5 },
     { url: `${SITE_URL}/faq`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE_URL}/warranty`, changeFrequency: "monthly", priority: 0.5 },
+    { url: `${SITE_URL}/replacement-policy`, changeFrequency: "monthly", priority: 0.4 },
+    { url: `${SITE_URL}/shipping-policy`, changeFrequency: "monthly", priority: 0.4 },
     // The blog index is only worth crawling once it has something on it.
     ...(posts.length > 0 ? [{ url: `${SITE_URL}/blog`, changeFrequency: "weekly" as const, priority: 0.5 }] : []),
   ];

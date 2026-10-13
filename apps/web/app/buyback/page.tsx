@@ -1,14 +1,14 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
-import { LegalDraftNotice } from "@/components/LegalDraftNotice";
-import { WHATSAPP_NUMBER, BUSINESS_EMAIL, BUYBACK_PERCENT, BUYBACK_WINDOW_MONTHS } from "@/lib/business-info";
+import { WHATSAPP_NUMBER, BUSINESS_EMAIL } from "@/lib/business-info";
+import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
 export const revalidate = 60;
 
 const baseMetadata: Metadata = {
-  title: "Buyback Guarantee",
+  title: "Trade-in & Buyback Quote",
   robots: { index: false },
 };
 
@@ -18,47 +18,32 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function BuybackPage() {
+  const waHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi, I'd like a trade-in quote for my old laptop/desktop.")}`;
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
-      <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">Buyback Guarantee</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Last updated: [date]</p>
+    <PolicyLayout title="Trade-in & Buyback Quote" updated="13 October 2026">
+      <p>
+        Want to sell or trade in your old laptop or desktop? We quote each unit individually. There is no fixed
+        buyback percentage: the price depends on the model, age and condition.
+      </p>
 
-      <div className="mt-6">
-        <LegalDraftNotice />
-      </div>
+      <PolicySection title="How it works">
+        <ol className="list-decimal space-y-1 pl-5">
+          <li>
+            Message us on <a href={waHref} className="text-brand-orange underline">WhatsApp</a> or email{" "}
+            <a href={`mailto:${BUSINESS_EMAIL}`} className="text-brand-orange underline">{BUSINESS_EMAIL}</a> with the brand,
+            model, specifications and a few photos.
+          </li>
+          <li>We give you an estimate. The final price is confirmed after we inspect the unit.</li>
+          <li>If you accept, we pay you, or adjust the amount against a purchase from us.</li>
+        </ol>
+      </PolicySection>
 
-      <div className="space-y-6 text-sm leading-relaxed text-foreground">
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">How it works</h2>
-          <p>
-            On eligible laptops, desktops, monitors and tablets, DigitalBluez guarantees to buy back your
-            unit for <strong>{BUYBACK_PERCENT}% of its purchase price</strong>, provided the request is made
-            within <strong>{BUYBACK_WINDOW_MONTHS} months</strong> of delivery. The guaranteed amount is fixed
-            at the time of purchase and shown on the product page.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">Eligibility</h2>
-          <p>
-            The unit must be in working condition, matching the condition it was delivered in (normal wear
-            excepted), with no physical/liquid damage and no unauthorized repairs or component swaps.
-            [Confirm any additional eligibility conditions, e.g. original accessories/charger required.]
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">What's not covered</h2>
-          <p>[Confirm exclusions -- e.g. accessories/monitors/ACC-category items, units bought during a sale, etc.]</p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">How to redeem</h2>
-          <p>
-            Message us on{" "}
-            <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="text-brand-orange underline">WhatsApp</a> or email{" "}
-            <a href={`mailto:${BUSINESS_EMAIL}`} className="text-brand-orange underline">{BUSINESS_EMAIL}</a> with
-            your order number. [Confirm inspection process, payout method, and timeline.]
-          </p>
-        </section>
-      </div>
-    </main>
+      <PolicySection title="What affects the price">
+        <p>
+          Model and age, processor, memory and storage, screen and battery condition, and whether it powers on and
+          works. Units with physical or liquid damage are valued lower.
+        </p>
+      </PolicySection>
+    </PolicyLayout>
   );
 }

@@ -11,6 +11,7 @@ import {
   BUSINESS_EMAIL,
   WHATSAPP_NUMBER,
   SOCIAL_LINKS,
+  GRIEVANCE_OFFICER,
 } from '@/lib/business-info'
 
 // Whole machines first, then everything else; only categories that currently
@@ -141,10 +142,13 @@ export async function SiteFooter() {
                 <Link href="/warranty" className="hover:text-brand-orange">Warranty Policy</Link>
               </li>
               <li>
-                <Link href="/return-policy" className="hover:text-brand-orange">Return Policy</Link>
+                <Link href="/replacement-policy" className="hover:text-brand-orange">Replacement Policy</Link>
               </li>
               <li>
-                <Link href="/buyback" className="hover:text-brand-orange">Buyback Guarantee</Link>
+                <Link href="/shipping-policy" className="hover:text-brand-orange">Shipping &amp; Delivery</Link>
+              </li>
+              <li>
+                <Link href="/buyback" className="hover:text-brand-orange">Trade-in</Link>
               </li>
               <li>
                 <Link href="/terms" className="hover:text-brand-orange">Terms &amp; Conditions</Link>
@@ -157,7 +161,10 @@ export async function SiteFooter() {
         </div>
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} DigitalBluez. All rights reserved.</p>
-          <p>One Stop IT Solutions</p>
+          <p>
+            Grievance Officer: {GRIEVANCE_OFFICER.name} ·{' '}
+            <a href={`mailto:${GRIEVANCE_OFFICER.email}`} className="hover:text-brand-orange">{GRIEVANCE_OFFICER.email}</a>
+          </p>
         </div>
       </div>
     </footer>

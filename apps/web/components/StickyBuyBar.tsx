@@ -14,14 +14,12 @@ import { WhatsAppOrderButton } from './WhatsAppOrderButton'
 // content never sits directly under the WhatsApp bubble on mobile.
 export function StickyBuyBar({
   price,
-  marketPrice,
   skuId,
   disabled,
   whatsappHref,
   item,
 }: {
   price: number
-  marketPrice: number | null
   skuId: string
   disabled?: boolean
   whatsappHref: string
@@ -45,7 +43,7 @@ export function StickyBuyBar({
     <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 p-3 pr-16 backdrop-blur sm:hidden">
       <div className="flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <PriceTag price={price} marketPrice={marketPrice} />
+          <PriceTag price={price} />
         </div>
         <div className="flex shrink-0 items-center gap-1.5">
           <WhatsAppOrderButton href={whatsappHref} compact />

@@ -8,7 +8,7 @@ const STEPS = [
   {
     n: "02",
     title: "Warrantied",
-    detail: "A 6-month warranty and a GST invoice are included with every order.",
+    detail: "A 6-month warranty on every laptop, desktop, monitor and tablet, plus a GST invoice with every order.",
     icon: <path d="M12 3l7 3v5.5c0 4.2-3 7.9-7 9-4-1.1-7-4.8-7-9V6l7-3z" />,
   },
   {

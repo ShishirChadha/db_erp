@@ -21,10 +21,6 @@ export function ProductCard({
 }) {
   const title = productDisplayTitle(product, templates)
 
-  const hasDiscount = !!product.market_price && product.market_price > product.web_price
-  const percentOff = hasDiscount
-    ? Math.round(((product.market_price! - product.web_price) / product.market_price!) * 100)
-    : 0
 
   return (
     <Link
@@ -45,11 +41,6 @@ export function ProductCard({
         ) : (
           <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No image</div>
         )}
-        {hasDiscount && (
-          <span className="absolute left-2 top-2 rounded-full bg-brand-orange px-2 py-0.5 text-xs font-bold text-white shadow-sm">
-            {percentOff}% off
-          </span>
-        )}
         {product.web_condition_grade && (
           <span className="absolute right-2 top-2">
             <ConditionBadge grade={product.web_condition_grade} />
@@ -60,7 +51,7 @@ export function ProductCard({
       <div className="flex flex-1 flex-col gap-2 p-3.5">
         <p className="line-clamp-2 text-sm font-medium text-foreground">{title}</p>
         <div className="mt-auto flex items-center justify-between gap-2">
-          <PriceTag price={product.web_price} marketPrice={product.market_price} />
+          <PriceTag price={product.web_price} />
         </div>
         <AvailabilityBadge bucket={product.availability_bucket} />
       </div>

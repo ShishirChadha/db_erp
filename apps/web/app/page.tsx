@@ -44,22 +44,12 @@ const HERO_CATEGORIES = [
 // was previously invisible in the storefront's nav entirely (see AGENTS/plan).
 const CATEGORY_TILES = [...HERO_CATEGORIES, { code: "ADP", label: "Adapters/Chargers" }];
 
-function discountPercent(price: number, marketPrice: number | null): number {
-  if (!marketPrice || marketPrice <= price) return 0;
-  return Math.round(((marketPrice - price) / marketPrice) * 100);
-}
-
 export default async function HomePage() {
   const [products, templates, banners] = await Promise.all([
     getPublishedProducts({ limit: 24, excludeSoldOut: true }),
     getCategories(),
     getActiveBanners(),
   ]);
-
-  const bestDeals = [...products]
-    .filter((p) => discountPercent(p.web_price, p.market_price) > 0)
-    .sort((a, b) => discountPercent(b.web_price, b.market_price) - discountPercent(a.web_price, a.market_price))
-    .slice(0, 4);
 
   const recentlyAdded = products.slice(0, 8);
 
@@ -77,7 +67,7 @@ export default async function HomePage() {
         />
         <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8 lg:py-20">
           <p className="animate-fade-up inline-flex items-center rounded-full border border-brand-orange/30 bg-brand-orange/10 px-3 py-1 text-xs font-semibold text-brand-orange-dark">
-            Quality-checked · 6-month warranty
+            Quality-checked · 6-month warranty on laptops &amp; desktops
           </p>
           <h1 className="mt-4 max-w-2xl text-4xl font-bold tracking-tight text-foreground sm:text-5xl">
             Great tech, <span className="text-brand-orange">without</span> the new price.
@@ -117,22 +107,6 @@ export default async function HomePage() {
           ))}
         </div>
       </section>
-
-      {bestDeals.length > 0 && (
-        <section className="bg-secondary/30">
-          <div className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
-            <div className="mb-6 flex items-baseline justify-between">
-              <h2 className="font-heading text-xl font-bold text-foreground">Best deals right now</h2>
-              <span className="text-sm font-medium text-brand-orange">Biggest markdowns</span>
-            </div>
-            <div className="stagger grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-              {bestDeals.map((product) => (
-                <ProductCard key={product.id} product={product} templates={templates} />
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
 
       <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6 lg:px-8">
         <div className="mb-6 flex items-baseline justify-between">

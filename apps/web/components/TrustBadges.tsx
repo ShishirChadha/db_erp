@@ -8,7 +8,7 @@ const BADGES = [
   },
   {
     label: "6-month warranty",
-    detail: "Included on every unit",
+    detail: "On laptops, desktops, monitors & tablets",
     icon: (
       <path d="M12 3l7 3v5.5c0 4.2-3 7.9-7 9-4-1.1-7-4.8-7-9V6l7-3z" />
     ),

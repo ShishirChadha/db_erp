@@ -39,6 +39,14 @@ export function isRefurbishedMachine(code: string): boolean {
   return REFURBISHED_MACHINE_CATEGORIES.has(code)
 }
 
+// Every laptop, desktop, monitor and tablet carries the 6-month warranty (owner
+// decision 2026-10-13, see /warranty), so an unlabelled one shows it rather than
+// "no warranty". Accessories keep exactly the label set on the SKU (or none).
+export const DEFAULT_MACHINE_WARRANTY = '6 Months'
+export function effectiveWarrantyLabel(category: string, label: string | null): string | null {
+  return label ?? (REFURBISHED_MACHINE_CATEGORIES.has(category) ? DEFAULT_MACHINE_WARRANTY : null)
+}
+
 export function categoryHeading(code: string, displayName: string): string {
   const label = categoryPluralLabel(code, displayName)
   return REFURBISHED_MACHINE_CATEGORIES.has(code) ? `Refurbished ${label}` : label

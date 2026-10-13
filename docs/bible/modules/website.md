@@ -14,7 +14,7 @@ sources:
   - apps/web/lib/email.ts
   - apps/erp/app/api/website-admin/**
   - apps/erp/app/api/web-orders/**
-updated: 2026-10-12
+updated: 2026-10-13
 ---
 
 ## The ERP is the single source of truth — the website never gets a copy
@@ -161,6 +161,33 @@ Sort control (Featured/Newest/Price asc/desc). The two filterable categories
 (Laptops/Desktops) apply it in-memory alongside their existing spec facets;
 everywhere else it's real SQL (`.neq('availability_bucket','sold_out')`,
 `.order()`) via `getPublishedProductsPage()`.
+
+## Customer policies (owner-approved 2026-10-13)
+
+Three customer-facing policy pages are live and indexable: **Warranty** (`/warranty`), **Replacement** (`/replacement-policy`)
+and **Shipping & Delivery** (`/shipping-policy`). Privacy and Terms are still drafts (noindex). The terms, in short:
+
+- **Warranty:** 6 months on every laptop, desktop, monitor and tablet, from delivery; accessories keep the warranty on their
+  own product page. Excluded: physical/liquid damage, motherboard/CPU/GPU damage from shorting, third-party repair,
+  software/data loss, normal battery ageing. Remedy: repair, else equal-or-better replacement, else refund. The customer pays to
+  send the unit in; DigitalBluez pays the return of the repaired/replacement unit. Walk-in service at the store is free.
+  The storefront shows "6 Months" for any computer SKU with no label (`effectiveWarrantyLabel`, applied once in
+  `lib/queries.ts`), so nothing needs back-filling in the ERP.
+- **No change-of-mind returns.** Replacements only: dead/damaged/wrong on arrival (report within 48 hours with an unboxing video)
+  or a hardware defect within 7 days; refund to the original payment method within 7 working days only when a replacement
+  isn't possible (Indian e-commerce rules don't let a seller refuse a refund for a defective or misdescribed item). DigitalBluez
+  pays the courier for the replacement and for collecting arrival problems; the customer pays to send back a defect found
+  within 7 days.
+- **Shipping:** dispatch within 3–6 business days; delivery per the courier; free on orders that include a laptop, desktop,
+  monitor or tablet. Cash on delivery terms are read live from the checkout settings, so the page can't disagree with checkout.
+  Accessory-only orders are intended to carry a location-based shipping charge (₹250 Noida/Greater Noida, ₹350
+  Delhi/Gurgaon/Faridabad, ₹500 elsewhere) — **not built yet** (needs a checkout and GST-invoice change), so the page says
+  nothing about it until it is.
+- **Grievance Officer:** named in the footer and on the replacement policy (`GRIEVANCE_OFFICER` in `lib/business-info.ts`).
+
+The storefront no longer shows a struck-through MRP or "% off" (no stored market price has a documented source), and the
+home page's "Best deals" row, which depended on it, is gone. The per-product **buyback guarantee amount** was replaced by a
+"Trade in your old laptop — get a quote on WhatsApp" prompt; `/buyback` is now a plain trade-in page with no fixed percentage.
 
 ## How product photos are resized
 

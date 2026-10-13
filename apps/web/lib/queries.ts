@@ -1,5 +1,6 @@
 import { cache } from 'react'
 import { createPublicSupabaseClient } from '@db/db/public'
+import { effectiveWarrantyLabel } from '@/lib/seo'
 
 export interface PublicProduct {
   id: string
@@ -38,6 +39,13 @@ export interface CategoryTemplate {
   display_name: string
   field_schema: any
 }
+
+// Single choke point so filters, collections, the feed and product pages all see
+// the same warranty (the 6-month default for computers).
+function withWarranty(p: PublicProduct): PublicProduct {
+  return { ...p, warranty_label: effectiveWarrantyLabel(p.category, p.warranty_label) }
+}
+const withWarranties = (rows: unknown): PublicProduct[] => ((rows ?? []) as PublicProduct[]).map(withWarranty)
 
 const PRODUCT_COLUMNS =
   'id, web_slug, full_sku_code, category, item_type, brand, model_name, specifications, web_title, web_description, web_highlights, web_condition_grade, web_price, market_price, hsn_code, published_at, availability_bucket, primary_image_path, warranty_label'
@@ -78,7 +86,7 @@ export const getPublishedProducts = cache(async (opts: {
   if (opts.limit) query = query.limit(opts.limit)
 
   const { data } = await query
-  return (data ?? []) as unknown as PublicProduct[]
+  return withWarranties(data)
 })
 
 // Default page size for the two paginated listing surfaces (category pages
@@ -141,7 +149,7 @@ export const getPublishedProductsPage = cache(async (opts: {
   if (opts.excludeSoldOut) query = query.neq('availability_bucket', 'sold_out')
 
   const { data, count } = await query
-  return { products: (data ?? []) as unknown as PublicProduct[], total: count ?? 0 }
+  return { products: withWarranties(data), total: count ?? 0 }
 })
 
 export const getSiblingConfigurations = cache(async (opts: {
@@ -160,7 +168,7 @@ export const getSiblingConfigurations = cache(async (opts: {
     .neq('id', opts.excludeId)
     .neq('availability_bucket', 'sold_out')
     .order('web_price', { ascending: true })
-  return (data ?? []) as unknown as PublicProduct[]
+  return withWarranties(data)
 })
 
 // PostgREST caps a single response at 1000 rows, so anything that must see the
@@ -229,7 +237,7 @@ export const getProductBySlug = cache(async (slug: string): Promise<PublicProduc
     .select(PRODUCT_COLUMNS)
     .eq('web_slug', slug)
     .maybeSingle()
-  return (data as unknown as PublicProduct) ?? null
+  return data ? withWarranty(data as unknown as PublicProduct) : null
 })
 
 export const getProductImages = cache(async (skuId: string): Promise<PublicProductImage[]> => {

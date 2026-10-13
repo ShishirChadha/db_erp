@@ -15,7 +15,7 @@ export function SiteHeader() {
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
       <div className="hidden bg-foreground text-background sm:block">
         <div className="mx-auto flex max-w-6xl items-center justify-center gap-6 px-4 py-1.5 text-xs font-medium sm:px-6 lg:px-8">
-          <span>Every unit quality-checked &amp; backed by warranty</span>
+          <span>Every unit quality-checked · 6-month warranty on laptops &amp; desktops</span>
           <span className="h-1 w-1 rounded-full bg-background/40" />
           <span>Secure Razorpay checkout</span>
         </div>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
-import { WHATSAPP_NUMBER, BUSINESS_EMAIL, BUYBACK_PERCENT, BUYBACK_WINDOW_MONTHS } from "@/lib/business-info";
+import { WHATSAPP_NUMBER, BUSINESS_EMAIL } from "@/lib/business-info";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
@@ -9,7 +9,7 @@ export const revalidate = 60;
 
 const baseMetadata: Metadata = {
   title: "Frequently Asked Questions",
-  description: "Answers to common questions about buying refurbished laptops and desktops from DigitalBluez — warranty, returns, buyback, and payment.",
+  description: "Answers to common questions about buying refurbished laptops and desktops from DigitalBluez — warranty, replacements, delivery, trade-in and payment.",
   alternates: { canonical: "/faq" },
 };
 
@@ -21,19 +21,31 @@ export async function generateMetadata(): Promise<Metadata> {
 const FAQS = [
   {
     q: "Are DigitalBluez's laptops and desktops genuinely refurbished, or just used?",
-    a: "Every unit we sell goes through our quality-check process before it's listed — condition grading, and (where shown on the product page) a per-unit test report covering things like battery health, keyboard, ports, and boot. We publish a unit only after it's passed.",
+    a: "Every unit we sell goes through our quality-check process before it's listed: condition grading and, where shown on the product page, a per-unit test report covering the screen, keyboard, trackpad, ports and more. We publish a unit only after it has passed.",
   },
   {
     q: "What warranty do I get?",
-    a: "Warranty coverage (type and duration) is shown on each product page for units that have one on file. See our full Warranty Policy for terms.",
+    a: "Every laptop, desktop, monitor and tablet has a 6-month warranty from delivery that covers hardware faults from normal use. Accessories carry the warranty shown on their product page. Physical or liquid damage, and motherboard, CPU or GPU damage from shorting, are not covered. See our Warranty Policy for the full terms.",
   },
   {
-    q: "What's your return policy?",
-    a: "See our Return Policy page for the current window and conditions.",
+    q: "What if my laptop arrives faulty?",
+    a: "Tell us within 48 hours of delivery, with an unboxing video, if it arrives dead, damaged or wrong, or within 7 days if it has a hardware defect from normal use. We replace it with the same or better specification, or refund you if we can't. See our Replacement Policy.",
   },
   {
-    q: "Do you offer a buyback guarantee?",
-    a: `Yes — on eligible units, we guarantee to buy back your unit for ${BUYBACK_PERCENT}% of its purchase price within ${BUYBACK_WINDOW_MONTHS} months of delivery. See our Buyback Guarantee page for eligibility and how to redeem it.`,
+    q: "Can I return a laptop if I change my mind?",
+    a: "No. We don't accept returns for change of mind, which is why every unit is tested and graded before it's listed. You're welcome to visit our Greater Noida store to see a unit first, or message us on WhatsApp with any question about a specific one.",
+  },
+  {
+    q: "How long does delivery take?",
+    a: "Orders ship within 3–6 business days of placement. After that, delivery times are as given by our courier partners. See our Shipping & Delivery Policy.",
+  },
+  {
+    q: "Can I pay cash on delivery?",
+    a: "Yes. You pay a part of the amount online when you order, and the rest on delivery. A cash-on-delivery handling fee applies and is shown at checkout before you pay.",
+  },
+  {
+    q: "Do you take trade-ins?",
+    a: "Yes. Message us on WhatsApp with the model and a few photos of your old laptop or desktop and we'll give you a quote. The final price is confirmed after we inspect the unit.",
   },
   {
     q: "Do you provide a GST invoice?",
@@ -76,8 +88,9 @@ export default function FaqPage() {
 
       <div className="mt-10 flex flex-wrap gap-x-4 gap-y-1 border-t border-border pt-4 text-sm">
         <Link href="/warranty" className="text-brand-orange hover:underline">Warranty Policy</Link>
-        <Link href="/return-policy" className="text-brand-orange hover:underline">Return Policy</Link>
-        <Link href="/buyback" className="text-brand-orange hover:underline">Buyback Guarantee</Link>
+        <Link href="/replacement-policy" className="text-brand-orange hover:underline">Replacement Policy</Link>
+        <Link href="/shipping-policy" className="text-brand-orange hover:underline">Shipping &amp; Delivery</Link>
+        <Link href="/buyback" className="text-brand-orange hover:underline">Trade-in</Link>
         <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="text-brand-orange hover:underline">
           Ask us on WhatsApp
         </a>

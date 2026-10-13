@@ -29,7 +29,7 @@ import { TrustBadges } from "@/components/TrustBadges";
 import { GoogleRatingBadge } from "@/components/GoogleReviews";
 import { ProductUnitCard } from "@/components/ProductUnitCard";
 import { SiblingConfigs } from "@/components/SiblingConfigs";
-import { BuybackBadge } from "@/components/BuybackBadge";
+import { TradeInBadge } from "@/components/TradeInBadge";
 import { NeedHelpCTA } from "@/components/NeedHelpCTA";
 import { ShareButtons } from "@/components/ShareButtons";
 import { WishlistButton } from "@/components/WishlistButton";
@@ -264,7 +264,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
             </div>
 
             <div className="mt-5">
-              <PriceTag price={product.web_price} marketPrice={product.market_price} size="lg" />
+              <PriceTag price={product.web_price} size="lg" />
             </div>
 
             {siblings.length > 0 && (
@@ -292,7 +292,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
             {isSerializedCategory(product.category) && (
               <div className="mt-5">
-                <BuybackBadge price={product.web_price} />
+                <TradeInBadge title={title} productUrl={productUrl} />
               </div>
             )}
 
@@ -347,7 +347,6 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
       <StickyBuyBar
         price={product.web_price}
-        marketPrice={product.market_price}
         skuId={product.id}
         disabled={product.availability_bucket === "sold_out"}
         whatsappHref={whatsappHref}

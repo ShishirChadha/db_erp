@@ -41,9 +41,16 @@ export const SOCIAL_LINKS = {
   linkedin: "https://www.linkedin.com/company/digitalbluez/",
 };
 
-// Buyback guarantee -- flat-window model (chosen 2026-07-29, replacing NewJaisa's
-// multi-tier slider with something simpler to both display and commit to).
-// PLACEHOLDER VALUES -- not yet a confirmed DigitalBluez policy. Do not treat
-// as live/binding until the owner confirms real numbers; see /buyback page.
-export const BUYBACK_PERCENT = 40; // [confirm real %]
-export const BUYBACK_WINDOW_MONTHS = 12; // [confirm real window]
+// Opening hours -- confirmed by the owner 2026-10-13 (same as the Google Business
+// Profile): every day, 9 AM to 8 PM.
+export const BUSINESS_HOURS_TEXT = "Every day, 9:00 AM – 8:00 PM";
+export const BUSINESS_OPENING_HOURS_SPEC = {
+  "@type": "OpeningHoursSpecification",
+  dayOfWeek: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"],
+  opens: "09:00",
+  closes: "20:00",
+} as const;
+
+// Grievance Officer -- named on the policy pages and in the footer (Consumer
+// Protection (E-Commerce) Rules, 2020). Confirmed by the owner 2026-10-13.
+export const GRIEVANCE_OFFICER = { name: "Shishir", email: "grievances@digitalbluez.com" };
