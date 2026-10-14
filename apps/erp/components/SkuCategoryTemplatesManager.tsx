@@ -10,6 +10,7 @@ interface TemplateField {
   type: 'text' | 'number' | 'checkbox' | 'select' | 'textarea'
   required?: boolean
   options?: string[]
+  optionsCategory?: string
   showIf?: { field: string; equals: any }
 }
 
@@ -31,7 +32,7 @@ function slugify(label: string) {
     .replace(/^_+|_+$/g, '')
 }
 
-const emptyNewField = { label: '', name: '', type: 'text' as TemplateField['type'], required: false, options: '', variant: false, showIfField: '' }
+const emptyNewField = { label: '', name: '', type: 'text' as TemplateField['type'], required: false, options: '', optionsCategory: '', useCustomOptions: false, variant: false, showIfField: '' }
 
 // Owner-only editor for `sku_category_templates` -- the schema that drives every
 // SKU spec form (New SKU, Stock Intake's inline create, PO wizard's create-new-SKU
@@ -146,7 +147,14 @@ export default function SkuCategoryTemplatesManager() {
     const name = (newField.name.trim() || slugify(label))
     if (!label || !name) { setError('New field needs a label.'); return }
     if (draftFields.some((f) => f.name === name)) { setError(`Field name "${name}" already exists in this category.`); return }
-    if (newField.type === 'select' && !newField.options.trim()) { setError('Select fields need at least one option (comma-separated).'); return }
+    if (newField.type === 'select' && newField.useCustomOptions && !newField.optionsCategory.trim()) {
+      setError('Pick or type an options-list key for an owner-curated select field.')
+      return
+    }
+    if (newField.type === 'select' && !newField.useCustomOptions && !newField.options.trim()) {
+      setError('Select fields need at least one option (comma-separated), or switch to an owner-curated list.')
+      return
+    }
 
     const field: TemplateField = {
       name,
@@ -154,7 +162,10 @@ export default function SkuCategoryTemplatesManager() {
       type: newField.type,
       required: newField.required,
     }
-    if (newField.type === 'select') field.options = newField.options.split(',').map((o) => o.trim()).filter(Boolean)
+    if (newField.type === 'select') {
+      if (newField.useCustomOptions) field.optionsCategory = slugify(newField.optionsCategory)
+      else field.options = newField.options.split(',').map((o) => o.trim()).filter(Boolean)
+    }
     if (newField.showIfField) field.showIf = { field: newField.showIfField, equals: true }
 
     setDraftFields((prev) => [...prev, field])
@@ -292,12 +303,30 @@ export default function SkuCategoryTemplatesManager() {
                       {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                     </select>
                     {field.type === 'select' && (
-                      <input
-                        value={(field.options || []).join(', ')}
-                        onChange={(e) => updateField(i, { options: e.target.value.split(',').map((o) => o.trim()).filter(Boolean) })}
-                        placeholder="options, comma-separated"
-                        className="border p-1 rounded flex-1 min-w-[140px]"
-                      />
+                      <>
+                        <label className="flex items-center gap-1 text-xs">
+                          <Checkbox
+                            checked={!!field.optionsCategory}
+                            onCheckedChange={(v) => updateField(i, v ? { optionsCategory: slugify(field.label), options: undefined } : { optionsCategory: undefined, options: [] })}
+                          />
+                          Owner-curated list
+                        </label>
+                        {field.optionsCategory ? (
+                          <input
+                            value={field.optionsCategory}
+                            onChange={(e) => updateField(i, { optionsCategory: e.target.value })}
+                            placeholder="options list key"
+                            className="border p-1 rounded flex-1 min-w-[160px] font-mono"
+                          />
+                        ) : (
+                          <input
+                            value={(field.options || []).join(', ')}
+                            onChange={(e) => updateField(i, { options: e.target.value.split(',').map((o) => o.trim()).filter(Boolean) })}
+                            placeholder="options, comma-separated"
+                            className="border p-1 rounded flex-1 min-w-[140px]"
+                          />
+                        )}
+                      </>
                     )}
                     <label className="flex items-center gap-1 text-xs">
                       <Checkbox checked={!!field.required} onCheckedChange={(v) => updateField(i, { required: !!v })} />
@@ -314,6 +343,9 @@ export default function SkuCategoryTemplatesManager() {
 
               <div className="border rounded p-2 space-y-2 bg-muted">
                 <p className="text-xs font-medium text-muted-foreground">+ Add Field</p>
+                <p className="text-xs text-muted-foreground">
+                  A "select" field can use a fixed, hand-typed list, or an owner-curated list: pick from existing values, or type a new one to add it for every future SKU. Curated lists are managed centrally in Settings → Dropdown Options under the same key.
+                </p>
                 <div className="flex flex-wrap gap-2">
                   <input
                     value={newField.label}
@@ -331,12 +363,27 @@ export default function SkuCategoryTemplatesManager() {
                     {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                   </select>
                   {newField.type === 'select' && (
-                    <input
-                      value={newField.options}
-                      onChange={(e) => setNewField((f) => ({ ...f, options: e.target.value }))}
-                      placeholder="options, comma-separated"
-                      className="border p-1 rounded text-sm flex-1 min-w-[140px]"
-                    />
+                    <>
+                      <label className="flex items-center gap-1 text-xs">
+                        <Checkbox checked={newField.useCustomOptions} onCheckedChange={(v) => setNewField((f) => ({ ...f, useCustomOptions: !!v }))} />
+                        Owner-curated list
+                      </label>
+                      {newField.useCustomOptions ? (
+                        <input
+                          value={newField.optionsCategory}
+                          onChange={(e) => setNewField((f) => ({ ...f, optionsCategory: e.target.value }))}
+                          placeholder="options list key, e.g. generation"
+                          className="border p-1 rounded text-sm flex-1 min-w-[160px]"
+                        />
+                      ) : (
+                        <input
+                          value={newField.options}
+                          onChange={(e) => setNewField((f) => ({ ...f, options: e.target.value }))}
+                          placeholder="options, comma-separated"
+                          className="border p-1 rounded text-sm flex-1 min-w-[140px]"
+                        />
+                      )}
+                    </>
                   )}
                   {checkboxFieldNames.length > 0 && (
                     <select value={newField.showIfField} onChange={(e) => setNewField((f) => ({ ...f, showIfField: e.target.value }))} className="border p-1 rounded text-sm">

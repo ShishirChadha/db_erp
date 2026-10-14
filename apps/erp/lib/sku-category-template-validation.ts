@@ -21,8 +21,8 @@ export function validateFieldSchema(schema: any): string | null {
     seenNames.add(name)
     if (!label) return `Field "${name}" needs a label.`
     if (!VALID_TYPES.includes(field.type)) return `Field "${name}" has an invalid type "${field.type}".`
-    if (field.type === 'select' && (!Array.isArray(field.options) || field.options.length === 0)) {
-      return `Select field "${name}" needs at least one option.`
+    if (field.type === 'select' && !field.optionsCategory && (!Array.isArray(field.options) || field.options.length === 0)) {
+      return `Select field "${name}" needs at least one option (or an owner-curated options list).`
     }
     if (field.showIf && (!field.showIf.field || !seenNames.has(field.showIf.field))) {
       return `Field "${name}"'s showIf must reference an earlier field in the list.`

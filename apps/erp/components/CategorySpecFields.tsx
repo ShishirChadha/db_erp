@@ -52,7 +52,17 @@ export function CategorySpecFields({
   return (
     <>
       {fields.map((field: any) => {
-        const optionsCategory = getCustomOptionsCategory(category, field.name)
+        // A field can declare `showIf: { field: otherFieldName, equals: value }` to only
+        // render once another field in the same schema matches -- e.g. Desktop's
+        // monitor_brand/size/resolution only appear once "includes_monitor" is checked.
+        if (field.showIf && specs[field.showIf.field] !== field.showIf.equals) return null
+
+        // A field can explicitly declare `optionsCategory` (set via Settings -> SKU
+        // Categories) to be backed by an owner-curated custom_options list -- same
+        // searchable-dropdown-with-"Other..."-escape-hatch UX as the legacy hardcoded
+        // (category, field name) pairs in getCustomOptionsCategory(), just author-able
+        // per field instead of requiring a code change.
+        const optionsCategory = field.optionsCategory || getCustomOptionsCategory(category, field.name)
         return (
           <div key={field.name} className="mb-3">
             <label className="block text-sm font-medium">{field.label}</label>
@@ -88,6 +98,14 @@ export function CategorySpecFields({
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+            ) : field.type === 'textarea' ? (
+              <textarea
+                value={specs[field.name] ?? ''}
+                onChange={(e) => onChange(field.name, e.target.value)}
+                className="border p-2 w-full rounded"
+                rows={3}
+                required={field.required}
+              />
             ) : null}
             <span className="text-xs text-muted-foreground">{field.required ? 'Required' : 'Optional'}</span>
           </div>
