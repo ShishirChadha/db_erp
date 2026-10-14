@@ -162,6 +162,15 @@ export function SkuFormModal({
 
   const { run: handleSubmit, pending: submitting } = useAsyncAction(async (e: React.FormEvent) => {
     e.preventDefault()
+    // Relying only on the native HTML5 `required` attribute (CategorySpecFields.tsx)
+    // silently blocks the form submit with no visible feedback if the bubble lands
+    // outside the modal's scrolled viewport -- check explicitly so a missing
+    // required spec (e.g. Keyboard's "Brand") always surfaces a clear message.
+    const missingField = fields.find((f: any) => f.required && !specs[f.name] && specs[f.name] !== 0 && specs[f.name] !== false)
+    if (missingField) {
+      alert(`"${missingField.label}" is required for this category.`)
+      return
+    }
     if (isService && !sacCodeId) {
       alert('Select a SAC code for this service.')
       return
