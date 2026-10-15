@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { CrawlSection, KeywordsSection } from '@/components/WebsiteSeoData'
 import { ListHeader, ListItem, NavList, Panes, Pill, type NavEntry } from '@/components/MasterDetail'
+import CompetitorsSection from '@/components/CompetitorsSection'
 
 // Owner-only Settings -> Website SEO. Everything here is stored in the seo_*
 // tables (migration 20261015) and read by apps/web through public_seo_* views,
@@ -12,7 +13,7 @@ import { ListHeader, ListItem, NavList, Panes, Pill, type NavEntry } from '@/com
 
 const SITE = 'https://www.digitalbluez.com'
 
-type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'history'
+type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'competitors' | 'history'
 const NAV: (NavEntry & { key: TabKey })[] = [
   { key: 'overview', label: 'Overview', hint: 'What needs attention' },
   { key: 'defaults', label: 'Site defaults', hint: 'Descriptions and share image' },
@@ -22,6 +23,7 @@ const NAV: (NavEntry & { key: TabKey })[] = [
   { key: 'redirects', label: 'Redirects', hint: 'Old addresses to live pages' },
   { key: 'images', label: 'Image alt text', hint: 'Photo descriptions' },
   { key: 'crawl', label: 'Crawl & 404s', hint: 'Site audit and dead links' },
+  { key: 'competitors', label: 'Competitor websites', hint: 'Analyse sites, get ideas' },
   { key: 'history', label: 'History', hint: 'Undo earlier changes' },
 ]
 
@@ -1104,6 +1106,7 @@ export default function WebsiteSeoManager() {
       {tab === 'redirects' && <RedirectsSection />}
       {tab === 'images' && <ImagesSection />}
       {tab === 'crawl' && <CrawlSection />}
+      {tab === 'competitors' && <CompetitorsSection go={go} />}
       {tab === 'history' && <HistorySection />}
     </Panes>
   )
