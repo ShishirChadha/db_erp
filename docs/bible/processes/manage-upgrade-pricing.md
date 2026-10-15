@@ -13,7 +13,7 @@ sources:
   - apps/web/lib/order-to-sale.ts
   - apps/web/lib/upgrades.ts
   - apps/web/components/UpgradeSelector.tsx
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 ## What this is
@@ -26,7 +26,7 @@ spec change on a physical unit.
 
 ## Who can do this
 
-Owner-only. Settings → Website Admin → **Upgrade Pricing** tab.
+Owner-only. Settings → Website Admin → **Upgrade Pricing** (pick it in the list on the left).
 
 ## Steps
 

@@ -14,7 +14,7 @@ sources:
   - apps/erp/app/api/audit-log/[id]/restore-hard-delete/route.ts
   - apps/erp/app/api/audit-log/field-corrections/[correctionId]/revert/route.ts
   - apps/erp/lib/audit-log-restore.ts
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 ## What this is

@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/cross-sell-rules/[id]/route.ts
   - apps/web/lib/queries.ts
   - apps/web/app/product/[slug]/page.tsx
-updated: 2026-10-13
+updated: 2026-10-15
 ---
 
 ## What this is
@@ -27,7 +27,7 @@ be honest, so this stays a deliberate category→category mapping instead.
 
 ## Who can do this
 
-Owner-only. Settings → Website Admin → Cross-sell tab.
+Owner-only. Settings → Website Admin → Cross-sell (pick it in the list on the left).
 
 ## Steps
 

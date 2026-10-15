@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/website-admin/promotions/[id]/route.ts
   - apps/web/lib/promotions.ts
   - apps/web/app/api/checkout/start/route.ts
-updated: 2026-10-12
+updated: 2026-10-15
 ---
 
 ## What this is
@@ -28,7 +28,7 @@ promotion is scoped **sitewide**, to a **category** (code, e.g. `LAP`), to a
 
 ## Who can do this
 
-Owner-only. Settings → Website Admin → Promotions tab.
+Owner-only. Settings → Website Admin → Promotions (pick it in the list on the left).
 
 ## Steps
 
