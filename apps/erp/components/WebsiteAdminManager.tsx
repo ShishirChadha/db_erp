@@ -6,6 +6,7 @@ import { apiFetch } from '@/lib/api-client'
 import { downscaleImageFile } from '@/lib/client-image'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
+import { NavList, Panes } from '@/components/MasterDetail'
 
 function publicImageUrl(storagePath: string) {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/product-images/${storagePath}`
@@ -1176,39 +1177,36 @@ function PaymentSettingsSection() {
   )
 }
 
-const TABS = [
-  { key: 'upgrade_pricing', label: 'Upgrade Pricing' },
-  { key: 'promotions', label: 'Promotions' },
-  { key: 'cross_sell', label: 'Cross-sell' },
-  { key: 'banners', label: 'Banners' },
-  { key: 'blog', label: 'Blog' },
-  { key: 'payments', label: 'Payments' },
+const SECTIONS = [
+  { key: 'upgrade_pricing', label: 'Upgrade Pricing', hint: 'RAM, SSD and warranty upsells' },
+  { key: 'promotions', label: 'Promotions', hint: 'Discounts and free gifts' },
+  { key: 'cross_sell', label: 'Cross-sell', hint: '"Complete your setup" rules' },
+  { key: 'banners', label: 'Banners', hint: 'Home page banners' },
+  { key: 'blog', label: 'Blog', hint: 'Posts and guides' },
+  { key: 'payments', label: 'Payments', hint: 'Discounts and cash on delivery' },
 ] as const
 
+type SectionKey = typeof SECTIONS[number]['key']
+
 export default function WebsiteAdminManager() {
-  const [tab, setTab] = useState<typeof TABS[number]['key']>('upgrade_pricing')
+  const [tab, setTab] = useState<SectionKey>('upgrade_pricing')
+  const [open, setOpen] = useState(false)
 
   return (
-    <div>
-      <div className="flex gap-2 mb-4 border-b">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm font-medium border-b-2 -mb-px ${
-              tab === t.key ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+    <Panes
+      bp="md"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to Website Admin"
+      list={<NavList entries={[...SECTIONS]} active={tab} onSelect={(k) => { setTab(k as SectionKey); setOpen(true) }} />}
+    >
+      <h3 className="mb-3 text-base font-semibold">{SECTIONS.find((t) => t.key === tab)?.label}</h3>
       {tab === 'upgrade_pricing' && <UpgradePricingSection />}
       {tab === 'promotions' && <PromotionsSection />}
       {tab === 'cross_sell' && <CrossSellSection />}
       {tab === 'banners' && <BannersSection />}
       {tab === 'blog' && <BlogSection />}
       {tab === 'payments' && <PaymentSettingsSection />}
-    </div>
+    </Panes>
   )
 }

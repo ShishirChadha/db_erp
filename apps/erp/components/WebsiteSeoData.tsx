@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import Papa from 'papaparse'
 import { apiFetch } from '@/lib/api-client'
+import { ListHeader, ListItem, Panes, Pill } from '@/components/MasterDetail'
 
 // Keywords + Crawl & 404s tabs of Settings -> Website SEO. Split from
 // WebsiteSeoManager only to keep each file readable.
@@ -59,6 +60,7 @@ export function KeywordsSection() {
   const [sourceLabel, setSourceLabel] = useState('')
   const [asOf, setAsOf] = useState(new Date().toISOString().slice(0, 10))
   const fileRef = useRef<HTMLInputElement>(null)
+  const [open, setOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/website-seo/keywords')
@@ -70,13 +72,15 @@ export function KeywordsSection() {
   const save = async () => {
     setError(''); setMessage(''); setBusy(true)
     const res = await apiFetch('/api/website-seo/keywords', { method: 'PUT', body: JSON.stringify({ ...form, id: form.id || undefined, priority: form.priority ? Number(form.priority) : null }) })
-    if (res.ok) { setForm(emptyKw); await load() } else setError(await errorOf(res, 'Failed to save'))
+    if (res.ok) { setForm(emptyKw); await load(); setOpen(false) } else setError(await errorOf(res, 'Failed to save'))
     setBusy(false)
   }
 
   const remove = async (k: Keyword) => {
     if (!confirm(`Remove "${k.keyword}"?`)) return
     await apiFetch(`/api/website-seo/keywords?id=${k.id}`, { method: 'DELETE' })
+    setForm(emptyKw)
+    setOpen(false)
     await load()
   }
 
@@ -117,8 +121,43 @@ export function KeywordsSection() {
 
   const shown = rows.filter((k) => !filter || `${k.keyword} ${k.cluster ?? ''} ${k.target_url ?? ''}`.toLowerCase().includes(filter.toLowerCase()))
 
+  const editKw = (k: Keyword) => {
+    setForm({ id: k.id, keyword: k.keyword, cluster: k.cluster ?? '', intent: k.intent ?? '', geo: k.geo ?? '', target_url: k.target_url ?? '', priority: k.priority ? String(k.priority) : '', notes: k.notes ?? '' })
+    setError(''); setMessage(''); setOpen(true)
+  }
+  const current = rows.find((r) => r.id === form.id)
+
   return (
-    <div>
+    <Panes
+      bp="xl"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to keywords"
+      list={
+        <div>
+          <ListHeader title={`${rows.length} keyword${rows.length === 1 ? '' : 's'}`} onNew={() => { setForm(emptyKw); setError(''); setMessage(''); setOpen(true) }} />
+          <input className={`${inputCls} mb-2`} placeholder="Filter…" value={filter} onChange={(e) => setFilter(e.target.value)} />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : shown.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No keywords yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {shown.map((k) => (
+                <ListItem
+                  key={k.id}
+                  selected={k.id === form.id}
+                  onClick={() => editKw(k)}
+                  title={k.keyword}
+                  sub={[k.cluster, k.target_url, k.volume != null ? `${k.volume}/mo` : null, k.clicks != null ? `${k.clicks} clicks` : null, k.avg_position != null ? `pos ${k.avg_position}` : null].filter(Boolean).join(' · ') || 'no cluster or target yet'}
+                  right={k.priority ? <Pill tone={k.priority === 1 ? 'green' : 'gray'}>P{k.priority}</Pill> : undefined}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    >
       <p className="text-sm text-muted-foreground mb-4">
         Map each search phrase to the one page that should rank for it. Numbers appear here <b>only</b> when they come from a file you
         import (with the tool named) — nothing is estimated. Get the files from Search Console (Performance → Queries → Export),
@@ -132,7 +171,7 @@ export function KeywordsSection() {
         </div>
       )}
 
-      <div className="border rounded-lg p-4 mb-4 space-y-3">
+      <div className="space-y-3">
         <div className="text-sm font-semibold">{form.id ? 'Edit keyword' : 'Add a keyword'}</div>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <input className={inputCls} placeholder="Keyword, e.g. refurbished dell laptop" value={form.keyword} onChange={(e) => setForm((f) => ({ ...f, keyword: e.target.value }))} />
@@ -153,7 +192,9 @@ export function KeywordsSection() {
         </div>
       </div>
 
-      <div className="border rounded-lg p-4 mb-4 space-y-3">
+
+      {current && <button className="mt-3 text-sm text-destructive" onClick={() => remove(current)}>Remove this keyword</button>}
+      <div className="mt-6 space-y-3 border-t pt-4">
         <div className="text-sm font-semibold">Import a CSV</div>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end">
           <div>
@@ -176,43 +217,11 @@ export function KeywordsSection() {
         <p className="text-xs text-muted-foreground">Existing keywords are updated; new ones are added with no cluster or target page for you to fill in.</p>
       </div>
 
-      {error && <div className="text-destructive text-sm mb-2">{error}</div>}
-      {message && <div className="text-green-700 text-sm mb-2">{message}</div>}
 
-      <div className="flex gap-2 mb-2">
-        <input className={inputCls} placeholder="Filter keywords, clusters, pages…" value={filter} onChange={(e) => setFilter(e.target.value)} />
-        <button className={btnGhost} onClick={exportCsv} disabled={rows.length === 0}>Export CSV</button>
-      </div>
-      {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : shown.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No keywords yet.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left"><tr>
-              <th className="p-2">Keyword</th><th className="p-2">Cluster</th><th className="p-2">Target page</th>
-              <th className="p-2 text-right">Searches / month</th><th className="p-2 text-right">Clicks</th><th className="p-2 text-right">Impr.</th><th className="p-2 text-right">Avg. pos.</th><th className="p-2" />
-            </tr></thead>
-            <tbody>
-              {shown.map((k) => (
-                <tr key={k.id} className="border-t">
-                  <td className="p-2">{k.keyword}{k.priority ? <span className="ml-1 text-xs text-muted-foreground">P{k.priority}</span> : null}</td>
-                  <td className="p-2">{k.cluster ?? '—'}</td>
-                  <td className="p-2 break-all">{k.target_url ?? '—'}</td>
-                  <td className="p-2 text-right tabular-nums" title={k.volume_source ?? ''}>{k.volume ?? '—'}</td>
-                  <td className="p-2 text-right tabular-nums" title={k.metrics_source ? `${k.metrics_source}, ${k.metrics_as_of}` : ''}>{k.clicks ?? '—'}</td>
-                  <td className="p-2 text-right tabular-nums">{k.impressions ?? '—'}</td>
-                  <td className="p-2 text-right tabular-nums">{k.avg_position ?? '—'}</td>
-                  <td className="p-2 text-right whitespace-nowrap">
-                    <button className="text-primary mr-3" onClick={() => setForm({ id: k.id, keyword: k.keyword, cluster: k.cluster ?? '', intent: k.intent ?? '', geo: k.geo ?? '', target_url: k.target_url ?? '', priority: k.priority ? String(k.priority) : '', notes: k.notes ?? '' })}>Edit</button>
-                    <button className="text-destructive" onClick={() => remove(k)}>Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
+      {error && <div className="text-destructive text-sm mt-2">{error}</div>}
+      {message && <div className="text-green-700 text-sm mt-2">{message}</div>}
+      <button className={`${btnGhost} mt-3`} onClick={exportCsv} disabled={rows.length === 0}>Export all keywords as CSV</button>
+    </Panes>
   )
 }
 
@@ -330,21 +339,19 @@ export function CrawlSection() {
           (Search Console&apos;s Pages report covers those). Fix a repeated one with a redirect (Redirects tab), then mark it done.
         </p>
         {nf.length === 0 ? <div className="text-sm text-muted-foreground">Nothing recorded yet.</div> : (
-          <div className="overflow-x-auto rounded-md border">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-left"><tr><th className="p-2">Last seen</th><th className="p-2">Address</th><th className="p-2 text-right">Times</th><th className="p-2">Came from</th><th className="p-2" /></tr></thead>
-              <tbody>
-                {nf.map((r) => (
-                  <tr key={r.path} className="border-t">
-                    <td className="p-2 whitespace-nowrap">{new Date(r.last_seen).toLocaleDateString()}</td>
-                    <td className="p-2 break-all">{r.path}</td>
-                    <td className="p-2 text-right tabular-nums">{r.hits}</td>
-                    <td className="p-2 break-all text-muted-foreground">{r.last_referrer || '—'}</td>
-                    <td className="p-2 text-right"><button className="text-primary" onClick={() => clear404(r.path)}>Done</button></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y rounded-md border">
+            {nf.map((r) => (
+              <div key={r.path} className="flex items-start justify-between gap-3 p-3 text-sm">
+                <div className="min-w-0">
+                  <div className="break-all font-medium">{r.path}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {r.hits} time{r.hits === 1 ? '' : 's'} · last {new Date(r.last_seen).toLocaleDateString()}
+                    {r.last_referrer ? ` · from ${r.last_referrer}` : ''}
+                  </div>
+                </div>
+                <button className="shrink-0 text-primary" onClick={() => clear404(r.path)}>Done</button>
+              </div>
+            ))}
           </div>
         )}
       </div>

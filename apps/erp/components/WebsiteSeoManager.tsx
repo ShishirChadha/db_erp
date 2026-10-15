@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import { CrawlSection, KeywordsSection } from '@/components/WebsiteSeoData'
+import { ListHeader, ListItem, NavList, Panes, Pill, type NavEntry } from '@/components/MasterDetail'
 
 // Owner-only Settings -> Website SEO. Everything here is stored in the seo_*
 // tables (migration 20261015) and read by apps/web through public_seo_* views,
@@ -12,16 +13,16 @@ import { CrawlSection, KeywordsSection } from '@/components/WebsiteSeoData'
 const SITE = 'https://www.digitalbluez.com'
 
 type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'history'
-const TABS: { key: TabKey; label: string }[] = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'defaults', label: 'Site defaults' },
-  { key: 'overrides', label: 'Page metadata' },
-  { key: 'collections', label: 'Collections' },
-  { key: 'keywords', label: 'Keywords' },
-  { key: 'redirects', label: 'Redirects' },
-  { key: 'images', label: 'Image alt text' },
-  { key: 'crawl', label: 'Crawl & 404s' },
-  { key: 'history', label: 'History' },
+const NAV: (NavEntry & { key: TabKey })[] = [
+  { key: 'overview', label: 'Overview', hint: 'What needs attention' },
+  { key: 'defaults', label: 'Site defaults', hint: 'Descriptions and share image' },
+  { key: 'overrides', label: 'Page metadata', hint: 'Titles, descriptions, indexing' },
+  { key: 'collections', label: 'Collections', hint: 'Brand, budget and spec pages' },
+  { key: 'keywords', label: 'Keywords', hint: 'Phrase to page map, imports' },
+  { key: 'redirects', label: 'Redirects', hint: 'Old addresses to live pages' },
+  { key: 'images', label: 'Image alt text', hint: 'Photo descriptions' },
+  { key: 'crawl', label: 'Crawl & 404s', hint: 'Site audit and dead links' },
+  { key: 'history', label: 'History', hint: 'Undo earlier changes' },
 ]
 
 const STATIC_PATHS = ['/', '/about', '/contact', '/faq', '/blog', '/privacy', '/terms', '/return-policy', '/warranty', '/buyback']
@@ -264,6 +265,7 @@ function OverridesSection() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
+  const [open, setOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/website-seo/overrides')
@@ -297,6 +299,7 @@ function OverridesSection() {
     setSkuLabel(o.entity_type === 'product' ? o.entity_key : '')
     setError('')
     setWarnings([])
+    setOpen(true)
   }
 
   const reset = () => { setForm(emptyOverride); setSkuLabel(''); setSkuQuery(''); setError(''); setWarnings([]) }
@@ -318,7 +321,7 @@ function OverridesSection() {
       const d = await res.json()
       setWarnings(d.warnings ?? [])
       await load()
-      if (!(d.warnings ?? []).length) reset()
+      if (!(d.warnings ?? []).length) { reset(); setOpen(false) }
     } else {
       setError(await errorOf(res, 'Failed to save'))
     }
@@ -328,21 +331,54 @@ function OverridesSection() {
   const remove = async (o: Override) => {
     if (!confirm(`Remove the override for ${o.entity_type}: ${o.entity_key}? You can restore it from History.`)) return
     await apiFetch(`/api/website-seo/overrides?id=${o.id}`, { method: 'DELETE' })
+    reset()
+    setOpen(false)
     await load()
   }
 
   const shownTitle = form.meta_title || '(page title as built by the website)'
   const shownDesc = form.meta_description || '(description as built by the website)'
 
+  const current = rows.find((r) => r.entity_type === form.entity_type && r.entity_key === form.entity_key)
+  const labelOf = (o: Override) => `${o.entity_type}: ${o.entity_type === 'product' ? o.entity_key.slice(0, 8) + '…' : o.entity_key}`
+
   return (
-    <div>
+    <Panes
+      bp="xl"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to pages"
+      list={
+        <div>
+          <ListHeader title={`${rows.length} page${rows.length === 1 ? '' : 's'} customised`} onNew={() => { reset(); setOpen(true) }} />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">None yet. Use “+ New”.</p>
+          ) : (
+            <div className="space-y-1">
+              {rows.map((o) => (
+                <ListItem
+                  key={o.id}
+                  selected={current?.id === o.id}
+                  onClick={() => edit(o)}
+                  title={labelOf(o)}
+                  sub={o.meta_title || 'no title set'}
+                  right={<Pill tone={o.status === 'published' ? 'green' : 'amber'}>{o.status}</Pill>}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    >
       <p className="text-sm text-muted-foreground mb-4">
         Override how one page appears in search results, or flip it between indexed and hidden. Only <b>Published</b> overrides
         reach the website. Product titles and descriptions normally come from the SKU&apos;s Website dialog — use this when you
         want a search-specific wording without touching the product itself.
       </p>
 
-      <div className="border rounded-lg p-4 mb-4 space-y-3">
+      <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1">Applies to</label>
@@ -459,38 +495,10 @@ function OverridesSection() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="text-sm text-muted-foreground">Loading…</div>
-      ) : rows.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No overrides yet.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th className="p-2">Updated</th><th className="p-2">Applies to</th><th className="p-2">Title</th>
-                <th className="p-2">Search engines</th><th className="p-2">Status</th><th className="p-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((o) => (
-                <tr key={o.id} className="border-t">
-                  <td className="p-2 whitespace-nowrap">{new Date(o.updated_at).toLocaleDateString()}</td>
-                  <td className="p-2"><span className="text-muted-foreground">{o.entity_type}:</span> {o.entity_type === 'product' ? o.entity_key.slice(0, 8) + '…' : o.entity_key}</td>
-                  <td className="p-2 max-w-[16rem] truncate">{o.meta_title || '—'}</td>
-                  <td className="p-2">{o.robots_index === null ? 'default' : o.robots_index ? 'allow' : 'hidden'}</td>
-                  <td className="p-2">{o.status}</td>
-                  <td className="p-2 text-right whitespace-nowrap">
-                    <button className="text-primary mr-3" onClick={() => edit(o)}>Edit</button>
-                    <button className="text-destructive" onClick={() => remove(o)}>Remove</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {current && (
+        <button className="mt-3 text-sm text-destructive" onClick={() => remove(current)}>Remove this customisation</button>
       )}
-    </div>
+    </Panes>
   )
 }
 
@@ -552,6 +560,7 @@ function CollectionsSection() {
   const [error, setError] = useState('')
   const [warnings, setWarnings] = useState<string[]>([])
   const [note, setNote] = useState('')
+  const [open, setOpen] = useState(false)
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/website-seo/collections')
@@ -573,6 +582,7 @@ function CollectionsSection() {
       min_products: c.min_products, min_intro_words: c.min_intro_words,
     })
     setError(''); setWarnings([]); setNote('')
+    setOpen(true)
   }
 
   const save = async (status: 'draft' | 'published') => {
@@ -596,7 +606,7 @@ function CollectionsSection() {
       setWarnings(d.warnings ?? [])
       if (d.redirected) setNote('The old address now redirects to the new one.')
       await load()
-      if (!(d.warnings ?? []).length) reset()
+      if (!(d.warnings ?? []).length) { reset(); setOpen(false) }
     } else {
       setError(await errorOf(res, 'Failed to save'))
     }
@@ -606,6 +616,8 @@ function CollectionsSection() {
   const remove = async (c: Collection) => {
     if (!confirm(`Delete "${c.name}"? ${c.status === 'published' ? 'Its address will redirect to the category page. ' : ''}You can restore it from History.`)) return
     await apiFetch(`/api/website-seo/collections?id=${c.id}`, { method: 'DELETE' })
+    reset()
+    setOpen(false)
     await load()
   }
 
@@ -613,8 +625,42 @@ function CollectionsSection() {
   const setFaq = (i: number, patch: Partial<{ q: string; a: string }>) =>
     setForm((f) => ({ ...f, faq: f.faq.map((x, j) => (j === i ? { ...x, ...patch } : x)) }))
 
+  const current = rows.find((r) => r.id === form.id)
+  const why = (c: Collection) =>
+    c.indexable
+      ? 'In Google'
+      : [!c.gate.published && 'draft', !c.gate.enough_products && 'too few products', !c.gate.enough_text && 'intro too short'].filter(Boolean).join(', ')
+
   return (
-    <div>
+    <Panes
+      bp="xl"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to collections"
+      list={
+        <div>
+          <ListHeader title={`${rows.length} collection${rows.length === 1 ? '' : 's'}`} onNew={() => { reset(); setOpen(true) }} />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No collections yet. Use “+ New”.</p>
+          ) : (
+            <div className="space-y-1">
+              {rows.map((c) => (
+                <ListItem
+                  key={c.id}
+                  selected={c.id === form.id}
+                  onClick={() => edit(c)}
+                  title={c.name}
+                  sub={`${c.url} · ${c.available}/${c.min_products} products · ${c.intro_words}/${c.min_intro_words} words · ${why(c)}`}
+                  right={<Pill tone={c.indexable ? 'green' : c.status === 'published' ? 'amber' : 'gray'}>{c.indexable ? 'Live' : c.status === 'published' ? 'Hidden' : 'Draft'}</Pill>}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    >
       <p className="text-sm text-muted-foreground mb-4">
         A collection is a saved search with your own wording, shown as its own page such as <b>/laptops/dell</b> or{' '}
         <b>/laptops/under-20000</b>. It only appears in search results while it has <b>enough available products</b> and{' '}
@@ -622,7 +668,7 @@ function CollectionsSection() {
         from Google. Write the intro yourself — copying text between collections or from other sites is what gets pages ignored.
       </p>
 
-      <div className="border rounded-lg p-4 mb-4 space-y-3">
+      <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1">Category</label>
@@ -719,45 +765,13 @@ function CollectionsSection() {
         </div>
       </div>
 
-      {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : rows.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No collections yet.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr>
-                <th className="p-2">Page</th><th className="p-2">Status</th>
-                <th className="p-2 text-right">Available</th><th className="p-2 text-right">Intro words</th>
-                <th className="p-2">In Google?</th><th className="p-2" />
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((c) => (
-                <tr key={c.id} className="border-t">
-                  <td className="p-2"><div className="font-medium">{c.name}</div><div className="text-xs text-muted-foreground break-all">{c.url}</div></td>
-                  <td className="p-2">{c.status}</td>
-                  <td className="p-2 text-right tabular-nums">{c.available} <span className="text-muted-foreground">/ {c.min_products} needed</span></td>
-                  <td className="p-2 text-right tabular-nums">{c.intro_words} <span className="text-muted-foreground">/ {c.min_intro_words}</span></td>
-                  <td className="p-2">
-                    {c.indexable ? <span className="text-green-700">Yes</span> : (
-                      <span className="text-amber-700">
-                        No — {[!c.gate.published && 'draft', !c.gate.enough_products && 'too few products', !c.gate.enough_text && 'intro too short'].filter(Boolean).join(', ')}
-                      </span>
-                    )}
-                  </td>
-                  <td className="p-2 text-right whitespace-nowrap">
-                    <button className="text-primary mr-3" onClick={() => edit(c)}>Edit</button>
-                    <button className="text-destructive" onClick={() => remove(c)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {current && (
+        <button className="mt-3 text-sm text-destructive" onClick={() => remove(current)}>Delete this collection</button>
       )}
-    </div>
+    </Panes>
   )
 }
+
 
 // ---------------------------------------------------------------- Redirects
 
@@ -771,6 +785,8 @@ function RedirectsSection() {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState<Redirect | null>(null)
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/website-seo/redirects')
@@ -783,7 +799,7 @@ function RedirectsSection() {
     setError('')
     setSaving(true)
     const res = await apiFetch('/api/website-seo/redirects', { method: 'POST', body: JSON.stringify({ from_path: from, to_path: to, note }) })
-    if (res.ok) { setFrom(''); setTo(''); setNote(''); await load() }
+    if (res.ok) { setFrom(''); setTo(''); setNote(''); await load(); setOpen(false) }
     else setError(await errorOf(res, 'Failed to save redirect'))
     setSaving(false)
   }
@@ -791,18 +807,62 @@ function RedirectsSection() {
   const remove = async (r: Redirect) => {
     if (!confirm(`Stop redirecting ${r.from_path}? That address will show "not found" again.`)) return
     await apiFetch(`/api/website-seo/redirects?id=${r.id}`, { method: 'DELETE' })
+    setSelected(null)
+    setOpen(false)
     await load()
   }
 
+  const startNew = () => { setSelected(null); setFrom(''); setTo(''); setNote(''); setError(''); setOpen(true) }
+
   return (
-    <div>
+    <Panes
+      bp="xl"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to redirects"
+      list={
+        <div>
+          <ListHeader title={`${rows.length} redirect${rows.length === 1 ? '' : 's'}`} onNew={startNew} />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No redirects yet. Use “+ New”.</p>
+          ) : (
+            <div className="space-y-1">
+              {rows.map((r) => (
+                <ListItem
+                  key={r.id}
+                  selected={selected?.id === r.id}
+                  onClick={() => { setSelected(r); setOpen(true) }}
+                  title={r.from_path}
+                  sub={`→ ${r.to_path}`}
+                  right={<Pill tone={r.source === 'auto' ? 'gray' : 'green'}>{r.source === 'auto' ? 'auto' : 'manual'}</Pill>}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    >
       <p className="text-sm text-muted-foreground mb-4">
         Send an old address to a live page so visitors and Google follow it instead of hitting &quot;not found&quot;. Changing a
         published product&apos;s web address creates one automatically. These work for the home-level addresses the website
         already routes (a product, a category, a blog post or a single-segment page such as /service), not arbitrary
         deep paths.
       </p>
-      <div className="border rounded-lg p-4 mb-4">
+
+      {selected ? (
+        <div className="space-y-2 rounded-lg border p-4 text-sm">
+          <div><span className="text-muted-foreground">Old address</span><div className="break-all font-medium">{selected.from_path}</div></div>
+          <div><span className="text-muted-foreground">Sends visitors to</span><div className="break-all font-medium">{selected.to_path}</div></div>
+          <div className="text-xs text-muted-foreground">
+            {selected.source === 'auto' ? 'Created automatically' : 'Added manually'} on {new Date(selected.created_at).toLocaleDateString()}
+            {selected.note ? ` · ${selected.note}` : ''}
+          </div>
+          <button className="text-sm text-destructive" onClick={() => remove(selected)}>Stop redirecting</button>
+        </div>
+      ) : (
+      <div className="space-y-3">
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium mb-1">Old address</label>
@@ -823,31 +883,11 @@ function RedirectsSection() {
         </button>
       </div>
 
-      {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : rows.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No redirects yet.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr><th className="p-2">Created</th><th className="p-2">From</th><th className="p-2">To</th><th className="p-2">Source</th><th className="p-2" /></tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-2 whitespace-nowrap">{new Date(r.created_at).toLocaleDateString()}</td>
-                  <td className="p-2 break-all">{r.from_path}</td>
-                  <td className="p-2 break-all">{r.to_path}</td>
-                  <td className="p-2">{r.source === 'auto' ? 'automatic' : 'manual'}</td>
-                  <td className="p-2 text-right"><button className="text-destructive" onClick={() => remove(r)}>Remove</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
       )}
-    </div>
+    </Panes>
   )
 }
+
 
 // ---------------------------------------------------------------- Images
 
@@ -952,6 +992,8 @@ function HistorySection() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [open, setOpen] = useState(false)
+  const [selected, setSelected] = useState<Revision | null>(null)
 
   const load = useCallback(async () => {
     const res = await apiFetch('/api/website-seo/revisions')
@@ -974,60 +1016,85 @@ function HistorySection() {
     return s.default_description || s.product_description_template || '—'
   }
 
+  const lines = (r: Revision) =>
+    Object.entries(r.snapshot as Record<string, any>)
+      .filter(([k, v]) => v !== null && v !== '' && !['id', 'created_at', 'updated_at', 'updated_by', 'created_by'].includes(k))
+      .map(([k, v]) => [k.replace(/_/g, ' '), typeof v === 'object' ? JSON.stringify(v) : String(v)] as const)
+
   return (
-    <div>
+    <Panes
+      bp="xl"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to history"
+      list={
+        <div>
+          <ListHeader title={`${rows.length} saved version${rows.length === 1 ? '' : 's'}`} />
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : rows.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No changes recorded yet.</p>
+          ) : (
+            <div className="space-y-1">
+              {rows.map((r) => (
+                <ListItem
+                  key={r.id}
+                  selected={selected?.id === r.id}
+                  onClick={() => { setSelected(r); setOpen(true); setMessage(''); setError('') }}
+                  title={`${r.entity_type}: ${r.entity_key}`}
+                  sub={`${new Date(r.created_at).toLocaleString()} · ${summary(r)}`}
+                  right={<Pill tone={r.action === 'delete' ? 'red' : 'gray'}>{r.action === 'delete' ? 'removed' : 'edited'}</Pill>}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      }
+    >
       <p className="text-sm text-muted-foreground mb-4">
-        Each row is the version a page had <b>before</b> it was changed or removed. Restore puts that version back.
+        Each entry is the version a page had <b>before</b> it was changed or removed. Restore puts that version back.
       </p>
       {error && <div className="text-destructive text-sm mb-2">{error}</div>}
       {message && <div className="text-green-700 text-sm mb-2">{message}</div>}
-      {loading ? <div className="text-sm text-muted-foreground">Loading…</div> : rows.length === 0 ? (
-        <div className="text-sm text-muted-foreground">No changes recorded yet.</div>
-      ) : (
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/50 text-left">
-              <tr><th className="p-2">When</th><th className="p-2">What</th><th className="p-2">Earlier version</th><th className="p-2">Change</th><th className="p-2" /></tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.id} className="border-t">
-                  <td className="p-2 whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</td>
-                  <td className="p-2"><span className="text-muted-foreground">{r.entity_type}:</span> {r.entity_key}</td>
-                  <td className="p-2 max-w-[18rem] truncate">{summary(r)}</td>
-                  <td className="p-2">{r.action === 'delete' ? 'removed' : 'edited'}</td>
-                  <td className="p-2 text-right"><button className="text-primary" onClick={() => restore(r)}>Restore</button></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {selected ? (
+        <div className="space-y-3 rounded-lg border p-4">
+          <div className="text-sm font-medium">{selected.entity_type}: {selected.entity_key}</div>
+          <dl className="space-y-1 text-sm">
+            {lines(selected).map(([k, v]) => (
+              <div key={k}>
+                <dt className="text-xs capitalize text-muted-foreground">{k}</dt>
+                <dd className="break-words">{v}</dd>
+              </div>
+            ))}
+          </dl>
+          <button className={btnPrimary} onClick={() => restore(selected)}>Restore this version</button>
         </div>
+      ) : (
+        <p className="text-sm text-muted-foreground">Choose a saved version on the left.</p>
       )}
-    </div>
+    </Panes>
   )
 }
+
 
 // ---------------------------------------------------------------- Shell
 
 export default function WebsiteSeoManager() {
   const [tab, setTab] = useState<TabKey>('overview')
+  const [open, setOpen] = useState(false)
+
+  const go = (t: TabKey) => { setTab(t); setOpen(true) }
 
   return (
-    <div>
-      <div className="flex gap-1 overflow-x-auto border-b mb-4">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setTab(t.key)}
-            className={`px-3 py-2 text-sm whitespace-nowrap border-b-2 -mb-px ${
-              tab === t.key ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
-            }`}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
-      {tab === 'overview' && <OverviewSection go={setTab} />}
+    <Panes
+      bp="md"
+      open={open}
+      onBack={() => setOpen(false)}
+      backLabel="Back to Website SEO"
+      list={<NavList entries={NAV} active={tab} onSelect={(k) => go(k as TabKey)} />}
+    >
+      <h3 className="mb-3 text-base font-semibold">{NAV.find((n) => n.key === tab)?.label}</h3>
+      {tab === 'overview' && <OverviewSection go={go} />}
       {tab === 'defaults' && <DefaultsSection />}
       {tab === 'overrides' && <OverridesSection />}
       {tab === 'collections' && <CollectionsSection />}
@@ -1036,6 +1103,6 @@ export default function WebsiteSeoManager() {
       {tab === 'images' && <ImagesSection />}
       {tab === 'crawl' && <CrawlSection />}
       {tab === 'history' && <HistorySection />}
-    </div>
+    </Panes>
   )
 }

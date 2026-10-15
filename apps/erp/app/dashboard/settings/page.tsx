@@ -255,7 +255,9 @@ function SettingsPage() {
   }
 
   return (
-    <div className="p-4 max-w-5xl mx-auto">
+    // Website Admin / Website SEO are list + detail screens inside this list + content
+    // layout, so they get the wider container (see components/MasterDetail.tsx).
+    <div className={`p-4 mx-auto ${category === 'website_admin' || category === 'website_seo' ? 'max-w-7xl' : 'max-w-5xl'}`}>
       <h1 className="text-2xl font-bold mb-6 text-foreground">Settings</h1>
 
       <div className="flex flex-col md:flex-row gap-4 md:gap-6">
