@@ -306,12 +306,13 @@ Defines the spec schema captured per `sku_master.category`. Source of truth for 
     },
     {
       "name": "type",
-      "type": "select",
-      "label": "Type",
+      "type": "text",
+      "label": "Model",
       "options": [
         "Mechanical",
         "Membrane"
-      ]
+      ],
+      "required": true
     },
     {
       "name": "connection",
@@ -326,11 +327,6 @@ Defines the spec schema captured per `sku_master.category`. Source of truth for 
       "name": "backlight",
       "type": "checkbox",
       "label": "Backlight"
-    },
-    {
-      "name": "layout",
-      "type": "text",
-      "label": "Layout"
     }
   ],
   "variant_fields": [

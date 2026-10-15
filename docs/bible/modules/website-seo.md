@@ -23,7 +23,16 @@ sources:
   - apps/web/app/contact/page.tsx
   - apps/erp/app/api/website-seo/collections/route.ts
   - apps/erp/app/api/website-seo/images/bulk-fill/route.ts
-updated: 2026-10-13
+  - apps/erp/components/MasterDetail.tsx
+  - apps/erp/components/CompetitorsSection.tsx
+  - apps/erp/components/SuggestionsSection.tsx
+  - apps/erp/lib/net-guard.ts
+  - apps/erp/lib/seo-competitor.ts
+  - apps/erp/lib/seo-competitor-ideas.ts
+  - apps/erp/lib/seo-suggestions.ts
+  - apps/erp/app/api/website-seo/competitors/route.ts
+  - apps/erp/app/api/website-seo/suggestions/route.ts
+updated: 2026-10-15
 ---
 
 ## What it is
@@ -33,6 +42,13 @@ An owner-only Settings tab for how the public website appears in search. Everyth
 through the `public_seo_settings`, `public_seo_overrides` and `public_redirects` views. The tables themselves are
 service-role only; employees get 403 from every `/api/website-seo/*` route, and the `website` page grant does **not**
 unlock any of it.
+
+## How the screens are laid out
+
+Settings → Website SEO is a **vertical section menu on the left and the selected screen on the right**, with no horizontal tabs and
+no sideways-scrolling tables. Screens that manage records (Page metadata, Collections, Keywords, Redirects, Competitor websites,
+Suggestions, History) repeat the pattern one level down: a list of records, then the editor for the one you pick. On a phone one
+pane shows at a time with a Back button. All of it is `components/MasterDetail.tsx`, the same pattern as Activities and Stock.
 
 ## The tabs
 
@@ -62,6 +78,25 @@ unlock any of it.
   (listed but not 200, not indexable, never found, orphaned). Below it, a log of addresses that showed the 404 page, recorded
   from visitors' browsers (`POST /api/seo/404` → `log_404()`; capped at 5,000 distinct paths, assets ignored). Crawlers
   that don't run scripts won't appear there — Search Console's Pages report covers those.
+- **Suggestions** — what to do next, built from measurements taken when you open it (the live home page, your stock,
+  collections, dead links, crawl and keyword data, competitor analyses), most urgent first. Each item says why it matters and the
+  exact steps, and can be marked done, snoozed or dismissed (a done item is re-checked after 14 days and returns if the problem is
+  still there). It also carries the **Google Business Profile routine**: weekly (post new arrivals, reply to reviews), monthly
+  (photos, hours, services, performance numbers) and quarterly (category and attributes, name-address-phone consistency, a tagged
+  website link). Those are reminders only, because Google doesn't let this tool read or edit a Business Profile. A pg_cron job
+  (`scan_seo_review`, Mondays 09:30 IST) raises one Activities task per active owner pointing here; it skips a week while the
+  previous task is still open.
+- **Google setup** — live checks (is Analytics installed and is its ID the right shape — `G-` plus 10 characters; is a Search
+  Console tag or DNS verification likely; is the sitemap readable; are the ERP's Google reports connected) and the numbered
+  steps for Analytics, Search Console (as a Domain property verified by DNS), connecting reports to the ERP, Business Profile,
+  Merchant Center and optional extras.
+- **Competitor websites** — list public sites (preloaded: EazyPC, Edify, NewJaisa, Electronics Bazaar, plus our own site as the
+  baseline) and press **Analyse**. The server reads robots.txt, the sitemap, the home page and one sample product, collection,
+  policy and blog page (at most ~14 requests, honouring robots.txt, once an hour per site) and stores only signals: titles and
+  lengths, markup types and product-markup fields, menu structure (price bands, brands, uses), policy pages, selling points they
+  state, sitemap counts. Ideas compare each site with ours and say where to apply them; they never suggest copying text. Outbound
+  fetching is guarded (`lib/net-guard.ts`): https only, no private/internal addresses, same-site redirects only, timeout and size
+  caps.
 - **Redirects** — old address → live page, permanent (308). Chains are flattened and loops rejected on save, so the
   storefront does one lookup. Changing a **published** product's web address creates one automatically
   (`PUT /api/sku-master/[id]`). The storefront consults redirects before returning 404 for a product, category-level

@@ -8,13 +8,15 @@ keywords: [website, online store, ecommerce, publish, digitalbluez.com, order, c
 sources:
   - apps/web/lib/order-to-sale.ts
   - apps/web/lib/product-title.ts
+  - apps/web/lib/site-profile.ts
+  - apps/erp/components/SiteProfileSection.tsx
   - apps/web/app/api/search/route.ts
   - apps/web/app/api/checkout/start/route.ts
   - apps/web/lib/customer-identity.ts
   - apps/web/lib/email.ts
   - apps/erp/app/api/website-admin/**
   - apps/erp/app/api/web-orders/**
-updated: 2026-10-13
+updated: 2026-10-15
 ---
 
 ## The ERP is the single source of truth — the website never gets a copy
@@ -161,6 +163,18 @@ Sort control (Featured/Newest/Price asc/desc). The two filterable categories
 (Laptops/Desktops) apply it in-memory alongside their existing spec facets;
 everywhere else it's real SQL (`.neq('availability_bucket','sold_out')`,
 `.order()`) via `getPublishedProductsPage()`.
+
+## Company details and the About page are owner-editable
+
+Phone, WhatsApp, email, address, opening hours, social links, Google rating, the Grievance Officer and the separate privacy
+contact, court jurisdiction, record-keeping wording, and the whole About page (story, mission, services, how laptops are
+tested, founder, store photos, team) live in one row, `site_profile` (+ `site_team_members`), edited in **Settings → Website
+Admin → Company & About** and read by the storefront through `public_site_profile` / `public_team_members`
+(`apps/web/lib/site-profile.ts`, which falls back to `lib/business-info.ts` if the row can't be read). The legal company name and
+GSTIN are not entered twice: the view joins them from Business Profiles. Changes are undoable from Website SEO → History. Photos are
+uploaded through the processed image route into the `site/` folder. The privacy policy and terms read their contacts, court,
+retention wording and "last updated" dates from this profile; both stay `noindex` until a CA/lawyer has reviewed them (flip from
+Website SEO → Page metadata).
 
 ## Customer policies (owner-approved 2026-10-13)
 

@@ -165,6 +165,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | seo_collections | min_products | seo_collections_min_products_check | `CHECK ((min_products >= 1))` |
 | seo_collections | slug | seo_collections_slug_check | `CHECK (((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text) AND (length(slug) <= 60)))` |
 | seo_collections | status | seo_collections_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
+| seo_competitors | base_url | seo_competitors_base_url_check | `CHECK ((base_url ~ '^https://[^/\s]+$'::text))` |
 | seo_keywords | intent | seo_keywords_intent_check | `CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['informational'::text, 'commercial'::text, 'transactional'::text, 'navigational'::text, 'local'::text]))))` |
 | seo_keywords | priority | seo_keywords_priority_check | `CHECK (((priority IS NULL) OR ((priority >= 1) AND (priority <= 3))))` |
 | seo_keywords | volume | seo_keywords_volume_check | `CHECK (((volume IS NULL) OR (volume >= 0)))` |
@@ -177,9 +178,14 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | seo_redirects | to_path | seo_redirects_to_path_check | `CHECK (((to_path ~~ '/%'::text) OR (to_path ~~ 'https://%'::text)))` |
 | seo_revisions | action | seo_revisions_action_check | `CHECK ((action = ANY (ARRAY['upsert'::text, 'delete'::text])))` |
 | seo_settings | id | seo_settings_id_check | `CHECK (id)` |
+| seo_suggestion_state | status | seo_suggestion_state_status_check | `CHECK ((status = ANY (ARRAY['done'::text, 'snoozed'::text, 'dismissed'::text])))` |
 | server_boot_events | shutdown_kind | server_boot_events_shutdown_kind_check | `CHECK ((shutdown_kind = ANY (ARRAY['power_loss'::text, 'clean_reboot'::text, 'clean_shutdown'::text, 'crash'::text, 'unknown'::text, 'first_boot'::text])))` |
 | server_commands | command | server_commands_command_check | `CHECK ((command = ANY (ARRAY['restart'::text, 'shutdown'::text])))` |
 | server_commands | status | server_commands_status_check | `CHECK ((status = ANY (ARRAY['pending'::text, 'acknowledged'::text, 'done'::text, 'failed'::text])))` |
+| site_profile | google_rating | site_profile_google_rating_check | `CHECK (((google_rating IS NULL) OR ((google_rating >= (0)::numeric) AND (google_rating <= (5)::numeric))))` |
+| site_profile | google_review_count | site_profile_google_review_count_check | `CHECK (((google_review_count IS NULL) OR (google_review_count >= 0)))` |
+| site_profile | id | site_profile_id_check | `CHECK (id)` |
+| site_profile | year_started | site_profile_year_started_check | `CHECK (((year_started IS NULL) OR ((year_started >= 1990) AND (year_started <= 2100))))` |
 | sku_master | status | sku_master_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])))` |
 | sku_upgrade_rules | field_name | sku_upgrade_rules_field_name_check | `CHECK ((field_name = ANY (ARRAY['ram'::text, 'ssd'::text, 'warranty_months'::text])))` |
 | sku_upgrade_rules | price_delta | sku_upgrade_rules_price_delta_check | `CHECK ((price_delta >= (0)::numeric))` |
