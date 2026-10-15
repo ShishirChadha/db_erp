@@ -5,6 +5,7 @@ import { apiFetch } from '@/lib/api-client'
 import { CrawlSection, KeywordsSection } from '@/components/WebsiteSeoData'
 import { ListHeader, ListItem, NavList, Panes, Pill, type NavEntry } from '@/components/MasterDetail'
 import CompetitorsSection from '@/components/CompetitorsSection'
+import { GoogleSetupSection, SuggestionsSection } from '@/components/SuggestionsSection'
 
 // Owner-only Settings -> Website SEO. Everything here is stored in the seo_*
 // tables (migration 20261015) and read by apps/web through public_seo_* views,
@@ -13,9 +14,11 @@ import CompetitorsSection from '@/components/CompetitorsSection'
 
 const SITE = 'https://www.digitalbluez.com'
 
-type TabKey = 'overview' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'competitors' | 'history'
+type TabKey = 'overview' | 'suggestions' | 'google' | 'defaults' | 'overrides' | 'collections' | 'keywords' | 'redirects' | 'images' | 'crawl' | 'competitors' | 'history'
 const NAV: (NavEntry & { key: TabKey })[] = [
   { key: 'overview', label: 'Overview', hint: 'What needs attention' },
+  { key: 'suggestions', label: 'Suggestions', hint: 'What to do next, week by week' },
+  { key: 'google', label: 'Google setup', hint: 'Analytics, Search Console, Business Profile' },
   { key: 'defaults', label: 'Site defaults', hint: 'Descriptions and share image' },
   { key: 'overrides', label: 'Page metadata', hint: 'Titles, descriptions, indexing' },
   { key: 'collections', label: 'Collections', hint: 'Brand, budget and spec pages' },
@@ -97,6 +100,10 @@ function OverviewSection({ go }: { go: (t: TabKey) => void }) {
 
   return (
     <div>
+      <button type="button" onClick={() => go('suggestions')} className="mb-4 w-full rounded-lg border border-primary/40 bg-primary/5 p-4 text-left hover:bg-primary/10">
+        <div className="text-sm font-semibold">See this week&apos;s suggestions →</div>
+        <div className="text-xs text-muted-foreground">Google setup problems, new pages worth creating, Google Business Profile routine, dead links and competitor ideas.</div>
+      </button>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {cards.map((c) => (
           <button
@@ -1099,6 +1106,8 @@ export default function WebsiteSeoManager() {
     >
       <h3 className="mb-3 text-base font-semibold">{NAV.find((n) => n.key === tab)?.label}</h3>
       {tab === 'overview' && <OverviewSection go={go} />}
+      {tab === 'suggestions' && <SuggestionsSection go={go} />}
+      {tab === 'google' && <GoogleSetupSection />}
       {tab === 'defaults' && <DefaultsSection />}
       {tab === 'overrides' && <OverridesSection />}
       {tab === 'collections' && <CollectionsSection />}

@@ -3,39 +3,18 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { assertPublicHttps } from '@/lib/net-guard'
-import type { SiteSignals } from '@/lib/seo-competitor'
-import { buildCompetitorIdeas } from '@/lib/seo-competitor-ideas'
+import { loadCompetitorsWithIdeas } from '@/lib/seo-competitors-state'
 
 // Websites the owner has asked us to analyse, with the latest analysis of each and
 // the ideas that follow from comparing it with our own site (also analysed).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-
-  const { data: sites, error } = await supabaseAdmin.from('seo_competitors').select('*').order('is_self', { ascending: false }).order('label')
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  const { data: snaps } = await supabaseAdmin
-    .from('seo_competitor_snapshots')
-    .select('competitor_id, fetched_at, signals, error')
-    .order('fetched_at', { ascending: false })
-    .limit(200)
-  const latest = new Map<string, { fetched_at: string; signals: SiteSignals | null; error: string | null }>()
-  for (const s of snaps ?? []) if (!latest.has(s.competitor_id)) latest.set(s.competitor_id, s as any)
-
-  const self = (sites ?? []).find((s) => s.is_self)
-  const selfSignals = self ? latest.get(self.id)?.signals ?? null : null
-
-  return NextResponse.json(
-    (sites ?? []).map((s) => {
-      const snap = latest.get(s.id) ?? null
-      return {
-        ...s,
-        snapshot: snap,
-        ideas: !s.is_self && snap?.signals ? buildCompetitorIdeas(selfSignals, snap.signals, s.label) : [],
-      }
-    })
-  )
+  try {
+    return NextResponse.json(await loadCompetitorsWithIdeas())
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
 }
 
 export async function POST(req: NextRequest) {

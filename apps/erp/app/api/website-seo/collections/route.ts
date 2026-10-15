@@ -2,54 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { addRedirect, canonicalFilter, recordRevision, validateCollection, wordCount } from '@/lib/seo-admin'
-import { filterProducts, filtersFromJson, type FilterableProduct } from '@db/shared'
-
-const CATEGORY_SLUG: Record<string, string> = { LAP: 'laptops', DES: 'desktops' }
+import { addRedirect, canonicalFilter, recordRevision, validateCollection } from '@/lib/seo-admin'
+import { CATEGORY_SLUG, loadCollectionsWithState } from '@/lib/seo-collections-state'
 
 // Owner-only. Each collection comes back with its live match counts and whether
-// it currently passes the indexing gate -- computed with the SAME matching code
-// the storefront uses (@db/shared product-filter-core), so this never disagrees
-// with what the public page does.
+// it currently passes the indexing gate (see lib/seo-collections-state.ts).
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-
-  const { data: rows, error } = await supabaseAdmin.from('seo_collections').select('*').order('updated_at', { ascending: false })
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-
-  const categories = [...new Set((rows ?? []).map((r) => r.category))]
-  const productsByCategory = new Map<string, FilterableProduct[]>()
-  for (const category of categories) {
-    const { data } = await supabaseAdmin
-      .from('public_products')
-      .select('brand, specifications, web_price, availability_bucket, warranty_label')
-      .eq('category', category)
-      .range(0, 999)
-    productsByCategory.set(category, (data ?? []) as FilterableProduct[])
+  try {
+    return NextResponse.json(await loadCollectionsWithState())
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
-
-  return NextResponse.json(
-    (rows ?? []).map((r) => {
-      const matched = filterProducts(productsByCategory.get(r.category) ?? [], filtersFromJson(r.filter))
-      const available = matched.filter((p) => p.availability_bucket !== 'sold_out').length
-      const words = wordCount(r.intro_md)
-      const gate = {
-        published: r.status === 'published',
-        enough_products: available >= r.min_products,
-        enough_text: words >= r.min_intro_words,
-      }
-      return {
-        ...r,
-        matching: matched.length,
-        available,
-        intro_words: words,
-        gate,
-        indexable: gate.published && gate.enough_products && gate.enough_text,
-        url: `/${CATEGORY_SLUG[r.category]}/${r.slug}`,
-      }
-    })
-  )
 }
 
 // Create (no id) or update (id) one collection.
