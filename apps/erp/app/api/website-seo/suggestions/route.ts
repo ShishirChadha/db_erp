@@ -34,6 +34,13 @@ async function googleFacts(): Promise<Facts['google'] & { serviceAccountEmail: s
       verificationMetaFound = /<meta[^>]+name=["']google-site-verification["']/i.test(home.body)
     }
   } catch { /* reported as "could not be checked" */ }
+  if (!verificationMetaFound) {
+    // The property was verified with Google's HTML file (apps/web/public), not a meta tag.
+    try {
+      const f = await guardedFetch(`${STOREFRONT}/google357912362808b5c0.html`, { timeoutMs: 8000 })
+      verificationMetaFound = f.status === 200 && /^google-site-verification:\s*google357912362808b5c0\.html/.test(f.body.trim())
+    } catch { /* stays false */ }
+  }
   try {
     const sm = await guardedFetch(`${STOREFRONT}/sitemap.xml`, { timeoutMs: 8000 })
     sitemapOk = sm.status === 200 && /<urlset|<sitemapindex/i.test(sm.body)

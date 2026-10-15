@@ -190,8 +190,8 @@ export function GoogleSetupSection() {
         <Check
           ok={g.verificationMetaFound}
           warn
-          title="Search Console verification tag"
-          detail={g.verificationMetaFound ? 'A verification tag is on the home page.' : 'No tag found. That is fine if you verified the domain with a DNS record. If you have not verified Search Console at all, do step 2.'}
+          title="Search Console verification"
+          detail={g.verificationMetaFound ? 'The verification tag or file is on the site.' : 'No tag or file found. That is fine if you verified the domain with a DNS record. If you have not verified Search Console at all, do step 2.'}
         />
         <Check ok={g.sitemapOk} title="Sitemap is readable" detail={g.sitemapOk ? 'sitemap.xml loads. Submit it in Search Console (step 2).' : 'sitemap.xml could not be read.'} />
         <Check ok={g.gscConfigured} warn title="Search Console is connected to the ERP" detail={g.gscConfigured ? `Using ${g.gscSiteUrl}.` : 'Not connected: needs GSC_SITE_URL and the service account (step 3).'} />
