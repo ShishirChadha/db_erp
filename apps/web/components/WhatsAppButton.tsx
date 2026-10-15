@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { WHATSAPP_NUMBER } from '@/lib/business-info'
 
 const DEFAULT_MESSAGE = "Hi DigitalBluez, I have a question about a product.";
 
@@ -13,9 +12,9 @@ const DEFAULT_MESSAGE = "Hi DigitalBluez, I have a question about a product.";
 // SiteFooter.tsx) hides the bubble once the footer is on screen, and it reappears
 // on scrolling back up -- so it now visibly "moves" (shows/hides) with scroll
 // instead of sitting permanently pinned through the footer.
-export function WhatsAppButton() {
+export function WhatsAppButton({ whatsappNumber }: { whatsappNumber: string }) {
   const [hidden, setHidden] = useState(false)
-  const href = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(DEFAULT_MESSAGE)}`;
+  const href = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(DEFAULT_MESSAGE)}`;
 
   useEffect(() => {
     const footer = document.getElementById('site-footer')

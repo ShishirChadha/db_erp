@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
-import { WHATSAPP_NUMBER, BUSINESS_EMAIL } from "@/lib/business-info";
+import { getSiteProfile } from "@/lib/site-profile";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
@@ -18,7 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/faq");
 }
 
-const FAQS = [
+function buildFaqs(email: string) {
+  return [
   {
     q: "Are DigitalBluez's laptops and desktops genuinely refurbished, or just used?",
     a: "Every unit we sell goes through our quality-check process before it's listed: condition grading and, where shown on the product page, a per-unit test report covering the screen, keyboard, trackpad, ports and more. We publish a unit only after it has passed.",
@@ -53,21 +54,23 @@ const FAQS = [
   },
   {
     q: "How can I get help before or after ordering?",
-    a: `Message us on WhatsApp or email ${BUSINESS_EMAIL} — we're happy to answer questions about a specific unit before you buy.`,
+    a: `Message us on WhatsApp or email ${email} — we're happy to answer questions about a specific unit before you buy.`,
   },
-];
+  ];
+}
 
-const faqJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "FAQPage",
-  mainEntity: FAQS.map((f) => ({
-    "@type": "Question",
-    name: f.q,
-    acceptedAnswer: { "@type": "Answer", text: f.a },
-  })),
-};
-
-export default function FaqPage() {
+export default async function FaqPage() {
+  const profile = await getSiteProfile();
+  const FAQS = buildFaqs(profile.email);
+  const faqJsonLd = {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    mainEntity: FAQS.map((f) => ({
+      "@type": "Question",
+      name: f.q,
+      acceptedAnswer: { "@type": "Answer", text: f.a },
+    })),
+  };
   return (
     <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
       <script
@@ -91,7 +94,7 @@ export default function FaqPage() {
         <Link href="/replacement-policy" className="text-brand-orange hover:underline">Replacement Policy</Link>
         <Link href="/shipping-policy" className="text-brand-orange hover:underline">Shipping &amp; Delivery</Link>
         <Link href="/buyback" className="text-brand-orange hover:underline">Trade-in</Link>
-        <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="text-brand-orange hover:underline">
+        <a href={`https://wa.me/${profile.whatsappNumber}`} target="_blank" rel="noopener noreferrer" className="text-brand-orange hover:underline">
           Ask us on WhatsApp
         </a>
       </div>

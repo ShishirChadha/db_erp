@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import Link from "next/link";
 import { isSerializedCategory, formatCurrency } from "@db/shared";
-import { WHATSAPP_NUMBER } from "@/lib/business-info";
+import { getSiteProfile, whatsappLink } from "@/lib/site-profile";
 import {
   getProductBySlug,
   getProductImages,
@@ -162,7 +162,8 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
   };
   const productUrl = `${SITE_URL}/product/${slug}`;
   const whatsappMessage = `Hi, I'm interested in this: ${title}\n${productUrl}\nPrice: ${formatCurrency(product.web_price)}`;
-  const whatsappHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(whatsappMessage)}`;
+  const siteProfile = await getSiteProfile();
+  const whatsappHref = whatsappLink(siteProfile, whatsappMessage);
 
   // Only ever show "this exact unit" when there's exactly one sellable,
   // graded unit -- a SKU can carry quantity 1-2, and showing a single serial
@@ -292,7 +293,7 @@ export default async function ProductPage({ params }: { params: Promise<{ slug: 
 
             {isSerializedCategory(product.category) && (
               <div className="mt-5">
-                <TradeInBadge title={title} productUrl={productUrl} />
+                <TradeInBadge title={title} productUrl={productUrl} whatsappNumber={siteProfile.whatsappNumber} />
               </div>
             )}
 

@@ -7,7 +7,7 @@ import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { SiteThemeAccent } from "@/components/SiteThemeAccent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
-import { BUSINESS_PHONE_TEL, BUSINESS_POSTAL_ADDRESS, SOCIAL_LINKS } from "@/lib/business-info";
+import { getSiteProfile } from "@/lib/site-profile";
 import { SITE_URL } from "@/lib/site-url";
 import { RecoveryRedirect } from "@/components/RecoveryRedirect";
 import { getSeoSettings } from "@/lib/seo-data";
@@ -77,21 +77,24 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-const organizationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "Organization",
-  name: "DigitalBluez",
-  url: SITE_URL,
-  logo: `${SITE_URL}/dbz-logo.png`,
-  description: "Quality-checked refurbished laptops, desktops, monitors and accessories.",
-  address: BUSINESS_POSTAL_ADDRESS,
-  sameAs: [SOCIAL_LINKS.instagram, SOCIAL_LINKS.facebook, SOCIAL_LINKS.linkedin],
-  contactPoint: {
-    "@type": "ContactPoint",
-    telephone: BUSINESS_PHONE_TEL,
-    contactType: "customer service",
-  },
-};
+function organizationJsonLd(profile: Awaited<ReturnType<typeof getSiteProfile>>) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "DigitalBluez",
+    ...(profile.legalName ? { legalName: profile.legalName } : {}),
+    url: SITE_URL,
+    logo: `${SITE_URL}/dbz-logo.png`,
+    description: "Quality-checked refurbished laptops, desktops, monitors and accessories.",
+    address: profile.postalAddress,
+    sameAs: profile.sameAs,
+    contactPoint: {
+      "@type": "ContactPoint",
+      telephone: profile.phoneTel,
+      contactType: "customer service",
+    },
+  };
+}
 
 const websiteJsonLd = {
   "@context": "https://schema.org",
@@ -105,7 +108,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const activeBanners = await getActiveBanners();
+  const [activeBanners, profile] = await Promise.all([getActiveBanners(), getSiteProfile()]);
   const siteAccent = resolveSiteAccent(activeBanners);
 
   return (
@@ -114,7 +117,7 @@ export default async function RootLayout({
         <script
           type="application/ld+json"
           // eslint-disable-next-line react/no-danger
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd(profile)) }}
         />
         <script
           type="application/ld+json"
@@ -130,7 +133,7 @@ export default async function RootLayout({
           </div>
         </CustomerSessionProvider>
         <SiteFooter />
-        <WhatsAppButton />
+        <WhatsAppButton whatsappNumber={profile.whatsappNumber} />
         <Analytics />
         <SpeedInsights />
       </body>

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
 import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
-import { BUSINESS_EMAIL, BUSINESS_PHONE_DISPLAY, WHATSAPP_NUMBER } from "@/lib/business-info";
+import { getSiteProfile, formatLongDate } from "@/lib/site-profile";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
@@ -18,7 +18,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/warranty");
 }
 
-export default function WarrantyPage() {
+export default async function WarrantyPage() {
+  const profile = await getSiteProfile();
   return (
     <PolicyLayout title="Warranty Policy" updated="13 October 2026">
       <p>
@@ -54,8 +55,8 @@ export default function WarrantyPage() {
       <PolicySection title="How to claim">
         <p>
           WhatsApp{" "}
-          <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="text-brand-orange underline">{BUSINESS_PHONE_DISPLAY}</a> or email{" "}
-          <a href={`mailto:${BUSINESS_EMAIL}`} className="text-brand-orange underline">{BUSINESS_EMAIL}</a> with your order
+          <a href={`https://wa.me/${profile.whatsappNumber}`} className="text-brand-orange underline">{profile.phoneDisplay}</a> or email{" "}
+          <a href={`mailto:${profile.email}`} className="text-brand-orange underline">{profile.email}</a> with your order
           number, a photo and a video of the problem. We reply within 2 working days, and most repairs are finished within
           7 working days of the unit reaching us.
         </p>

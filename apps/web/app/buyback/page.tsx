@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
-import { WHATSAPP_NUMBER, BUSINESS_EMAIL } from "@/lib/business-info";
+import { getSiteProfile, whatsappLink } from "@/lib/site-profile";
 import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
@@ -17,8 +17,9 @@ export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/buyback");
 }
 
-export default function BuybackPage() {
-  const waHref = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent("Hi, I'd like a trade-in quote for my old laptop/desktop.")}`;
+export default async function BuybackPage() {
+  const profile = await getSiteProfile();
+  const waHref = whatsappLink(profile, "Hi, I'd like a trade-in quote for my old laptop/desktop.");
   return (
     <PolicyLayout title="Trade-in & Buyback Quote" updated="13 October 2026">
       <p>
@@ -30,7 +31,7 @@ export default function BuybackPage() {
         <ol className="list-decimal space-y-1 pl-5">
           <li>
             Message us on <a href={waHref} className="text-brand-orange underline">WhatsApp</a> or email{" "}
-            <a href={`mailto:${BUSINESS_EMAIL}`} className="text-brand-orange underline">{BUSINESS_EMAIL}</a> with the brand,
+            <a href={`mailto:${profile.email}`} className="text-brand-orange underline">{profile.email}</a> with the brand,
             model, specifications and a few photos.
           </li>
           <li>We give you an estimate. The final price is confirmed after we inspect the unit.</li>

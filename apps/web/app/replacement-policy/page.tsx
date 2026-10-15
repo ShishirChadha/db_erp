@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
 import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
-import { BUSINESS_EMAIL, BUSINESS_PHONE_DISPLAY, GRIEVANCE_OFFICER, WHATSAPP_NUMBER } from "@/lib/business-info";
+import { getSiteProfile, formatLongDate } from "@/lib/site-profile";
 
 export const revalidate = 60;
 
@@ -16,7 +16,8 @@ export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/replacement-policy");
 }
 
-export default function ReplacementPolicyPage() {
+export default async function ReplacementPolicyPage() {
+  const profile = await getSiteProfile();
   return (
     <PolicyLayout title="Replacement Policy" updated="13 October 2026">
       <p>
@@ -67,16 +68,16 @@ export default function ReplacementPolicyPage() {
       <PolicySection title="To claim">
         <p>
           WhatsApp{" "}
-          <a href={`https://wa.me/${WHATSAPP_NUMBER}`} className="text-brand-orange underline">{BUSINESS_PHONE_DISPLAY}</a> or email{" "}
-          <a href={`mailto:${BUSINESS_EMAIL}`} className="text-brand-orange underline">{BUSINESS_EMAIL}</a> with your order
+          <a href={`https://wa.me/${profile.whatsappNumber}`} className="text-brand-orange underline">{profile.phoneDisplay}</a> or email{" "}
+          <a href={`mailto:${profile.email}`} className="text-brand-orange underline">{profile.email}</a> with your order
           number, photos and the unboxing video.
         </p>
       </PolicySection>
 
       <PolicySection title="Grievances">
         <p>
-          {GRIEVANCE_OFFICER.name}, Grievance Officer,{" "}
-          <a href={`mailto:${GRIEVANCE_OFFICER.email}`} className="text-brand-orange underline">{GRIEVANCE_OFFICER.email}</a>.
+          {profile.grievance.name}, Grievance Officer,{" "}
+          <a href={`mailto:${profile.grievance.email}`} className="text-brand-orange underline">{profile.grievance.email}</a>.
           We acknowledge within 48 hours and aim to resolve within one month.
         </p>
       </PolicySection>

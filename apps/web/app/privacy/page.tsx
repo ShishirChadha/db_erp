@@ -1,77 +1,88 @@
 import type { Metadata } from "next";
 import { withSeoOverride } from "@/lib/seo-data";
-import { LegalDraftNotice } from "@/components/LegalDraftNotice";
+import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
+import { getSiteProfile, formatLongDate } from "@/lib/site-profile";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
 export const revalidate = 60;
 
+// noindex until the owner's CA / lawyer has reviewed the text; flip it from
+// Settings -> Website SEO -> Page metadata (no deploy needed).
 const baseMetadata: Metadata = {
   title: "Privacy Policy",
+  description: "How DigitalBluez collects, uses and protects your personal data.",
+  alternates: { canonical: "/privacy" },
   robots: { index: false },
 };
-
 
 export async function generateMetadata(): Promise<Metadata> {
   return withSeoOverride(baseMetadata, "static", "/privacy");
 }
 
-export default function PrivacyPage() {
+export default async function PrivacyPage() {
+  const profile = await getSiteProfile();
+  const company = profile.legalName ?? profile.businessName;
+  const dp = profile.dataProtection;
+
   return (
-    <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 lg:px-8">
-      <h1 className="font-heading text-2xl font-bold tracking-tight text-foreground">Privacy Policy</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Last updated: [date]</p>
+    <PolicyLayout title="Privacy Policy" updated={formatLongDate(profile.privacyUpdatedOn) ?? "—"}>
+      <PolicySection title="1. Who we are">
+        <p>{company} decides how your personal data is used.</p>
+      </PolicySection>
 
-      <div className="mt-6">
-        <LegalDraftNotice />
-      </div>
+      <PolicySection title="2. What we collect">
+        <p>
+          Your name, email, phone number and password (stored securely hashed); delivery addresses and order history; messages
+          you send us; your email if you join our newsletter; and basic technical data such as your IP address and device type.
+          Payments are handled by Razorpay, and we do not store your card or UPI details.
+        </p>
+      </PolicySection>
 
-      <div className="space-y-6 text-sm leading-relaxed text-foreground">
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">1. What we collect</h2>
-          <p>
-            When you create an account, place an order, or contact us, we collect: name, email, phone
-            number, shipping address, and order history. We do not collect or store your card/bank details
-            — payments are processed directly by Razorpay under its own privacy policy.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">2. How we use it</h2>
-          <p>
-            To process and deliver orders, issue GST invoices, provide order updates (including via
-            WhatsApp/email), honour warranty claims, and improve our catalogue and service.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">3. Sharing</h2>
-          <p>
-            We share order data with our payment processor (Razorpay) and delivery/logistics partner(s) only
-            as needed to fulfil your order. We do not sell your personal data to third parties.
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">4. Your rights</h2>
-          <p>
-            You may request access to, correction of, or deletion of your personal data by contacting us at{" "}
-            <a href="mailto:info@digitalbluez.com" className="text-brand-orange underline">info@digitalbluez.com</a>.
-            [Add DPDP Act-specific consent/grievance-redressal process and grievance officer name/contact.]
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">5. Cookies</h2>
-          <p>
-            We use essential cookies to keep you signed in and remember your cart. [Add details of any
-            analytics/marketing cookies once configured.]
-          </p>
-        </section>
-        <section>
-          <h2 className="mb-2 font-heading text-base font-bold">6. Contact</h2>
-          <p>
-            Privacy questions or requests: <a href="mailto:info@digitalbluez.com" className="text-brand-orange underline">info@digitalbluez.com</a> or{" "}
-            <a href="https://wa.me/919991111193" className="text-brand-orange underline">+91 99911 11193</a>.
-          </p>
-        </section>
-      </div>
-    </main>
+      <PolicySection title="3. Why we use it">
+        <p>
+          To process orders, deliver them, honour warranties and replacements, issue GST invoices and keep legal and tax records,
+          answer support requests, prevent fraud, and improve the site. We send marketing only if you subscribed, and you can
+          unsubscribe at any time.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="4. Who we share it with">
+        <p>
+          Razorpay (payments), couriers (name, phone and address), Google Analytics (only after you accept cookies), our email
+          provider, our website and database hosts, and authorities or our accountants where the law requires. We do not sell your data.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="5. How long we keep it">
+        <p>
+          {profile.retentionText} Other data is kept while your account is open and deleted on request, unless the law requires
+          us to keep it.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="6. Your rights">
+        <p>
+          You can ask to see, correct or delete your data, withdraw consent, or make a complaint. Write to {dp.name}, our data
+          protection contact, at <a href={`mailto:${dp.email}`} className="text-brand-orange underline">{dp.email}</a>. We
+          acknowledge within 48 hours. You may also approach the Data Protection Board of India.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="7. Cookies">
+        <p>
+          Essential cookies keep you signed in and remember your cart. Analytics cookies are used only if you accept them in the
+          cookie banner.
+        </p>
+      </PolicySection>
+
+      <PolicySection title="8. Children">
+        <p>The site is not meant for people under 18.</p>
+      </PolicySection>
+
+      <PolicySection title="9. Changes">
+        <p>We will post updates on this page.</p>
+      </PolicySection>
+    </PolicyLayout>
   );
 }

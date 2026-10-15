@@ -4,15 +4,7 @@ import { categoryToSlug, CATEGORY_SLUGS } from '@/lib/categories'
 import { categoryPluralLabel } from '@/lib/seo'
 import { getCategoryProductCounts } from '@/lib/queries'
 import { NewsletterForm } from './NewsletterForm'
-import {
-  BUSINESS_ADDRESS_LINES,
-  BUSINESS_PHONE_DISPLAY,
-  BUSINESS_PHONE_TEL,
-  BUSINESS_EMAIL,
-  WHATSAPP_NUMBER,
-  SOCIAL_LINKS,
-  GRIEVANCE_OFFICER,
-} from '@/lib/business-info'
+import { getSiteProfile } from '@/lib/site-profile'
 
 // Whole machines first, then everything else; only categories that currently
 // have published products are linked, so no empty page is ever advertised.
@@ -21,7 +13,7 @@ const SHOP_ORDER = ['LAP', 'DES', 'MON', 'TAB', 'ACC', 'ADP', 'RAM', 'SSD', 'KBD
 const SOCIAL_ICONS = [
   {
     label: 'Instagram',
-    href: SOCIAL_LINKS.instagram,
+    key: 'instagram' as const,
     icon: (
       <>
         <rect x="3.5" y="3.5" width="17" height="17" rx="5" />
@@ -32,12 +24,12 @@ const SOCIAL_ICONS = [
   },
   {
     label: 'Facebook',
-    href: SOCIAL_LINKS.facebook,
+    key: 'facebook' as const,
     icon: <path d="M14 8.5h2V5h-2a4 4 0 00-4 4v2H8.5v3.5H10V21h3.5v-6.5H16l.5-3.5h-3V9a.5.5 0 01.5-.5z" />,
   },
   {
     label: 'LinkedIn',
-    href: SOCIAL_LINKS.linkedin,
+    key: 'linkedin' as const,
     icon: (
       <>
         <rect x="3.5" y="3.5" width="17" height="17" rx="2.5" />
@@ -48,7 +40,7 @@ const SOCIAL_ICONS = [
 ]
 
 export async function SiteFooter() {
-  const counts = await getCategoryProductCounts()
+  const [counts, profile] = await Promise.all([getCategoryProductCounts(), getSiteProfile()])
   const SHOP_LINKS = SHOP_ORDER.filter((code) => code in CATEGORY_SLUGS && (counts[code] ?? 0) > 0).map((code) => ({
     code,
     label: categoryPluralLabel(code, code),
@@ -75,20 +67,20 @@ export async function SiteFooter() {
               </span>
             </Link>
             <p className="mt-3 max-w-xs text-sm text-muted-foreground">
-              {BUSINESS_ADDRESS_LINES.map((line) => (
+              {profile.addressLines.map((line) => (
                 <span key={line} className="block">{line}</span>
               ))}
             </p>
             <p className="mt-3 text-sm text-muted-foreground">
-              <a href={`tel:${BUSINESS_PHONE_TEL}`} className="hover:text-brand-orange">{BUSINESS_PHONE_DISPLAY}</a>
+              <a href={`tel:${profile.phoneTel}`} className="hover:text-brand-orange">{profile.phoneDisplay}</a>
               <span className="mx-1.5">·</span>
-              <a href={`mailto:${BUSINESS_EMAIL}`} className="hover:text-brand-orange">{BUSINESS_EMAIL}</a>
+              <a href={`mailto:${profile.email}`} className="hover:text-brand-orange">{profile.email}</a>
             </p>
             <div className="mt-4 flex items-center gap-3">
-              {SOCIAL_ICONS.map((s) => (
+              {SOCIAL_ICONS.filter((s) => profile.social[s.key]).map((s) => (
                 <a
                   key={s.label}
-                  href={s.href}
+                  href={profile.social[s.key] as string}
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label={s.label}
@@ -129,7 +121,7 @@ export async function SiteFooter() {
                 <Link href="/faq" className="hover:text-brand-orange">FAQ</Link>
               </li>
               <li>
-                <a href={`https://wa.me/${WHATSAPP_NUMBER}`} target="_blank" rel="noopener noreferrer" className="hover:text-brand-orange">
+                <a href={`https://wa.me/${profile.whatsappNumber}`} target="_blank" rel="noopener noreferrer" className="hover:text-brand-orange">
                   Bulk / business orders
                 </a>
               </li>
@@ -162,8 +154,8 @@ export async function SiteFooter() {
         <div className="mt-10 flex flex-col gap-2 border-t border-border pt-6 text-xs text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
           <p>© {new Date().getFullYear()} DigitalBluez. All rights reserved.</p>
           <p>
-            Grievance Officer: {GRIEVANCE_OFFICER.name} ·{' '}
-            <a href={`mailto:${GRIEVANCE_OFFICER.email}`} className="hover:text-brand-orange">{GRIEVANCE_OFFICER.email}</a>
+            Grievance Officer: {profile.grievance.name} ·{' '}
+            <a href={`mailto:${profile.grievance.email}`} className="hover:text-brand-orange">{profile.grievance.email}</a>
           </p>
         </div>
       </div>
