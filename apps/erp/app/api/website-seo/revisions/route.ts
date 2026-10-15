@@ -66,6 +66,18 @@ export async function POST(req: NextRequest) {
       .from('seo_collections')
       .upsert({ ...row, updated_at: new Date().toISOString(), updated_by: sessionUser.id }, { onConflict: 'category,slug' })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  } else if (rev.entity_type === 'site_profile') {
+    // Put back every editable column from the saved row (never id / audit columns).
+    const patch = Object.fromEntries(
+      Object.entries(snap).filter(([k]) => !['id', 'updated_at', 'updated_by'].includes(k))
+    )
+    const { data: current } = await supabaseAdmin.from('site_profile').select('*').maybeSingle()
+    if (current) await recordRevision('site_profile', 'singleton', 'upsert', current, sessionUser.id)
+    const { error } = await supabaseAdmin
+      .from('site_profile')
+      .update({ ...patch, updated_at: new Date().toISOString(), updated_by: sessionUser.id })
+      .eq('id', true)
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   } else if (rev.entity_type === 'redirect') {
     const { error } = await supabaseAdmin
       .from('seo_redirects')
@@ -82,7 +94,7 @@ export async function POST(req: NextRequest) {
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
     actionType: 'restore',
     module: 'settings',
-    tableName: `seo_${rev.entity_type === 'settings' ? 'settings' : rev.entity_type === 'override' ? 'overrides' : rev.entity_type === 'collection' ? 'collections' : 'redirects'}`,
+    tableName: ({ settings: 'seo_settings', override: 'seo_overrides', collection: 'seo_collections', site_profile: 'site_profile', redirect: 'seo_redirects' } as Record<string, string>)[rev.entity_type],
     recordLabel: rev.entity_key,
     metadata: { revision_id: id },
   })

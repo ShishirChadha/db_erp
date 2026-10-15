@@ -87,7 +87,7 @@ export function validateOverride(b: OverrideInput):
 }
 
 export async function recordRevision(
-  entityType: 'settings' | 'override' | 'redirect' | 'collection',
+  entityType: 'settings' | 'override' | 'redirect' | 'collection' | 'site_profile',
   entityKey: string,
   action: 'upsert' | 'delete',
   snapshot: Record<string, unknown>,

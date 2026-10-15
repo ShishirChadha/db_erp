@@ -1012,6 +1012,8 @@ function HistorySection() {
   const summary = (r: Revision) => {
     const s = r.snapshot as Record<string, any>
     if (r.entity_type === 'redirect') return `${s.from_path} → ${s.to_path}`
+    if (r.entity_type === 'site_profile') return 'Company & About details'
+    if (r.entity_type === 'collection') return s.name || s.slug || '—'
     if (r.entity_type === 'override') return s.meta_title || s.meta_description || (s.robots_index === false ? 'hidden from search' : '—')
     return s.default_description || s.product_description_template || '—'
   }

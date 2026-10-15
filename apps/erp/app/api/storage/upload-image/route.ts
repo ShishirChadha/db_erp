@@ -10,7 +10,7 @@ import { NextRequest, NextResponse } from 'next/server';
 // signed-URL-PUT flow in /api/storage/upload-url; this route exists specifically so
 // large phone-camera originals never land in storage unmodified (see
 // lib/image-process.ts and apps/web/next.config.ts for why that matters).
-const ALLOWED_FOLDER_PREFIXES = ['products/', 'banners'];
+const ALLOWED_FOLDER_PREFIXES = ['products/', 'banners', 'site/'];
 
 export async function POST(req: NextRequest) {
   const sessionUser = await getCookieSessionUser();

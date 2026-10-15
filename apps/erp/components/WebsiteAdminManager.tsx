@@ -7,6 +7,7 @@ import { downscaleImageFile } from '@/lib/client-image'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import { NavList, Panes } from '@/components/MasterDetail'
+import SiteProfileSection from '@/components/SiteProfileSection'
 
 function publicImageUrl(storagePath: string) {
   return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/storage/v1/object/public/product-images/${storagePath}`
@@ -1178,6 +1179,7 @@ function PaymentSettingsSection() {
 }
 
 const SECTIONS = [
+  { key: 'company', label: 'Company & About', hint: 'Contact, hours, About page, team' },
   { key: 'upgrade_pricing', label: 'Upgrade Pricing', hint: 'RAM, SSD and warranty upsells' },
   { key: 'promotions', label: 'Promotions', hint: 'Discounts and free gifts' },
   { key: 'cross_sell', label: 'Cross-sell', hint: '"Complete your setup" rules' },
@@ -1189,7 +1191,7 @@ const SECTIONS = [
 type SectionKey = typeof SECTIONS[number]['key']
 
 export default function WebsiteAdminManager() {
-  const [tab, setTab] = useState<SectionKey>('upgrade_pricing')
+  const [tab, setTab] = useState<SectionKey>('company')
   const [open, setOpen] = useState(false)
 
   return (
@@ -1201,6 +1203,7 @@ export default function WebsiteAdminManager() {
       list={<NavList entries={[...SECTIONS]} active={tab} onSelect={(k) => { setTab(k as SectionKey); setOpen(true) }} />}
     >
       <h3 className="mb-3 text-base font-semibold">{SECTIONS.find((t) => t.key === tab)?.label}</h3>
+      {tab === 'company' && <SiteProfileSection />}
       {tab === 'upgrade_pricing' && <UpgradePricingSection />}
       {tab === 'promotions' && <PromotionsSection />}
       {tab === 'cross_sell' && <CrossSellSection />}
