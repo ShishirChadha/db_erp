@@ -57,16 +57,19 @@ export async function generateMetadata({
   const pageNumber = Math.max(1, Number.parseInt(rawPage ?? "1", 10) || 1);
   const isMachine = heading.startsWith("Refurbished");
 
-  return withSeoOverride({
+  // A custom title/description (Website SEO -> Page metadata) belongs to page 1 only;
+  // page 2+ keep their own "— Page N" title so paginated pages never share one.
+  const metadata: Metadata = {
     // Paginated pages get their own title and a self-referencing canonical, so
     // products that only appear on page 2+ stay discoverable. Sort/filter
     // parameters are still folded into the base canonical.
     title: pageNumber > 1 ? `${heading} — Page ${pageNumber}` : heading,
     description: isMachine
       ? `Browse quality-checked ${heading.toLowerCase()}, tested and backed by warranty. Buy online from DigitalBluez, Greater Noida.`
-      : `Browse ${heading.toLowerCase()} from DigitalBluez, Greater Noida. Quality-checked stock, backed by warranty.`,
+      : `Browse ${heading.toLowerCase()} from DigitalBluez, Greater Noida. Quality-checked stock with a GST invoice.`,
     alternates: { canonical: pageNumber > 1 ? `/${categorySlug}?page=${pageNumber}` : `/${categorySlug}` },
-  }, "category", category.code);
+  };
+  return pageNumber > 1 ? metadata : withSeoOverride(metadata, "category", category.code);
 }
 
 export default async function CategoryPage({
