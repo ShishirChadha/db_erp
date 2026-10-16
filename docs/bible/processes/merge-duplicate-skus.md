@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/sku-master/merge/route.ts
   - apps/erp/app/api/sku-master/duplicate-candidates/route.ts
   - apps/erp/app/dashboard/sku-master/page.tsx
-updated: 2026-09-16
+updated: 2026-10-16
 ---
 
 ## What this is

@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-10-12
+updated: 2026-10-16
 ---
 
 ## What this covers
@@ -66,6 +66,13 @@ honest throughout. See **rentals**.
 A SKU's `web_slug` is part of its public product URL. Editing it on a **published** SKU through
 `PUT /api/sku-master/[id]` also writes a permanent redirect from the old address to the new one
 (`seo_redirects`, see **website-seo**), so existing links and search listings keep working.
+
+## One selling price per SKU
+
+`web_price` and `selling_price_default` are always written together (SKU Master
+edit, the Website dialog, the Price Cockpit and the Price Board all go through
+`PUT /api/sku-master/[id]`'s validation). Repricing many SKUs is done on the
+Price Board; see **use-the-price-board**.
 
 ## Related
 

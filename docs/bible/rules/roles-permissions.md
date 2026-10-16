@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/RequirePageAccess.tsx
   - apps/erp/app/dashboard/home/page.tsx
   - apps/erp/lib/leads.ts
-updated: 2026-10-13
+updated: 2026-10-16
 ---
 
 ## The three roles
