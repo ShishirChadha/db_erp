@@ -148,7 +148,9 @@ export function matchScore(ours: Config, theirs: Config): MatchResult {
   const reasons: string[] = []
   if (ours.brand && theirs.brand && ours.brand !== theirs.brand) return NO_MATCH('different brand')
   if (!ours.modelTokens.length) return NO_MATCH('our model has no model number')
-  const same = (a: string, b: string) => a === b || a === 'x' + b || b === 'x' + a // "360" vs "x360"
+  // "360" vs "x360"; and for Apple, whose models are named by their A-number ("A1466"), "1466" vs "a1466"
+  const apple = ours.brand === 'apple' || theirs.brand === 'apple'
+  const same = (a: string, b: string) => a === b || a === 'x' + b || b === 'x' + a || (apple && (a === 'a' + b || b === 'a' + a))
   const missing = ours.modelTokens.filter((tok) => !theirs.modelTokens.some((t) => same(tok, t)))
   if (missing.length) return NO_MATCH(`model differs (${missing.join(', ')})`)
 
