@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/reports/route.ts
   - apps/erp/app/api/reports/website/route.ts
   - apps/erp/app/api/reports/search-console/route.ts
-updated: 2026-09-16
+updated: 2026-10-16
 ---
 
 ## What this is
@@ -112,6 +112,13 @@ which can take days to weeks after first enabling, not a configuration
 problem.
 
 ## Common mix-ups
+
+- **"Google Analytics rejected the request ... DECODER routines::unsupported."** —
+  `GA4_PRIVATE_KEY` on the server is not a valid key, almost always because it
+  was pasted into Vercel with its wrapping quotes or with `\n` typed as text.
+  The server now repairs those shapes automatically (`lib/google-key.ts`); if
+  the message still appears, paste the `private_key` value from the service
+  account JSON again, including the BEGIN/END lines, and redeploy.
 
 - **"Profitability / Purchasing / GST tabs are blank or say owner-only for
   me."** — Expected for manager/employee; the `reports` page grant gets you

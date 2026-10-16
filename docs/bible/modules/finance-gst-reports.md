@@ -35,7 +35,7 @@ sources:
   - apps/erp/app/api/gst/news/route.ts
   - apps/erp/app/api/gst/news/run/route.ts
   - apps/erp/app/dashboard/gst/gst-news-panel.tsx
-updated: 2026-10-12
+updated: 2026-10-16
 ---
 
 ## The single reporting dispatcher
