@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -109,6 +109,16 @@ is also no `middleware.ts`. The real boundary is `lib/auth/session.ts` +
 `lib/auth/redact.ts`, checked inside each route handler. Page-level guards
 (`RequireOwner`) are UX only, never the actual security boundary — see
 **roles-permissions**.
+
+## A SKU has one selling price (2026-10-16)
+
+`sku_master.web_price` and `selling_price_default` are always the same number.
+`PUT /api/sku-master/[id]` and the Price Board write both together and reject a
+price that is not a number, is zero or negative, or is above ₹10,00,000. A
+blank web price clears only the web price. Bulk repricing is staged and
+reviewed before it goes live, a price below cost or the owner's minimum margin
+needs an explicit confirmation, and any published batch can be undone. See
+**use-the-price-board**.
 
 ## Attendance invariants (2026-10-03)
 
