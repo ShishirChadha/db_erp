@@ -8,7 +8,7 @@ routes: [/dashboard/sku-master]
 keywords: [publish, website, online, list on site, digitalbluez.com, web price, unpublish]
 sources:
   - apps/erp/components/SkuWebPublishDialog.tsx
-updated: 2026-10-12
+updated: 2026-10-16
 ---
 
 ## What this is
@@ -19,8 +19,9 @@ nothing is ever published automatically.
 ## Steps
 
 1. From **SKU Master**, open the SKU's **Website** action.
-2. Toggle **Published**, set web price/MRP (falls back to
-   `selling_price_default` if left blank), slug, title, description,
+2. Toggle **Published**, set web price/MRP (saving a price sets the default
+   selling price to the same number; to reprice many laptops at once use the
+   **Price Board**, see **use-the-price-board**), slug, title, description,
    highlights, and condition grade.
 3. Manage photos via the built-in photo manager (writes to `product_images` +
    the public storage bucket).

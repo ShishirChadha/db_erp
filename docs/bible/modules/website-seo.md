@@ -32,7 +32,7 @@ sources:
   - apps/erp/lib/seo-suggestions.ts
   - apps/erp/app/api/website-seo/competitors/route.ts
   - apps/erp/app/api/website-seo/suggestions/route.ts
-updated: 2026-10-15
+updated: 2026-10-16
 ---
 
 ## What it is
@@ -87,7 +87,7 @@ pane shows at a time with a Back button. All of it is `components/MasterDetail.t
   (`scan_seo_review`, Mondays 09:30 IST) raises one Activities task per active owner pointing here; it skips a week while the
   previous task is still open.
 - **Google setup** — live checks (is Analytics installed and is its ID the right shape — `G-` plus 10 characters; is a Search
-  Console tag or DNS verification likely; is the sitemap readable; are the ERP's Google reports connected) and the numbered
+  Console verification (meta tag, or the HTML verification file served from the storefront's `public/` folder, or DNS); is the sitemap readable; are the ERP's Google reports connected) and the numbered
   steps for Analytics, Search Console (as a Domain property verified by DNS), connecting reports to the ERP, Business Profile,
   Merchant Center and optional extras.
 - **Competitor websites** — list public sites (preloaded: EazyPC, Edify, NewJaisa, Electronics Bazaar, plus our own site as the

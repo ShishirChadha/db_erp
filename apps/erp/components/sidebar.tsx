@@ -126,7 +126,7 @@ export const menuGroups = [
       // Price Cockpit stays owner-only -- its core data (price-intel) mixes vendor
       // names/buying cost with competitor prices in one response with no safe
       // employee-facing subset, unlike every other page-keyed area.
-      { key: 'pricing', href: '/dashboard/pricing', label: 'Price Cockpit', ownerOnly: true },
+      { key: 'pricing', href: '/dashboard/pricing', label: 'Price Board', ownerOnly: true },
       // Owner-only for the same reason as Price Cockpit: the page is revenue,
       // customer addresses and payment identifiers, with no partial view worth
       // granting. Deliberately NOT gated on the existing 'website' key -- that

@@ -163,7 +163,7 @@ function SkuDetailPane({ sku, summary, isOwner, hasWebsiteAccess, deleting, onEd
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <Button variant="link" size="sm" onClick={onEdit} disabled={deleting} className="text-primary text-sm disabled:opacity-50">Edit</Button>
           {isOwner && (
-            <Link href={`/dashboard/pricing?sku_id=${sku.id}`} className="text-purple underline text-sm">Pricing</Link>
+            <Link href={`/dashboard/pricing?sku=${sku.id}`} className="text-purple underline text-sm">Pricing</Link>
           )}
           {hasWebsiteAccess && (
             <Button variant="link" size="sm" onClick={onWebsite} disabled={deleting} className="text-success text-sm disabled:opacity-50">Website</Button>

@@ -57,6 +57,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | business_profiles | invoicing_mode | business_profiles_invoicing_mode_check | `CHECK ((invoicing_mode = ANY (ARRAY['erp'::text, 'external'::text])))` |
 | business_profiles | key | business_profiles_key_check | `CHECK ((key = ANY (ARRAY['digitalbluez'::text, 'techtenth'::text, 'cash'::text])))` |
 | cart_items | quantity | cart_items_quantity_check | `CHECK ((quantity > 0))` |
+| competitor_price_links | status | competitor_price_links_status_check | `CHECK ((status = ANY (ARRAY['confirmed'::text, 'rejected'::text])))` |
 | customer_profiles | tier | customer_profiles_tier_check | `CHECK ((tier = ANY (ARRAY['standard'::text, 'vip'::text, 'wholesale'::text])))` |
 | customers | gst_treatment | customers_gst_treatment_check | `CHECK (((gst_treatment IS NULL) OR (gst_treatment = ANY (ARRAY['registered_regular'::text, 'registered_composition'::text, 'unregistered_business'::text, 'consumer'::text, 'overseas'::text]))))` |
 | customers | social_following | customers_social_following_check | `CHECK ((social_following = ANY (ARRAY['FB'::text, 'Insta'::text, 'Both'::text, 'None'::text])))` |
@@ -119,6 +120,13 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | period_locks | module | period_locks_module_check | `CHECK ((module = ANY (ARRAY['sales'::text, 'purchases'::text, 'banking'::text, 'accounts'::text])))` |
 | period_locks | unlock_from | period_locks_unlock_reason_check | `CHECK (((unlock_from IS NULL) OR (NULLIF(TRIM(BOTH FROM COALESCE(unlock_reason, ''::text)), ''::text) IS NOT NULL)))` |
 | period_locks | unlock_from | period_locks_unlock_window_check | `CHECK ((((unlock_from IS NULL) AND (unlock_to IS NULL)) OR ((unlock_from IS NOT NULL) AND (unlock_to IS NOT NULL) AND (unlock_to >= unlock_from))))` |
+| pricing_settings | aging_days | pricing_settings_aging_days_check | `CHECK (((aging_days >= 7) AND (aging_days <= 365)))` |
+| pricing_settings | aging_drop_pct | pricing_settings_aging_drop_pct_check | `CHECK (((aging_drop_pct >= (0)::numeric) AND (aging_drop_pct <= (50)::numeric)))` |
+| pricing_settings | beat_by | pricing_settings_beat_by_check | `CHECK ((beat_by >= (0)::numeric))` |
+| pricing_settings | id | pricing_settings_id_check | `CHECK (id)` |
+| pricing_settings | min_margin_pct | pricing_settings_min_margin_pct_check | `CHECK (((min_margin_pct >= (0)::numeric) AND (min_margin_pct < (90)::numeric)))` |
+| pricing_settings | rounding | pricing_settings_rounding_check | `CHECK ((rounding = ANY (ARRAY['none'::text, 'ten'::text, 'hundred'::text, '99'::text, '999'::text])))` |
+| pricing_settings | undercut_tolerance | pricing_settings_undercut_tolerance_check | `CHECK ((undercut_tolerance >= (0)::numeric))` |
 | profile_page_actions | page_key | profile_page_actions_page_key_check | `CHECK ((page_key = ANY (ARRAY['new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text, 'leads'::text])))` |
 | profiles | allowed_pages | profiles_allowed_pages_check | `CHECK ((allowed_pages <@ ARRAY['dashboard'::text, 'pending_tasks'::text, 'new_entry'::text, 'accessories'::text, 'repair_jobs'::text, 'replacement_jobs'::text, 'sku_master'::text, 'live_stock'::text, 'invoices'::text, 'customers'::text, 'activities'::text, 'sales'::text, 'stock'::text, 'website'::text, 'expenses'::text, 'reports'::text, 'quotations'::text, 'rma'::text, 'marketing'::text, 'rentals'::text, 'attendance'::text, 'leads'::text]))` |
 | profiles | role | profiles_role_check | `CHECK ((role = ANY (ARRAY['owner'::text, 'manager'::text, 'employee'::text])))` |
@@ -187,6 +195,8 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | site_profile | id | site_profile_id_check | `CHECK (id)` |
 | site_profile | year_started | site_profile_year_started_check | `CHECK (((year_started IS NULL) OR ((year_started >= 1990) AND (year_started <= 2100))))` |
 | sku_master | status | sku_master_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'discontinued'::text, 'archived'::text])))` |
+| sku_price_changes | new_price | sku_price_changes_new_price_check | `CHECK ((new_price > (0)::numeric))` |
+| sku_price_changes | reason | sku_price_changes_reason_check | `CHECK ((reason = ANY (ARRAY['manual'::text, 'bulk'::text, 'suggestion'::text, 'undo'::text])))` |
 | sku_upgrade_rules | field_name | sku_upgrade_rules_field_name_check | `CHECK ((field_name = ANY (ARRAY['ram'::text, 'ssd'::text, 'warranty_months'::text])))` |
 | sku_upgrade_rules | price_delta | sku_upgrade_rules_price_delta_check | `CHECK ((price_delta >= (0)::numeric))` |
 | staff | weekly_off_days | staff_weekly_off_days_check | `CHECK (((weekly_off_days IS NULL) OR (weekly_off_days <@ ARRAY[(1)::smallint, (2)::smallint, (3)::smallint, (4)::smallint, (5)::smallint, (6)::smallint, (7)::smallint])))` |

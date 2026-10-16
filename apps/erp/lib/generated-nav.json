@@ -104,7 +104,7 @@
     "ownerOnly": false
   },
   {
-    "label": "Sales > Price Cockpit",
+    "label": "Sales > Price Board",
     "route": "/dashboard/pricing",
     "ownerOnly": true
   },

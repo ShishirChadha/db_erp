@@ -7,6 +7,7 @@ import { redactForRole } from '@/lib/auth/redact'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent, AuditActionType } from '@/lib/audit-log'
 import { addRedirect } from '@/lib/seo-admin'
+import { validatePrice } from '@/lib/pricing'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -80,6 +81,26 @@ export async function PUT(
   const updatable: any = {}
   for (const key of allowedKeys) {
     if (body[key] !== undefined) updatable[key] = body[key]
+  }
+
+  // The website price and the default selling price are one number (owner decision,
+  // 2026-10-15): setting either writes both. A blank web price clears only the web
+  // price, so the default keeps working as the storefront's fallback.
+  const priceInput = updatable.web_price ?? updatable.selling_price_default
+  if (priceInput !== undefined && priceInput !== null && priceInput !== '') {
+    const v = validatePrice(priceInput)
+    if (!v.ok) return NextResponse.json({ error: v.error }, { status: 400 })
+    if (updatable.web_price != null && updatable.selling_price_default != null
+      && Number(updatable.web_price) !== Number(updatable.selling_price_default)) {
+      return NextResponse.json({ error: 'Website price and selling price are the same number; send one value.' }, { status: 400 })
+    }
+    updatable.web_price = v.price
+    updatable.selling_price_default = v.price
+  } else if ('web_price' in updatable && (updatable.web_price === '' || updatable.web_price === null)) {
+    updatable.web_price = null
+  }
+  if ('selling_price_default' in updatable && (updatable.selling_price_default === '' || updatable.selling_price_default === null)) {
+    delete updatable.selling_price_default // never wipe the fallback price by accident
   }
 
   // published_at is server-set, never client-supplied -- mirrors completed_at/

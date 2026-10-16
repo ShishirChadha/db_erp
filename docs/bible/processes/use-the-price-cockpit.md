@@ -4,18 +4,18 @@ title: Using the Price Cockpit
 kind: process
 module: sales-invoicing
 audience: [owner]
-routes: [/dashboard/pricing]
+routes: [/dashboard/pricing/cockpit]
 keywords: [price cockpit, pricing, margin calculator, markup, vendor comparison, competitor price, market price, rate compare karna, daam nikalna, profit margin, quotation banana]
 sources:
-  - apps/erp/app/dashboard/pricing/page.tsx
+  - apps/erp/app/dashboard/pricing/cockpit/page.tsx
   - apps/erp/app/api/sku-master/[id]/price-intel/route.ts
   - apps/erp/app/api/sku-master/[id]/market-observations/route.ts
-updated: 2026-09-16
+updated: 2026-10-16
 ---
 
 ## What this is
 
-An owner-only, single-SKU workbench (`/dashboard/pricing`) for pricing and
+An owner-only, single-SKU workbench (`/dashboard/pricing/cockpit`, reached from the Price Board) for pricing and
 margin decisions — it pulls together what you've paid vendors for an item, a
 live markup/margin calculator, and a log of competitor prices, so buy-side
 and sell-side numbers for one item sit on one screen instead of being pieced
@@ -35,7 +35,7 @@ non-owner-safe subset to return.
 
 ## Steps
 
-1. Open **Price Cockpit** (`/dashboard/pricing`) and search for an item by
+1. Open **Price Cockpit** (from a laptop on the **Price Board**, or `/dashboard/pricing/cockpit`) and search for an item by
    SKU code or description — any category in `sku_master` (laptops,
    desktops, monitors, tablets, accessories).
 2. **Vendor Comparison** — see every vendor you've bought this exact SKU
@@ -53,7 +53,8 @@ non-owner-safe subset to return.
    compares to the cheapest one. From here:
    - **Copy Price** — copies the number to the clipboard.
    - **Save as Default Selling Price** — writes it to
-     `sku_master.selling_price_default`.
+     `sku_master.selling_price_default` **and** `web_price` (the two are one
+     number; see **use-the-price-board**).
    - **Create Quotation** — pick a customer and immediately create a
      one-line Quotation at this price, handing off to the normal
      quotation flow (see **create-a-quotation-or-proforma**).

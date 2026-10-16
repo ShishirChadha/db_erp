@@ -36,6 +36,7 @@ export function Panes({
   onBack,
   backLabel = 'Back to list',
   bp = 'md',
+  listClassName,
 }: {
   list: ReactNode
   children: ReactNode
@@ -44,11 +45,13 @@ export function Panes({
   onBack: () => void
   backLabel?: string
   bp?: 'md' | 'xl'
+  /** Overrides the list pane's width, e.g. 'xl:w-[30rem]' for a dense record list. */
+  listClassName?: string
 }) {
   const c = BP[bp]
   return (
     <div className={c.wrap}>
-      <div className={cn('w-full', c.list, open && c.hide)}>{list}</div>
+      <div className={cn('w-full', c.list, listClassName, open && c.hide)}>{list}</div>
       <div className={cn('min-w-0 flex-1', !open && c.hide)}>
         <button
           type="button"

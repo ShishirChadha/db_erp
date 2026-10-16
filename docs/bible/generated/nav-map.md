@@ -23,7 +23,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Sales > Sales | `/dashboard/sales` | sales |  |
 | Sales > Invoices | `/dashboard/invoices` | invoices |  |
 | Sales > Quotations | `/dashboard/quotations` | quotations |  |
-| Sales > Price Cockpit | `/dashboard/pricing` |  | yes |
+| Sales > Price Board | `/dashboard/pricing` |  | yes |
 | Sales > Website Orders | `/dashboard/web-orders` |  | yes |
 | Contacts > Customers | `/dashboard/customers` | customers |  |
 | Contacts > Vendors | `/dashboard/vendors` |  | yes |
