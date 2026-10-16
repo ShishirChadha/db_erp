@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { BetaAnalyticsDataClient } from '@google-analytics/data'
 import { AnalyticsAdminServiceClient } from '@google-analytics/admin'
+import { friendlyGoogleError, normalizeGooglePrivateKey } from '@/lib/google-key'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
 const METRICS = ['config', 'ecommerce_funnel', 'search_terms', 'summary', 'timeseries', 'top_pages', 'devices', 'demographics_age', 'demographics_gender', 'geo', 'traffic_source'] as const
@@ -16,7 +17,7 @@ function getClient() {
   const privateKey = process.env.GA4_PRIVATE_KEY
   if (!clientEmail || !privateKey) return null
   return new BetaAnalyticsDataClient({
-    credentials: { client_email: clientEmail, private_key: privateKey.replace(/\\n/g, '\n') },
+    credentials: { client_email: clientEmail, private_key: normalizeGooglePrivateKey(privateKey) },
   })
 }
 
@@ -31,7 +32,7 @@ function getAdminClient() {
   const privateKey = process.env.GA4_PRIVATE_KEY
   if (!clientEmail || !privateKey) return null
   return new AnalyticsAdminServiceClient({
-    credentials: { client_email: clientEmail, private_key: privateKey.replace(/\\n/g, '\n') },
+    credentials: { client_email: clientEmail, private_key: normalizeGooglePrivateKey(privateKey) },
   })
 }
 
@@ -118,7 +119,7 @@ export async function GET(req: NextRequest) {
               .filter((id): id is string => !!id)
           }
         } catch (err: any) {
-          adminError = err?.message || 'Admin API request failed'
+          adminError = friendlyGoogleError(err?.message, 'Admin API request failed')
         }
 
         return NextResponse.json({
@@ -342,7 +343,7 @@ export async function GET(req: NextRequest) {
       }
     }
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Google Analytics request failed' }, { status: 502 })
+    return NextResponse.json({ error: friendlyGoogleError(err?.message, 'Google Analytics request failed') }, { status: 502 })
   }
 }
 

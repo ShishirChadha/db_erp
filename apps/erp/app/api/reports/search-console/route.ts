@@ -3,6 +3,7 @@
 // route, this data does not live in Supabase, so it gets its own route rather
 // than being folded into the report_* RPC dispatcher (apps/erp/app/api/reports).
 import { NextRequest, NextResponse } from 'next/server'
+import { friendlyGoogleError, normalizeGooglePrivateKey } from '@/lib/google-key'
 import { JWT } from 'google-auth-library'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
@@ -25,7 +26,7 @@ function getClient(): JWT | null {
   if (!clientEmail || !privateKey) return null
   return new JWT({
     email: clientEmail,
-    key: privateKey.replace(/\\n/g, '\n'),
+    key: normalizeGooglePrivateKey(privateKey),
     scopes: [SEARCH_ANALYTICS_SCOPE],
   })
 }
@@ -146,7 +147,7 @@ export async function GET(req: NextRequest) {
       }
     }
   } catch (err: any) {
-    return NextResponse.json({ error: err?.message || 'Search Console request failed' }, { status: 502 })
+    return NextResponse.json({ error: friendlyGoogleError(err?.message, 'Search Console request failed') }, { status: 502 })
   }
 }
 
