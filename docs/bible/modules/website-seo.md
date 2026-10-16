@@ -126,3 +126,7 @@ opening hours (every day, 9 AM–8 PM, confirmed by the owner 2026-10-13). Coord
 ## Related
 
 **website**, **settings-admin**, **backup-audit**.
+
+## Adding a competitor that cannot be read
+
+When a competitor is added (Competitor websites, or Price Board → Competitors) the site is tested first. If it blocks automated readers (bot check), forbids us in robots.txt, or has no readable price list, you are warned and must confirm with **Add anyway**; the SEO page analysis can still work on it but the Price Board will not show its prices. Electronics Bazaar was removed for this reason.

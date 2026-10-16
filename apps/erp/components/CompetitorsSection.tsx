@@ -70,6 +70,7 @@ export default function CompetitorsSection({ go }: { go: Go }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
+  const [unreadable, setUnreadable] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
@@ -96,14 +97,18 @@ export default function CompetitorsSection({ go }: { go: Go }) {
     setBusy(false)
   }
 
-  const add = async () => {
-    setBusy(true); setError('')
-    const res = await apiFetch('/api/website-seo/competitors', { method: 'POST', body: JSON.stringify({ label, base_url: url }) })
+  const add = async (confirmUnreadable = false) => {
+    setBusy(true); setError(''); setUnreadable(null)
+    const res = await apiFetch('/api/website-seo/competitors', { method: 'POST', body: JSON.stringify({ label, base_url: url, confirm_unreadable: confirmUnreadable }) })
     if (res.ok) {
       const d = await res.json()
       setLabel(''); setUrl(''); setAdding(false)
       await load()
       setSelectedId(d.id); setOpen(true)
+    } else if (res.status === 409) {
+      const d = await res.json().catch(() => ({}))
+      if (d.needs_confirmation) setUnreadable(d.error || 'This website\'s prices cannot be read automatically.')
+      else setError(d.error || 'Could not add this website')
     } else {
       setError(await errorOf(res, 'Could not add this website'))
     }
@@ -164,8 +169,16 @@ export default function CompetitorsSection({ go }: { go: Go }) {
             <input className={inputCls} value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://example.com" />
             <p className="mt-1 text-xs text-muted-foreground">Public https websites only.</p>
           </div>
+          {unreadable && (
+            <div className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">
+              <p className="font-medium">Heads up: this website blocks or hides its prices.</p>
+              <p className="mt-1 text-xs">{unreadable}</p>
+              <p className="mt-1 text-xs">The page analysis here can still work, but the Price Board cannot read its prices. Add it only if you want the SEO analysis.</p>
+              <button className={`${btnGhost} mt-2`} onClick={() => add(true)} disabled={busy}>Add anyway</button>
+            </div>
+          )}
           <div className="flex gap-2">
-            <button className={btnPrimary} onClick={add} disabled={busy || !label.trim() || !url.trim()}>Add website</button>
+            <button className={btnPrimary} onClick={() => add(false)} disabled={busy || !label.trim() || !url.trim()}>Add website</button>
             <button className={btnGhost} onClick={() => { setAdding(false); setOpen(false) }}>Cancel</button>
           </div>
         </div>

@@ -1,24 +1,45 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { SELLABLE_STATUSES } from '@/lib/sales-entry'
 import { DEFAULT_RULES, isUndercut, suggestForAging, suggestFromCompetitor, type PricingRules, type Suggestion } from '@/lib/pricing'
-import { matchScore, skuConfig, parseTitle, SIMILAR_THRESHOLD, SUGGEST_THRESHOLD } from '@/lib/competitor-prices/parse'
+import { isExactVariant, modelMatch, parseTitle, skuConfig, MODEL_THRESHOLD, type Config } from '@/lib/competitor-prices/parse'
 
 export const BOARD_CATEGORIES = ['LAP', 'DES']
 const DAY_MS = 86_400_000
 
-export interface CompetitorMatch {
-  competitor_id: string
-  competitor: string
+export interface VariantView {
   listing_key: string
-  title: string
-  url: string | null
+  variant_label: string
+  ram_gb: number | null
+  ssd_gb: number | null
+  warranty_months: number | null
+  condition: string | null
   price: number
   in_stock: boolean
-  warranty_months: number | null
+  /** same RAM and SSD as ours, and warranty at least 6 months: a like-for-like price */
+  exact: boolean
+}
+
+export interface ProductMatch {
+  competitor_id: string
+  competitor: string
+  product_key: string
+  title: string
+  url: string | null
   score: number
-  /** confirmed = owner confirmed; suggested = exact config match; similar = same model, different RAM/SSD */
-  kind: 'confirmed' | 'suggested' | 'similar'
-  notes: string[]
+  /** owner pressed "This model" */
+  forced: boolean
+  /** owner pressed "Not this model" */
+  hidden: boolean
+  variants: VariantView[]
+}
+
+export interface PriceRef {
+  competitor: string
+  price: number
+  variant_label: string
+  warranty_months: number | null
+  url: string | null
+  title: string
 }
 
 export interface BoardRow {
@@ -36,10 +57,26 @@ export interface BoardRow {
   cost: number | null
   available: number
   oldest_age_days: number | null
-  matches: CompetitorMatch[]
-  comparable_min: CompetitorMatch | null
+  /** cheapest in-stock like-for-like variant (same RAM + SSD): drives Undercut and suggestions */
+  exact_min: PriceRef | null
+  /** cheapest in-stock variant of the same model, any RAM/SSD: reference only */
+  model_low: PriceRef | null
+  matched_products: number
   undercut: boolean
   suggestion: (Suggestion & { source: 'competitor' | 'aging' }) | null
+}
+
+interface IndexedProduct {
+  competitor_id: string
+  competitor: string
+  product_key: string
+  title: string
+  url: string | null
+  brand: string | null
+  tokens: string[]
+  cpu: string | null
+  generation: number | null
+  variants: { listing_key: string; variant_label: string; ram_gb: number | null; ssd_gb: number | null; warranty_months: number | null; condition: string | null; price: number; in_stock: boolean; url: string | null }[]
 }
 
 export async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: any }>): Promise<T[]> {
@@ -66,28 +103,110 @@ export async function loadRules(): Promise<PricingRules> {
   }
 }
 
+export interface CompetitorInfo {
+  id: string
+  label: string
+  base_url: string
+  price_source: string | null
+  price_enabled: boolean
+  last_price_check_at: string | null
+  last_price_check_note: string | null
+  listings: number
+}
+
+async function loadMarketData() {
+  const [competitorsRes, listings, links] = await Promise.all([
+    supabaseAdmin.from('seo_competitors').select('id, label, base_url, price_source, price_enabled, last_price_check_at, last_price_check_note').eq('is_self', false).order('label'),
+    fetchAll<any>((a, b) => supabaseAdmin.from('competitor_listings')
+      .select('competitor_id, product_key, listing_key, title, url, brand, cpu, generation, ram_gb, ssd_gb, warranty_months, condition, variant_label, price, in_stock')
+      .range(a, b)),
+    fetchAll<any>((a, b) => supabaseAdmin.from('competitor_price_links').select('sku_id, competitor_id, listing_key, status').like('listing_key', 'product:%').range(a, b)),
+  ])
+  const competitors = (competitorsRes.data || []) as any[]
+  const active = new Map(competitors.filter((c) => c.price_enabled).map((c) => [c.id as string, c.label as string]))
+
+  const products = new Map<string, IndexedProduct>()
+  const counts = new Map<string, number>()
+  for (const l of listings) {
+    counts.set(l.competitor_id, (counts.get(l.competitor_id) || 0) + 1)
+    if (!active.has(l.competitor_id) || !l.product_key) continue
+    const key = `${l.competitor_id}|${l.product_key}`
+    let p = products.get(key)
+    if (!p) {
+      p = {
+        competitor_id: l.competitor_id, competitor: active.get(l.competitor_id)!, product_key: l.product_key, title: l.title, url: l.url,
+        brand: l.brand, tokens: parseTitle(l.title).modelTokens, cpu: l.cpu, generation: l.generation != null ? Number(l.generation) : null, variants: [],
+      }
+      products.set(key, p)
+    }
+    p.variants.push({
+      listing_key: l.listing_key, variant_label: l.variant_label || 'Standard', ram_gb: l.ram_gb, ssd_gb: l.ssd_gb,
+      warranty_months: l.warranty_months, condition: l.condition, price: Number(l.price), in_stock: !!l.in_stock, url: l.url,
+    })
+  }
+  const linkMap = new Map<string, string>() // sku|competitor|product:<key> -> status
+  for (const l of links) linkMap.set(`${l.sku_id}|${l.competitor_id}|${l.listing_key}`, l.status)
+  return { competitors, counts, products: [...products.values()], linkMap }
+}
+
+/** Competitor products that are the same model as `ours`, with every variant, exact ones flagged. */
+export function matchProducts(skuId: string, ours: Config, products: IndexedProduct[], linkMap: Map<string, string>): ProductMatch[] {
+  const out: ProductMatch[] = []
+  for (const p of products) {
+    const status = linkMap.get(`${skuId}|${p.competitor_id}|product:${p.product_key}`)
+    const score = modelMatch(ours, { brand: p.brand, modelTokens: p.tokens, cpu: p.cpu, generation: p.generation, ramGb: null, ssdGb: null }).score
+    const forced = status === 'confirmed'
+    const hidden = status === 'rejected'
+    if (!forced && !hidden && score < MODEL_THRESHOLD) continue
+    out.push({
+      competitor_id: p.competitor_id, competitor: p.competitor, product_key: p.product_key, title: p.title, url: p.url, score, forced, hidden,
+      variants: p.variants
+        .map((v) => ({
+          listing_key: v.listing_key, variant_label: v.variant_label, ram_gb: v.ram_gb, ssd_gb: v.ssd_gb, warranty_months: v.warranty_months,
+          condition: v.condition, price: v.price, in_stock: v.in_stock,
+          exact: isExactVariant(ours, { ramGb: v.ram_gb, ssdGb: v.ssd_gb, warrantyMonths: v.warranty_months }),
+        }))
+        .sort((a, b) => Number(b.exact) - Number(a.exact) || a.price - b.price),
+    })
+  }
+  return out
+}
+
+function cheapest(matches: ProductMatch[], pred: (v: VariantView) => boolean): PriceRef | null {
+  let best: PriceRef | null = null
+  for (const m of matches) {
+    if (m.hidden) continue
+    for (const v of m.variants) {
+      if (!v.in_stock || !pred(v)) continue
+      if (!best || v.price < best.price) best = { competitor: m.competitor, price: v.price, variant_label: v.variant_label, warranty_months: v.warranty_months, url: m.url, title: m.title }
+    }
+  }
+  return best
+}
+
+export function summarize(matches: ProductMatch[]) {
+  return { exact_min: cheapest(matches, (v) => v.exact), model_low: cheapest(matches, () => true) }
+}
+
 export async function loadBoard(): Promise<{
   rules: PricingRules
   rows: BoardRow[]
-  competitors: { id: string; label: string; base_url: string; last_checked: string | null; listings: number }[]
+  competitors: CompetitorInfo[]
   last_batch: { batch_id: string; changed_at: string; count: number } | null
 }> {
   const rules = await loadRules()
 
-  const [skus, units, competitors, listings, links, lastChanges] = await Promise.all([
+  const [skus, units, market, lastChanges] = await Promise.all([
     fetchAll<any>((a, b) => supabaseAdmin.from('sku_master')
       .select('id, full_sku_code, category, brand, model_name, sku_description, specifications, is_published, web_price, selling_price_default, market_price, base_cost, quantity_in_stock')
       .in('category', BOARD_CATEGORIES).eq('status', 'active').range(a, b)),
     fetchAll<any>((a, b) => supabaseAdmin.from('asset_ledger')
       .select('sku_id, current_sku_id, cost_price, received_at, created_at')
       .in('status', SELLABLE_STATUSES).is('deleted_at', null).range(a, b)),
-    supabaseAdmin.from('seo_competitors').select('id, label, base_url').eq('is_self', false).order('label'),
-    fetchAll<any>((a, b) => supabaseAdmin.from('competitor_listings').select('*').range(a, b)),
-    fetchAll<any>((a, b) => supabaseAdmin.from('competitor_price_links').select('sku_id, competitor_id, listing_key, status').range(a, b)),
+    loadMarketData(),
     supabaseAdmin.from('sku_price_changes').select('batch_id, changed_at, reason, undone_at').order('changed_at', { ascending: false }).limit(300),
   ])
 
-  // per-SKU unit facts (a unit's SKU may be overridden by current_sku_id)
   const unitBySku = new Map<string, { n: number; costSum: number; costN: number; oldest: number }>()
   for (const u of units) {
     const id = u.current_sku_id || u.sku_id
@@ -99,56 +218,23 @@ export async function loadBoard(): Promise<{
     unitBySku.set(id, e)
   }
 
-  const compList = competitors.data || []
-  const compLabel = new Map(compList.map((c: any) => [c.id, c.label as string]))
-  const linkMap = new Map<string, string>() // sku|competitor|listing -> status
-  for (const l of links) linkMap.set(`${l.sku_id}|${l.competitor_id}|${l.listing_key}`, l.status)
-
-  // Parse each competitor listing's model tokens once.
-  const parsed = listings.map((l: any) => ({ l, tokens: parseTitle(l.title).modelTokens }))
-
   const now = Date.now()
   const rows: BoardRow[] = []
   for (const s of skus) {
     const unit = unitBySku.get(s.id)
-    if (!s.is_published && !unit) continue // not for sale and nothing in stock: not a repricing candidate
+    if (!s.is_published && !unit) continue
 
     const price = s.web_price != null ? Number(s.web_price) : s.selling_price_default != null ? Number(s.selling_price_default) : null
     const cost = unit && unit.costN ? Math.round(unit.costSum / unit.costN) : s.base_cost != null && Number(s.base_cost) > 0 ? Number(s.base_cost) : null
     const ageDays = unit && Number.isFinite(unit.oldest) ? Math.floor((now - unit.oldest) / DAY_MS) : null
 
-    const ours = skuConfig(s)
-    const matches: CompetitorMatch[] = []
-    for (const { l, tokens } of parsed) {
-      const status = linkMap.get(`${s.id}|${l.competitor_id}|${l.listing_key}`)
-      if (status === 'rejected') continue
-      const m = matchScore(ours, { brand: l.brand, modelTokens: tokens, cpu: l.cpu, generation: l.generation, ramGb: l.ram_gb, ssdGb: l.ssd_gb })
-      const confirmed = status === 'confirmed'
-      if (!confirmed && m.score < SIMILAR_THRESHOLD) continue
-      const kind: CompetitorMatch['kind'] = confirmed ? 'confirmed' : m.exact && m.score >= SUGGEST_THRESHOLD ? 'suggested' : 'similar'
-      matches.push({
-        competitor_id: l.competitor_id, competitor: compLabel.get(l.competitor_id) || 'Competitor',
-        listing_key: l.listing_key, title: l.title, url: l.url, price: Number(l.price), in_stock: !!l.in_stock,
-        warranty_months: l.warranty_months, score: m.score, kind, notes: m.reasons,
-      })
-    }
-    // keep the three best per competitor: confirmed first, then closest score, then cheapest
-    const rank = { confirmed: 0, suggested: 1, similar: 2 }
-    matches.sort((a, b) => rank[a.kind] - rank[b.kind] || b.score - a.score || a.price - b.price)
-    const perComp = new Map<string, number>()
-    const kept = matches.filter((m) => {
-      const n = perComp.get(m.competitor_id) || 0
-      perComp.set(m.competitor_id, n + 1)
-      return n < 3
-    })
-
-    // Comparable = confirmed or exact-config matches that are in stock. Similar ones never trigger alerts.
-    const comparable = kept.filter((m) => m.in_stock && (m.kind === 'confirmed' || m.kind === 'suggested')).sort((a, b) => a.price - b.price)[0] || null
-    const undercut = isUndercut(price, comparable?.price ?? null, rules.undercut_tolerance)
+    const matches = matchProducts(s.id, skuConfig(s), market.products, market.linkMap).filter((m) => !m.hidden)
+    const { exact_min, model_low } = summarize(matches)
+    const undercut = isUndercut(price, exact_min?.price ?? null, rules.undercut_tolerance)
 
     let suggestion: BoardRow['suggestion'] = null
-    if (undercut && comparable) {
-      const sg = suggestFromCompetitor(price, cost, { label: comparable.competitor, price: comparable.price, warrantyMonths: comparable.warranty_months }, rules)
+    if (undercut && exact_min) {
+      const sg = suggestFromCompetitor(price, cost, { label: exact_min.competitor, price: exact_min.price, warrantyMonths: exact_min.warranty_months }, rules)
       if (sg) suggestion = { ...sg, source: 'competitor' }
     }
     if (!suggestion && ageDays != null) {
@@ -161,18 +247,10 @@ export async function loadBoard(): Promise<{
       sku_description: s.sku_description, specifications: s.specifications, is_published: !!s.is_published,
       price, prices_differ: s.web_price != null && s.selling_price_default != null && Number(s.web_price) !== Number(s.selling_price_default),
       market_price: s.market_price != null ? Number(s.market_price) : null, cost,
-      available: unit?.n ?? 0, oldest_age_days: ageDays, matches: kept, comparable_min: comparable, undercut, suggestion,
+      available: unit?.n ?? 0, oldest_age_days: ageDays, exact_min, model_low, matched_products: matches.length, undercut, suggestion,
     })
   }
 
-  const lastChecked = new Map<string, string>()
-  const listingCount = new Map<string, number>()
-  for (const l of listings) {
-    listingCount.set(l.competitor_id, (listingCount.get(l.competitor_id) || 0) + 1)
-    if (!lastChecked.get(l.competitor_id) || l.fetched_at > (lastChecked.get(l.competitor_id) as string)) lastChecked.set(l.competitor_id, l.fetched_at)
-  }
-
-  // Most recent batch that can still be undone (a batch of undo rows is not itself undoable).
   let last_batch: { batch_id: string; changed_at: string; count: number } | null = null
   const changes = lastChanges.data || []
   const first = changes.find((c: any) => c.reason !== 'undo' && !c.undone_at)
@@ -183,8 +261,33 @@ export async function loadBoard(): Promise<{
   return {
     rules,
     rows,
-    competitors: compList.map((c: any) => ({ id: c.id, label: c.label, base_url: c.base_url, last_checked: lastChecked.get(c.id) || null, listings: listingCount.get(c.id) || 0 })),
+    competitors: market.competitors.map((c: any) => ({ ...c, listings: market.counts.get(c.id) || 0 })),
     last_batch,
+  }
+}
+
+/** Everything competitors sell that is the same model as one SKU, for the detail pane. */
+export async function loadMarket(skuId: string) {
+  const [{ data: sku }, market] = await Promise.all([
+    supabaseAdmin.from('sku_master').select('id, full_sku_code, brand, model_name, specifications, web_price, selling_price_default').eq('id', skuId).maybeSingle(),
+    loadMarketData(),
+  ])
+  if (!sku) return null
+  const cfg = skuConfig(sku)
+  const price = sku.web_price != null ? Number(sku.web_price) : sku.selling_price_default != null ? Number(sku.selling_price_default) : null
+  const matches = matchProducts(sku.id, cfg, market.products, market.linkMap)
+  const visible = matches.filter((m) => !m.hidden)
+  const { exact_min, model_low } = summarize(visible)
+  const inStock = visible.flatMap((m) => m.variants.filter((v) => v.in_stock).map((v) => v.price))
+  return {
+    price,
+    ours: { ram_gb: cfg.ramGb, ssd_gb: cfg.ssdGb },
+    exact_min, model_low,
+    range: inStock.length ? { min: Math.min(...inStock), max: Math.max(...inStock) } : null,
+    competitor_count: new Set(visible.map((m) => m.competitor_id)).size,
+    variant_count: visible.reduce((n, m) => n + m.variants.length, 0),
+    products: matches.sort((a, b) => a.competitor.localeCompare(b.competitor) || b.score - a.score),
+    competitors: market.competitors.map((c: any) => ({ id: c.id, label: c.label, price_enabled: c.price_enabled, last_price_check_at: c.last_price_check_at, listings: market.counts.get(c.id) || 0 })),
   }
 }
 

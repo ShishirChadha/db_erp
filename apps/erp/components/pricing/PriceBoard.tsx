@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { toast } from 'sonner'
-import { Loader2, RefreshCw, Undo2, SlidersHorizontal } from 'lucide-react'
+import { Loader2, RefreshCw, Undo2, SlidersHorizontal, Users } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Button } from '@/components/ui/button'
@@ -13,6 +13,7 @@ import { ListItem, Panes, Pill } from '@/components/MasterDetail'
 import { buildConfigSummary, type ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 import { applyBulk, marginFromPrice, priceWarnings, validatePrice, type BulkOp } from '@/lib/pricing'
 import { DetailPane, ReviewDialog, RulesDialog } from './PriceBoardParts'
+import CompetitorsDialog from './CompetitorsDialog'
 import { inr, timeAgo, type BoardData, type BoardRow } from './types'
 
 type Filter = 'all' | 'undercut' | 'aging' | 'low_margin' | 'unpublished' | 'differ' | 'no_stock'
@@ -49,6 +50,8 @@ export default function PriceBoard() {
   const [brand, setBrand] = useState('')
   const [reviewing, setReviewing] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
+  const [competitorsOpen, setCompetitorsOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [opKey, setOpKey] = useState<BulkOp['type']>('match_competitor')
   const [opValue, setOpValue] = useState('500')
   const listRef = useRef<HTMLDivElement>(null)
@@ -60,6 +63,7 @@ export default function PriceBoard() {
       if (!res.ok) throw new Error(body.error || 'Could not load the board')
       setData(body)
       setError(null)
+      setRefreshKey((k) => k + 1)
     } catch (e: any) {
       setError(e.message)
     }
@@ -93,7 +97,7 @@ export default function PriceBoard() {
         default: return true
       }
     })
-    const gap = (r: BoardRow) => (r.comparable_min && r.price != null ? r.price - r.comparable_min.price : -Infinity)
+    const gap = (r: BoardRow) => (r.exact_min && r.price != null ? r.price - r.exact_min.price : -Infinity)
     const margin = (r: BoardRow) => (r.cost != null && r.price != null ? marginFromPrice(r.cost, r.price) : Infinity)
     return rows.sort((a, b) => {
       switch (sort) {
@@ -161,7 +165,7 @@ export default function PriceBoard() {
     let applied = 0, skipped = 0
     const next = { ...draft }
     for (const r of rowsToChange) {
-      const price = applyBulk(op, { current: r.price, cost: r.cost, competitorMin: r.comparable_min?.price ?? null }, rules.rounding)
+      const price = applyBulk(op, { current: r.price, cost: r.cost, competitorMin: r.exact_min?.price ?? null }, rules.rounding)
       if (price == null) { skipped++; continue }
       if (price === r.price) { delete next[r.id]; continue }
       next[r.id] = price
@@ -188,7 +192,7 @@ export default function PriceBoard() {
     const body = await res.json().catch(() => ({}))
     if (!res.ok) { toast.error(body.error || 'Check failed'); return }
     for (const r of body.results || []) {
-      if (r.status === 'error') toast.error(`${r.competitor}: ${r.message}`)
+      if (r.status === 'error' || r.status === 'blocked') toast.error(`${r.competitor}: ${r.message}`)
       else toast.success(`${r.competitor}: ${r.message}`)
     }
     await load()
@@ -246,7 +250,8 @@ export default function PriceBoard() {
           const margin = r.cost != null && shown != null ? marginFromPrice(r.cost, shown) : null
           const aging = r.oldest_age_days != null && r.oldest_age_days >= rules.aging_days
           const warn = staged != null ? priceWarnings(r.price, staged, r.cost, rules.min_margin_pct) : []
-          const comp = r.comparable_min
+          const comp = r.exact_min
+          const low = !comp ? r.model_low : null
           return (
             <div key={r.id} className={`rounded-lg border p-2 ${openId === r.id ? 'border-primary bg-primary/5' : ''} ${staged != null ? 'ring-1 ring-amber-400' : ''}`}>
               <div className="flex items-start gap-2">
@@ -291,6 +296,11 @@ export default function PriceBoard() {
                     {r.price != null && <span className={comp.price < (shown ?? 0) ? 'ml-1 text-red-600' : 'ml-1 text-green-700'}>({comp.price < (shown ?? 0) ? '−' : '+'}{inr(Math.abs(comp.price - (shown ?? 0)))})</span>}
                   </span>
                 )}
+                {low && (
+                  <span className="text-xs tabular-nums text-amber-700" title={`${low.competitor}: ${low.variant_label}. Different RAM/SSD, reference only.`}>
+                    Model low {inr(low.price)} {low.competitor}
+                  </span>
+                )}
                 {r.suggestion && staged !== r.suggestion.price && (
                   <button type="button" onClick={() => stage(r.id, r.suggestion!.price)} className="rounded border border-primary/40 bg-primary/5 px-2 py-0.5 text-xs text-primary hover:bg-primary/10" title={r.suggestion.reason}>
                     Suggest {inr(r.suggestion.price)}
@@ -313,6 +323,7 @@ export default function PriceBoard() {
           <p className="text-sm text-muted-foreground">Type a new price, or tick several laptops and change them together. Nothing goes live until you review and publish.</p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => setCompetitorsOpen(true)}><Users className="size-3.5" /> Competitors</Button>
           <Button variant="outline" size="sm" onClick={() => setRulesOpen(true)}><SlidersHorizontal className="size-3.5" /> Rules</Button>
           {data.last_batch && (
             <Button variant="outline" size="sm" onClick={undoLast} disabled={undoing} title={`${data.last_batch.count} price(s), ${timeAgo(data.last_batch.changed_at)}`}>
@@ -327,7 +338,7 @@ export default function PriceBoard() {
 
       <p className="text-xs text-muted-foreground">
         Competitor prices:{' '}
-        {data.competitors.length === 0 ? 'none added (Website SEO → Competitor websites).' : data.competitors.map((c) => `${c.label} ${c.listings ? `${c.listings} listings, ${timeAgo(c.last_checked)}` : 'not checked yet'}`).join(' · ')}
+        {data.competitors.length === 0 ? 'none added yet (use Competitors).' : data.competitors.filter((c) => c.price_enabled).map((c) => `${c.label} ${c.listings ? `${c.listings} variants, ${timeAgo(c.last_price_check_at)}` : /^blocked/i.test(c.last_price_check_note || '') ? 'blocked' : 'not checked yet'}`).join(' · ') || 'none switched on.'}
       </p>
 
       {selected.size > 0 && (
@@ -370,6 +381,7 @@ export default function PriceBoard() {
             staged={draft[openRow.id]}
             onStage={(p) => stage(openRow.id, p)}
             onDecision={load}
+            refreshKey={refreshKey}
           />
         ) : (
           <p className="hidden text-sm text-muted-foreground xl:block">Pick a laptop to see its cost, competitor prices and price history.</p>
@@ -402,6 +414,7 @@ export default function PriceBoard() {
           load()
         }}
       />
+      <CompetitorsDialog open={competitorsOpen} onClose={() => setCompetitorsOpen(false)} onChanged={load} />
       <RulesDialog open={rulesOpen} onClose={() => setRulesOpen(false)} rules={rules} onSaved={load} />
     </div>
   )

@@ -2,18 +2,49 @@ import type { PricingRules } from '@/lib/pricing'
 
 export type { PricingRules }
 
-export interface CompetitorMatch {
-  competitor_id: string
+export interface PriceRef {
   competitor: string
-  listing_key: string
-  title: string
+  price: number
+  variant_label: string
+  warranty_months: number | null
   url: string | null
+  title: string
+}
+
+export interface VariantView {
+  listing_key: string
+  variant_label: string
+  ram_gb: number | null
+  ssd_gb: number | null
+  warranty_months: number | null
+  condition: string | null
   price: number
   in_stock: boolean
-  warranty_months: number | null
+  exact: boolean
+}
+
+export interface ProductMatch {
+  competitor_id: string
+  competitor: string
+  product_key: string
+  title: string
+  url: string | null
   score: number
-  kind: 'confirmed' | 'suggested' | 'similar'
-  notes: string[]
+  forced: boolean
+  hidden: boolean
+  variants: VariantView[]
+}
+
+export interface MarketData {
+  price: number | null
+  ours: { ram_gb: number | null; ssd_gb: number | null }
+  exact_min: PriceRef | null
+  model_low: PriceRef | null
+  range: { min: number; max: number } | null
+  competitor_count: number
+  variant_count: number
+  products: ProductMatch[]
+  competitors: { id: string; label: string; price_enabled: boolean; last_price_check_at: string | null; listings: number }[]
 }
 
 export interface BoardRow {
@@ -31,16 +62,28 @@ export interface BoardRow {
   cost: number | null
   available: number
   oldest_age_days: number | null
-  matches: CompetitorMatch[]
-  comparable_min: CompetitorMatch | null
+  exact_min: PriceRef | null
+  model_low: PriceRef | null
+  matched_products: number
   undercut: boolean
   suggestion: { price: number; reason: string; limitedByMargin: boolean; source: 'competitor' | 'aging' } | null
+}
+
+export interface CompetitorInfo {
+  id: string
+  label: string
+  base_url: string
+  price_source: string | null
+  price_enabled: boolean
+  last_price_check_at: string | null
+  last_price_check_note: string | null
+  listings: number
 }
 
 export interface BoardData {
   rules: PricingRules
   rows: BoardRow[]
-  competitors: { id: string; label: string; base_url: string; last_checked: string | null; listings: number }[]
+  competitors: CompetitorInfo[]
   last_batch: { batch_id: string; changed_at: string; count: number } | null
 }
 

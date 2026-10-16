@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { assertPublicHttps } from '@/lib/net-guard'
 import { loadCompetitorsWithIdeas } from '@/lib/seo-competitors-state'
+import { priceFetcher, probeSite } from '@/lib/competitor-prices/probe'
 
 // Websites the owner has asked us to analyse, with the latest analysis of each and
 // the ideas that follow from comparing it with our own site (also analysed).
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
-  const body = (await req.json()) as { label?: string; base_url?: string }
+  const body = (await req.json()) as { label?: string; base_url?: string; confirm_unreadable?: boolean }
   const label = String(body.label ?? '').trim()
   if (!label || label.length > 60) return NextResponse.json({ error: 'Give the website a name (max 60 characters)' }, { status: 400 })
 
@@ -34,7 +35,14 @@ export async function POST(req: NextRequest) {
   }
   const base = `https://${url.hostname}`
 
-  const { data, error } = await supabaseAdmin.from('seo_competitors').insert({ label, base_url: base, added_by: sessionUser.id }).select().single()
+  // Warn before adding a site whose prices cannot be read automatically (bot check, robots block,
+  // no price list). The SEO analysis can still run on it, so the owner may add it anyway.
+  const probe = await probeSite(base, priceFetcher)
+  if (probe.status !== 'ok' && body.confirm_unreadable !== true) {
+    return NextResponse.json({ error: probe.message, needs_confirmation: true, probe }, { status: 409 })
+  }
+
+  const { data, error } = await supabaseAdmin.from('seo_competitors').insert({ label, base_url: base, added_by: sessionUser.id, price_enabled: probe.status === 'ok' }).select().single()
   if (error) return NextResponse.json({ error: error.code === '23505' ? 'That website is already in the list' : error.message }, { status: error.code === '23505' ? 409 : 500 })
 
   await logAuditEvent({

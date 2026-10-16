@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { toast } from 'sonner'
-import { ExternalLink } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { Button } from '@/components/ui/button'
@@ -12,7 +11,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { SimpleModal } from '@/components/SimpleModal'
 import { Pill } from '@/components/MasterDetail'
 import { marginFromPrice, priceWarnings, type RoundingStyle } from '@/lib/pricing'
-import { inr, timeAgo, type BoardRow, type CompetitorMatch, type PricingRules } from './types'
+import CompetitorMatrix from './CompetitorMatrix'
+import { inr, timeAgo, type BoardRow, type PricingRules } from './types'
 
 // ---------------------------------------------------------------------------
 // Review & publish
@@ -150,19 +150,14 @@ export function RulesDialog({ open, onClose, rules, onSaved }: { open: boolean; 
 // ---------------------------------------------------------------------------
 interface HistoryRow { id: string; old_price: number | null; new_price: number; reason: string; changed_at: string; undone_at: string | null }
 
-const KIND_LABEL: Record<CompetitorMatch['kind'], { text: string; tone: 'green' | 'amber' | 'gray' }> = {
-  confirmed: { text: 'Confirmed', tone: 'green' },
-  suggested: { text: 'Same config', tone: 'amber' },
-  similar: { text: 'Similar model', tone: 'gray' },
-}
-
-export function DetailPane({ row, title, rules, staged, onStage, onDecision }: {
+export function DetailPane({ row, title, rules, staged, onStage, onDecision, refreshKey }: {
   row: BoardRow
   title: string
   rules: PricingRules
   staged: number | undefined
   onStage: (price: number) => void
   onDecision: () => void
+  refreshKey: number
 }) {
   const [history, setHistory] = useState<HistoryRow[] | null>(null)
   useEffect(() => {
@@ -171,13 +166,6 @@ export function DetailPane({ row, title, rules, staged, onStage, onDecision }: {
     apiFetch(`/api/pricing/history?sku_id=${row.id}`).then((r) => r.json()).then((d) => { if (live) setHistory(Array.isArray(d) ? d : []) }).catch(() => { if (live) setHistory([]) })
     return () => { live = false }
   }, [row.id, row.price])
-
-  const decide = async (m: CompetitorMatch, status: 'confirmed' | 'rejected' | 'clear') => {
-    const res = await apiFetch('/api/pricing/links', { method: 'POST', body: JSON.stringify({ sku_id: row.id, competitor_id: m.competitor_id, listing_key: m.listing_key, status }) })
-    const body = await res.json().catch(() => ({}))
-    if (!res.ok) { toast.error(body.error || 'Could not save'); return }
-    onDecision()
-  }
 
   const cur = staged ?? row.price
   const margin = row.cost != null && cur != null ? marginFromPrice(row.cost, cur) : null
@@ -211,43 +199,7 @@ export function DetailPane({ row, title, rules, staged, onStage, onDecision }: {
         </div>
       )}
 
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">Competitor prices</h3>
-        {row.matches.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No matching competitor listing yet. Press “Check competitors” on the board. Only listings with the same model number are shown, and only the same CPU, RAM and SSD count as comparable.</p>
-        ) : (
-          <div className="space-y-2">
-            {row.matches.map((m) => {
-              const k = KIND_LABEL[m.kind]
-              const diff = row.price != null ? m.price - row.price : null
-              return (
-                <div key={`${m.competitor_id}-${m.listing_key}`} className="rounded border p-2 text-sm">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className="font-medium">{m.competitor}</span>
-                    <span className="flex items-center gap-2 tabular-nums">
-                      <span className="font-semibold">{inr(m.price)}</span>
-                      {diff != null && <span className={diff < 0 ? 'text-red-600' : 'text-green-700'}>{diff < 0 ? '−' : '+'}{inr(Math.abs(diff))}</span>}
-                    </span>
-                  </div>
-                  <p className="mt-0.5 break-words text-xs text-muted-foreground">{m.title}</p>
-                  <div className="mt-1 flex flex-wrap items-center gap-1">
-                    <Pill tone={k.tone}>{k.text}</Pill>
-                    {!m.in_stock && <Pill tone="red">Out of stock</Pill>}
-                    {m.warranty_months && <Pill>{m.warranty_months} m warranty</Pill>}
-                    {m.kind !== 'confirmed' && m.notes.filter((n) => /vs your/.test(n)).map((n) => <Pill key={n} tone="amber">{n}</Pill>)}
-                    {m.url && <a href={m.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 text-xs text-primary underline">Open <ExternalLink className="size-3" /></a>}
-                  </div>
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {m.kind !== 'confirmed' && <Button size="xs" variant="outline" onClick={() => decide(m, 'confirmed')}>Same machine</Button>}
-                    {m.kind === 'confirmed' && <Button size="xs" variant="outline" onClick={() => decide(m, 'clear')}>Forget confirmation</Button>}
-                    <Button size="xs" variant="ghost" onClick={() => decide(m, 'rejected')}>Not the same</Button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </section>
+      <CompetitorMatrix skuId={row.id} refreshKey={refreshKey} onChanged={onDecision} />
 
       <section>
         <h3 className="mb-2 text-sm font-semibold">Price history</h3>

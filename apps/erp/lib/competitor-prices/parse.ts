@@ -52,7 +52,12 @@ export function parseGeneration(text: string): number | null {
 }
 
 export function parseRamGb(text: string): number | null {
-  const m = text.match(/(\d{1,3})\s*gb\s*(?:ddr\d?\s*)?(?:ram|memory)/i) || text.match(/ram\s*[:-]?\s*(\d{1,3})\s*gb/i)
+  const m =
+    text.match(/(\d{1,3})\s*gb\s*(?:ddr\d?\s*)?(?:ram|memory)/i) ||
+    text.match(/ram\s*[:-]?\s*(\d{1,3})\s*gb/i) ||
+    text.match(/(\d{1,3})\s*gb\s*ddr\d/i) ||
+    // "Core i7 6th Gen/16GB/512GB SSD": RAM is the size written just before the storage size
+    text.match(/(\d{1,3})\s*gb\s*[\/,|+]\s*\d{2,4}\s*(?:gb|tb)\s*(?:ssd|hdd|nvme|m\.?2)/i)
   return m ? Number(m[1]) : null
 }
 
@@ -66,8 +71,12 @@ export function parseSsdGb(text: string): number | null {
 export function parseWarrantyMonths(text: string): number | null {
   const y = text.match(/(\d{1,2})\s*year/i)
   const mo = text.match(/(\d{1,2})\s*month/i)
-  if (mo) return Number(mo[1])
-  if (y) return Number(y[1]) * 12
+  const d = text.match(/(\d{1,3})\s*days?/i)
+  // "1 Year Additional Wty" on top of a free 6 months is 18 months in total.
+  const additional = /additional/i.test(text) ? 6 : 0
+  if (mo) return Number(mo[1]) + additional
+  if (y) return Number(y[1]) * 12 + additional
+  if (d) return Math.max(1, Math.round(Number(d[1]) / 30))
   return null
 }
 
@@ -165,3 +174,18 @@ export function matchScore(ours: Config, theirs: Config): MatchResult {
 export const SUGGEST_THRESHOLD = 0.75
 /** Same model but a different RAM/SSD size: offered as "similar", owner decides. */
 export const SIMILAR_THRESHOLD = 0.6
+
+/** A variant is only a like-for-like price if its warranty is at least what we give (6 months). */
+export const MIN_COMPARABLE_WARRANTY_MONTHS = 6
+/** Same model (brand + model number + at least CPU or generation agreeing). Ignores RAM/SSD. */
+export const MODEL_THRESHOLD = 0.6
+
+export function modelMatch(ours: Config, theirs: Config): MatchResult {
+  return matchScore({ ...ours, ramGb: null, ssdGb: null }, { ...theirs, ramGb: null, ssdGb: null })
+}
+
+export function isExactVariant(ours: Config, v: { ramGb: number | null; ssdGb: number | null; warrantyMonths: number | null }): boolean {
+  if (ours.ramGb == null || ours.ssdGb == null || v.ramGb == null || v.ssdGb == null) return false
+  if (ours.ramGb !== v.ramGb || ours.ssdGb !== v.ssdGb) return false
+  return v.warrantyMonths == null || v.warrantyMonths >= MIN_COMPARABLE_WARRANTY_MONTHS
+}

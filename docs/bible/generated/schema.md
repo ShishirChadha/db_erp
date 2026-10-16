@@ -215,7 +215,7 @@ Live schema snapshot -- 138 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~130 rows (estimate)
+~131 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -756,7 +756,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## competitor_listings
 
-~2,509 rows (estimate)
+~9,297 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -774,6 +774,9 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | price | numeric(12,2) | no |  |  |  |
 | in_stock | boolean | no | `true` |  |  |
 | fetched_at | timestamp with time zone | no | `now()` |  |  |
+| product_key | text | yes |  |  |  |
+| condition | text | yes |  |  |  |
+| variant_label | text | yes |  |  |  |
 
 ## competitor_price_links
 
@@ -2303,6 +2306,10 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 | added_by | uuid | yes |  |  |  |
 | created_at | timestamp with time zone | no | `now()` |  |  |
 | last_analyzed_at | timestamp with time zone | yes |  |  |  |
+| price_source | text | yes |  |  |  |
+| price_enabled | boolean | no | `true` |  |  |
+| last_price_check_at | timestamp with time zone | yes |  |  |  |
+| last_price_check_note | text | yes |  |  |  |
 
 ## seo_crawl_imports
 
@@ -2781,7 +2788,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~118 rows (estimate)
+~119 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

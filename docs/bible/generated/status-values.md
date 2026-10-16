@@ -174,6 +174,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | seo_collections | slug | seo_collections_slug_check | `CHECK (((slug ~ '^[a-z0-9]+(-[a-z0-9]+)*$'::text) AND (length(slug) <= 60)))` |
 | seo_collections | status | seo_collections_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'published'::text])))` |
 | seo_competitors | base_url | seo_competitors_base_url_check | `CHECK ((base_url ~ '^https://[^/\s]+$'::text))` |
+| seo_competitors | price_source | seo_competitors_price_source_check | `CHECK ((price_source = ANY (ARRAY['shopify'::text, 'woocommerce'::text, 'jsonld'::text, 'none'::text])))` |
 | seo_keywords | intent | seo_keywords_intent_check | `CHECK (((intent IS NULL) OR (intent = ANY (ARRAY['informational'::text, 'commercial'::text, 'transactional'::text, 'navigational'::text, 'local'::text]))))` |
 | seo_keywords | priority | seo_keywords_priority_check | `CHECK (((priority IS NULL) OR ((priority >= 1) AND (priority <= 3))))` |
 | seo_keywords | volume | seo_keywords_volume_check | `CHECK (((volume IS NULL) OR (volume >= 0)))` |
