@@ -38,7 +38,18 @@ interface StaffMember {
   phone: string | null; is_active: boolean
   profiles?: { id: string; full_name: string | null; username: string | null; employee_id: string | null } | null
 }
-interface Network { id: string; label: string; cidr: string; is_active: boolean; notes: string | null }
+interface Network { id: string; label: string; cidr: string; is_active: boolean; notes: string | null; source?: string; last_seen_at?: string | null }
+
+// A heartbeat row only counts for 12 hours after the shop server last reported it
+// (attendance_ip_allowed) -- keep in step with that function.
+const HEARTBEAT_FRESH_MS = 12 * 3600_000
+function heartbeatNote(n: Network) {
+  if (n.source !== 'heartbeat' || !n.last_seen_at) return null
+  const ageMs = Date.now() - new Date(n.last_seen_at).getTime()
+  const mins = Math.max(0, Math.round(ageMs / 60_000))
+  const seen = mins < 1 ? 'just now' : mins < 90 ? `${mins} min ago` : `${Math.round(mins / 60)} h ago`
+  return { text: `auto-updated by the shop server · last seen ${seen}`, stale: ageMs > HEARTBEAT_FRESH_MS }
+}
 interface Holiday { id: string; name: string; festival_date: string; is_major: boolean; is_business_holiday: boolean }
 interface AppUser { id: string; full_name: string | null; username: string | null; employee_id?: string | null; is_active?: boolean }
 
@@ -504,7 +515,17 @@ export default function AttendanceSettingsManager() {
               <tbody>
                 {networks.map(n => (
                   <tr key={n.id} className="border-t border-border">
-                    <td className="p-2">{n.label}</td>
+                    <td className="p-2">
+                      {n.label}
+                      {(() => {
+                        const hb = heartbeatNote(n)
+                        return hb && (
+                          <div className={hb.stale ? 'text-xs text-warning' : 'text-xs text-muted-foreground'}>
+                            {hb.text}{hb.stale && ' — expired, no longer allows punching'}
+                          </div>
+                        )
+                      })()}
+                    </td>
                     <td className="p-2 tabular-nums">{n.cidr}</td>
                     <td className="p-2">
                       <Checkbox checked={n.is_active}

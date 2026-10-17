@@ -13,7 +13,9 @@ sources:
   - apps/erp/app/api/settings/attendance-networks/[id]/route.ts
   - apps/erp/app/api/attendance/my-ip/route.ts
   - apps/erp/app/api/attendance/punch/route.ts
-updated: 2026-10-03
+  - apps/erp/app/api/attendance/office-heartbeat/route.ts
+  - scripts/prodesk/office-heartbeat.sh
+updated: 2026-10-17
 ---
 
 ## What this is
@@ -48,12 +50,30 @@ Punching keeps working for everyone, and the page shows a warning. This is delib
 the alternative — refusing every punch — would lock the whole shop out over a
 configuration slip. Add a network to make the restriction take effect.
 
+## The shop's IP changes by itself (automatic)
+
+Cityline, the shop's broadband provider, moves the shop between public IP addresses —
+sometimes more than once in a day — so a typed-in address goes stale. To stop this
+locking the team out, the shop server (HP ProDesk) tells the ERP its public IP every
+minute (`scripts/prodesk/office-heartbeat.sh`, a cron job). The ProDesk is behind the
+same router as the staff wifi, so its address is the shop's. The ERP records the
+address **it sees** on that call and lists it as **Shop (auto)** in this page.
+
+- An auto row allows punching for **12 hours after the last report**. It then shows
+  "expired" here and stops matching. In normal operation it is refreshed every minute.
+- You can untick an auto row to switch it off; it stays off.
+- Auto rows older than 30 days are removed. Rows you typed yourself are never touched
+  and never expire.
+- It needs `ATTENDANCE_HEARTBEAT_SECRET` set on the ERP **and** in
+  `/etc/erp-heartbeat.env` on the ProDesk (same value). Without it the endpoint is off.
+
 ## If punching suddenly stops working for everyone
 
-Almost always because the broadband IP changed, which most Indian connections do from
-time to time. Open this page from the shop and use **Use this device's IP** again, then
-remove the stale entry. Until then you can either untick the setting or mark attendance
-yourself.
+First check this page: if **Shop (auto)** says "expired" or "last seen" is old, the
+ProDesk is off, offline or its cron has stopped (`journalctl -t erp-office-heartbeat` on
+the box shows failures). Until it is back, open this page from the shop and use **Use
+this device's IP** to add a manual entry, or untick the setting, or mark attendance
+yourself. Never fixed by adding more address ranges — the ISP will just move again.
 
 ## Running outside the live site
 

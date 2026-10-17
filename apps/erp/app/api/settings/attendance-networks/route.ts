@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const [{ data: networks }, { data: toggle }] = await Promise.all([
     supabaseAdmin.from('attendance_networks')
-      .select('id, label, cidr, is_active, notes, created_at')
+      .select('id, label, cidr, is_active, notes, created_at, source, last_seen_at')
       .order('created_at', { ascending: false }),
     supabaseAdmin.from('custom_options')
       .select('id').eq('category', ENFORCEMENT_CATEGORY).eq('value', ENFORCEMENT_ON)
