@@ -27,9 +27,11 @@ import { logAuditEvent } from '@/lib/audit-log'
 const STALE_PRUNE_DAYS = 30
 
 function secretOk(provided: string | null): boolean {
-  const expected = process.env.ATTENDANCE_HEARTBEAT_SECRET
+  // Trimmed on both sides: a secret pasted into a dashboard very often carries a
+  // trailing newline or space, and that should not read as a wrong secret.
+  const expected = process.env.ATTENDANCE_HEARTBEAT_SECRET?.trim()
   if (!expected || !provided) return false
-  const a = Buffer.from(provided)
+  const a = Buffer.from(provided.trim())
   const b = Buffer.from(expected)
   return a.length === b.length && timingSafeEqual(a, b)
 }
