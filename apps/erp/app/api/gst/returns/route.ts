@@ -106,6 +106,31 @@ export async function GET(req: NextRequest) {
         p_entity_key: entity, p_from: from, p_to: to,
       })
       if (error) throw error
+      // 3B only: attach the ITC the portal will show from the latest GSTR-2B upload, so the
+      // page can work out the net payable by head. Reverse-charge rows (rev = 'Y') are kept
+      // apart -- that credit is only available after the tax is paid in cash.
+      if (metric === 'r3b' && data && typeof data === 'object') {
+        const { data: imp } = await supabaseAdmin
+          .from('gst_recon_imports').select('id, created_at')
+          .eq('entity_key', entity).eq('kind', 'gstr2b').eq('period_start', from)
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (imp) {
+          const { data: ls } = await supabaseAdmin
+            .from('gst_recon_lines').select('cgst, sgst, igst, taxable_value, raw').eq('import_id', imp.id)
+          const sum = { cgst: 0, sgst: 0, igst: 0, taxable: 0, invoices: 0 }
+          const rcm = { cgst: 0, sgst: 0, igst: 0, taxable: 0, invoices: 0 }
+          for (const l of ls ?? []) {
+            const inv = (l.raw as any)?.inv
+            if (!inv) continue
+            const t = inv.rev === 'Y' ? rcm : sum
+            t.cgst += Number(l.cgst) || 0; t.sgst += Number(l.sgst) || 0; t.igst += Number(l.igst) || 0
+            t.taxable += Number(l.taxable_value) || 0; t.invoices += 1
+          }
+          const r2 = (n: number) => Math.round(n * 100) / 100
+          const round = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, k === 'invoices' ? v : r2(v as number)]))
+          ;(data as any).itc_2b = { uploaded_at: imp.created_at, ...round(sum), reverse_charge: round(rcm) }
+        }
+      }
       return NextResponse.json(data)
     }
 

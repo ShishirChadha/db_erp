@@ -26,6 +26,7 @@ import { cn } from "@/lib/utils";
 // Modal dialogs only render behind a click (gated by a state flag) -- code-split
 // out of the initial bundle rather than shipped unconditionally.
 const RecordZohoInvoiceDialog = dynamic(() => import("@/components/RecordZohoInvoiceDialog").then(m => m.RecordZohoInvoiceDialog), { ssr: false });
+const BulkEwayBillDialog = dynamic(() => import("@/components/BulkEwayBillDialog").then(m => m.BulkEwayBillDialog), { ssr: false });
 const AttachInvoiceFileDialog = dynamic(() => import("@/components/AttachInvoiceFileDialog").then(m => m.AttachInvoiceFileDialog), { ssr: false });
 const EditSaleDialog = dynamic(() => import("@/components/EditSaleDialog").then(m => m.EditSaleDialog), { ssr: false });
 const CustomerDetailDialog = dynamic(() => import("@/components/CustomerDetailDialog").then(m => m.CustomerDetailDialog), { ssr: false });
@@ -574,6 +575,7 @@ function SalesLedgerPage() {
   // view -- mirrors the Vendors page's "Show deleted" pattern.
   const [showVoided, setShowVoided] = useState(false);
   const [showBatchZoho, setShowBatchZoho] = useState(false);
+  const [showBulkEwayBill, setShowBulkEwayBill] = useState(false);
   // Stat cards (Total Sold / Pending / Partial / Awaiting Invoice) need counts over
   // every matching sale, not just the current page -- SQL exact counts (see
   // /api/sales' counts=true branch), same pattern StockView.tsx uses for its own.
@@ -847,6 +849,15 @@ function SalesLedgerPage() {
             </button>
           )
         )}
+        {canEditSale && selected.size >= 2 && selectedSales.every(s => !s.is_deleted) && (
+          <button
+            onClick={() => setShowBulkEwayBill(true)}
+            className="border px-3 py-2 rounded text-sm"
+            title="Apply the same E-way Bill number/date to all selected sales -- e.g. several items that shipped under one invoice"
+          >
+            Update E-way Bill ({selected.size})
+          </button>
+        )}
         {batchErr && <span className="text-destructive text-xs">{batchErr}</span>}
       </div>
       {showBatchZoho && (
@@ -854,6 +865,13 @@ function SalesLedgerPage() {
           saleIds={[...selected]}
           onClose={() => setShowBatchZoho(false)}
           onRecorded={() => { setSelected(new Set()); refresh(); }}
+        />
+      )}
+      {showBulkEwayBill && (
+        <BulkEwayBillDialog
+          saleIds={[...selected]}
+          onClose={() => setShowBulkEwayBill(false)}
+          onUpdated={() => { setSelected(new Set()); refresh(); }}
         />
       )}
 

@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
+import { setOff } from '@/lib/gst-setoff'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -1485,6 +1486,97 @@ function TaxRow({ label, v }: { label: string; v: any }) {
   )
 }
 
+// Net tax payable by head: output tax (Table 3.1) set off against the input credit the
+// portal will show from GSTR-2B (falls back to the ERP's own ITC tagging when no 2B has
+// been uploaded), plus an optional opening balance from the portal's electronic credit
+// ledger. An estimate -- the portal's own set-off at filing is what counts.
+function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
+  const [opening, setOpening] = useState({ igst: '', cgst: '', sgst: '' })
+  const n = (v: any) => Number(v) || 0
+  const out = t31.a_outward_taxable ?? {}
+  const rcmTax = n(t31.d_inward_reverse_charge?.tax)
+  const erpItc = itc['4A_all_other_itc'] ?? {}
+  const base = itc2b ?? erpItc
+  const credit = {
+    igst: n(base.igst) + n(opening.igst),
+    cgst: n(base.cgst) + n(opening.cgst),
+    sgst: n(base.sgst) + n(opening.sgst),
+  }
+  const r = setOff({ igst: n(out.igst), cgst: n(out.cgst), sgst: n(out.sgst) }, credit)
+  const heads: Array<'igst' | 'cgst' | 'sgst'> = ['igst', 'cgst', 'sgst']
+  const label = { igst: 'IGST', cgst: 'CGST', sgst: 'SGST' }
+  const used = (h: 'igst' | 'cgst' | 'sgst') =>
+    h === 'igst' ? r.used.igst_on_igst + r.used.cgst_on_igst + r.used.sgst_on_igst
+    : h === 'cgst' ? r.used.igst_on_cgst + r.used.cgst_on_cgst
+    : r.used.igst_on_sgst + r.used.sgst_on_sgst
+  const cashTotal = r.cash.igst + r.cash.cgst + r.cash.sgst + rcmTax
+  return (
+    <Card>
+      <CardContent className="pt-6 space-y-3">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h3 className="text-sm font-medium">Tax payable this month (estimate)</h3>
+          <p className={`text-sm font-medium ${cashTotal > 0 ? 'text-destructive' : 'text-success'}`}>
+            {cashTotal > 0 ? `Pay from cash: ${formatCurrency(cashTotal)}` : 'Nothing to pay from cash'}
+          </p>
+        </div>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted">
+              <tr>
+                <th className="text-left px-3 py-2 font-medium text-muted-foreground"></th>
+                {heads.map((h) => <th key={h} className="text-right px-3 py-2 font-medium text-muted-foreground">{label[h]}</th>)}
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {([
+                ['Output tax (Table 3.1)', (h: any) => (r.liability as any)[h]],
+                [itc2b ? 'ITC from GSTR-2B' : 'ITC from ERP purchases (no 2B uploaded)', (h: any) => n(base[h])],
+                ['+ Opening credit balance', (h: any) => n((opening as any)[h])],
+                ['ITC used', (h: any) => used(h)],
+                ['To pay from cash', (h: any) => (r.cash as any)[h]],
+                ['ITC carried forward', (h: any) => (r.carry_forward as any)[h]],
+              ] as Array<[string, (h: any) => number]>).map(([lbl, f], i) => (
+                <tr key={lbl} className={`border-t ${i === 4 ? 'font-medium bg-muted/40' : ''}`}>
+                  <td className="px-3 py-2">{lbl}</td>
+                  {heads.map((h) => <td key={h} className="px-3 py-2 text-right tabular-nums">{formatCurrency(f(h))}</td>)}
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(heads.reduce((a, h) => a + f(h), 0))}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+          <span>Opening credit balance (from the portal&apos;s Electronic Credit Ledger):</span>
+          {heads.map((h) => (
+            <label key={h} className="flex items-center gap-1">
+              {label[h]}
+              <input
+                inputMode="decimal" value={(opening as any)[h]} placeholder="0"
+                onChange={(e) => setOpening((o) => ({ ...o, [h]: e.target.value.replace(/[^0-9.]/g, '') }))}
+                className="h-7 w-24 rounded border bg-background px-2 text-right tabular-nums text-foreground"
+              />
+            </label>
+          ))}
+        </div>
+        <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
+          <li>Set-off order: IGST credit pays IGST, then CGST, then SGST. CGST and SGST credit pay their own head, then IGST; they can never pay each other.</li>
+          {itc2b && <li>ITC is the non-reverse-charge total of the GSTR-2B you uploaded ({itc2b.invoices} invoices). It assumes you claim all of it; remove anything ineligible first.</li>}
+          {itc2b && n(itc2b.reverse_charge?.invoices) > 0 && (
+            <li>{itc2b.reverse_charge.invoices} reverse-charge invoice{itc2b.reverse_charge.invoices === 1 ? '' : 's'} in 2B (tax {formatCurrency(n(itc2b.reverse_charge.igst) + n(itc2b.reverse_charge.cgst) + n(itc2b.reverse_charge.sgst))}) are left out: that credit only arrives after you pay the tax in cash.</li>
+          )}
+          {!itc2b && <li>No GSTR-2B uploaded for this month, so ITC here is only what the ERP has tagged. Upload 2B in step 8 for the real figure.</li>}
+          {rcmTax > 0 && <li>Reverse-charge tax of {formatCurrency(rcmTax)} must be paid in cash and is already included in the total above.</li>}
+          {itc2b && n(erpItc.igst) + n(erpItc.cgst) + n(erpItc.sgst) < n(itc2b.igst) + n(itc2b.cgst) + n(itc2b.sgst) - 1 && (
+            <li>The ERP has booked less purchase credit ({formatCurrency(n(erpItc.igst) + n(erpItc.cgst) + n(erpItc.sgst))}) than 2B shows ({formatCurrency(n(itc2b.igst) + n(itc2b.cgst) + n(itc2b.sgst))}). The difference is purchases not yet entered in the ERP.</li>
+          )}
+          <li>Estimate only. The portal does the actual set-off when you file GSTR-3B; check the figures there.</li>
+        </ul>
+      </CardContent>
+    </Card>
+  )
+}
+
 function Gstr3b({ data, recon }: { data: any; recon: any }) {
   if (!data || data.error) return <p className="text-sm text-muted-foreground">No 3B figures for this period.</p>
   if (data.not_registered) {
@@ -1499,6 +1591,7 @@ function Gstr3b({ data, recon }: { data: any; recon: any }) {
 
   return (
     <div className="space-y-4">
+      <TaxPayable t31={t31} itc={itc} itc2b={data.itc_2b} />
       <Card className="border-warning/30">
         <CardContent className="pt-6 text-sm">
           <p className="font-medium">These are figures to key in and check against the portal — not to file from.</p>

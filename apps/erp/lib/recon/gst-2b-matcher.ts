@@ -50,7 +50,9 @@ export interface Gstr2bRow {
 export function parseGstr2bJson(payload: any): Gstr2bRow[] {
   const out: Gstr2bRow[] = []
   const data = payload?.data ?? payload?.docdata ?? payload
-  const b2b = data?.b2b ?? []
+  // The portal's current download nests the suppliers under data.docdata.b2b; older
+  // layouts put b2b directly under data.
+  const b2b = data?.docdata?.b2b ?? data?.b2b ?? []
   for (const supplier of b2b) {
     const gstin = supplier?.ctin ?? null
     const name = supplier?.trdnm ?? supplier?.cfs ?? null
@@ -58,6 +60,15 @@ export function parseGstr2bJson(payload: any): Gstr2bRow[] {
       const items = inv?.items ?? inv?.itms ?? []
       // 2B gives per-rate lines; ITC is claimed per invoice, so they sum up.
       let txval = 0, cgst = 0, sgst = 0, igst = 0, cess = 0
+      // The current download gives the invoice's totals flat (txval/cgst/sgst/igst/cess)
+      // with no per-rate item list; the older layout gives items with camt/samt/iamt.
+      if (items.length === 0) {
+        txval = Number(inv?.txval) || 0
+        cgst = Number(inv?.cgst) || 0
+        sgst = Number(inv?.sgst) || 0
+        igst = Number(inv?.igst) || 0
+        cess = Number(inv?.cess) || 0
+      }
       for (const it of items) {
         const d = it?.itm_det ?? it
         txval += Number(d?.txval) || 0

@@ -1001,3 +1001,17 @@ Also investigated the same day: "production is slow" — live `server_metrics` (
 **Why:** the first version compared only identical RAM/SSD, which left most laptops without a benchmark; the owner needs the whole competitor range for a model in front of them when repricing. Bot-protected sites are never bypassed.
 
 **Limits:** conditions are only stated by Edify; EazyPC and NewJaisa do not grade. The product-page reader sees only models we carry.
+
+## 2026-10-16 — GSTR-3B step shows net tax payable by head (estimate)
+
+**Decision:** the 3B step now opens with a "Tax payable this month" card: output tax (Table 3.1) set off against ITC from the uploaded GSTR-2B (non-reverse-charge rows only; falls back to the ERP's own ITC tagging if no 2B is uploaded), plus an optional typed-in opening credit balance, in the statutory order (`lib/gst-setoff.ts`). It shows cash payable and ITC carried forward per IGST/CGST/SGST. Also: the 2B parser now reads the portal's current layout (`data.docdata.b2b`, flat per-invoice tax fields) as well as the old one.
+
+**Why:** the owner needs to know what to pay from the bank account, by head, before filing. It is an estimate; the portal does the real set-off at filing. Opening balance is not stored anywhere in the ERP, so it is typed per view.
+
+## 2026-10-17 — Office punch network follows the shop's changing IP (heartbeat)
+
+**Decision:** the HP ProDesk POSTs to `/api/attendance/office-heartbeat` every minute (cron, `scripts/prodesk/office-heartbeat.sh`, shared secret `ATTENDANCE_HEARTBEAT_SECRET`). The ERP stores the IP it observes (trusted proxy header, never a body value) as an `attendance_networks` row with `source='heartbeat'`, `last_seen_at`; `attendance_ip_allowed()` honours such a row only for 12 hours after the last report. Manual rows are unchanged. Migration `20261017_attendance_network_heartbeat.sql`.
+
+**Why:** Cityline rotates the shop's public IP between unrelated pools (103.220.158.x, 114.142.164/165.x, 103.60.196.x), sometimes within a day; allowlisting ranges locked the team out repeatedly. The ProDesk shares the shop's router, so its egress IP is the staff wifi's. Rejected: ever-wider CIDRs (opens it to the ISP's other customers and still breaks), a new table (the existing one fits), and a static IP from the ISP (still worth asking for, but not in our control).
+
+**Limits:** if the ProDesk is down and the IP rotates, punching blocks until the owner adds a manual row. The check remains a deterrent, not proof of presence.
