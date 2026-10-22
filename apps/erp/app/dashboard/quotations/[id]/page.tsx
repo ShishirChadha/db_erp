@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Pencil, Send, CheckCircle2, XCircle, Ban, Eye, FileText, Mail, Printer, User } from 'lucide-react'
+import { ArrowLeft, Pencil, Send, CheckCircle2, XCircle, Ban, Eye, FileText, Mail, Printer, User, Copy } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -35,7 +35,7 @@ const DOC_RIBBONS: Record<string, { label: string; tone: Tone }> = {
 // outer max-width), and reports back through `onUpdated` after every mutating
 // action so the list pane's own status badge stays in sync. Matches
 // ViewInvoicePage's embedded convention exactly.
-export function ViewSalesDocumentPage({ docId, embedded, onUpdated }: { docId?: string; embedded?: boolean; onUpdated?: () => void } = {}) {
+export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: { docId?: string; embedded?: boolean; onUpdated?: () => void; onCloned?: (newId: string) => void } = {}) {
   const params = useParams()
   const id = docId ?? (params.id as string)
   const router = useRouter()
@@ -79,7 +79,39 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated }: { docId?: 
     alert(res.ok ? `Sent to ${data.sent_to}.` : (data.error || 'Failed to send email.'))
   })
 
-  const busy = changingStatus || downloading || previewing || emailing
+  // A fresh copy: same entity/customer/line items/notes/terms, but a brand-new
+  // document number and today's date -- reuses the exact same create endpoint the
+  // "New Quotation/Proforma" form posts to, rather than a dedicated clone route,
+  // since there's nothing clone-specific happening server-side (status/date/number
+  // are already always freshly assigned on create).
+  const { run: cloneDoc, pending: cloning } = useAsyncAction(async () => {
+    const res = await apiFetch('/api/sales-documents', {
+      method: 'POST',
+      body: JSON.stringify({
+        doc_type: doc.doc_type,
+        entity_key: doc.entity_key,
+        customer_id: doc.customer_id,
+        notes: doc.notes || undefined,
+        terms_conditions: doc.terms_conditions || undefined,
+        items: doc.items.map((i: any) => ({
+          item_type: i.item_type,
+          sku_id: i.sku_id || undefined,
+          accessory_id: i.accessory_id || undefined,
+          description: i.description,
+          hsn_code: i.hsn_code || undefined,
+          quantity: Number(i.quantity),
+          rate: Number(i.rate),
+          gst_rate: Number(i.gst_rate) || 0,
+        })),
+      }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (!res.ok) { alert(data.error || 'Failed to clone.'); return }
+    if (embedded && onCloned) onCloned(data.id)
+    else router.push(`/dashboard/quotations/${data.id}`)
+  })
+
+  const busy = changingStatus || downloading || previewing || emailing || cloning
 
   const convertLine = (item: any) => {
     const params = new URLSearchParams({
@@ -116,6 +148,9 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated }: { docId?: 
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
+          <Button variant="outline" onClick={() => cloneDoc()} disabled={busy} loading={cloning} title={`Create a new draft ${docLabel.toLowerCase()} with the same customer and line items`}>
+            <Copy className="mr-2 h-4 w-4" /> Clone
+          </Button>
           {doc.status === 'draft' && (
             <Button variant="outline" onClick={() => changeStatus('sent')} disabled={busy} loading={changingStatus}>
               <Send className="mr-2 h-4 w-4" /> Mark Sent

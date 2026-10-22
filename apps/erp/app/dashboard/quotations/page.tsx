@@ -8,7 +8,8 @@ import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
 import { useListPageSize } from '@/lib/useListPageSize'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ResizableDialogContent } from '@/components/ResizableDialogContent'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -76,7 +77,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
   return (
     <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset() }}>
       <Button onClick={() => setOpen(true)}>New {docType === 'quotation' ? 'Quotation' : 'Proforma Invoice'}</Button>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <ResizableDialogContent storageKey="new-sales-document-dialog-size" defaultWidth={820} defaultHeight={680}>
         <DialogHeader><DialogTitle>New {docType === 'quotation' ? 'Quotation' : 'Proforma Invoice'}</DialogTitle></DialogHeader>
 
         <DocumentFormFields
@@ -95,7 +96,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
           <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={() => handleSave()} loading={saving}>Create</Button>
         </div>
-      </DialogContent>
+      </ResizableDialogContent>
     </Dialog>
   )
 }
@@ -108,7 +109,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
 // without leaving this pane. `key={docId}` forces a clean remount per
 // selection, and `onUpdated` keeps the list pane's own status badge in sync
 // after a status change or edit.
-function DocDetailPane({ docId, onBack, onUpdated }: { docId: string; onBack: () => void; onUpdated: () => void }) {
+function DocDetailPane({ docId, onBack, onUpdated, onCloned }: { docId: string; onBack: () => void; onUpdated: () => void; onCloned: (newId: string) => void }) {
   return (
     <div className="flex flex-col h-full">
       <div className="p-4 pb-0">
@@ -117,7 +118,7 @@ function DocDetailPane({ docId, onBack, onUpdated }: { docId: string; onBack: ()
         </button>
       </div>
       <div className="flex-1 overflow-y-auto p-4 pt-2">
-        <ViewSalesDocumentPage key={docId} docId={docId} embedded onUpdated={onUpdated} />
+        <ViewSalesDocumentPage key={docId} docId={docId} embedded onUpdated={onUpdated} onCloned={onCloned} />
       </div>
     </div>
   )
@@ -322,7 +323,12 @@ function QuotationsPage() {
           {/* Detail pane -- full width on mobile (replaces the list), flex-1 at md+. */}
           <div className={cn('flex-1 min-w-0', !activeDoc && 'hidden md:flex md:items-center md:justify-center')}>
             {activeDoc ? (
-              <DocDetailPane docId={activeDoc.id} onBack={() => setActiveDocId(null)} onUpdated={fetchDocs} />
+              <DocDetailPane
+                docId={activeDoc.id}
+                onBack={() => setActiveDocId(null)}
+                onUpdated={fetchDocs}
+                onCloned={(newId) => { setActiveDocId(newId); fetchDocs() }}
+              />
             ) : (
               <p className="text-sm text-muted-foreground">Select a document to view details.</p>
             )}

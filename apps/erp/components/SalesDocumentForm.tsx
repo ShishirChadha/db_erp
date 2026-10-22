@@ -6,7 +6,8 @@ import { SearchableCustomerSelect } from '@/components/SearchableCustomerSelect'
 import AddCustomerDialog from '@/components/AddCustomerDialog'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { useRememberedDefault } from '@/lib/useRememberedDefault'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ResizableDialogContent } from '@/components/ResizableDialogContent'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 
@@ -245,7 +246,7 @@ export function EditSalesDocumentDialog({ doc, onClose, onSaved }: { doc: any; o
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <ResizableDialogContent storageKey="new-sales-document-dialog-size" defaultWidth={820} defaultHeight={680}>
         <DialogHeader><DialogTitle>Edit {doc.document_number}</DialogTitle></DialogHeader>
 
         <DocumentFormFields
@@ -264,7 +265,7 @@ export function EditSalesDocumentDialog({ doc, onClose, onSaved }: { doc: any; o
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={() => handleSave()} loading={saving}>Save Changes</Button>
         </div>
-      </DialogContent>
+      </ResizableDialogContent>
     </Dialog>
   )
 }
