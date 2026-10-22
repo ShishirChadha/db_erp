@@ -14,6 +14,8 @@ sources:
   - apps/erp/app/api/ops/health/findings/route.ts
   - apps/erp/app/api/ops/health/findings/[id]/route.ts
   - apps/erp/components/OpsHealthReports.tsx
+  - apps/erp/components/WebVitalsReporter.tsx
+  - apps/erp/app/api/vitals/route.ts
 updated: 2026-10-22
 ---
 
@@ -132,6 +134,22 @@ Every evening a Claude Code **cloud routine** checks how fast and healthy the st
 The snapshot route adds the endpoint probes and **times the ERP's heaviest reads** from Vercel: Stock counts, the Stock first page, the Sales ledger month page, `report_kpis` and `report_inventory`. It keeps only milliseconds and row counts. That is how ERP speed is measured without a staff login.
 
 **Auth.** The routines send `OPS_REPORT_TOKEN` in the `x-ops-token` header. It is never a query parameter, so it stays out of logs. It is compared in constant time (`lib/ops-auth.ts`). The token can only read the snapshot and read or write reports and findings, and it can only move a finding the owner has **already approved**: `approved → in_progress → pr_open | failed | needs_manual`. Approving and rejecting need an owner session.
+
+**Real-visitor speed, every page (added 2026-10-22).** Both apps report each visit's Core Web Vitals (TTFB, FCP, LCP, INP, CLS) to `/api/vitals` through `components/WebVitalsReporter.tsx`. The reporter is mounted in the storefront's root layout and in the ERP's dashboard layout, so it covers every staff page.
+- The data lands in `web_vitals` and `ops_web_vitals_summary()` rolls it up per app and route at p75, the percentile Google and Vercel judge by. The snapshot passes this on as `realUserVitals`.
+- It's anonymous. Ids, slugs and query strings are stripped to a route pattern (`packages/db/src/web-vitals.ts`), and no user or IP is stored. Rows are kept 30 days by `prune_cron_history()`.
+- Vercel Speed Insights is still installed on the storefront for its own dashboard. Its data can't be exported on this plan, which is why this exists.
+
+**ERP module timings.** Each day the snapshot times the default first load of every module, listed in `erpReads` by `module`:
+- Live Stock;
+- Stock (main);
+- SKU Master;
+- Sales;
+- Purchase Orders;
+- Expenses;
+- the Dashboard reports.
+
+This gives a number even on a day nobody opened a page.
 
 **How findings behave.**
 - Each finding has a stable `ref` slug. A recurring issue updates its one open row, so you are not asked about it again every day.

@@ -7,6 +7,7 @@ import { WhatsAppButton } from "@/components/WhatsAppButton";
 import { SiteThemeAccent } from "@/components/SiteThemeAccent";
 import { Analytics } from "@/components/Analytics";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { WebVitalsReporter } from "@/components/WebVitalsReporter";
 import { getSiteProfile } from "@/lib/site-profile";
 import { SITE_URL } from "@/lib/site-url";
 import { RecoveryRedirect } from "@/components/RecoveryRedirect";
@@ -136,6 +137,7 @@ export default async function RootLayout({
         <WhatsAppButton whatsappNumber={profile.whatsappNumber} />
         <Analytics />
         <SpeedInsights />
+        <WebVitalsReporter />
       </body>
     </html>
   );

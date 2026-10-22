@@ -1043,3 +1043,9 @@ Verified against the live database with crafted reports on far-past test dates, 
 - the 19:15 check notifies once, is idempotent, and stays quiet once a report exists (tested inside a rolled-back transaction).
 
 The first real snapshot already showed signal worth the agent's attention: 20 tunnel-down samples and about 80 missed metric samples in 24h, and a 646ms-mean PostgREST RPC call at the top of `pg_stat_statements`. The owner-session approve/reject path is verified by typecheck and the route's guards only. It was not exercised by signing in as the owner, so the first real click on Approve is its live test.
+
+**Update, same day: real-visitor speed for every page, plus per-module ERP timings.** The owner asked for every page of Live Stock, SKU Master, Sales, Purchase Orders and Expenses to be covered, and for Vercel Speed Insights data to be added.
+
+Speed Insights could not be used. On this plan its data is dashboard-only; exporting it needs the paid Speed Insights Plus tier, and Vercel publishes no read API. Instead, both apps report the same Core Web Vitals from `useReportWebVitals` to a public, validated, anonymous `/api/vitals`, which writes to `web_vitals` with 30-day retention. The reporter sits in the storefront root layout and the ERP dashboard layout. `ops_web_vitals_summary()` gives p75 per app and route, and the routine gets thresholds of LCP 2.5s/4s, INP 200/500ms, CLS 0.1/0.25 and TTFB 800ms/1.8s. This covers every page of both apps with real visitors' numbers, mobile and desktop separately.
+
+The snapshot also now times each module's default first load (list page with exact count, plus its counts call), so there is a reading even on days with no visits. Verified locally: the beacon stored the route with the id replaced, rejected an unknown metric and an out-of-range CLS, and returned 400 for garbage; all 14 module timings came back in 31–148ms. The test row was removed.
