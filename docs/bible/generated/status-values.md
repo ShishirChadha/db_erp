@@ -32,6 +32,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | attendance_days | status | attendance_days_status_check | `CHECK ((status = ANY (ARRAY['present'::text, 'half_day'::text, 'absent'::text, 'leave'::text, 'holiday'::text, 'week_off'::text, 'on_duty'::text])))` |
 | attendance_days | status_source | attendance_days_status_source_check | `CHECK ((status_source = ANY (ARRAY['derived'::text, 'manual'::text, 'leave'::text, 'holiday'::text, 'week_off'::text])))` |
 | attendance_days | worked_minutes | attendance_days_worked_minutes_check | `CHECK ((worked_minutes >= 0))` |
+| attendance_networks | source | attendance_networks_source_check | `CHECK ((source = ANY (ARRAY['manual'::text, 'heartbeat'::text])))` |
 | attendance_punches | ip_check | attendance_punches_ip_check_check | `CHECK ((ip_check = ANY (ARRAY['allowed'::text, 'exempt_supervisor'::text, 'not_enforced'::text])))` |
 | attendance_punches | punch_type | attendance_punches_punch_type_check | `CHECK ((punch_type = ANY (ARRAY['in'::text, 'out'::text])))` |
 | attendance_punches | source | attendance_punches_source_check | `CHECK ((source = ANY (ARRAY['self'::text, 'supervisor'::text, 'system'::text])))` |
@@ -112,6 +113,11 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | marketing_assets | platform | marketing_assets_platform_check | `CHECK ((platform = ANY (ARRAY['whatsapp'::text, 'instagram'::text, 'facebook'::text, 'google_business'::text, 'blog'::text, 'email'::text])))` |
 | marketing_assets | status | marketing_assets_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'approved'::text, 'scheduled'::text, 'published'::text, 'archived'::text])))` |
 | marketing_settings | id | marketing_settings_id_check | `CHECK (id)` |
+| ops_health_findings | area | ops_health_findings_area_check | `CHECK ((area = ANY (ARRAY['storefront'::text, 'erp'::text, 'database'::text, 'server'::text, 'infra'::text])))` |
+| ops_health_findings | fix_kind | ops_health_findings_fix_kind_check | `CHECK ((fix_kind = ANY (ARRAY['code'::text, 'db'::text, 'infra'::text, 'config'::text])))` |
+| ops_health_findings | severity | ops_health_findings_severity_check | `CHECK ((severity = ANY (ARRAY['act'::text, 'watch'::text, 'info'::text])))` |
+| ops_health_findings | status | ops_health_findings_status_check | `CHECK ((status = ANY (ARRAY['proposed'::text, 'approved'::text, 'rejected'::text, 'in_progress'::text, 'pr_open'::text, 'needs_manual'::text, 'done'::text, 'failed'::text])))` |
+| ops_health_reports | overall | ops_health_reports_overall_check | `CHECK ((overall = ANY (ARRAY['healthy'::text, 'watch'::text, 'act'::text])))` |
 | order_items | quantity | order_items_quantity_check | `CHECK ((quantity > 0))` |
 | orders | cancel_reason | orders_cancel_reason_check | `CHECK (((cancel_reason IS NULL) OR (cancel_reason = ANY (ARRAY['sold_out'::text, 'payment_init_failed'::text, 'reserve_error'::text, 'customer_abandoned'::text]))))` |
 | orders | fulfillment_status | orders_fulfillment_status_check | `CHECK ((fulfillment_status = ANY (ARRAY['pending'::text, 'packed'::text, 'shipped'::text, 'delivered'::text, 'returned'::text])))` |

@@ -4,12 +4,17 @@ title: System Health
 kind: module
 audience: [owner]
 routes: [/dashboard/monitoring]
-keywords: [monitoring, system health, server, vitals, cpu, temperature, disk, memory, uptime, containers, tunnel, backup status, restart, reboot, shutdown, power off, server down, power outage, power cut, bijli, downtime, availability, kya chal raha hai]
+keywords: [daily health report, speed, slow, performance, approve fix, monitoring, system health, server, vitals, cpu, temperature, disk, memory, uptime, containers, tunnel, backup status, restart, reboot, shutdown, power off, server down, power outage, power cut, bijli, downtime, availability, kya chal raha hai]
 sources:
   - apps/erp/app/dashboard/monitoring/page.tsx
   - apps/erp/app/api/monitoring/route.ts
   - apps/erp/app/api/monitoring/command/route.ts
-updated: 2026-10-08
+  - apps/erp/app/api/ops/health/snapshot/route.ts
+  - apps/erp/app/api/ops/health/reports/route.ts
+  - apps/erp/app/api/ops/health/findings/route.ts
+  - apps/erp/app/api/ops/health/findings/[id]/route.ts
+  - apps/erp/components/OpsHealthReports.tsx
+updated: 2026-10-22
 ---
 
 ## What this page is for
@@ -103,6 +108,37 @@ A dashboard whose job is telling you something is wrong cannot afford to render 
 - **Shutdown** requires typing `SHUTDOWN` to confirm, enforced server-side in `POST /api/monitoring/command`, not just hidden behind a client dialog. This machine has **no remote power-on** (no Wake-on-LAN, no smart plug), so a shutdown stays down until someone is physically at the office — the dialog says this plainly rather than letting a shutdown look as casual as a restart.
 - Only one request can be in flight at a time — the route refuses a second while one is `pending`/`acknowledged`, so a restart can't queue behind a shutdown that may never get a chance to run.
 - The poller itself never writes a completion row — the moment it executes the command the box is seconds from disappearing (restart) or gone for good until someone presses the button (shutdown), with no window left to write anything. **`GET /api/monitoring/command` resolves this instead**, every time anyone asks: a `server_boot_events` row booted *after* the command was acknowledged is proof a real reboot happened, and flips the row to `done`. No such boot within 20 minutes flips it to `failed` instead (the poller never ran it, `sudo` failed, or the box genuinely didn't come back), so the page never gets stuck showing "in progress" forever — a real bug the first restart through this feature hit, fixed the same day (2026-10-08).
+
+## Daily health & speed reports (2026-10-22)
+
+Every evening a Claude Code **cloud routine** checks how fast and healthy the storefront and the ERP are, and posts a report to the **Daily health reports** card on this page. It also emails the report (through Resend, the same as digests) and sends an in-app notification. The owner approves or rejects each finding. A second routine turns approved code findings into a **GitHub pull request**, and merging that PR is what deploys. Nothing changes production on its own.
+
+| When (IST) | Routine | What it does |
+|---|---|---|
+| 18:00 daily | **Daily health report** | Probes the public pages from outside: TTFB, `x-vercel-cache`, the `x-vercel-id` region, and `cache-control`. Reads the inside view from `GET /api/ops/health/snapshot` and compares it with yesterday's report. Reads the code to find causes, then posts `POST /api/ops/health/reports`. It never changes code. |
+| 10:00 and 15:00 daily | **Apply approved health fixes** | Each approved `code`/`config` finding becomes a branch `health-fix/<date>-<ref>` with a PR, after typecheck and build. `db`/`infra` findings come back as **Needs you**, because the cloud cannot reach the ProDesk. |
+| 19:15 daily | `ops-health-report-check` (pg_cron) | If no report has arrived for today, every owner gets an in-app notice, so a broken routine is not silent. |
+
+**Why two layers.** The routines run in Anthropic's cloud and cannot SSH to the box (it is Tailscale-only). `ops_health_snapshot()` (SECURITY DEFINER, service-role only) gathers everything only the database can see:
+- 24h server vitals;
+- boots;
+- website uptime;
+- cron failures and runtimes;
+- cache hit rate and temp-file spill;
+- connections;
+- the top `pg_stat_statements` queries, whose text is already normalised to `$n` and carries no values;
+- dead tuples and the largest tables.
+
+The snapshot route adds the endpoint probes and **times the ERP's heaviest reads** from Vercel: Stock counts, the Stock first page, the Sales ledger month page, `report_kpis` and `report_inventory`. It keeps only milliseconds and row counts. That is how ERP speed is measured without a staff login.
+
+**Auth.** The routines send `OPS_REPORT_TOKEN` in the `x-ops-token` header. It is never a query parameter, so it stays out of logs. It is compared in constant time (`lib/ops-auth.ts`). The token can only read the snapshot and read or write reports and findings, and it can only move a finding the owner has **already approved**: `approved → in_progress → pr_open | failed | needs_manual`. Approving and rejecting need an owner session.
+
+**How findings behave.**
+- Each finding has a stable `ref` slug. A recurring issue updates its one open row, so you are not asked about it again every day.
+- A `proposed` finding that does not show up the next day closes itself as `done`.
+- **A rejection holds for 30 days.** If the issue comes back during that time, its evidence is refreshed quietly and you are not asked again.
+- A report for a date shows the findings whose seen-range covers that date.
+- `ops_health_reports.report_date` is unique, so a re-run replaces that day's report.
 
 ## Known gaps
 

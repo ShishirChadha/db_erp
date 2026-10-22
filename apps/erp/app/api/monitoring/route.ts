@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { withRetry } from '@/lib/db-retry'
 import { rollupByApp, rollupByModule, type TableSize } from '@/lib/monitoring-modules'
+import { probeEndpoints } from '@/lib/monitoring-probes'
 
 // System Health feed for /dashboard/monitoring.
 //
@@ -180,43 +181,4 @@ function summarisePower(boots: BootEvent[]) {
     availability:
       Math.round(Math.max(0, 1 - downtimeSeconds / windowSeconds) * 10000) / 100,
   }
-}
-
-async function probeEndpoints() {
-  const targets = [
-    { key: 'erp', label: 'ERP', url: 'https://erp.digitalbluez.com/login' },
-    { key: 'website', label: 'Storefront', url: 'https://digitalbluez.com' },
-    { key: 'database', label: 'Database API', url: 'https://db.digitalbluez.com/auth/v1/health' },
-  ]
-
-  return Promise.all(
-    targets.map(async t => {
-      const started = Date.now()
-      try {
-        const res = await fetch(t.url, {
-          method: 'GET',
-          cache: 'no-store',
-          signal: AbortSignal.timeout(10_000),
-        })
-        return {
-          ...t,
-          // 401 from the database API is a healthy answer: it means Envoy
-          // replied, which is what we are actually testing. Cloudflare's 52x/530
-          // is the real "origin unreachable" signal.
-          ok: res.status < 500,
-          status: res.status,
-          latencyMs: Date.now() - started,
-          error: null as string | null,
-        }
-      } catch (err) {
-        return {
-          ...t,
-          ok: false,
-          status: 0,
-          latencyMs: Date.now() - started,
-          error: err instanceof Error ? err.message : 'request failed',
-        }
-      }
-    })
-  )
 }

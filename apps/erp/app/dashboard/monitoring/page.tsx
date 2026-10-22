@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
 import RequireOwner from '@/components/RequireOwner'
 import { ErrorBanner } from '@/components/ErrorBanner'
@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { RefreshCw, Info, Power, PowerOff } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { SimpleModal } from '@/components/SimpleModal'
+import OpsHealthReports from '@/components/OpsHealthReports'
 
 // System Health. Everything here is read-only; the page never writes.
 //
@@ -514,6 +515,15 @@ function MonitoringInner() {
             </p>
           </div>
         </details>
+      </Card>
+
+      <Card
+        title="Daily health reports"
+        info="Every evening at about 6pm a cloud agent checks how fast and healthy the website and the ERP are — page load times from outside, the database's slowest queries, the server's vitals — compares them with the day before, and posts a report here (and emails it). Approve a finding to have the fix prepared as a GitHub pull request; nothing goes live until you merge it."
+      >
+        <Suspense fallback={<p className="text-sm text-muted-foreground">Loading daily reports…</p>}>
+          <OpsHealthReports />
+        </Suspense>
       </Card>
 
       {/* Public endpoints -- probed from Vercel, so these stay meaningful even

@@ -1015,3 +1015,31 @@ Also investigated the same day: "production is slow" — live `server_metrics` (
 **Why:** Cityline rotates the shop's public IP between unrelated pools (103.220.158.x, 114.142.164/165.x, 103.60.196.x), sometimes within a day; allowlisting ranges locked the team out repeatedly. The ProDesk shares the shop's router, so its egress IP is the staff wifi's. Rejected: ever-wider CIDRs (opens it to the ISP's other customers and still breaks), a new table (the existing one fits), and a static IP from the ISP (still worth asking for, but not in our control).
 
 **Limits:** if the ProDesk is down and the IP rotates, punching blocks until the owner adds a manual row. The check remains a deterrent, not proof of presence.
+
+---
+
+**Daily health & speed agent: a cloud routine that reports at 6pm, with fixes made only after owner approval, as PRs.** (2026-10-22)
+Why: the owner wanted something checking every day how fast and healthy the storefront and the ERP are, finding problems, suggesting fixes, emailing a report by 7pm, and making a fix only once it's approved. Until now nothing kept a record over time, which is why the 2026-10-12 "production is slow" report could not be diagnosed: by the time anyone looked, there was nothing recorded from the moment it was slow.
+
+Design, and the reasons for it:
+- **Two layers.** The analysis runs as a Claude Code cloud routine, but the cloud cannot reach the ProDesk (Tailscale-only). So everything only the database can see is gathered by one service-role-only `ops_health_snapshot()` and served through a token-gated ERP route. The routine adds the outside view (TTFB, cache, region) with curl, and reads the repo to explain causes.
+- **Approval lives in the ERP, and merging is the deploy.** That keeps the standing rule that Claude never pushes to `main`. The routine's token can only move a finding the owner already approved, and only toward `in_progress`/`pr_open`/`failed`/`needs_manual`.
+- **Email goes through the ERP's Resend.** Gmail would have tied delivery to a connector, and keeping it in the ERP keeps report history and approvals there too.
+- **DB and infra fixes are never applied from the cloud.** They come back as "Needs you", for a local session.
+- **Quiet by default.** Recurring issues dedupe on a stable `ref`. Proposals that don't show up the next day close themselves. A rejection holds for 30 days. A pg_cron check at 19:15 IST makes a missing report visible.
+
+Impact:
+- Tables `ops_health_reports` and `ops_health_findings` (RLS on, no grants).
+- Functions `ops_health_snapshot()` and `check_health_report_missing()`, and the cron `ops-health-report-check`.
+- Routes under `/api/ops/health/**`, the shared `lib/monitoring-probes.ts` (extracted from `/api/monitoring`), `lib/ops-auth.ts`, `lib/ops-health-email.ts`, the `health_report` notification type, and the **Daily health reports** card on System Health.
+- New env var `OPS_REPORT_TOKEN` on the ERP Vercel project and on the cloud environment.
+
+Verified against the live database with crafted reports on far-past test dates, all cleaned up and re-queried:
+- auth refuses no token, a wrong token, and the token sent in the query string;
+- a recurring approved finding keeps one row with its evidence refreshed;
+- a dropped proposal closes as `done`;
+- a rejected one is suppressed;
+- the routine cannot approve, cannot start on a proposed finding, and only accepts a `https://github.com/` PR URL;
+- the 19:15 check notifies once, is idempotent, and stays quiet once a report exists (tested inside a rolled-back transaction).
+
+The first real snapshot already showed signal worth the agent's attention: 20 tunnel-down samples and about 80 missed metric samples in 24h, and a 646ms-mean PostgREST RPC call at the top of `pg_stat_statements`. The owner-session approve/reject path is verified by typecheck and the route's guards only. It was not exercised by signing in as the owner, so the first real click on Approve is its live test.

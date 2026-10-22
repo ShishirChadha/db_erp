@@ -166,6 +166,25 @@ export const LEAD_SET_STATUS_TONES: Record<string, Tone> = {
   archived: 'neutral',
 }
 
+// ops_health_findings.severity (System Health -> Daily reports)
+export const OPS_HEALTH_SEVERITY_TONES: Record<string, Tone> = {
+  act: 'danger',
+  watch: 'warning',
+  info: 'info',
+}
+
+// ops_health_findings.status
+export const OPS_HEALTH_STATUS_TONES: Record<string, Tone> = {
+  proposed: 'neutral',
+  approved: 'info',
+  in_progress: 'info',
+  pr_open: 'purple',
+  needs_manual: 'warning',
+  done: 'success',
+  rejected: 'neutral',
+  failed: 'danger',
+}
+
 /** Looks up a status string in the given map, falling back to a neutral tone for any unmapped value rather than throwing. */
 export function toneFor(map: Record<string, Tone>, status: string | null | undefined): Tone {
   if (!status) return fallbackTone()

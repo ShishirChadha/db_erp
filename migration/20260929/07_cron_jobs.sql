@@ -29,3 +29,8 @@ select cron.schedule('scan-attendance-days', '15 22 * * *', $$select public.scan
 -- (prune_cron_history covers website_health_checks).
 select cron.schedule('website-health-check', '*/10 * * * *', $$select public.run_website_health_check();$$);
 select cron.schedule('gst-news-fetch',                '30 2 * * *',    $$select public.dispatch_gst_news();$$);
+
+-- 19:15 IST safety net for the daily health report cloud routine: in-app notice
+-- to owners if no ops_health_reports row arrived today. Added 2026-10-22 by
+-- supabase/migrations/20261022_ops_health_reports.sql.
+select cron.schedule('ops-health-report-check', '45 13 * * *', $$select public.check_health_report_missing()$$);
