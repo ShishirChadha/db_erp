@@ -1049,3 +1049,24 @@ The first real snapshot already showed signal worth the agent's attention: 20 tu
 Speed Insights could not be used. On this plan its data is dashboard-only; exporting it needs the paid Speed Insights Plus tier, and Vercel publishes no read API. Instead, both apps report the same Core Web Vitals from `useReportWebVitals` to a public, validated, anonymous `/api/vitals`, which writes to `web_vitals` with 30-day retention. The reporter sits in the storefront root layout and the ERP dashboard layout. `ops_web_vitals_summary()` gives p75 per app and route, and the routine gets thresholds of LCP 2.5s/4s, INP 200/500ms, CLS 0.1/0.25 and TTFB 800ms/1.8s. This covers every page of both apps with real visitors' numbers, mobile and desktop separately.
 
 The snapshot also now times each module's default first load (list page with exact count, plus its counts call), so there is a reading even on days with no visits. Verified locally: the beacon stored the route with the id replaced, rejected an unknown metric and an out-of-range CLS, and returned 400 for garbage; all 14 module timings came back in 31–148ms. The test row was removed.
+
+---
+
+**Bug fix: staff were being signed out by network blips, on every device at once, and again every morning.** (2026-10-23)
+
+Why: the owner kept having to log in again, including first thing this morning. The auth audit log showed the mechanism directly: `token_refreshed` at 21:23:48, then `logout` at 21:23:50 on 2026-10-22, with no user action. Three causes combined.
+1. `getSessionUser()` returned `null`, and so a 401, both when a token was invalid and when it simply **couldn't be checked**. With the ProDesk tunnel dropping a few times a day (as the new health report shows), a blip during the JWKS fetch or the `profiles` read turned into a 401. Both bible chapters had already flagged this as a known weakness.
+2. `api-client.ts` signed out on any 401, and `signOut()` defaults to **global** scope. That revokes the refresh token on every device, so the phone went too.
+3. An access token lasts 1h, and the dashboard layout deliberately never refreshes one. Opening the ERP the next morning therefore redirected to `/login` even though the refresh token was still valid, and the login page never checked for one.
+
+Fix:
+- Infrastructure errors in verification throw `SessionCheckUnavailable`, which surfaces as a 500, never a 401. jose's genuine token verdicts (`ERR_JWT*`, `ERR_JWS*`, no matching key, unsupported algorithm) still mean "not signed in".
+- The client asks the new `/api/auth/session-check` before signing out. Only a confirmed 401 signs out, and then with `scope: 'local'`. The sidebar's Log out button is local too.
+- The dashboard layout shows `ResumeSession` instead of redirecting when an auth cookie is present: it renews and reloads the same URL. When the check is unavailable, it retries with backoff and then offers a Try again button. A per-tab counter, reset by `RoleSeed`, prevents loops.
+- The login page renews and skips the form for a still-valid session, except after an explicit sign-out.
+
+Verified:
+- With a throwaway employee account, created and then deleted, and re-queried to confirm it was gone: a valid session returned 200, and a deactivated profile returned 401.
+- No token and a garbage token both returned 401.
+- jose reports an unreachable JWKS as `ERR_JWKS_TIMEOUT`, which is now "couldn't check", and a wrong-algorithm token as `ERR_JOSE_NOT_SUPPORTED`, which is now "invalid".
+- Force-logoff and the device cap still work, because a revoked device session still returns 401 from session-check.

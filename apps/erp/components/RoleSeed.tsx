@@ -17,6 +17,9 @@ export function RoleSeed({ snapshot }: { snapshot: RoleSnapshot }) {
 
   useEffect(() => {
     hydrate(snapshot)
+    // The dashboard rendered with a valid session, so any session-resume
+    // attempts (components/ResumeSession.tsx) succeeded -- reset its loop guard.
+    try { sessionStorage.removeItem('db_resume_attempts') } catch { /* private mode */ }
     // Intentionally run once -- this layout (and therefore this component)
     // persists across client-side navigations within /dashboard/**; it isn't
     // remounted per page, so there's nothing to re-sync on snapshot identity

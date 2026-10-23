@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveLoginIdentifier } from '@/lib/auth/username'
 import { apiFetch } from '@/lib/api-client'
@@ -20,6 +20,27 @@ function LoginForm() {
   const searchParams = useSearchParams()
   const supabase = createClient()
   const signedOutNotice = searchParams.get('reason') === 'signed_out'
+
+  // Landing here with a still-valid session (an old tab, a bookmark to /login,
+  // or a token that expired overnight) shouldn't mean typing the password
+  // again: getSession() renews the token from the refresh token, and the
+  // server confirms it before we skip the form. Not after an explicit
+  // sign-out, where the user is meant to see this page.
+  useEffect(() => {
+    if (signedOutNotice) return
+    let cancelled = false
+    ;(async () => {
+      const { data } = await supabase.auth.getSession()
+      if (cancelled || !data.session) return
+      const res = await fetch('/api/auth/session-check', {
+        headers: { Authorization: `Bearer ${data.session.access_token}` },
+        cache: 'no-store',
+      }).catch(() => null)
+      if (!cancelled && res?.ok) router.replace('/dashboard')
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const { run: handleLogin, pending: loading } = useAsyncAction(async () => {
     setError('')

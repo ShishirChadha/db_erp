@@ -521,7 +521,9 @@ export default function Sidebar() {
   const { run: handleLogout, pending: loggingOut } = useAsyncAction(async () => {
     // Must fire before signOut() -- the token is still valid here, dead after.
     await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'logout' }) }).catch(() => {})
-    await supabase.auth.signOut()
+    // 'local' = this browser only. The default ('global') also signed the user
+    // out of every other device -- logging out of the shop PC killed their phone.
+    await supabase.auth.signOut({ scope: 'local' })
     router.push('/login')
     router.refresh()
   })

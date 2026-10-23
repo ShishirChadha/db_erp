@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/supabase/service.ts
   - apps/erp/lib/chunked-in.ts
   - packages/db/src/**
-updated: 2026-10-12
+updated: 2026-10-23
 ---
 
 ## What this system is

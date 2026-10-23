@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/RequirePageAccess.tsx
   - apps/erp/app/dashboard/home/page.tsx
   - apps/erp/lib/leads.ts
-updated: 2026-10-16
+updated: 2026-10-23
 ---
 
 ## The three roles
@@ -109,11 +109,13 @@ Two consequences worth knowing:
 - Changing the backend hostname invalidates every existing token, so everyone
   is signed out once and must log in again. This is expected, and looks exactly
   like a rejected password.
-- A failed *network* call to the database is currently indistinguishable from
-  "not signed in": `getSessionUser()` returns null either way, the route
-  answers 401, and `api-client.ts` signs the user out. On a home connection
-  this will eventually happen again. The proper fix is for routes to answer 503
-  on a backend-unreachable error so the client retries instead of logging out.
+- **Fixed 2026-10-23:** a failed *network* call while checking a session is no
+  longer treated as "not signed in". When the key set or the `profiles` lookup is
+  unreachable, `getSessionUser()` throws `SessionCheckUnavailable`, so the route
+  answers 500/503 instead of 401. Even after a 401, `api-client.ts` signs out
+  only once `/api/auth/session-check` confirms the session is really gone, and
+  then only that browser (`signOut({ scope: 'local' })`). The Log out button is
+  local too, so logging out of one device no longer ends the others.
 
 ## Attendance (2026-10-03)
 

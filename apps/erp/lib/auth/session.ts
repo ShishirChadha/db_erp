@@ -31,14 +31,44 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!
 // profiles.is_active, which every request below still re-checks live.
 const jwks = createRemoteJWKSet(new URL(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`))
 
+// Thrown when we could not FIND OUT whether a token is valid -- the key set or
+// the profiles lookup was unreachable (a tunnel blip to the ProDesk, a cold
+// function timing out on the JWKS fetch). It must never be reported as "not
+// signed in": a 401 makes the browser sign the user out (lib/api-client.ts),
+// so before this existed every short network hiccup logged staff out of every
+// device. Uncaught, it surfaces as a 500, which the client treats as a
+// retryable failure instead.
+export class SessionCheckUnavailable extends Error {
+  constructor(cause: string) {
+    super(`Could not verify the session right now: ${cause}`)
+    this.name = 'SessionCheckUnavailable'
+  }
+}
+
 async function verifyAccessToken(token: string): Promise<{ id: string; email: string | undefined } | null> {
   try {
     const { payload } = await jwtVerify(token, jwks, { issuer: `${SUPABASE_URL}/auth/v1` })
     if (!payload.sub) return null
     return { id: payload.sub, email: typeof payload.email === 'string' ? payload.email : undefined }
-  } catch {
-    return null
+  } catch (err) {
+    // jose's own verdicts on the token (expired, bad signature, wrong issuer,
+    // malformed, no matching key) mean the token really is not valid.
+    // Anything else -- the JWKS fetch timing out or failing -- is us not being
+    // able to check, which is a different answer.
+    const code = (err as { code?: string })?.code || ''
+    if (
+      code.startsWith('ERR_JWT') || code.startsWith('ERR_JWS') ||
+      code === 'ERR_JWKS_NO_MATCHING_KEY' || code === 'ERR_JWKS_MULTIPLE_MATCHING_KEYS' ||
+      code === 'ERR_JOSE_NOT_SUPPORTED' || code === 'ERR_JOSE_ALG_NOT_ALLOWED'
+    ) return null
+    throw new SessionCheckUnavailable(code || (err instanceof Error ? err.message : 'verification failed'))
   }
+}
+
+// A profiles lookup that ERRORED (as opposed to finding no row) is the same
+// "could not check" case as above.
+function assertProfileLookup(error: { code?: string; message: string } | null) {
+  if (error && error.code !== 'PGRST116') throw new SessionCheckUnavailable(error.message)
 }
 
 // Bearer-token pattern -- for API routes called via lib/api-client.ts's apiFetch(),
@@ -71,7 +101,7 @@ export async function getSessionUser(req: NextRequest, opts?: { skipSessionCheck
   // never gates access) -- kicked off here too, but never awaited.
   if (sessionId) touchSessionIfStale(sessionId).catch(() => {})
 
-  const [revoked, { data: profile }] = await Promise.all([
+  const [revoked, { data: profile, error: profileError }] = await Promise.all([
     isSessionRevoked(sessionId),
     supabaseAdmin
       .from('profiles')
@@ -79,6 +109,7 @@ export async function getSessionUser(req: NextRequest, opts?: { skipSessionCheck
       .eq('id', user.id)
       .single(),
   ])
+  assertProfileLookup(profileError)
   if (revoked) return null
 
   if (!profile || !profile.is_active) return null
@@ -167,7 +198,7 @@ export async function getLayoutSessionUser(): Promise<RoleSnapshot | null> {
   const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value
   if (sessionId) touchSessionIfStale(sessionId).catch(() => {})
 
-  const [revoked, { data: profile }] = await Promise.all([
+  const [revoked, { data: profile, error: profileError }] = await Promise.all([
     isSessionRevoked(sessionId),
     supabaseAdmin
       .from('profiles')
@@ -175,6 +206,7 @@ export async function getLayoutSessionUser(): Promise<RoleSnapshot | null> {
       .eq('id', user.id)
       .single(),
   ])
+  assertProfileLookup(profileError)
   if (revoked) return null
   if (!profile || !profile.is_active) return null
 

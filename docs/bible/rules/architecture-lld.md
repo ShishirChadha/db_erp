@@ -8,11 +8,13 @@ keywords: [lld, low level design, sequence diagram, auth flow, login flow, sale 
 sources:
   - apps/erp/lib/auth/session.ts
   - apps/erp/lib/api-client.ts
+  - apps/erp/app/api/auth/session-check/route.ts
+  - apps/erp/components/ResumeSession.tsx
   - apps/erp/lib/auth/device-sessions.ts
   - apps/erp/lib/chunked-in.ts
   - apps/erp/app/api/monitoring/route.ts
   - apps/web/lib/order-to-sale.ts
-updated: 2026-10-06
+updated: 2026-10-23
 ---
 
 ## 1. Authentication — login and request authorisation
@@ -43,18 +45,41 @@ updated: 2026-10-06
               isSessionRevoked(db_session_id cookie)
               SELECT role, is_active, allowed_pages, page actions
          3. null if: bad token | revoked | inactive | no profile
+            THROWS SessionCheckUnavailable if the JWKS or profiles
+            lookup could not be reached (-> 500, never 401)
                   |
-          null ---+---> 401 ---> api-client signs the user out
+          null ---+---> 401 ---> api-client asks /api/auth/session-check;
+                  |              only a second 401 signs out (this browser only)
           user ---+---> route continues, redaction applied by role
 ```
 
 **JWKS is fetched once per server instance and cached** by `jose`; it is not a
 network call per request.
 
-**Known weakness:** step 3 cannot distinguish "invalid token" from "could not
-reach the database". A network failure produces `null`, which produces a 401,
-which logs the user out. On a home connection this will recur. The fix is for
-routes to answer 503 when the backend is unreachable.
+**Fixed 2026-10-23 (was a known weakness):** step 3 used to treat "could not
+reach the database" as "invalid token". Here is the chain that produced:
+- a network failure returned `null`;
+- `null` became a 401;
+- the 401 signed the user out, with the default **global** scope, so on every
+  device.
+
+The auth log caught it on 2026-10-22: `token_refreshed` at 21:23:48, then
+`logout` at 21:23:50.
+
+Now unreachable checks throw `SessionCheckUnavailable` instead. The client
+re-asks `/api/auth/session-check` before signing out, and signs out only locally.
+
+**Expired access tokens on a fresh page load.** `app/dashboard/layout.tsx`
+renders `components/ResumeSession.tsx` instead of redirecting to `/login` when
+an auth cookie is present but the token has expired. That happens when the ERP
+is opened the next morning or after the laptop slept. ResumeSession:
+- renews the token from the refresh token;
+- reloads the same page;
+- is guarded by a per-tab attempt counter, which `RoleSeed` resets on a
+  successful load.
+
+The login page also renews and skips the form when it is reached with a
+still-valid session.
 
 ## 2. The 401 → sign-out loop (and why it fired after the migration)
 

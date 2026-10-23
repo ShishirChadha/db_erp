@@ -2,7 +2,9 @@ import { redirect } from 'next/navigation';
 import Sidebar from '@/components/sidebar';
 import { NavSearchProvider } from '@/components/NavSearch';
 import { RoleSeed } from '@/components/RoleSeed';
-import { getLayoutSessionUser } from '@/lib/auth/session';
+import { cookies } from 'next/headers';
+import { getLayoutSessionUser, SessionCheckUnavailable } from '@/lib/auth/session';
+import { ResumeSession } from '@/components/ResumeSession';
 import { WebVitalsReporter } from '@/components/WebVitalsReporter';
 
 export default async function DashboardLayout({
@@ -16,9 +18,26 @@ export default async function DashboardLayout({
   // RoleProvider (mounted in app/layout.tsx) via <RoleSeed> below, so the
   // client no longer has to re-fetch the same role/permissions data itself on
   // every dashboard load.
-  const sessionUser = await getLayoutSessionUser();
+  let sessionUser: Awaited<ReturnType<typeof getLayoutSessionUser>>;
+  try {
+    sessionUser = await getLayoutSessionUser();
+  } catch (err) {
+    // Could not CHECK the session (server/tunnel unreachable) -- that is not
+    // the same as being signed out, so don't send the user to /login for it.
+    if (err instanceof SessionCheckUnavailable) return <ResumeSession mode="unavailable" />;
+    throw err;
+  }
 
   if (!sessionUser) {
+    // Access tokens last an hour, and this Server Component deliberately never
+    // refreshes one (it can't save the rotated cookie). So opening the ERP
+    // after a while -- next morning, after the laptop slept -- lands here with
+    // an expired token but a perfectly good refresh token. If any auth cookie
+    // is present, let the browser renew it and reload this same page instead
+    // of dumping the user on the login form.
+    const cookieName = process.env.NEXT_PUBLIC_SUPABASE_COOKIE_NAME || 'sb-';
+    const hasAuthCookie = (await cookies()).getAll().some(c => c.name.startsWith(cookieName));
+    if (hasAuthCookie) return <ResumeSession mode="expired" />;
     redirect('/login');
   }
 

@@ -105,6 +105,21 @@ async function doFetch(url: string, init: RequestInit, method: string, budget: n
   throw lastErr
 }
 
+async function sessionIsGone(): Promise<boolean> {
+  try {
+    const token = await getToken(true)
+    if (!token) return true
+    const res = await fetch('/api/auth/session-check', {
+      headers: { Authorization: `Bearer ${token}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(10_000),
+    })
+    return res.status === 401
+  } catch {
+    return false
+  }
+}
+
 export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
   const { timeoutMs, ...init } = options
   const method = (init.method || 'GET').toUpperCase()
@@ -145,9 +160,20 @@ export async function apiFetch(url: string, options: ApiFetchOptions = {}) {
     // that a routine event, and without this a revoked session just showed
     // every page's own generic fetch-failed error forever instead of a clean
     // bounce back to sign-in.
-    supabase.auth.signOut().finally(() => {
-      window.location.href = '/login?reason=signed_out'
-    })
+    //
+    // But only after a second opinion: a 401 from one route used to be enough,
+    // and a network blip that stopped the server verifying the token (the
+    // ProDesk tunnel drops a few times a day) logged people out mid-work.
+    // /api/auth/session-check answers 401 only when the session really is
+    // gone; anything else (200, 503, a network error) leaves the user signed in.
+    if (await sessionIsGone()) {
+      // 'local': sign out THIS browser only. The default ('global') revoked
+      // the user's refresh tokens on every device, so one bad moment on one
+      // laptop logged them out of their phone too.
+      supabase.auth.signOut({ scope: 'local' }).finally(() => {
+        window.location.href = '/login?reason=signed_out'
+      })
+    }
   }
 
   return res
