@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { resolveLoginIdentifier } from '@/lib/auth/username'
 import { apiFetch } from '@/lib/api-client'
@@ -42,7 +42,15 @@ function LoginForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Stays true once sign-in succeeds. useAsyncAction unlocks the button as soon
+  // as this action returns, but the dashboard may still be loading for a second
+  // or two on a phone -- a second tap in that gap was a second full login, and
+  // each login used to take a device slot (see reuseExistingSession()).
+  const signedInRef = useRef(false)
+  const [signedIn, setSignedIn] = useState(false)
+
   const { run: handleLogin, pending: loading } = useAsyncAction(async () => {
+    if (signedInRef.current) return
     setError('')
 
     // A plain User ID (e.g. "ShishirCH") is transformed to its synthetic login email;
@@ -63,6 +71,8 @@ function LoginForm() {
     // so it needs to land before the dashboard's first request.
     await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
 
+    signedInRef.current = true
+    setSignedIn(true)
     router.push('/dashboard')
     router.refresh()
   })
@@ -138,7 +148,8 @@ function LoginForm() {
               <Button
                 className="w-full bg-primary hover:bg-primary/90 py-2.5"
                 onClick={handleLogin}
-                loading={loading}
+                loading={loading || signedIn}
+                disabled={loading || signedIn}
               >
                 Sign in
               </Button>

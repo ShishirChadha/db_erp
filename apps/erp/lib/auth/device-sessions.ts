@@ -114,6 +114,24 @@ export async function registerSession(
   return { sessionId: inserted!.id, kickedCount }
 }
 
+// A login from a browser that already holds a live device-session cookie for
+// the SAME user re-uses that session instead of registering a new one. Without
+// this, one browser could take two slots: a double-tapped Sign in on a phone
+// produces two logins ~1.5s apart, and each registered a new session -- so the
+// phone filled both of a 2-device allowance and kicked the user's own PC out
+// (seen on Sanjana's account 21-23 Oct 2026). Same browser = same device.
+export async function reuseExistingSession(sessionId: string | undefined, profileId: string): Promise<boolean> {
+  if (!sessionId) return false
+  const { data } = await supabaseAdmin
+    .from('user_sessions')
+    .select('profile_id, revoked_at')
+    .eq('id', sessionId)
+    .maybeSingle()
+  if (!data || data.revoked_at !== null || data.profile_id !== profileId) return false
+  await supabaseAdmin.from('user_sessions').update({ last_seen_at: new Date().toISOString() }).eq('id', sessionId)
+  return true
+}
+
 export async function revokeSession(sessionId: string, reason: string): Promise<void> {
   await supabaseAdmin
     .from('user_sessions')

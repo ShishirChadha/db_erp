@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { SESSION_COOKIE_NAME, registerSession, revokeSession } from '@/lib/auth/device-sessions'
+import { SESSION_COOKIE_NAME, registerSession, revokeSession, reuseExistingSession } from '@/lib/auth/device-sessions'
 
 // No Supabase Auth Hooks are used in this project -- login/logout are plain
 // client-side supabase-js calls (app/login/page.tsx, components/sidebar.tsx),
@@ -31,6 +31,11 @@ export async function POST(req: NextRequest) {
   })
 
   if (event === 'login') {
+    // Same browser, same user, session still live -> it's the same device; keep
+    // its slot rather than taking another (see reuseExistingSession()).
+    if (await reuseExistingSession(req.cookies.get(SESSION_COOKIE_NAME)?.value, sessionUser.id)) {
+      return NextResponse.json({ success: true, kicked_other_device: false, reused_session: true })
+    }
     const { sessionId, kickedCount } = await registerSession(sessionUser.id, sessionUser.role, req)
     const res = NextResponse.json({ success: true, kicked_other_device: kickedCount > 0 })
     res.cookies.set(SESSION_COOKIE_NAME, sessionId, {

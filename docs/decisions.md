@@ -1070,3 +1070,15 @@ Verified:
 - No token and a garbage token both returned 401.
 - jose reports an unreachable JWKS as `ERR_JWKS_TIMEOUT`, which is now "couldn't check", and a wrong-algorithm token as `ERR_JOSE_NOT_SUPPORTED`, which is now "invalid".
 - Force-logoff and the device cap still work, because a revoked device session still returns 401 from session-check.
+
+**Bug fix, same day: one browser could take two device slots.** Sanjana kept being logged out of her PC. Her `user_sessions` and auth log showed **every phone login happening twice, about 1.5s apart**: on 22 Oct at 10:17 and 19:22, and on 23 Oct at 10:16. The login button unlocks as soon as sign-in returns, while a slow phone is still loading the dashboard, so a second tap in that gap was a full second login. Each login registered a new device session, so the phone filled both of her 2-device allowance and the device cap kicked her PC (`device_limit`).
+
+Fix:
+- `log-event`'s login path now re-uses the browser's existing live device session for the same user (`reuseExistingSession()`), so the same browser always counts as the same device.
+- The login button stays disabled once sign-in has succeeded.
+
+This was not a "two windows" problem. Windows and tabs in the same browser already share one session and one slot.
+
+Verified with a throwaway employee account, deleted afterwards:
+- a double login from one browser left 1 live session;
+- a login from a second browser made 2, and nobody was kicked.
