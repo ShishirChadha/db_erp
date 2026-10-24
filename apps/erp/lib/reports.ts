@@ -23,6 +23,17 @@ export function toDateStr(d: Date): string {
   return `${y}-${m}-${day}`
 }
 
+// The inverse of toDateStr() -- new Date("YYYY-MM-DD") parses as UTC midnight,
+// not local midnight, which is the same footgun in reverse. Every period
+// helper below expects/returns local-midnight Date objects, so any caller
+// that needs to turn one of their string outputs back into a Date (e.g. to
+// feed it into another period helper as a `ref`) must go through this, not
+// `new Date(str)`.
+export function parseDateStr(s: string): Date {
+  const [y, m, d] = s.split('-').map(Number)
+  return new Date(y, m - 1, d)
+}
+
 export function today(): { from: string; to: string } {
   const d = toDateStr(new Date())
   return { from: d, to: d }

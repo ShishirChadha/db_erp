@@ -21,18 +21,38 @@ function fmt(n: number): string {
   return `₹${Math.round(n).toLocaleString('en-IN')}`
 }
 
+function growthPct(cur: number, prev: number): number | null {
+  if (!(prev > 0)) return null
+  return Math.round(((cur - prev) / prev) * 1000) / 10
+}
+
+function GrowthBadge({ pct }: { pct: number | null }) {
+  if (pct === null) return <span className="text-muted-foreground">—</span>
+  const color = pct > 0 ? 'text-success' : pct < 0 ? 'text-destructive' : 'text-muted-foreground'
+  return <span className={color}>{pct > 0 ? '+' : ''}{pct}%</span>
+}
+
 export function CategoryEntityMatrixTable({
   title,
   subtitle,
   rows,
   categoryOrder,
   entityOrder = ['Digitalbluez', 'Techtenth', 'Cash'],
+  compareRows,
+  compareLabel,
 }: {
   title: string
   subtitle?: string
   rows: MatrixRow[]
   categoryOrder: string[]
   entityOrder?: string[]
+  // Same-shaped rows for the comparison period (see Dashboard/Reports' own
+  // "vs prior period" compare window -- lastMonthToDate()/lastYearToDate()/
+  // prevPeriod() as appropriate, never an arbitrary mismatched window). When
+  // omitted (e.g. the LMT/LYTD tabs, which are themselves reference periods),
+  // no comparison column is rendered at all, matching the KPI tiles' own rule.
+  compareRows?: MatrixRow[]
+  compareLabel?: string
 }) {
   // Any entity value present in the data but not in the fixed order (e.g. a
   // purchase_orders.purchased_by_type of 'Other') still gets its own column
@@ -74,6 +94,14 @@ export function CategoryEntityMatrixTable({
     { value: 0, count: 0 }
   )
 
+  // Comparison totals computed the same way as the current period's, just
+  // against compareRows -- the row (category) and grand totals, not per-cell,
+  // since a DB/TT/Cash x category x period 4-way table would be unreadable.
+  const showCompare = !!compareRows
+  const compareRowTotal = (category: string) =>
+    (compareRows || []).filter((r) => r.category === category).reduce((s, r) => s + r.value, 0)
+  const compareGrandTotal = categoryOrder.reduce((s, cat) => s + compareRowTotal(cat), 0)
+
   if (rows.length === 0) {
     return (
       <div>
@@ -96,11 +124,15 @@ export function CategoryEntityMatrixTable({
                 <th key={e} className="text-right px-3 py-2 font-medium text-muted-foreground">{ENTITY_LABEL[e] || e}</th>
               ))}
               <th className="text-right px-3 py-2 font-medium text-foreground">Total</th>
+              {showCompare && (
+                <th className="text-right px-3 py-2 font-medium text-muted-foreground">vs {compareLabel || 'prior period'}</th>
+              )}
             </tr>
           </thead>
           <tbody>
             {categoryOrder.map((cat) => {
               const total = rowTotal(cat)
+              const prevTotal = compareRowTotal(cat)
               return (
                 <tr key={cat} className="border-t">
                   <td className="px-3 py-2">{cat}</td>
@@ -123,6 +155,12 @@ export function CategoryEntityMatrixTable({
                     {fmt(total.value)}
                     <span className="block text-xs text-muted-foreground font-normal">{total.count} units</span>
                   </td>
+                  {showCompare && (
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <GrowthBadge pct={growthPct(total.value, prevTotal)} />
+                      <span className="block text-xs text-muted-foreground">{fmt(prevTotal)}</span>
+                    </td>
+                  )}
                 </tr>
               )
             })}
@@ -141,6 +179,12 @@ export function CategoryEntityMatrixTable({
                 {fmt(grandTotal.value)}
                 <span className="block text-xs text-muted-foreground font-normal">{grandTotal.count} units</span>
               </td>
+              {showCompare && (
+                <td className="px-3 py-2 text-right tabular-nums">
+                  <GrowthBadge pct={growthPct(grandTotal.value, compareGrandTotal)} />
+                  <span className="block text-xs text-muted-foreground font-normal">{fmt(compareGrandTotal)}</span>
+                </td>
+              )}
             </tr>
           </tbody>
         </table>

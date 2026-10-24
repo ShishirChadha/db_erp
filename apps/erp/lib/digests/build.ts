@@ -6,7 +6,7 @@
 // their chosen `blocks` (see lib/digests/blocks.ts) -- fetches for an unselected
 // block are skipped entirely rather than fetched and discarded.
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { yesterday, previousWeek, previousFortnight, monthToDate, prevPeriod } from '@/lib/reports'
+import { yesterday, previousWeek, previousFortnight, monthToDate, lastMonthToDate, prevPeriod, parseDateStr } from '@/lib/reports'
 import { sanitizeBlocks } from './blocks'
 
 export type DigestPeriod = 'daily' | 'weekly' | 'fortnightly' | 'monthly'
@@ -68,7 +68,13 @@ export function isDueToday(period: DigestPeriod, ref = new Date()): boolean {
 
 export async function buildDigestPayload(period: DigestPeriod, role: DigestRole, requestedBlocks?: string[] | null): Promise<DigestPayload> {
   const { from, to, label } = periodRange(period)
-  const compare = prevPeriod(from, to)
+  // Daily/weekly/fortnightly recap closed, non-calendar-aligned windows, so
+  // prevPeriod()'s equal-length-immediately-preceding window IS the natural
+  // "vs last period" comparison for them. Monthly is month-to-date (a
+  // calendar-aligned window) -- prevPeriod() on it silently becomes "some N
+  // days of last month" instead of "the same days last month", the same bug
+  // fixed on Dashboard/Reports' own MTD comparisons.
+  const compare = period === 'monthly' ? lastMonthToDate(parseDateStr(to)) : prevPeriod(from, to)
   const includeFinancials = role === 'owner'
   const blocks = sanitizeBlocks(requestedBlocks, role)
   const has = (id: string) => blocks.includes(id)

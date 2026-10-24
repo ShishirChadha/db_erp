@@ -20,6 +20,7 @@ const SALES_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories', 'Repair', 'R
 const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
 import {
   toDateStr, monthToDate, last7Days, last15Days, lastMonthFull, fyToDate, prevPeriod,
+  lastMonthToDate, lastYearToDate, parseDateStr,
 } from '@/lib/reports'
 
 // One entry per series/slice. Indices 3 and 4 were both --chart-5, so two
@@ -33,6 +34,10 @@ function fmt(n: number | null | undefined): string {
 function pct(n: number | null | undefined): string {
   if (n === null || n === undefined) return '—'
   return `${n > 0 ? '+' : ''}${n}%`
+}
+function compareLabelFor(compare: { from: string; to: string }): string {
+  const fmtDate = (s: string) => parseDateStr(s).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+  return `${fmtDate(compare.from)} – ${fmtDate(compare.to)}`
 }
 
 type Period = { from: string; to: string; label: string }
@@ -95,7 +100,17 @@ export default function ReportsClient() {
   const allPresets = useMemo(presets, [])
   const [presetKey, setPresetKey] = useState('mtd')
   const period = allPresets[presetKey]
-  const compare = useMemo(() => prevPeriod(period.from, period.to), [period.from, period.to])
+  // "Month to Date"/"FY to Date" are calendar-aligned periods -- comparing them
+  // against prevPeriod()'s arbitrary equal-length-immediately-preceding window
+  // silently becomes "some N days of last month/year", not "the same days last
+  // month/year" the growth % implies. l7/l15/lm have no such calendar analog
+  // (they're already rolling/full windows), so prevPeriod() is the right
+  // comparison for those. See the matching fix on Dashboard -> page.tsx.
+  const compare = useMemo(() => {
+    if (presetKey === 'mtd') return lastMonthToDate(parseDateStr(period.to))
+    if (presetKey === 'fy') return lastYearToDate(parseDateStr(period.to))
+    return prevPeriod(period.from, period.to)
+  }, [presetKey, period.from, period.to])
 
   const [activeTab, setActiveTab] = useState('overview')
   const [kpis, setKpis] = useState<any>(null)
@@ -160,7 +175,7 @@ export default function ReportsClient() {
           <OverviewTab kpis={kpis} timeseries={timeseries} loading={loading} includeFinancials={includeFinancials} />
         </TabsContent>
         <TabsContent value="sales">
-          <SalesTab period={period} active={activeTab === 'sales'} />
+          <SalesTab period={period} compare={compare} active={activeTab === 'sales'} />
         </TabsContent>
         <TabsContent value="profitability">
           <ProfitabilityTab period={period} active={activeTab === 'profitability'} includeFinancials={includeFinancials} cur={cur} />
@@ -169,7 +184,7 @@ export default function ReportsClient() {
           <InventoryTab active={activeTab === 'inventory'} includeFinancials={includeFinancials} />
         </TabsContent>
         <TabsContent value="purchasing">
-          <PurchasingTab period={period} active={activeTab === 'purchasing'} includeFinancials={includeFinancials} />
+          <PurchasingTab period={period} compare={compare} active={activeTab === 'purchasing'} includeFinancials={includeFinancials} />
         </TabsContent>
         <TabsContent value="expenses">
           <ExpensesTab period={period} compare={compare} active={activeTab === 'expenses'} includeFinancials={includeFinancials} />
@@ -263,13 +278,14 @@ function OverviewTab({ kpis, timeseries, loading, includeFinancials }: any) {
 }
 
 // ── Sales ─────────────────────────────────────────────────────────────
-function SalesTab({ period, active }: { period: Period; active: boolean }) {
+function SalesTab({ period, compare, active }: { period: Period; compare: { from: string; to: string }; active: boolean }) {
   const [byBrand, setByBrand] = useState<any[] | null>(null)
   const [byStaff, setByStaff] = useState<any[] | null>(null)
   const [byEntity, setByEntity] = useState<any[] | null>(null)
   const [byType, setByType] = useState<any[] | null>(null)
   const [topCustomers, setTopCustomers] = useState<any[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[] | null>(null)
+  const [matrixCompare, setMatrixCompare] = useState<MatrixRow[] | null>(null)
 
   useEffect(() => {
     if (!active) return
@@ -280,7 +296,8 @@ function SalesTab({ period, active }: { period: Period; active: boolean }) {
     getReport('breakdown', { ...p, dimension: 'sale_type', limit: '5' }).then(setByType)
     getReport('breakdown', { ...p, dimension: 'customer', limit: '10' }).then(setTopCustomers)
     getReport('category_entity_matrix', { ...p, source: 'sales' }).then(setMatrix)
-  }, [active, period.from, period.to])
+    getReport('category_entity_matrix', { from: compare.from, to: compare.to, source: 'sales' }).then(setMatrixCompare)
+  }, [active, period.from, period.to, compare.from, compare.to])
 
   return (
     <div className="space-y-6">
@@ -288,7 +305,10 @@ function SalesTab({ period, active }: { period: Period; active: boolean }) {
         <CardHeader><CardTitle className="text-base">Sales: Value & Count by Entity and Category</CardTitle></CardHeader>
         <CardContent>
           {!matrix ? <p className="text-sm text-muted-foreground">Loading…</p> : (
-            <CategoryEntityMatrixTable title="" rows={matrix} categoryOrder={SALES_CATEGORY_ORDER} />
+            <CategoryEntityMatrixTable
+              title="" rows={matrix} categoryOrder={SALES_CATEGORY_ORDER}
+              compareRows={matrixCompare || undefined} compareLabel={compareLabelFor(compare)}
+            />
           )}
         </CardContent>
       </Card>
@@ -497,15 +517,17 @@ function StatTile({ label, value, sub, warn }: { label: string; value: any; sub?
 }
 
 // ── Purchasing & Vendors ─────────────────────────────────────────────
-function PurchasingTab({ period, active, includeFinancials }: { period: Period; active: boolean; includeFinancials: boolean }) {
+function PurchasingTab({ period, compare, active, includeFinancials }: { period: Period; compare: { from: string; to: string }; active: boolean; includeFinancials: boolean }) {
   const [byVendor, setByVendor] = useState<any[] | null>(null)
   const [matrix, setMatrix] = useState<MatrixRow[] | null>(null)
+  const [matrixCompare, setMatrixCompare] = useState<MatrixRow[] | null>(null)
 
   useEffect(() => {
     if (!active) return
     getReport('breakdown', { from: period.from, to: period.to, dimension: 'vendor', limit: '15' }).then(setByVendor)
     getReport('category_entity_matrix', { from: period.from, to: period.to, source: 'purchases' }).then(setMatrix)
-  }, [active, period.from, period.to])
+    getReport('category_entity_matrix', { from: compare.from, to: compare.to, source: 'purchases' }).then(setMatrixCompare)
+  }, [active, period.from, period.to, compare.from, compare.to])
 
   if (!includeFinancials) return <p className="text-sm text-muted-foreground">Purchasing figures are owner-only.</p>
 
@@ -520,6 +542,8 @@ function PurchasingTab({ period, active, includeFinancials }: { period: Period; 
               subtitle="Repair and Rental don't have their own purchase category — repair parts and rental units are already counted as Accessories/Laptop/Desktop purchases here."
               rows={matrix}
               categoryOrder={PURCHASE_CATEGORY_ORDER}
+              compareRows={matrixCompare || undefined}
+              compareLabel={compareLabelFor(compare)}
             />
           )}
         </CardContent>

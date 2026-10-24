@@ -16,6 +16,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.festival_date = body.festival_date
   }
   if ('is_major' in body) updates.is_major = body.is_major !== false
+  if ('is_staff_calendar' in body) updates.is_staff_calendar = body.is_staff_calendar === true
 
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
 

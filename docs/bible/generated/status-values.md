@@ -221,6 +221,10 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | vendor_payments | amount | vendor_payments_amount_check | `CHECK ((amount > (0)::numeric))` |
 | vendor_payments | payment_account | vendor_payments_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | web_reservations | release_reason | web_reservations_release_reason_check | `CHECK (((release_reason IS NULL) OR (release_reason = ANY (ARRAY['converted'::text, 'expired'::text, 'aborted_sold_out'::text, 'aborted_payment_init'::text]))))` |
+| web_vitals | app | web_vitals_app_check | `CHECK ((app = ANY (ARRAY['web'::text, 'erp'::text])))` |
+| web_vitals | device | web_vitals_device_check | `CHECK ((device = ANY (ARRAY['mobile'::text, 'desktop'::text])))` |
+| web_vitals | metric | web_vitals_metric_check | `CHECK ((metric = ANY (ARRAY['TTFB'::text, 'FCP'::text, 'LCP'::text, 'INP'::text, 'CLS'::text])))` |
+| web_vitals | rating | web_vitals_rating_check | `CHECK ((rating = ANY (ARRAY['good'::text, 'needs-improvement'::text, 'poor'::text])))` |
 | website_payment_settings | card_discount_pct | website_payment_settings_card_discount_pct_check | `CHECK (((card_discount_pct >= (0)::numeric) AND (card_discount_pct <= (100)::numeric)))` |
 | website_payment_settings | cod_handling_fee_pct | website_payment_settings_cod_handling_fee_pct_check | `CHECK (((cod_handling_fee_pct >= (0)::numeric) AND (cod_handling_fee_pct <= (100)::numeric)))` |
 | website_payment_settings | cod_token_amount | website_payment_settings_cod_token_amount_check | `CHECK ((cod_token_amount >= (0)::numeric))` |

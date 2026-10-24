@@ -33,7 +33,7 @@ export async function POST(req: NextRequest) {
   if (!sessionUser || !canEditPage(sessionUser, 'marketing')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
-  const { name, festival_date, is_major } = body
+  const { name, festival_date, is_major, is_staff_calendar } = body
   if (!name || typeof name !== 'string' || !name.trim()) {
     return NextResponse.json({ error: 'name is required' }, { status: 400 })
   }
@@ -43,7 +43,13 @@ export async function POST(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('festival_calendar')
-    .insert({ name: name.trim(), festival_date, is_major: is_major !== false, created_by: sessionUser.id })
+    .insert({
+      name: name.trim(),
+      festival_date,
+      is_major: is_major !== false,
+      is_staff_calendar: is_staff_calendar === true,
+      created_by: sessionUser.id,
+    })
     .select('*')
     .single()
 

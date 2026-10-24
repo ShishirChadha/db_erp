@@ -5,7 +5,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getDailyQuote } from '@/lib/daily-quote'
 import { PunchWidget } from '@/components/PunchWidget'
 import { BusinessUpdatesManager } from '@/components/BusinessUpdatesManager'
-import { Megaphone, Quote, IdCard } from 'lucide-react'
+import { Megaphone, Quote, IdCard, CalendarDays } from 'lucide-react'
 
 // The universal landing page for every signed-in profile -- deliberately the
 // ONE page in this app with no RequirePageAccess wrapper and no pageKey at
@@ -18,7 +18,8 @@ export default async function HomePage() {
   const sessionUser = await getLayoutSessionUser()
   if (!sessionUser) return null
 
-  const [staff, updatesRes] = await Promise.all([
+  const todayStr = new Date().toISOString().slice(0, 10)
+  const [staff, updatesRes, holidaysRes] = await Promise.all([
     getMyStaffRow(sessionUser.userId),
     supabaseAdmin
       .from('business_updates')
@@ -26,9 +27,18 @@ export default async function HomePage() {
       .eq('is_active', true)
       .order('created_at', { ascending: false })
       .limit(10),
+    supabaseAdmin
+      .from('festival_calendar')
+      .select('id, name, festival_date')
+      .eq('is_deleted', false)
+      .eq('is_staff_calendar', true)
+      .gte('festival_date', todayStr)
+      .order('festival_date', { ascending: true })
+      .limit(6),
   ])
 
   const updates = updatesRes.data || []
+  const holidays = holidaysRes.data || []
   const quote = getDailyQuote()
 
   return (
@@ -67,6 +77,30 @@ export default async function HomePage() {
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
+            <CalendarDays className="h-4 w-4" /> Upcoming holidays
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {holidays.length > 0 ? (
+            <ul className="space-y-1.5">
+              {holidays.map(h => (
+                <li key={h.id} className="flex items-center justify-between text-sm">
+                  <span>{h.name}</span>
+                  <span className="text-muted-foreground tabular-nums">
+                    {new Date(`${h.festival_date}T00:00:00`).toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">No upcoming holidays recorded.</p>
+          )}
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-2">

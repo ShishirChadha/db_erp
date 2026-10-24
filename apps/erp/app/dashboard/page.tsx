@@ -4,7 +4,7 @@ import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck, Ca
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { getLayoutSessionUser } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { monthToDate, lastMonthToDate, fyToDate, lastYearToDate, prevPeriod } from '@/lib/reports'
+import { monthToDate, lastMonthToDate, fyToDate, lastYearToDate, parseDateStr } from '@/lib/reports'
 import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
 import { PunchWidget } from '@/components/PunchWidget'
 
@@ -40,18 +40,36 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const includeFinancials = sessionUser?.role === 'owner'
   const presetKey = PRESETS[preset] ? preset : 'mtd'
   const { from, to } = PRESETS[presetKey].range()
-  const compare = prevPeriod(from, to)
+  const toRef = parseDateStr(to)
+  // The "vs prior period" badge must compare against the SAME window the LMT/
+  // LYTD tabs show, not an arbitrary equal-length immediately-preceding slice
+  // (prevPeriod()) -- otherwise MTD's badge and the LMT tab's own total
+  // disagree on what "last month" even means, which is confusing rather than
+  // informative. LMT/LYTD are themselves reference periods, so they show no
+  // badge at all instead of comparing against a third window nobody asked for.
+  const compare = presetKey === 'mtd' ? lastMonthToDate(toRef)
+    : presetKey === 'ytd' ? lastYearToDate(toRef)
+    : null
 
-  const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes, salesMatrixRes, purchaseMatrixRes] = await Promise.all([
+  const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes, salesMatrixRes, purchaseMatrixRes, compareMatrixRes, comparePurchaseMatrixRes] = await Promise.all([
     supabaseAdmin.rpc('report_kpis', {
-      p_from: from, p_to: to, p_compare_from: compare.from, p_compare_to: compare.to, p_include_financials: includeFinancials,
+      p_from: from, p_to: to, p_compare_from: compare?.from ?? null, p_compare_to: compare?.to ?? null, p_include_financials: includeFinancials,
     }),
-    supabaseAdmin.rpc('report_purchase_kpis', { p_from: from, p_to: to }),
+    supabaseAdmin.rpc('report_purchase_kpis', { p_from: from, p_to: to, p_compare_from: compare?.from ?? null, p_compare_to: compare?.to ?? null }),
     supabaseAdmin.rpc('report_expenses', { p_from: from, p_to: to, p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_inventory', { p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_rentals', { p_from: from, p_to: to }),
     supabaseAdmin.rpc('report_category_entity_matrix', { p_from: from, p_to: to, p_source: 'sales', p_include_financials: includeFinancials }),
     supabaseAdmin.rpc('report_category_entity_matrix', { p_from: from, p_to: to, p_source: 'purchases', p_include_financials: includeFinancials }),
+    // Comparison-period matrices for the same "vs prior period" window as the
+    // tiles above -- skipped entirely on LMT/LYTD (compare === null, they're
+    // reference periods themselves), not fetched-and-discarded.
+    compare
+      ? supabaseAdmin.rpc('report_category_entity_matrix', { p_from: compare.from, p_to: compare.to, p_source: 'sales', p_include_financials: includeFinancials })
+      : Promise.resolve({ data: null }),
+    compare
+      ? supabaseAdmin.rpc('report_category_entity_matrix', { p_from: compare.from, p_to: compare.to, p_source: 'purchases', p_include_financials: includeFinancials })
+      : Promise.resolve({ data: null }),
   ])
 
   const kpis = kpisRes.data?.current
@@ -62,8 +80,17 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   const rentals = rentalsRes.data
   const salesMatrix = (salesMatrixRes.data || []) as MatrixRow[]
   const purchaseMatrix = (purchaseMatrixRes.data || []) as MatrixRow[]
+  const salesMatrixCompare = compareMatrixRes.data ? ((compareMatrixRes.data || []) as MatrixRow[]) : undefined
+  const purchaseMatrixCompare = comparePurchaseMatrixRes.data ? ((comparePurchaseMatrixRes.data || []) as MatrixRow[]) : undefined
+  const compareLabel = compare
+    ? `${new Date(compare.from).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })} – ${new Date(compare.to).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
+    : undefined
 
-  const purchaseGrowth = purchase?.prev_value > 0
+  // compare === null on the LMT/LYTD tabs (they're reference periods themselves,
+  // see above) -- without this guard, report_purchase_kpis would fall back to its
+  // own equal-length-preceding-window default and show a badge the Sold-value
+  // tile doesn't, comparing against a window nobody selected.
+  const purchaseGrowth = compare && purchase?.prev_value > 0
     ? Math.round(((purchase.value - purchase.prev_value) / purchase.prev_value) * 1000) / 10
     : null
 
@@ -182,6 +209,8 @@ async function DashboardPageContent({ preset }: { preset: string }) {
           title="Sales: Value & Count by Entity and Category"
           rows={salesMatrix}
           categoryOrder={SALES_CATEGORY_ORDER}
+          compareRows={salesMatrixCompare}
+          compareLabel={compareLabel}
         />
         {includeFinancials && (
           <CategoryEntityMatrixTable
@@ -189,6 +218,8 @@ async function DashboardPageContent({ preset }: { preset: string }) {
             subtitle="Repair/Rental have no purchase category of their own — those purchases already show up as Accessories/Laptop/Desktop."
             rows={purchaseMatrix}
             categoryOrder={PURCHASE_CATEGORY_ORDER}
+            compareRows={purchaseMatrixCompare}
+            compareLabel={compareLabel}
           />
         )}
       </div>

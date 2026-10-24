@@ -35,7 +35,7 @@ interface MarketingAsset {
 }
 interface GeneratedProduct { id: string; primary_image_path: string | null }
 interface FestivalEntry {
-  id: string; name: string; festival_date: string; is_major: boolean
+  id: string; name: string; festival_date: string; is_major: boolean; is_staff_calendar: boolean
 }
 
 const CARD_FORMATS = [
@@ -579,6 +579,7 @@ function FestivalCalendarTab() {
   const [name, setName] = useState('')
   const [date, setDate] = useState('')
   const [isMajor, setIsMajor] = useState(true)
+  const [isStaffCalendar, setIsStaffCalendar] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -626,15 +627,20 @@ function FestivalCalendarTab() {
 
   const { run: add, pending: adding } = useAsyncAction(async () => {
     if (!name.trim() || !date) { toast.error('Name and date are required'); return }
-    const res = await apiFetch('/api/marketing/festivals', { method: 'POST', body: JSON.stringify({ name, festival_date: date, is_major: isMajor }) })
+    const res = await apiFetch('/api/marketing/festivals', { method: 'POST', body: JSON.stringify({ name, festival_date: date, is_major: isMajor, is_staff_calendar: isStaffCalendar }) })
     if (!res.ok) { const d = await res.json().catch(() => ({})); toast.error(d.error || 'Failed to add'); return }
-    setName(''); setDate(''); setIsMajor(true)
+    setName(''); setDate(''); setIsMajor(true); setIsStaffCalendar(false)
     load()
   })
 
   const remove = async (id: string) => {
     if (!confirm('Remove this festival from the calendar?')) return
     await apiFetch(`/api/marketing/festivals/${id}`, { method: 'DELETE' })
+    load()
+  }
+
+  const toggleStaffCalendar = async (f: FestivalEntry) => {
+    await apiFetch(`/api/marketing/festivals/${f.id}`, { method: 'PATCH', body: JSON.stringify({ is_staff_calendar: !f.is_staff_calendar }) })
     load()
   }
 
@@ -675,6 +681,18 @@ function FestivalCalendarTab() {
                         <span className={f.is_major ? 'font-medium truncate' : 'truncate'}>{f.name}</span>
                         {!f.is_major && <span className="text-[10px] text-muted-foreground border rounded-full px-1.5 py-0.5 shrink-0">minor</span>}
                         {isNext && <span className="text-[10px] font-medium text-primary border border-primary/40 rounded-full px-1.5 py-0.5 shrink-0">Next up</span>}
+                        {canEditPage('marketing') ? (
+                          <button
+                            type="button"
+                            onClick={() => toggleStaffCalendar(f)}
+                            title="Toggle whether this shows on the Home tab's staff holiday list"
+                            className={`text-[10px] rounded-full px-1.5 py-0.5 shrink-0 border ${f.is_staff_calendar ? 'text-primary border-primary/40 bg-primary/10' : 'text-muted-foreground border-border'}`}
+                          >
+                            Staff calendar
+                          </button>
+                        ) : f.is_staff_calendar ? (
+                          <span className="text-[10px] text-primary border border-primary/40 bg-primary/10 rounded-full px-1.5 py-0.5 shrink-0">Staff calendar</span>
+                        ) : null}
                       </div>
                       {canEditPage('marketing') && (
                         <button type="button" onClick={() => remove(f.id)} className="text-destructive shrink-0" title="Remove">
@@ -707,6 +725,9 @@ function FestivalCalendarTab() {
               </div>
               <label className="flex items-center gap-1.5 text-xs pb-2">
                 <Checkbox checked={isMajor} onCheckedChange={(v) => setIsMajor(v === true)} /> Major
+              </label>
+              <label className="flex items-center gap-1.5 text-xs pb-2">
+                <Checkbox checked={isStaffCalendar} onCheckedChange={(v) => setIsStaffCalendar(v === true)} /> Staff calendar
               </label>
               <Button type="button" className="h-8" disabled={adding} onClick={() => add()}>
                 {adding ? <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : null} Add
