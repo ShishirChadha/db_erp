@@ -16,6 +16,7 @@ import ActivityCommentThread from '@/components/ActivityCommentThread';
 import ActivityDescriptionTable, { DescriptionTableData, tableFromPastedText } from '@/components/ActivityDescriptionTable';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SimpleModal } from '@/components/SimpleModal';
+import { SearchableSelect } from '@/components/SearchableSelect';
 
 // ---------- Type definitions ----------
 type Priority = 'low' | 'normal' | 'high' | 'urgent';
@@ -1040,7 +1041,22 @@ export default function ActivityList({ onUpdate }: { onUpdate: () => void }) {
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Filter by tags</label>
-            <input type="text" placeholder="Tag name" value={tagFilter} onChange={e => setTagFilter(e.target.value)} className="border rounded p-2 w-40" />
+            <div className="flex gap-1 w-48">
+              <div className="flex-1">
+                <SearchableSelect
+                  options={tagOptions}
+                  value={tagFilter}
+                  onChange={setTagFilter}
+                  placeholder="All tags"
+                  allowOther={false}
+                />
+              </div>
+              {tagFilter && (
+                <button type="button" onClick={() => setTagFilter('')} title="Clear tag filter" className="px-2 border rounded text-muted-foreground hover:text-foreground">
+                  ×
+                </button>
+              )}
+            </div>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">Status</label>
