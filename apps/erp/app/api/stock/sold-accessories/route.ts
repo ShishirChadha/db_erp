@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('sales')
     .select(
-      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, created_at',
+      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, created_at',
       pagination ? { count: 'exact' } : undefined
     )
     .not('accessory_id', 'is', null)
@@ -102,6 +102,8 @@ export async function GET(req: NextRequest) {
       sku_description: sku?.sku_description || '',
       category: sku?.category || null,
       accessory_quantity: s.accessory_quantity,
+      sale_base_price: s.sale_base_price,
+      sale_gst: s.sale_gst,
       sale_total: s.sale_total,
       payment_status: s.payment_status,
       amount_paid: s.amount_paid,

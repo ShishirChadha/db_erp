@@ -421,6 +421,18 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           )}
         </Field>
         {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
+        <Field label="Price">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
+            <span>Base: <span className="tabular-nums font-medium">₹{(sale.sale_base_price ?? 0).toFixed(2)}</span></span>
+            <span>
+              GST:{" "}
+              <span className="tabular-nums font-medium">
+                {sale.payment_account === "Cash" || sale.payment_account === "Techtenth" ? "-" : `₹${(sale.sale_gst ?? 0).toFixed(2)}`}
+              </span>
+            </span>
+            <span>Total: <span className="tabular-nums font-medium">₹{(sale.sale_total ?? 0).toFixed(2)}</span></span>
+          </div>
+        </Field>
         <Field label="E-way Bill"><EwayBillField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
         {sale.bundle_parent && (
           <Field label="Sold With">{sale.bundle_parent.label}</Field>

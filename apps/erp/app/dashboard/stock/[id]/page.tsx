@@ -93,6 +93,8 @@ interface AssetDetail {
   sale_id: string | null
   sale_summary: {
     customer_name: string | null
+    sale_base_price: number | null
+    sale_gst: number | null
     sale_total: number | null
     payment_status: string | null
     amount_paid: number | null
@@ -852,7 +854,20 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
               {asset.sale_summary ? (
                 <div className="mt-1">
                   <Field label="Customer">{asset.sale_summary.customer_name || '—'}</Field>
-                  <Field label="Total">₹{(asset.sale_summary.sale_total ?? 0).toFixed(2)}</Field>
+                  <Field label="Price">
+                    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
+                      <span>Base: <span className="tabular-nums font-medium">₹{(asset.sale_summary.sale_base_price ?? 0).toFixed(2)}</span></span>
+                      <span>
+                        GST:{" "}
+                        <span className="tabular-nums font-medium">
+                          {asset.sale_summary.payment_account === "Cash" || asset.sale_summary.payment_account === "Techtenth"
+                            ? "-"
+                            : `₹${(asset.sale_summary.sale_gst ?? 0).toFixed(2)}`}
+                        </span>
+                      </span>
+                      <span>Total: <span className="tabular-nums font-medium">₹{(asset.sale_summary.sale_total ?? 0).toFixed(2)}</span></span>
+                    </div>
+                  </Field>
                   <Field label="Payment Status">
                     {asset.sale_summary.payment_status ? (
                       <span className="capitalize">

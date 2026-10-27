@@ -95,6 +95,8 @@ interface SoldAccessoryRow {
   full_sku_code: string
   sku_description: string | null
   accessory_quantity: number
+  sale_base_price?: number | null
+  sale_gst?: number | null
   sale_total: number
   payment_status: string
   amount_paid: number
@@ -1386,7 +1388,18 @@ function SoldAccessoryDetailPane({ sale, canEdit, onBack, onEdit, onCustomerUpda
           )}
         </Field>
         <Field label="Quantity">{sale.accessory_quantity}</Field>
-        <Field label="Sale Total">₹{sale.sale_total?.toFixed(2)}</Field>
+        <Field label="Price">
+          <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
+            <span>Base: <span className="tabular-nums font-medium">₹{(sale.sale_base_price ?? 0).toFixed(2)}</span></span>
+            <span>
+              GST:{" "}
+              <span className="tabular-nums font-medium">
+                {sale.payment_account === "Cash" || sale.payment_account === "Techtenth" ? "-" : `₹${(sale.sale_gst ?? 0).toFixed(2)}`}
+              </span>
+            </span>
+            <span>Total: <span className="tabular-nums font-medium">₹{(sale.sale_total ?? 0).toFixed(2)}</span></span>
+          </div>
+        </Field>
         <Field label="Payment Status">
           <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
         </Field>

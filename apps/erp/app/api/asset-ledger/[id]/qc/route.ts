@@ -104,6 +104,8 @@ export async function GET(
   let saleId: string | null = null
   let saleSummary: {
     customer_name: string | null
+    sale_base_price: number | null
+    sale_gst: number | null
     sale_total: number | null
     payment_status: string | null
     amount_paid: number | null
@@ -114,7 +116,7 @@ export async function GET(
   if (['sold', 'invoiced', 'returned'].includes(asset.status)) {
     const { data: saleRow } = await supabaseAdmin
       .from('sales')
-      .select('id, customer_name, sale_total, payment_status, amount_paid, payment_account, bundled_accessories')
+      .select('id, customer_name, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, bundled_accessories')
       .eq('asset_ledger_id', id)
       .eq('is_deleted', false)
       .maybeSingle()
@@ -134,6 +136,8 @@ export async function GET(
       const bundledSkuById = new Map((bundledSkus || []).map((s: any) => [s.id, s]))
       saleSummary = {
         customer_name: saleRow.customer_name,
+        sale_base_price: saleRow.sale_base_price,
+        sale_gst: saleRow.sale_gst,
         sale_total: saleRow.sale_total,
         payment_status: saleRow.payment_status,
         amount_paid: saleRow.amount_paid,
