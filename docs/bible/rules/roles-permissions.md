@@ -12,7 +12,8 @@ sources:
   - apps/erp/components/RequirePageAccess.tsx
   - apps/erp/app/dashboard/home/page.tsx
   - apps/erp/lib/leads.ts
-updated: 2026-10-23
+  - apps/erp/app/api/users/route.ts
+updated: 2026-10-27
 ---
 
 ## The three roles
@@ -188,35 +189,42 @@ and manage every Set regardless of assignment, via the same
 `isCurrentHolderOrManager()` (`apps/erp/lib/leads.ts`) is the one place this
 check lives, called by every route under `/api/lead-sets` and `/api/leads`.
 
-So "give Sanjana the Leads module" is two or three different things, and all
-of them matter:
+So "give Sanjana the Leads module" is really two things now:
 
 1. **Grant the page** — Settings → Users & Access → tick `leads` for
-   Sanjana's account, same as any other page. This alone is enough for her
-   to **view** a Set assigned to her and **add a new lead to it**
-   (`POST /api/leads` checks `hasPageAccess`, not `canEditPage` — see below).
-2. **Grant edit, separately, if she should also edit/delete leads, log
-   remarks, set follow-up dates, or convert a lead to a customer** — tick the
-   "Can edit" box too. View and edit are independently grantable here, same
-   as everywhere else, but Leads is the one module (so far) where an owner
-   has explicitly wanted the narrower "can add, can't edit" split.
-3. **Assign her a Set** — granting the page alone shows her an empty list.
+   Sanjana's account, same as any other page. There is no separate "Can edit"
+   checkbox for Leads any more (see below) — this view-access tick is the
+   whole grant.
+2. **Assign her a Set** — granting the page alone shows her an empty list.
    She needs at least one Lead Set actually assigned to her
    (`current_assignee_id`), either because she uploaded/created it herself
-   (auto-assigns to the creator) or because a manager/owner reassigned an
-   existing Set to her from the Leads page.
+   (auto-assigns to the creator), a manager/owner reassigned an existing Set
+   to her, or a manager/owner forked her a working copy of a master Set.
 
-**Adding a single lead is deliberately the one write action gated on view
-access alone, not the edit grant** (2026-10-13) — the same shape as the
+**Leads is the one module (so far) with no edit grant at all (2026-10-27).**
+Every per-lead and per-Set mutation route (`PATCH`/`POST /api/leads`,
+`POST`/`PATCH /api/lead-sets`, notes, convert-to-customer) checks
+`hasPageAccess(sessionUser, 'leads')` plus `isCurrentHolderOrManager()` — never
+`canEditPage`. Holding a Set (being its `current_assignee_id`, or being
+manager/owner) is what grants edit and add rights on it; `'leads'` was removed
+from `EDITABLE_PAGE_KEYS` in `app/api/users/route.ts` /
+`app/api/users/[id]/route.ts` / `UserManager.tsx` because the checkbox would
+otherwise do nothing. This generalizes what started as a narrower 2026-10-13
+carve-out (single-lead-add only, gated on view access alone, same shape as the
 accessory-vendor-creation exception in **business-rules**: creating something
-new is lower-stakes than editing or deleting what's already there. Every
-other mutation in this module (`PATCH`/`DELETE` on a lead, notes, convert-to-
-customer, Set rename/delete) still requires the edit grant on top of being
-the Set's current holder.
+new is lower-stakes than editing what's already there) to the whole module —
+the owner's own framing for it was "that user can edit/add but no delete".
 
-**Reassigning a Set is manager-or-above; cloning it (a fresh copy with no
-history) is owner-only.** This is one notch stricter than the plain
-page-edit grant most other modules use for their day-to-day actions —
-reassignment is the specific lever the owner asked for control over, since
-it decides who can see a batch of contact data, not just who can edit a
-record. See **leads** for the transfer-vs-clone distinction itself.
+**Delete is the one action pulled the other way.** `DELETE /api/leads/[id]`
+and `DELETE /api/lead-sets/[id]` check `isManagerOrAbove(sessionUser)` alone,
+with no holder exception — an employee holding a Set can edit/add on it
+freely, but can never delete from it.
+
+**Reassigning an in-progress working copy (transfer-with-history), assigning
+a new working copy from a master, and merging a working copy's changes back
+are all manager-or-above; cloning a Set (a fresh, permanently disconnected
+copy) is owner-only.** This is one notch stricter than the "holding the Set is
+enough" rule above — deciding who gets a copy of a batch of contact data, and
+what gets folded back into the original, is the specific lever the owner
+asked for control over. See **leads** for the master/working-copy model and
+the assign-vs-reassign-vs-clone distinctions.

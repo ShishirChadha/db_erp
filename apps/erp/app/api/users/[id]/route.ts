@@ -15,9 +15,10 @@ const ALLOWED_PAGE_KEYS = [
 // are nav/landing keys with no mutable resource behind them, so they're valid for
 // allowed_pages (visibility) but must never be written to profile_page_actions.
 // 'reports' is also excluded -- it's pure view/analysis, no mutation exists to grant.
+// 'leads' is excluded too (2026-10-27): see app/api/users/route.ts for why.
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance',
 ]
 
 // ---------- PATCH: owner updates role/allowed_pages/is_active/full_name/contact_email/employee_id, and/or resets a password ----------

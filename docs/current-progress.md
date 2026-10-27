@@ -1,6 +1,59 @@
 # Current Progress
 
-Last updated: 2026-10-13 — Leads module follow-up fixes: a real-world CSV with a blank header row crashed the import dialog (Radix Select forbids an empty-string item value), the New Lead Set dialog was clipped on desktop (shadcn's built-in `sm:max-w-sm` beating an unprefixed override), and "Add Lead" is now gated on view access instead of the edit grant so an owner can hand out a narrower "can add, can't edit" right. Prior entry: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS.
+Last updated: 2026-10-27 — Leads module: master/working-copy split, merge-with-dedupe, contact-field editing, delete lockdown. See "Leads: master/working copies, merge, contact-field editing (2026-10-27)" below for full detail. Prior entry: 2026-10-13 — Leads module follow-up fixes: a real-world CSV with a blank header row crashed the import dialog (Radix Select forbids an empty-string item value), the New Lead Set dialog was clipped on desktop (shadcn's built-in `sm:max-w-sm` beating an unprefixed override), and "Add Lead" is now gated on view access instead of the edit grant so an owner can hand out a narrower "can add, can't edit" right. Prior entry: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS.
+
+## Leads: master/working copies, merge, contact-field editing (2026-10-27)
+
+Four real gaps surfaced from using the module day-to-day:
+
+1. **Editing a lead's contact fields (phone/email/address/name/identifier) was
+   impossible anywhere in the UI**, for anyone including the owner — the backend
+   `PATCH /api/leads/[id]` already accepted those fields, but `LeadDetailModal`
+   only ever rendered them as read-only text. Fixed by adding an edit affordance
+   in the modal, wired to the existing route — no backend change needed.
+2. **Assigning a Set handed over the only copy** (Reassign mutates the same
+   rows in place). The owner wanted the opposite: the original/raw data always
+   stays owner-controlled, and each employee works a disposable copy. New: a
+   Set is a **master** by default; `POST /api/lead-sets/[id]/assign`
+   (manager-or-above) forks a **working copy** for a chosen employee
+   (`lead_sets.working_copy_of_set_id`), copying every lead with
+   `source_lead_id`/`source_snapshot` for later diffing — the master itself is
+   never touched. Reassign (transfer-with-history, for handing off an
+   in-progress working copy during staff turnover) is unchanged.
+3. **No way to fold an employee's edits or new referrals back into the
+   original.** New: `GET/POST /api/lead-sets/[id]/merge-preview` and
+   `/merge-commit` (manager-or-above) — a review-then-approve flow (never
+   silent auto-apply). Existing-lead edits are diffed three-way (master's
+   live value / fork-time snapshot / working copy's current value) so a
+   conflict (master changed independently since fork) is flagged rather than
+   silently decided. New referrals get a broadened duplicate check
+   (`findLeadMatches()`, extends the existing phone-only check to email/name)
+   and either land in the master as a new lead or get folded into a matched
+   duplicate (same pick-one-keep-one shape as `customers/merge`, filling only
+   the duplicate's blank fields). New `MergeReviewModal` UI; the Sets list for
+   manager/owner's "All Sets" view now groups each master immediately above
+   its own working copies instead of a shuffled flat list.
+4. **Delete wasn't locked to manager/owner** — it ran on the same edit grant as
+   every other mutation. Given the owner's explicit framing ("that user can
+   edit/add but no delete"), the whole module's edit-grant axis was dropped:
+   every per-lead/per-Set mutation now runs on view access + being the Set's
+   current holder (`isCurrentHolderOrManager`), not `canEditPage` — this also
+   fixes the earlier narrow "Add Lead" carve-out by generalizing it instead of
+   leaving it as a one-off. `DELETE` on a lead or a Set is the one exception
+   pulled the other way: manager/owner only, with no holder exception at all.
+   The now-unused Leads "Can edit" checkbox was removed from Settings → Users
+   & Access.
+
+Migration: `backups/20261027_lead_sets_working_copies.sql` (nullable/backward-
+compatible additions only — every pre-existing Set/lead keeps working
+unchanged as a master with nothing pending to merge). Applied to production
+2026-10-27 (fresh backup first, then the usual SSH+base64+stdin method, then
+`NOTIFY pgrst, 'reload schema';`) — all four new columns, constraints and
+indexes confirmed live.
+
+Bible: `docs/bible/modules/leads.md`, `docs/bible/rules/roles-permissions.md`
+updated. `npm run bible:check` clean (86 chapters). `npx tsc --noEmit -p .`
+and `npx next build` both clean.
 
 2026-10-06 — Leads / Calling Lists module shipped (owner-assignable "Lead Sets" for sales-pitch calling, CSV import with auto-detected column mapping, transfer-with-history vs. fresh-copy clone reassignment, per-lead remarks + follow-up date reusing the Activity Hub's due-date/notification machinery, status and follow-up filters, manual single-lead entry for referrals). Prior entry: 2026-10-03 — Attendance & Leave module shipped (staff roster separate from logins, self-service punch in/out restricted to the office network, supervisor corrections over an append-only punch log, leave request→approve through the Activity Hub, shop holidays on the shared festival calendar, nightly materialize + missing-punch-out nudge). Prior entry: 2026-09-16 — Laptop Rentals module shipped (agreements, per-unit handover/return/buyout, per-agreement billing cycle, security deposits, overdue + billing reminders, rental income reported separately). Prior entry: 2026-09-16 — DB Guide shipped, expanded same-day from 27 to 67 chapters after a real content gap was reported and a full module-by-module audit followed, then "Ask DB" (the ⌘K Q&A palette) was removed entirely in favor of DB Guide as the sole reading surface; see the "DB" internal advisor section below. Prior entry (2026-09-11): Marketing Content Studio, Phase 0/1 (foundations + generation) COMPLETE, plus fourteen rounds of same-week follow-up from real usage. The old P1-P4 "Today's Picks" priority-suggestion engine and the standalone "Product List" tab are both gone -- Today's Picks is now the one filterable, brand-grouped, CPU-tier-sorted, multi-select current-stock browser (Single Product remains separate, for one-item generation with a free-text search picker).
 

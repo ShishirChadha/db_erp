@@ -218,7 +218,7 @@ Live schema snapshot -- 141 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~141 rows (estimate)
+~153 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -248,7 +248,7 @@ Live schema snapshot -- 141 tables. Regenerate with `npm run bible:generate`.
 
 ## activity_assignees
 
-~158 rows (estimate)
+~207 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -512,7 +512,7 @@ Append-only punch-event log. A correction is a new row plus a void on the old on
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~5,837 rows (estimate)
+~5,139 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -960,7 +960,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## expenses
 
-~167 rows (estimate)
+~193 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1524,7 +1524,7 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 
 ## notifications
 
-~1,163 rows (estimate)
+~1,288 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1544,7 +1544,7 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 
 Findings from ops_health_reports. Owner approves/rejects on System Health; the "Apply approved health fixes" routine turns approved code findings into GitHub PRs.
 
-~11 rows (estimate)
+~20 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1676,7 +1676,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## product_images
 
-~246 rows (estimate)
+~249 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2071,7 +2071,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## repair_jobs
 
-~85 rows (estimate)
+~111 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2529,7 +2529,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~29,501 rows (estimate)
+~33,841 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2954,7 +2954,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summarised by ops_web_vitals_summary() for the daily health report. 30-day retention.
 
-~334 rows (estimate)
+~993 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2970,7 +2970,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~3,257 rows (estimate)
+~3,411 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

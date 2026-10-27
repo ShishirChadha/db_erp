@@ -10,7 +10,7 @@ import BulkImportDialog from '@/components/BulkImportDialog'
 import { SimpleModal } from '@/components/SimpleModal'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Pagination } from '@/components/Pagination'
-import { LEAD_SET_STATUS_TONES } from '@/lib/status-styles'
+import { LEAD_SET_STATUS_TONES, LEAD_STATUS_TONES } from '@/lib/status-styles'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -31,6 +31,7 @@ interface LeadSet {
   current_assignee_id: string | null
   assignee_name: string | null
   cloned_from_set_id: string | null
+  working_copy_of_set_id: string | null
   created_at: string
   counts: { total: number; worked: number; converted: number }
 }
@@ -72,9 +73,10 @@ function followUpTone(dateStr: string | null): 'danger' | 'warning' | 'info' | '
 interface AssignableUser { id: string; full_name: string | null; role: string }
 
 function SetsTable({
-  sets, loading, onOpen, onReassign, onClone, onRename, onDelete, isManagerOrAbove,
+  sets, loading, onOpen, onAssign, onMerge, onReassign, onClone, onRename, onDelete, isManagerOrAbove,
 }: {
   sets: LeadSet[]; loading: boolean; onOpen: (s: LeadSet) => void
+  onAssign: (s: LeadSet) => void; onMerge: (s: LeadSet) => void
   onReassign: (s: LeadSet) => void; onClone: (s: LeadSet) => void
   onRename: (s: LeadSet) => void; onDelete: (s: LeadSet) => void
   isManagerOrAbove: boolean
@@ -104,6 +106,7 @@ function SetsTable({
                 <td className="p-2">
                   <button className="font-medium text-left hover:underline" onClick={() => onOpen(s)}>{s.name}</button>
                   {s.cloned_from_set_id && <Badge variant="outline" className="ml-2 text-xs">fresh copy</Badge>}
+                  {s.working_copy_of_set_id && <Badge variant="outline" className="ml-2 text-xs">working copy</Badge>}
                   {s.description && <div className="text-xs text-muted-foreground">{s.description}</div>}
                 </td>
                 <td className="p-2">{s.assignee_name || <span className="text-muted-foreground">Unassigned</span>}</td>
@@ -113,9 +116,11 @@ function SetsTable({
                 <td className="p-2 text-right whitespace-nowrap">
                   <Button variant="link" size="sm" onClick={() => onOpen(s)}>Open</Button>
                   <Button variant="link" size="sm" onClick={() => onRename(s)}>Rename</Button>
+                  {isManagerOrAbove && <Button variant="link" size="sm" onClick={() => onAssign(s)}>Assign copy</Button>}
+                  {isManagerOrAbove && s.working_copy_of_set_id && <Button variant="link" size="sm" onClick={() => onMerge(s)}>Merge to master</Button>}
                   {isManagerOrAbove && <Button variant="link" size="sm" onClick={() => onReassign(s)}>Reassign</Button>}
                   {isManagerOrAbove && <Button variant="link" size="sm" onClick={() => onClone(s)}>Clone fresh</Button>}
-                  <Button variant="link" size="sm" className="text-destructive" onClick={() => onDelete(s)}>Delete</Button>
+                  {isManagerOrAbove && <Button variant="link" size="sm" className="text-destructive" onClick={() => onDelete(s)}>Delete</Button>}
                 </td>
               </tr>
             ))}
@@ -130,6 +135,7 @@ function SetsTable({
               <div>
                 <div className="text-xs text-muted-foreground tabular-nums">{new Date(s.created_at).toLocaleDateString()}</div>
                 <button className="font-medium text-left hover:underline" onClick={() => onOpen(s)}>{s.name}</button>
+                {s.working_copy_of_set_id && <Badge variant="outline" className="ml-2 text-xs">working copy</Badge>}
               </div>
               <StatusBadge tone={LEAD_SET_STATUS_TONES[s.status] || 'neutral'}>{s.status}</StatusBadge>
             </div>
@@ -138,9 +144,11 @@ function SetsTable({
             <div className="flex gap-2 pt-1 flex-wrap">
               <Button size="sm" variant="outline" onClick={() => onOpen(s)}>Open</Button>
               <Button size="sm" variant="outline" onClick={() => onRename(s)}>Rename</Button>
+              {isManagerOrAbove && <Button size="sm" variant="outline" onClick={() => onAssign(s)}>Assign copy</Button>}
+              {isManagerOrAbove && s.working_copy_of_set_id && <Button size="sm" variant="outline" onClick={() => onMerge(s)}>Merge to master</Button>}
               {isManagerOrAbove && <Button size="sm" variant="outline" onClick={() => onReassign(s)}>Reassign</Button>}
               {isManagerOrAbove && <Button size="sm" variant="outline" onClick={() => onClone(s)}>Clone fresh</Button>}
-              <Button size="sm" variant="outline" className="text-destructive" onClick={() => onDelete(s)}>Delete</Button>
+              {isManagerOrAbove && <Button size="sm" variant="outline" className="text-destructive" onClick={() => onDelete(s)}>Delete</Button>}
             </div>
           </div>
         ))}
@@ -150,25 +158,15 @@ function SetsTable({
 }
 
 function LeadRow({
-  lead, statusOptions, onUpdate, onOpenDetail, variant,
+  lead, onOpenDetail, variant,
 }: {
-  lead: Lead; statusOptions: string[]; onUpdate: (patch: Partial<Lead>) => void
-  onOpenDetail: () => void; variant: 'table' | 'card'
+  lead: Lead; onOpenDetail: () => void; variant: 'table' | 'card'
 }) {
-  const { run: setStatus, pending } = useAsyncAction(async (newStatus: string) => {
-    const res = await apiFetch(`/api/leads/${lead.id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
-    if (res.ok) onUpdate({ status: newStatus })
-    else toast.error('Failed to update status.')
-  })
-
-  const statusControl = (
-    <Select value={lead.status} onValueChange={(v) => setStatus(v)} disabled={pending}>
-      <SelectTrigger className="h-8 w-[160px]"><SelectValue /></SelectTrigger>
-      <SelectContent>
-        {statusOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
-      </SelectContent>
-    </Select>
-  )
+  // Read-only here on purpose: status is now only changed inside the lead
+  // detail view (LeadDetailModal), right alongside remarks/follow-up, so the
+  // list always reflects whatever was last set from inside -- no second,
+  // separate place that can drift out of sync with it.
+  const statusBadge = <StatusBadge tone={LEAD_STATUS_TONES[lead.status] || 'neutral'}>{lead.status}</StatusBadge>
 
   const followUpBadge = lead.follow_up_date && (
     <StatusBadge tone={followUpTone(lead.follow_up_date)}>
@@ -189,7 +187,7 @@ function LeadRow({
         {lead.address && <div className="flex items-center gap-1 text-sm text-muted-foreground"><MapPin className="h-3 w-3" />{lead.address}</div>}
         {followUpBadge && <div>{followUpBadge}</div>}
         {lead.last_note && <p className="text-xs text-muted-foreground truncate">Last remark: {lead.last_note}</p>}
-        <div className="pt-1">{statusControl}</div>
+        <div className="pt-1">{statusBadge}</div>
       </div>
     )
   }
@@ -204,7 +202,7 @@ function LeadRow({
       <td className="p-2">{lead.external_identifier || '-'}</td>
       <td className="p-2 max-w-[220px] truncate text-muted-foreground" title={lead.last_note || ''}>{lead.last_note || '-'}</td>
       <td className="p-2">{followUpBadge || '-'}</td>
-      <td className="p-2">{statusControl}</td>
+      <td className="p-2">{statusBadge}</td>
       <td className="p-2">{lead.converted_customer_id && <Badge>Converted</Badge>}</td>
     </tr>
   )
@@ -272,11 +270,50 @@ function AddLeadModal({ setId, onClose, onAdded }: { setId: string; onClose: () 
   )
 }
 
-function LeadDetailModal({ lead, onClose, onUpdated }: { lead: Lead; onClose: () => void; onUpdated: (patch: Partial<Lead>) => void }) {
+function LeadDetailModal({ lead, statusOptions, onClose, onUpdated }: { lead: Lead; statusOptions: string[]; onClose: () => void; onUpdated: (patch: Partial<Lead>) => void }) {
   const [comments, setComments] = useState<{ id: string; author_name: string; body: string; created_at: string }[]>([])
   const [loadingThread, setLoadingThread] = useState(true)
   const [noteText, setNoteText] = useState('')
   const [followUpDate, setFollowUpDate] = useState(lead.follow_up_date || '')
+
+  // Status now changes only from inside this view -- the outer list shows a
+  // read-only badge reflecting whatever was last set here (see LeadRow).
+  const { run: setStatus, pending: settingStatus } = useAsyncAction(async (newStatus: string) => {
+    const res = await apiFetch(`/api/leads/${lead.id}`, { method: 'PATCH', body: JSON.stringify({ status: newStatus }) })
+    if (res.ok) onUpdated({ status: newStatus })
+    else toast.error('Failed to update status.')
+  })
+
+  // Contact-field editing -- the backend (PATCH /api/leads/[id]) already
+  // accepted these fields; nothing in the UI ever called it with them, which
+  // is why "update the phone number" was impossible for anyone, including
+  // the owner. Edit mode is local-only until Save.
+  const [editingContact, setEditingContact] = useState(false)
+  const [editName, setEditName] = useState(lead.name)
+  const [editPhone, setEditPhone] = useState(lead.phone || '')
+  const [editEmail, setEditEmail] = useState(lead.email || '')
+  const [editAddress, setEditAddress] = useState(lead.address || '')
+  const [editIdentifier, setEditIdentifier] = useState(lead.external_identifier || '')
+
+  const { run: saveContact, pending: savingContact } = useAsyncAction(async () => {
+    if (!editName.trim()) { toast.error('Name cannot be empty.'); return }
+    const res = await apiFetch(`/api/leads/${lead.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name: editName.trim(), phone: editPhone.trim() || null, email: editEmail.trim() || null,
+        address: editAddress.trim() || null, external_identifier: editIdentifier.trim() || null,
+      }),
+    })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) {
+      if (json.duplicate_warning) toast.warning('Saved -- note: this phone number already appears in another set.')
+      else toast.success('Contact details updated.')
+      onUpdated({ name: editName.trim(), phone: editPhone.trim() || null, email: editEmail.trim() || null, address: editAddress.trim() || null, external_identifier: editIdentifier.trim() || null })
+      setEditingContact(false)
+    } else {
+      toast.error(json.error || 'Failed to update contact details.')
+    }
+  })
 
   const loadThread = useCallback(async () => {
     setLoadingThread(true)
@@ -332,11 +369,57 @@ function LeadDetailModal({ lead, onClose, onUpdated }: { lead: Lead; onClose: ()
   return (
     <SimpleModal isOpen onClose={onClose} title={lead.name} wide>
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 text-sm">
-          <div><span className="text-muted-foreground">Phone:</span> {lead.phone || '-'}</div>
-          <div><span className="text-muted-foreground">Email:</span> {lead.email || '-'}</div>
-          <div className="col-span-2"><span className="text-muted-foreground">Address:</span> {lead.address || '-'}</div>
-          <div className="col-span-2"><span className="text-muted-foreground">Identifier:</span> {lead.external_identifier || '-'}</div>
+        {editingContact ? (
+          <div className="space-y-2 rounded-md border p-3">
+            <div>
+              <Label className="text-xs">Name</Label>
+              <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="mt-1" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <Label className="text-xs">Phone</Label>
+                <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="mt-1" />
+              </div>
+              <div>
+                <Label className="text-xs">Email</Label>
+                <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="mt-1" />
+              </div>
+            </div>
+            <div>
+              <Label className="text-xs">Address</Label>
+              <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className="mt-1" />
+            </div>
+            <div>
+              <Label className="text-xs">Identifier</Label>
+              <Input value={editIdentifier} onChange={(e) => setEditIdentifier(e.target.value)} className="mt-1" />
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <Button size="sm" variant="outline" onClick={() => {
+                setEditingContact(false)
+                setEditName(lead.name); setEditPhone(lead.phone || ''); setEditEmail(lead.email || '')
+                setEditAddress(lead.address || ''); setEditIdentifier(lead.external_identifier || '')
+              }}>Cancel</Button>
+              <Button size="sm" onClick={() => saveContact()} loading={savingContact}>Save</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 text-sm relative">
+            <div><span className="text-muted-foreground">Phone:</span> {lead.phone || '-'}</div>
+            <div><span className="text-muted-foreground">Email:</span> {lead.email || '-'}</div>
+            <div className="col-span-2"><span className="text-muted-foreground">Address:</span> {lead.address || '-'}</div>
+            <div className="col-span-2"><span className="text-muted-foreground">Identifier:</span> {lead.external_identifier || '-'}</div>
+            <Button size="sm" variant="outline" className="col-span-2 w-fit" onClick={() => setEditingContact(true)}>Edit contact details</Button>
+          </div>
+        )}
+
+        <div className="flex items-center gap-2">
+          <Label className="text-sm whitespace-nowrap">Status</Label>
+          <Select value={lead.status} onValueChange={(v) => setStatus(v)} disabled={settingStatus}>
+            <SelectTrigger className="h-8 w-[200px]"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((o) => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+            </SelectContent>
+          </Select>
         </div>
 
         <div className="rounded-md border p-3 space-y-2 bg-muted/20">
@@ -487,6 +570,158 @@ function CloneModal({ set, onClose, onDone }: { set: LeadSet; onClose: () => voi
   )
 }
 
+function AssignModal({ set, onClose, onDone }: { set: LeadSet; onClose: () => void; onDone: () => void }) {
+  const [users, setUsers] = useState<AssignableUser[]>([])
+  const [assigneeId, setAssigneeId] = useState('')
+  const [name, setName] = useState('')
+  useEffect(() => { apiFetch('/api/lead-sets/assignable-users').then((r) => r.json()).then((d) => setUsers(d || [])) }, [])
+
+  const { run: submit, pending } = useAsyncAction(async () => {
+    if (!assigneeId) return
+    const res = await apiFetch(`/api/lead-sets/${set.id}/assign`, {
+      method: 'POST',
+      body: JSON.stringify({ assignee_id: assigneeId, name: name.trim() || undefined }),
+    })
+    if (res.ok) { toast.success('Working copy created -- the original stays exactly as it is.'); onDone() }
+    else { const j = await res.json().catch(() => ({})); toast.error(j.error || 'Failed to assign a copy.') }
+  })
+
+  return (
+    <SimpleModal isOpen onClose={onClose} title={`Assign a copy of "${set.name}"`}>
+      <div className="space-y-3">
+        <p className="text-sm text-muted-foreground">
+          Creates a new working copy of this Set for the chosen staff member -- the original stays untouched and
+          fully yours. Their edits and any referrals they add can be reviewed and merged back later via
+          "Merge to master".
+        </p>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder={`e.g. "${set.name} — Sanjana"`} />
+        <Select value={assigneeId} onValueChange={setAssigneeId}>
+          <SelectTrigger><SelectValue placeholder="Assign copy to" /></SelectTrigger>
+          <SelectContent>
+            {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.full_name || u.role}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <div className="flex justify-end gap-2">
+          <Button variant="outline" onClick={onClose}>Cancel</Button>
+          <Button onClick={() => submit()} disabled={!assigneeId} loading={pending}>Assign copy</Button>
+        </div>
+      </div>
+    </SimpleModal>
+  )
+}
+
+interface MergeEdit { lead_id: string; source_lead_id: string; master: Record<string, string | null> | null; source: Record<string, string | null> | null; working: Record<string, string | null>; conflict: boolean }
+interface MergeNewLead { lead_id: string; working: Record<string, string | null>; duplicate_candidates: { lead_id: string; set_id: string; set_name: string; matched_on: string }[] }
+
+const CONTACT_FIELD_LABELS: Record<string, string> = { name: 'Name', phone: 'Phone', email: 'Email', address: 'Address', external_identifier: 'Identifier' }
+
+function MergeReviewModal({ set, onClose, onDone }: { set: LeadSet; onClose: () => void; onDone: () => void }) {
+  const [loading, setLoading] = useState(true)
+  const [edits, setEdits] = useState<MergeEdit[]>([])
+  const [newLeads, setNewLeads] = useState<MergeNewLead[]>([])
+  // decisions[lead_id] -- 'apply' | 'skip' for edits; 'new' | 'skip' | a target_lead_id for new leads.
+  const [decisions, setDecisions] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    let cancelled = false
+    apiFetch(`/api/lead-sets/${set.id}/merge-preview`).then((r) => r.json()).then((json) => {
+      if (cancelled) return
+      setEdits(json.edits || [])
+      setNewLeads(json.new_leads || [])
+      const initial: Record<string, string> = {}
+      for (const e of json.edits || []) initial[e.lead_id] = 'apply'
+      for (const n of json.new_leads || []) initial[n.lead_id] = 'new'
+      setDecisions(initial)
+      setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [set.id])
+
+  const { run: commit, pending } = useAsyncAction(async () => {
+    const payload = [
+      ...edits.map((e) => ({ lead_id: e.lead_id, action: decisions[e.lead_id] === 'skip' ? 'skip' as const : 'apply' as const })),
+      ...newLeads.map((n) => {
+        const decision = decisions[n.lead_id]
+        if (decision === 'skip') return { lead_id: n.lead_id, action: 'skip' as const }
+        if (decision && decision !== 'new') return { lead_id: n.lead_id, action: 'merge_into' as const, target_lead_id: decision }
+        return { lead_id: n.lead_id, action: 'apply' as const }
+      }),
+    ]
+    const res = await apiFetch(`/api/lead-sets/${set.id}/merge-commit`, { method: 'POST', body: JSON.stringify({ decisions: payload }) })
+    const json = await res.json().catch(() => ({}))
+    if (res.ok) {
+      toast.success(`Merged: ${json.applied_edits} edit(s), ${json.new_leads_inserted} new lead(s), ${json.merged_as_duplicate} duplicate(s) linked, ${json.skipped} skipped.`)
+      onDone()
+    } else {
+      toast.error(json.error || 'Failed to commit merge.')
+    }
+  })
+
+  const changedFields = (e: MergeEdit) => Object.keys(CONTACT_FIELD_LABELS).filter((f) => (e.working[f] || '') !== (e.source?.[f] || ''))
+
+  return (
+    <SimpleModal isOpen onClose={onClose} title={`Merge "${set.name}" into its master`} wide>
+      {loading ? (
+        <div className="p-8 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+      ) : edits.length === 0 && newLeads.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nothing to review -- this working copy has no pending edits or new leads yet.</p>
+      ) : (
+        <div className="space-y-4">
+          {edits.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">Edited leads ({edits.length})</h3>
+              {edits.map((e) => (
+                <div key={e.lead_id} className="rounded-md border p-2 text-sm space-y-1">
+                  {e.conflict && <Badge variant="outline" className="text-xs text-destructive">master also changed since this copy was made</Badge>}
+                  {changedFields(e).map((f) => (
+                    <div key={f} className="grid grid-cols-3 gap-2">
+                      <span className="text-muted-foreground">{CONTACT_FIELD_LABELS[f]}</span>
+                      <span className="text-muted-foreground line-through">{e.master?.[f] || '-'}</span>
+                      <span className="font-medium">{e.working[f] || '-'}</span>
+                    </div>
+                  ))}
+                  <Select value={decisions[e.lead_id] || 'apply'} onValueChange={(v) => setDecisions((p) => ({ ...p, [e.lead_id]: v }))}>
+                    <SelectTrigger className="h-8 w-56 mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="apply">Apply -- use their edit</SelectItem>
+                      <SelectItem value="skip">Skip -- keep master as is</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+          {newLeads.length > 0 && (
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium">New leads / referrals ({newLeads.length})</h3>
+              {newLeads.map((n) => (
+                <div key={n.lead_id} className="rounded-md border p-2 text-sm space-y-1">
+                  <div className="font-medium">{n.working.name}</div>
+                  <div className="text-muted-foreground">{[n.working.phone, n.working.email, n.working.address].filter(Boolean).join(' · ') || 'No contact details'}</div>
+                  <Select value={decisions[n.lead_id] || 'new'} onValueChange={(v) => setDecisions((p) => ({ ...p, [n.lead_id]: v }))}>
+                    <SelectTrigger className="h-8 w-64 mt-1"><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="new">Add as new to master</SelectItem>
+                      <SelectItem value="skip">Skip -- don't bring in</SelectItem>
+                      {n.duplicate_candidates.map((c) => (
+                        <SelectItem key={c.lead_id} value={c.lead_id}>Duplicate of "{c.set_name}" lead (matched on {c.matched_on})</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={onClose}>Cancel</Button>
+            <Button onClick={() => commit()} loading={pending}>Commit merge</Button>
+          </div>
+        </div>
+      )}
+    </SimpleModal>
+  )
+}
+
 function FromCustomersModal({ onClose, onDone }: { onClose: () => void; onDone: () => void }) {
   const [users, setUsers] = useState<AssignableUser[]>([])
   const [assigneeId, setAssigneeId] = useState('')
@@ -599,6 +834,8 @@ function LeadsPageInner() {
   const [reassignTarget, setReassignTarget] = useState<LeadSet | null>(null)
   const [cloneTarget, setCloneTarget] = useState<LeadSet | null>(null)
   const [renameTarget, setRenameTarget] = useState<LeadSet | null>(null)
+  const [assignTarget, setAssignTarget] = useState<LeadSet | null>(null)
+  const [mergeTarget, setMergeTarget] = useState<LeadSet | null>(null)
 
   const { run: deleteSet } = useAsyncAction(async (s: LeadSet) => {
     if (!confirm(`Delete "${s.name}" and all ${s.counts.total} of its leads? This can't be undone from the UI.`)) return
@@ -627,7 +864,33 @@ function LeadsPageInner() {
       qs.set('assignee_id', userId)
     }
     const res = await apiFetch(`/api/lead-sets?${qs.toString()}`)
-    if (res.ok) setSets(await res.json())
+    if (res.ok) {
+      const data: LeadSet[] = await res.json()
+      // Manager/owner "All Sets": group each master immediately above its own
+      // working copies, so lineage reads top-to-bottom without a separate tree
+      // component -- this is what makes "all Sets assigned to all users"
+      // visible as a single, scannable list rather than a shuffled flat one.
+      if (isManagerOrAbove && scope === 'all') {
+        const byId = new Map(data.map((s) => [s.id, s]))
+        const childrenOf = new Map<string, LeadSet[]>()
+        for (const s of data) {
+          if (s.working_copy_of_set_id && byId.has(s.working_copy_of_set_id)) {
+            const list = childrenOf.get(s.working_copy_of_set_id) || []
+            list.push(s)
+            childrenOf.set(s.working_copy_of_set_id, list)
+          }
+        }
+        const ordered: LeadSet[] = []
+        for (const s of data) {
+          if (s.working_copy_of_set_id && byId.has(s.working_copy_of_set_id)) continue // placed under its master below
+          ordered.push(s)
+          for (const child of childrenOf.get(s.id) || []) ordered.push(child)
+        }
+        setSets(ordered)
+      } else {
+        setSets(data)
+      }
+    }
     setLoadingSets(false)
   }, [isManagerOrAbove, scope, userId])
 
@@ -716,18 +979,14 @@ function LeadsPageInner() {
                 </thead>
                 <tbody>
                   {leads.map((l) => (
-                    <LeadRow key={l.id} lead={l} statusOptions={statusOptions} variant="table"
-                      onOpenDetail={() => setDetailLead(l)}
-                      onUpdate={(patch) => setLeads((prev) => prev.map((x) => x.id === l.id ? { ...x, ...patch } : x))} />
+                    <LeadRow key={l.id} lead={l} variant="table" onOpenDetail={() => setDetailLead(l)} />
                   ))}
                 </tbody>
               </table>
             </div>
             <div className="md:hidden space-y-2">
               {leads.map((l) => (
-                <LeadRow key={l.id} lead={l} statusOptions={statusOptions} variant="card"
-                  onOpenDetail={() => setDetailLead(l)}
-                  onUpdate={(patch) => setLeads((prev) => prev.map((x) => x.id === l.id ? { ...x, ...patch } : x))} />
+                <LeadRow key={l.id} lead={l} variant="card" onOpenDetail={() => setDetailLead(l)} />
               ))}
             </div>
             <Pagination page={page} pageSize={PAGE_SIZE} total={total} onPageChange={setPage} />
@@ -737,6 +996,7 @@ function LeadsPageInner() {
         {detailLead && (
           <LeadDetailModal
             lead={detailLead}
+            statusOptions={statusOptions}
             onClose={() => { setDetailLead(null); router.replace(`/dashboard/leads?set=${activeSetId}`) }}
             onUpdated={(patch) => {
               setLeads((prev) => prev.map((x) => x.id === detailLead.id ? { ...x, ...patch } : x))
@@ -781,6 +1041,7 @@ function LeadsPageInner() {
 
       <SetsTable
         sets={sets} loading={loadingSets} onOpen={openSet}
+        onAssign={setAssignTarget} onMerge={setMergeTarget}
         onReassign={setReassignTarget} onClone={setCloneTarget}
         onRename={setRenameTarget} onDelete={deleteSet}
         isManagerOrAbove={isManagerOrAbove}
@@ -795,6 +1056,8 @@ function LeadsPageInner() {
       {reassignTarget && <ReassignModal set={reassignTarget} onClose={() => setReassignTarget(null)} onDone={() => { setReassignTarget(null); loadSets() }} />}
       {cloneTarget && <CloneModal set={cloneTarget} onClose={() => setCloneTarget(null)} onDone={() => { setCloneTarget(null); loadSets() }} />}
       {renameTarget && <RenameModal set={renameTarget} onClose={() => setRenameTarget(null)} onDone={() => { setRenameTarget(null); loadSets() }} />}
+      {assignTarget && <AssignModal set={assignTarget} onClose={() => setAssignTarget(null)} onDone={() => { setAssignTarget(null); loadSets() }} />}
+      {mergeTarget && <MergeReviewModal set={mergeTarget} onClose={() => setMergeTarget(null)} onDone={() => { setMergeTarget(null); loadSets() }} />}
     </div>
   )
 }

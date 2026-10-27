@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { LEAD_SET_STATUSES, getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
 
@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { data: fullSet } = await supabaseAdmin
     .from('lead_sets')
     .select(`
-      id, name, description, source_type, status, current_assignee_id, cloned_from_set_id,
+      id, name, description, source_type, status, current_assignee_id, cloned_from_set_id, working_copy_of_set_id,
       created_by, created_at, updated_at,
       current_assignee:profiles!lead_sets_current_assignee_id_fkey ( id, full_name )
     `)
@@ -55,11 +55,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 // ---------- PATCH: edit name/description/status ----------
+// Gated on view access + current holder (or manager/owner) -- holding a Set
+// is what grants edit rights on it now, same as the per-lead PATCH route.
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const set = await getLeadSetOrNull(id)
   if (!set) return NextResponse.json({ error: 'Set not found.' }, { status: 404 })
@@ -91,19 +93,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 // ---------- DELETE: soft-delete a whole Set and its leads ----------
-// A mistaken import (wrong columns mapped, wrong file) is the main real-world
-// case -- same posture as the single-lead soft-delete, just scoped to every
-// lead in the Set rather than one row. Same authorization as PATCH: the
-// current holder may clean up their own Set, manager/owner may clean up any.
+// Manager/owner only, full stop -- not the current holder. Deleting an
+// entire Set (and everything an employee may have added to their working
+// copy) is more consequential than a single bad row; same "edit/add but no
+// delete" boundary as the per-lead DELETE route.
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!isManagerOrAbove(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const set = await getLeadSetOrNull(id)
   if (!set) return NextResponse.json({ error: 'Set not found.' }, { status: 404 })
-  if (!isCurrentHolderOrManager(sessionUser, set)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const now = new Date().toISOString()
   const { error: leadsErr } = await supabaseAdmin.from('leads').update({ is_deleted: true, updated_at: now }).eq('set_id', id)

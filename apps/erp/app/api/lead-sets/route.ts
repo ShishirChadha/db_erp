@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, canEditPage, isManagerOrAbove } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
 import { parsePagination } from '@/lib/pagination'
 import { withRetry } from '@/lib/db-retry'
 import { logAuditEvent } from '@/lib/audit-log'
 import { LEAD_SET_SOURCE_TYPES, DEFAULT_LEAD_STATUS, findDuplicatePhones } from '@/lib/leads'
 
 const SELECT = `
-  id, name, description, source_type, status, current_assignee_id, cloned_from_set_id,
+  id, name, description, source_type, status, current_assignee_id, cloned_from_set_id, working_copy_of_set_id,
   created_by, created_at, updated_at,
   current_assignee:profiles!lead_sets_current_assignee_id_fkey ( id, full_name )
 `
@@ -75,13 +75,17 @@ export async function GET(req: NextRequest) {
 }
 
 // ---------- POST: create a Set, from parsed CSV rows or a manual list ----------
-// Any staff with canEditPage('leads') can self-serve import their own list --
-// immediately real, auto-assigned to themselves, no owner approval gate,
+// Any staff with view access to 'leads' can self-serve import their own list
+// -- immediately real, auto-assigned to themselves, no owner approval gate,
 // matching the "stock-in is immediately real" convention used elsewhere.
+// Gated on view access only, not the edit grant: importing becomes your own
+// Set, which you then hold and can already edit/add on by virtue of holding
+// it (see isCurrentHolderOrManager) -- the separate edit grant no longer
+// does anything in this module (see roles-permissions bible chapter).
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid body.' }, { status: 400 })

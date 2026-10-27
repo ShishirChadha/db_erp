@@ -4,14 +4,14 @@ title: Leads / Calling Lists
 kind: module
 audience: [owner, manager, employee]
 routes: ['/dashboard/leads', '/dashboard/leads/[id]']
-keywords: [lead, leads, calling list, lead set, cold calling, pitch, sales pitch, follow up, followup, remark, remarks, telecalling, referral, convert to customer, golden data, lead recycling]
+keywords: [lead, leads, calling list, lead set, cold calling, pitch, sales pitch, follow up, followup, remark, remarks, telecalling, referral, convert to customer, golden data, lead recycling, master set, working copy, merge, dedupe, duplicate]
 sources:
   - apps/erp/app/api/lead-sets/**
   - apps/erp/app/api/leads/**
   - apps/erp/app/dashboard/leads/**
   - apps/erp/lib/leads.ts
   - apps/erp/components/BulkImportDialog.tsx
-updated: 2026-10-13
+updated: 2026-10-27
 ---
 
 ## What this covers
@@ -45,6 +45,73 @@ Every `leads` row belongs to exactly one `lead_sets` row, and `lead_sets.current
 decides who can see and work the whole batch — **not** a per-lead assignee. Reassigning
 a lead individually is deliberately not supported; every real example that shaped this
 module was Set-level ("I gave Sanjana this set, she finished it, now give it to Akash").
+
+## Master Sets vs. working copies (2026-10-27)
+
+The owner wanted the opposite of "handing over the only copy": the original/raw data a
+Set was created from should stay owner-controlled forever, while each employee works a
+disposable copy whose edits and new referrals can later be reviewed and folded back in.
+
+A `lead_sets` row is a **master** by default — every CSV import, `from-customers`
+snapshot, and existing fresh-copy Clone stays exactly as before, unaffected by this. It
+becomes a **working copy** only when forked via `POST /api/lead-sets/[id]/assign`
+(manager-or-above), which sets `working_copy_of_set_id` to point at the master. The
+master itself is never touched by this — every one of its current, non-deleted leads is
+simply copied into new `leads` rows in the working copy, each carrying:
+
+- `source_lead_id` — which master lead it was forked from. `NULL` means the row was added
+  directly inside the working copy (a referral), not forked from anything.
+- `source_snapshot` — the contact fields as they stood at fork time, so a later merge
+  diff only surfaces fields the employee actually touched.
+- `merge_status` — `'pending'` until reviewed; `'merged'` or `'skipped'` after a merge
+  decision. Every pre-existing `leads` row (anything older than this feature) defaults to
+  `'merged'`, since there's nothing to review on data that predates it.
+
+This is deliberately a *different* self-FK from `cloned_from_set_id`: Clone's own
+contract ("fresh copy, never merges back", owner-only, for a brand-new campaign) does not
+change — it keeps its own column and meaning. `working_copy_of_set_id` is the new,
+always-mergeable relationship, and nothing stops the same master being forked to more
+than one employee in parallel (no uniqueness constraint); the owner decides whether
+that's ever actually used.
+
+## Merging a working copy back into its master
+
+`GET /api/lead-sets/[id]/merge-preview` (id = a working copy, manager-or-above) computes
+a review-only diff over every lead still `merge_status='pending'` — it writes nothing.
+For a lead with `source_lead_id`, it's only surfaced if the working copy's current
+contact fields differ from `source_snapshot` (the employee actually touched it); it's
+compared three-way against the master lead's *current* live values too, since another
+working copy may already have merged a different change into the same master lead since
+this one was forked — that case is flagged as a conflict rather than silently decided.
+For a lead with no `source_lead_id` (a referral), it runs a broadened duplicate check —
+`findLeadMatches()` (`lib/leads.ts`, extends `findDuplicatePhones()` to also check email
+and name) — against the entire `leads` table and returns candidate matches.
+
+`POST /api/lead-sets/[id]/merge-commit` takes the owner's per-lead decisions and applies
+them — this module never auto-merges silently. An edited existing lead's fields get
+written onto its master row. A referral with no duplicate is inserted into the **same
+master** it was forked from (not a separate pool). A referral matched to a duplicate is
+folded in the same way `customers/merge` folds a duplicate customer: the existing record
+is kept, and only its currently-blank fields are filled in from the referral — never
+overwritten where the kept record already has a value.
+
+## Edit/add rights now follow holding a Set, not a separate grant (2026-10-27)
+
+Per the owner's own framing — "that user can edit/add but no delete" — every per-lead and
+per-Set mutation route in this module (`PATCH`/`POST /api/leads`, `POST`/`PATCH
+/api/lead-sets`, notes, convert-to-customer) now checks `hasPageAccess(sessionUser,
+'leads')` plus `isCurrentHolderOrManager()` — **not** `canEditPage`. Holding a Set (being
+its `current_assignee_id`, or being manager/owner) is what grants edit and add on it now;
+the separate Leads edit grant does nothing any more and was removed from Settings → Users
+& Access (`EDITABLE_PAGE_KEYS` in `app/api/users/route.ts` /
+`app/api/users/[id]/route.ts` / `UserManager.tsx`). This is a deliberate generalization of
+the narrower 2026-10-13 carve-out that first did this for single-lead-add only — see
+**roles-permissions** for the full reasoning.
+
+Delete is the one exception pulled the *other* way: `DELETE /api/leads/[id]` and
+`DELETE /api/lead-sets/[id]` now check `isManagerOrAbove(sessionUser)` alone, with no
+holder exception at all. An employee holding a Set can edit and add freely on it, but can
+never delete from it, regardless of any grant.
 
 ## Access: own-Set-only by default, same shape as Attendance
 
@@ -139,25 +206,29 @@ to the existing record instead of creating a duplicate.
 
 ## Who can do what
 
-- **Add a single lead to a Set (the referral case)** — needs only **view** access
-  to the `leads` page (`hasPageAccess`), not the edit grant, as long as the Set is
-  currently assigned to that person (or they're manager/owner). This is a
-  deliberate, narrower carve-out (added 2026-10-13 after an owner explicitly
-  asked for "add lead rights" without the full edit grant) — same shape as the
-  accessory-vendor-creation exception in **business-rules**: creating something
-  new is lower-stakes than editing or deleting what's already there.
-- **Upload a new Set / log a remark / set a follow-up date / edit a lead's
-  fields / delete a lead or a Set / convert to customer / rename a Set** —
-  requires the `leads` **edit grant** (`canEditPage`), in addition to being the
-  Set's current holder (or manager/owner).
-- **Reassign a Set (transfer-with-history)** — manager or above.
-- **Clone a Set (fresh copy) / create a Set from existing customers** — owner, and
-  owner/manager respectively; cloning is the more consequential "start a fresh
-  campaign" decision.
-- Page access and edit grant are the ordinary `leads` key, set in
-  **Settings → Users & Access** like any other page — see **manage-users-and-access**
-  and **roles-permissions**. View access alone is enough for the single-lead-add
-  case above; everything else needs the edit grant too.
+- **Upload a new Set / add a lead / edit a lead's fields / log a remark / set a
+  follow-up date / convert to customer / rename a Set** — needs only **view**
+  access to the `leads` page (`hasPageAccess`), as long as the Set is currently
+  assigned to that person (or they're manager/owner). There is no separate edit
+  grant to this module any more (see above) — holding a Set is what grants
+  edit/add on it.
+- **Delete a lead or a Set** — manager or above, full stop. Never unlocked by
+  holding the Set, and never affected by any grant.
+- **Assign a working copy of a master Set to someone** — manager or above.
+- **Reassign an in-progress working copy (transfer-with-history) to a different
+  holder** — manager or above. Unchanged from before: this still moves the same
+  rows, keeping the outgoing holder's edits/history intact for the new holder.
+- **Merge a working copy's changes back into its master** — manager or above,
+  review-then-commit (never silent).
+- **Clone a Set (fresh, permanently disconnected copy) / create a Set from
+  existing customers** — owner, and owner/manager respectively; cloning is the
+  more consequential "start a fresh campaign" decision, and deliberately
+  distinct from "assign a working copy" above.
+- Page access is the ordinary `leads` key, set in **Settings → Users & Access**
+  like any other page — see **manage-users-and-access** and
+  **roles-permissions**. There is no "Can edit" checkbox for Leads any more;
+  view access plus being a Set's current holder is the whole story for
+  edit/add, and delete/assign/reassign/merge/clone are role-gated on top.
 
 ## Not covered yet
 

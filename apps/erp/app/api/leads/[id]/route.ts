@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getLeadSetOrNull, isCurrentHolderOrManager, findDuplicatePhones } from '@/lib/leads'
 
@@ -14,14 +14,16 @@ async function loadLeadWithSet(id: string) {
 }
 
 // ---------- PATCH: edit contact fields / status ----------
-// Only the Set's current holder (or manager/owner) may write -- loaded via the
-// lead's set_id -> current_assignee_id before any check, same posture as every
-// other "only the current holder" route in this module.
+// Gated on view access + being the Set's current holder (or manager/owner),
+// not the separate edit grant -- holding a Set is what grants edit/add
+// rights on it now, matching POST /api/leads (add) and the owner's own
+// framing ("that user can edit/add but no delete"). Delete stays locked to
+// manager/owner regardless (see DELETE below).
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const found = await loadLeadWithSet(id)
   if (!found) return NextResponse.json({ error: 'Lead not found.' }, { status: 404 })
@@ -55,15 +57,18 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 }
 
 // ---------- DELETE: soft-delete one bad row ----------
+// Manager/owner only, full stop -- not "current holder", not the edit grant.
+// The owner's own framing for a working-copy holder is "edit/add, but no
+// delete", so holding a Set (which is now enough for PATCH above) must never
+// be enough here.
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!isManagerOrAbove(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const found = await loadLeadWithSet(id)
   if (!found) return NextResponse.json({ error: 'Lead not found.' }, { status: 404 })
-  if (!isCurrentHolderOrManager(sessionUser, found.set)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { error } = await supabaseAdmin.from('leads').update({ is_deleted: true, updated_at: new Date().toISOString() }).eq('id', id)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

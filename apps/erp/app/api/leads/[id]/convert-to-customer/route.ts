@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { checkDuplicateCustomer } from '@/lib/customer-dedupe'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
@@ -9,11 +9,14 @@ import { getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
 // Reuses the exact same dedupe rule the Customers page itself uses
 // (lib/customer-dedupe.ts) -- block on phone match, warn on name match --
 // so a lead that's secretly already a customer doesn't create a duplicate.
+//
+// Gated on view access + current holder, not the edit grant -- same
+// holding-a-Set-is-enough boundary as every other per-lead mutation here.
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { data: lead } = await supabaseAdmin
     .from('leads').select('id, set_id, name, phone, email, address, converted_customer_id')

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { getProfileMap } from '@/lib/activities'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
@@ -56,11 +56,15 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 // due_soon/overdue notifications for it with zero further migration: setting
 // a follow-up date here is the whole mechanism for "the agent sees it and
 // calls back".
+//
+// Gated on view access + current holder, not the edit grant -- logging a
+// remark and setting a follow-up are exactly the "edit" an employee holding
+// a Set should be able to do, matching PATCH /api/leads/[id].
 export async function POST(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const sessionUser = await getSessionUser(req)
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!canEditPage(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!hasPageAccess(sessionUser, 'leads')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const found = await loadLeadWithSet(id)
   if (!found) return NextResponse.json({ error: 'Lead not found.' }, { status: 404 })

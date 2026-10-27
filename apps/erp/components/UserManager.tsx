@@ -70,10 +70,13 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
 // Dashboard/Pending Tasks/Reports are view-only nav/landing pages -- no "Can edit"
 // concept, and profile_page_actions.page_key's DB constraint rejects them. Must match
 // EDITABLE_PAGE_KEYS in app/api/users/route.ts and app/api/users/[id]/route.ts.
+// 'leads' is excluded too (2026-10-27): holding a Lead Set is now what grants edit/add
+// rights on it, so a separate "Can edit" checkbox for Leads would do nothing -- see
+// docs/bible/rules/roles-permissions.md.
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock',
   'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance',
 ]
 
 function generatePassword() {

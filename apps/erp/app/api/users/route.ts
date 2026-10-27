@@ -15,9 +15,12 @@ const ALLOWED_PAGE_KEYS = [
 // profile_page_actions.page_key's CHECK constraint exactly. See app/api/users/[id]/route.ts
 // for why 'dashboard'/'pending_tasks' are excluded here but not from ALLOWED_PAGE_KEYS.
 // 'reports' is also excluded -- it's pure view/analysis, no mutation exists to grant.
+// 'leads' is excluded too (2026-10-27): every per-lead/per-Set mutation now runs on
+// view access + being the Set's current holder (isCurrentHolderOrManager), not a
+// separate edit grant, so this checkbox would do nothing -- see roles-permissions.md.
 const EDITABLE_PAGE_KEYS = [
   'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs', 'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads',
+  'expenses', 'quotations', 'rma', 'marketing', 'rentals', 'attendance',
 ]
 
 // ---------- GET: owner lists every user (auth + profile info combined) ----------
