@@ -4,7 +4,7 @@ import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/sess
 import { parsePagination } from '@/lib/pagination'
 import { withRetry } from '@/lib/db-retry'
 import { logAuditEvent } from '@/lib/audit-log'
-import { LEAD_SET_SOURCE_TYPES, DEFAULT_LEAD_STATUS, findDuplicatePhones } from '@/lib/leads'
+import { LEAD_SET_SOURCE_TYPES, DEFAULT_LEAD_STATUS, findDuplicatePhones, isLeadWorked } from '@/lib/leads'
 
 const SELECT = `
   id, name, description, source_type, status, current_assignee_id, cloned_from_set_id, working_copy_of_set_id,
@@ -58,7 +58,7 @@ export async function GET(req: NextRequest) {
     for (const row of leadRows || []) {
       const c = countsBySet.get((row as any).set_id) || { total: 0, worked: 0, converted: 0 }
       c.total += 1
-      if ((row as any).activity_id) c.worked += 1
+      if (isLeadWorked(row as any)) c.worked += 1
       if ((row as any).status === 'Converted') c.converted += 1
       countsBySet.set((row as any).set_id, c)
     }

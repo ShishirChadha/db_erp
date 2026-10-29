@@ -19,6 +19,16 @@ export interface LeadSetRow {
   current_assignee_id: string | null
 }
 
+// "Worked" for the Sets list's Worked/Total count and the Set-detail counts.
+// Used to only count activity_id (a logged remark/follow-up) -- but changing
+// a lead's status (e.g. New -> Contacted) is just as real a sign of effort
+// and didn't move the counter at all, which read as "stuck at 0" even while
+// an employee was visibly working through a list by status alone. Counting
+// either signal is what the owner actually wants reflected here.
+export function isLeadWorked(lead: { activity_id: string | null; status: string }): boolean {
+  return !!lead.activity_id || lead.status !== DEFAULT_LEAD_STATUS
+}
+
 // Whether sessionUser may read/write within a given Set: manager-or-above sees/
 // edits everything; a plain employee only the Set they currently hold. Mirrors
 // the RLS policy in backups/20261006_lead_sets.sql -- this is the API-layer

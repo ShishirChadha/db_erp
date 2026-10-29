@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { LEAD_SET_STATUSES, getLeadSetOrNull, isCurrentHolderOrManager } from '@/lib/leads'
+import { LEAD_SET_STATUSES, getLeadSetOrNull, isCurrentHolderOrManager, isLeadWorked } from '@/lib/leads'
 
 // ---------- GET: Set detail + live status counts + assignment history ----------
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -30,7 +30,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   let worked = 0
   for (const row of leadRows || []) {
     counts[(row as any).status] = (counts[(row as any).status] || 0) + 1
-    if ((row as any).activity_id) worked += 1
+    if (isLeadWorked(row as any)) worked += 1
   }
 
   const { data: history } = await supabaseAdmin

@@ -49,18 +49,13 @@ type RepairJob = RepairJobDetail & {
 function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: boolean; onDone: () => void }) {
   const [showZohoDialog, setShowZohoDialog] = useState(false)
   const sales = job.sales || []
-  if (sales.length === 0) return <span className="text-muted-foreground text-xs">Not billed yet</span>
-
   const unfinalized = sales.filter((s) => !s.finalized)
-  if (unfinalized.length === 0) {
-    // All finalized -- show every invoice number (usually just one, but a job's
-    // charges could have been invoiced separately at different times).
-    const numbers = [...new Set(sales.map((s) => s.invoice_number).filter(Boolean))]
-    return <span className="text-success text-xs">✓ {numbers.join(', ')}</span>
-  }
-  if (!isOwner) return <span className="text-muted-foreground text-xs">Awaiting invoice</span>
 
-  const isExternal = job.invoice_mode === 'external'
+  // Hooks must run unconditionally on every render (Rules of Hooks) -- the early
+  // returns below used to sit before this call, so a job going from 0 sales (not
+  // billed yet) to 1+ sales (e.g. the moment an item is added) changed how many
+  // hooks this component instance called between renders and crashed the page with
+  // "React has detected a change in the order of Hooks."
   const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
     const res = unfinalized.length === 1
       ? await apiFetch(`/api/sales/${unfinalized[0].id}/finalize`, { method: 'POST', body: '{}' })
@@ -72,6 +67,18 @@ function RepairInvoiceCell({ job, isOwner, onDone }: { job: RepairJob; isOwner: 
       onDone()
     }
   })
+
+  if (sales.length === 0) return <span className="text-muted-foreground text-xs">Not billed yet</span>
+
+  if (unfinalized.length === 0) {
+    // All finalized -- show every invoice number (usually just one, but a job's
+    // charges could have been invoiced separately at different times).
+    const numbers = [...new Set(sales.map((s) => s.invoice_number).filter(Boolean))]
+    return <span className="text-success text-xs">✓ {numbers.join(', ')}</span>
+  }
+  if (!isOwner) return <span className="text-muted-foreground text-xs">Awaiting invoice</span>
+
+  const isExternal = job.invoice_mode === 'external'
 
   return (
     <>

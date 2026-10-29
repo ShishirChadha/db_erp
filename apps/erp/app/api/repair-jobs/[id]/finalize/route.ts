@@ -28,7 +28,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage, asset_id, is_own_stock')
+    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage, asset_id, is_own_stock, job_date')
     .eq('id', id)
     .single()
 
@@ -69,8 +69,13 @@ export async function POST(
   // nothing to charge (warranty/free fix) or no payment_account set never gets a
   // sales row -- this never blocks the Done transition itself.
   if (job.amount_charged && job.amount_charged > 0 && job.payment_account) {
-    const today = new Date()
-    const saleDateObj = new Date(`${today.toISOString().slice(0, 10)}T12:00:00.000Z`)
+    // The charge is dated to when the repair actually happened (job_date), not to
+    // whenever Mark Done is clicked -- a backlog of old jobs cleared in one sitting
+    // must not flood the Sales Ledger with a pile of "today"-dated sales. Matches
+    // lib/repair-jobs.ts's consumeRepairParts, which already uses job_date for the
+    // same reason.
+    const saleDate = job.job_date || new Date().toISOString().slice(0, 10)
+    const saleDateObj = new Date(`${saleDate}T12:00:00.000Z`)
 
     const { data: customer } = await supabaseAdmin
       .from('customers')
@@ -91,7 +96,7 @@ export async function POST(
         repair_job_id: job.id,
         customer_id: job.customer_id,
         customer_name: customer?.customer_name || null,
-        sale_date: today.toISOString().slice(0, 10),
+        sale_date: saleDate,
         sale_month: MONTHS[saleDateObj.getUTCMonth()],
         sale_year: saleDateObj.getUTCFullYear(),
         sale_type: gstPct > 0 ? 'GST' : 'Cash',
