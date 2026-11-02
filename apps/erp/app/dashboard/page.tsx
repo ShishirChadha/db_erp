@@ -4,7 +4,7 @@ import { TrendingUp, Receipt, ShoppingCart, IndianRupee, Clock, PackageCheck, Ca
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { getLayoutSessionUser } from '@/lib/auth/session'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { monthToDate, lastMonthToDate, fyToDate, lastYearToDate, parseDateStr } from '@/lib/reports'
+import { monthToDate, lastMonthToDate, lastMonthFull, fyToDate, lastYearToDate, parseDateStr } from '@/lib/reports'
 import { CategoryEntityMatrixTable, type MatrixRow } from '@/components/CategoryEntityMatrixTable'
 import { PunchWidget } from '@/components/PunchWidget'
 
@@ -19,6 +19,9 @@ const PURCHASE_CATEGORY_ORDER = ['Laptops', 'Desktops', 'Accessories']
 const PRESETS: Record<string, { label: string; range: () => { from: string; to: string } }> = {
   mtd: { label: 'MTD', range: monthToDate },
   lmt: { label: 'LMT', range: lastMonthToDate },
+  // The whole previous calendar month, compared against the whole month before
+  // it -- unlike LMT, which stops at today's day-of-month.
+  lm: { label: 'Last Month', range: lastMonthFull },
   ytd: { label: 'YTD', range: fyToDate },
   lytd: { label: 'LYTD', range: lastYearToDate },
 }
@@ -49,6 +52,9 @@ async function DashboardPageContent({ preset }: { preset: string }) {
   // badge at all instead of comparing against a third window nobody asked for.
   const compare = presetKey === 'mtd' ? lastMonthToDate(toRef)
     : presetKey === 'ytd' ? lastYearToDate(toRef)
+    // Full month vs the full month before it (e.g. October vs September).
+    // lastMonthFull() of the 1st of last month is exactly that earlier month.
+    : presetKey === 'lm' ? lastMonthFull(parseDateStr(from))
     : null
 
   const [kpisRes, purchaseRes, expensesRes, inventoryRes, rentalsRes, salesMatrixRes, purchaseMatrixRes, compareMatrixRes, comparePurchaseMatrixRes] = await Promise.all([
