@@ -213,7 +213,7 @@ export function EditRepairJobDialog({
   const [showAddPart, setShowAddPart] = useState(false);
   const [partSearch, setPartSearch] = useState("");
   const [partOptions, setPartOptions] = useState<PartOption[]>([]);
-  const [newPart, setNewPart] = useState<{ sku_id: string; label: string; quantity: number; unit_price: number } | null>(null);
+  const [newPart, setNewPart] = useState<{ sku_id: string; label: string; quantity: number; unit_price: number; date: string } | null>(null);
 
   useEffect(() => {
     if (!partSearch.trim()) {
@@ -237,7 +237,7 @@ export function EditRepairJobDialog({
     setErr("");
     const res = await apiFetch(`/api/repair-jobs/${job.id}/parts`, {
       method: "POST",
-      body: JSON.stringify({ sku_id: newPart.sku_id, quantity: newPart.quantity, unit_price: newPart.unit_price }),
+      body: JSON.stringify({ sku_id: newPart.sku_id, quantity: newPart.quantity, unit_price: newPart.unit_price, sale_date: newPart.date || undefined }),
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -399,7 +399,7 @@ export function EditRepairJobDialog({
                         {partOptions.map((p) => (
                           <li
                             key={p.id}
-                            onClick={() => { setNewPart({ sku_id: p.id, label: p.label, quantity: 1, unit_price: p.price }); setPartSearch(""); setPartOptions([]); }}
+                            onClick={() => { setNewPart({ sku_id: p.id, label: p.label, quantity: 1, unit_price: p.price, date: jobDate || new Date().toISOString().slice(0, 10) }); setPartSearch(""); setPartOptions([]); }}
                             className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm"
                           >
                             {p.label}
@@ -410,26 +410,38 @@ export function EditRepairJobDialog({
                     <Button type="button" size="sm" variant="ghost" onClick={() => setShowAddPart(false)}>Cancel</Button>
                   </>
                 ) : (
-                  <div className="flex items-center gap-2 text-sm bg-muted border rounded p-2">
-                    <span className="flex-1">{newPart.label}</span>
-                    <Input
-                      type="number"
-                      min={1}
-                      value={newPart.quantity}
-                      onChange={(e) => setNewPart({ ...newPart, quantity: Number(e.target.value) })}
-                      className="w-16 text-center"
-                    />
-                    <Input
-                      type="number"
-                      min={0}
-                      value={newPart.unit_price}
-                      onChange={(e) => setNewPart({ ...newPart, unit_price: Number(e.target.value) })}
-                      className="w-24 text-center"
-                    />
-                    <Button type="button" size="sm" onClick={() => addPart()} disabled={addingPart}>
-                      {addingPart && <Loader2 className="size-3 animate-spin mr-1" />}Add
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => { setNewPart(null); setShowAddPart(false); }}>✕</Button>
+                  <div className="bg-muted border rounded p-2 space-y-2">
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="flex-1">{newPart.label}</span>
+                      <Input
+                        type="number"
+                        min={1}
+                        value={newPart.quantity}
+                        onChange={(e) => setNewPart({ ...newPart, quantity: Number(e.target.value) })}
+                        className="w-16 text-center"
+                      />
+                      <Input
+                        type="number"
+                        min={0}
+                        value={newPart.unit_price}
+                        onChange={(e) => setNewPart({ ...newPart, unit_price: Number(e.target.value) })}
+                        className="w-24 text-center"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Label className="text-xs text-muted-foreground flex-1">Dated</Label>
+                      <Input
+                        type="date"
+                        value={newPart.date}
+                        max={new Date().toISOString().slice(0, 10)}
+                        onChange={(e) => setNewPart({ ...newPart, date: e.target.value })}
+                        className="w-40"
+                      />
+                      <Button type="button" size="sm" onClick={() => addPart()} disabled={addingPart}>
+                        {addingPart && <Loader2 className="size-3 animate-spin mr-1" />}Add
+                      </Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => { setNewPart(null); setShowAddPart(false); }}>✕</Button>
+                    </div>
                   </div>
                 )}
               </div>

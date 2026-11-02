@@ -4,6 +4,11 @@ import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 
+const MONTHS = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December',
+]
+
 // ---------- GET: one job's full detail -- every linked sale (labor charge + one per
 // consumed part), itemized, plus the parts themselves for display ----------
 // Deliberately separate from the list GET (which only returns lightweight aggregates,
@@ -119,6 +124,29 @@ export async function PATCH(
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // A part/item added at intake or via "+ Add Part" is always dated to job_date at
+  // that moment (lib/repair-jobs.ts's consumeRepairParts) -- but if job_date is
+  // corrected AFTER a part was already added (e.g. a job entered today is backdated
+  // to when the repair actually happened once Sanjana remembers the real date), the
+  // already-created sale(s) never hear about it and stay stuck on the date they were
+  // created, silently booking that revenue into the wrong day/month. Cascade the
+  // correction to every linked, not-yet-invoiced sale -- same principle as the Sales
+  // Ledger PATCH route pushing a sale_date fix onto asset_ledger.sold_at. An already
+  // invoiced sale is a frozen snapshot and is deliberately left untouched.
+  if (updates.job_date !== undefined) {
+    const dateObj = new Date(`${updates.job_date}T12:00:00.000Z`)
+    await supabaseAdmin
+      .from('sales')
+      .update({
+        sale_date: updates.job_date,
+        sale_month: MONTHS[dateObj.getUTCMonth()],
+        sale_year: dateObj.getUTCFullYear(),
+      })
+      .eq('repair_job_id', id)
+      .eq('is_deleted', false)
+      .eq('finalized', false)
+  }
 
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },

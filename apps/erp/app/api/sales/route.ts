@@ -96,8 +96,22 @@ export async function GET(req: NextRequest) {
       searchAssetLedgerIds = (matchingAssets || []).map((a: any) => a.id)
     }
   }
+  // A repair-derived sale (parts consumed or the job's own labor charge) has no
+  // job_number column of its own -- resolve matching repair_jobs rows up front so a
+  // search by job number (e.g. "RPR-26-100") finds the sale(s) linked via
+  // sales.repair_job_id, the same way accessory/asset SKU search already works above.
+  let searchRepairJobIds: string[] = []
+  if (search) {
+    const { data: matchingJobs } = await withRetry(() =>
+      supabaseAdmin
+        .from('repair_jobs')
+        .select('id')
+        .ilike('job_number', `%${search}%`)
+    )
+    searchRepairJobIds = (matchingJobs || []).map((j: any) => j.id)
+  }
   const searchFilter = search
-    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}${searchAccessoryIds.length ? `,accessory_id.in.(${searchAccessoryIds.join(',')})` : ''}${searchAssetLedgerIds.length ? `,asset_ledger_id.in.(${searchAssetLedgerIds.join(',')})` : ''}`
+    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}${searchAccessoryIds.length ? `,accessory_id.in.(${searchAccessoryIds.join(',')})` : ''}${searchAssetLedgerIds.length ? `,asset_ledger_id.in.(${searchAssetLedgerIds.join(',')})` : ''}${searchRepairJobIds.length ? `,repair_job_id.in.(${searchRepairJobIds.join(',')})` : ''}`
     : ''
 
   // Customers Owed Money mode: two cases where money is owed back that nothing else

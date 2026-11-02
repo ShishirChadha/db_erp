@@ -18,10 +18,13 @@ export async function POST(
 
   const { id } = await params
   const body = await req.json().catch(() => ({}))
-  const { sku_id, quantity, unit_price } = body
+  const { sku_id, quantity, unit_price, sale_date } = body
 
   if (!sku_id || !(quantity > 0)) {
     return NextResponse.json({ error: 'sku_id and a positive quantity are required.' }, { status: 400 })
+  }
+  if (sale_date !== undefined && sale_date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(sale_date)) {
+    return NextResponse.json({ error: 'sale_date must be in YYYY-MM-DD format.' }, { status: 400 })
   }
 
   const { data: job } = await supabaseAdmin
@@ -48,7 +51,11 @@ export async function POST(
     customerName: customer?.customer_name || null,
     paymentAccount: job.payment_account,
     gstPercent: gstPct,
-    saleDate: job.job_date || new Date().toISOString().slice(0, 10),
+    // A part is normally dated to job_date, but the caller can override it (e.g. a part
+    // added today for a job that happened earlier, without needing a separate job_date
+    // backdate -- see PATCH /api/repair-jobs/[id]'s cascade for the complementary case
+    // where job_date itself is corrected after the fact).
+    saleDate: sale_date || job.job_date || new Date().toISOString().slice(0, 10),
     parts: [{ sku_id, quantity: Number(quantity), unit_price: Number(unit_price) || 0 }],
     sessionUserId: sessionUser.id,
   })

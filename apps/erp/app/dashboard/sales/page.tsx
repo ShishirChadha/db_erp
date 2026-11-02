@@ -419,6 +419,9 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           {specParts.length > 0 && (
             <span className="text-muted-foreground"> · {specParts.join(" / ")}</span>
           )}
+          {sale.accessory_id && (sale.accessory_quantity ?? 1) > 1 && (
+            <span className="text-muted-foreground"> · Qty {sale.accessory_quantity}</span>
+          )}
         </Field>
         {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
         <Field label="Price">
@@ -431,6 +434,11 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
               </span>
             </span>
             <span>Total: <span className="tabular-nums font-medium">₹{(sale.sale_total ?? 0).toFixed(2)}</span></span>
+            {sale.accessory_id && (sale.accessory_quantity ?? 1) > 1 && (
+              <span className="text-muted-foreground">
+                (₹{((sale.sale_base_price ?? 0) / (sale.accessory_quantity || 1)).toFixed(2)} × {sale.accessory_quantity})
+              </span>
+            )}
           </div>
         </Field>
         <Field label="E-way Bill"><EwayBillField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
@@ -514,6 +522,7 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
         <div className="flex items-baseline justify-between gap-2 mt-1">
           <p className="text-xs text-muted-foreground truncate">
             {item(sale)}
+            {sale.accessory_id && (sale.accessory_quantity ?? 1) > 1 && <span> ×{sale.accessory_quantity}</span>}
             {sale.bundle_parent && <span> · with {sale.bundle_parent.label}</span>}
             {sale.bundle_children && sale.bundle_children.length > 0 && <span> · +{sale.bundle_children.length} accessor{sale.bundle_children.length === 1 ? "y" : "ies"}</span>}
           </p>
