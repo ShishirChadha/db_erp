@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Loader2, ArrowLeft, X, Pencil } from "lucide-react";
@@ -8,6 +8,8 @@ import { apiFetch } from "@/lib/api-client";
 import { getCachedListPageSize } from "@/lib/useListPageSize";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
+import { useUrlState } from "@/lib/useUrlState";
+import { createClient } from "@/lib/supabase/client";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { useRole } from "@/lib/auth/useRole";
 import { useAsyncAction } from "@/lib/useAsyncAction";
@@ -560,10 +562,20 @@ function SalesLedgerPage() {
   const canEditSale = isOwner || canEditPage("sales") || canEditPage("live_stock");
   const [sales, setSales] = useState<Sale[]>([]);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  // Each of these filter/search fields is synced to the URL via useUrlState
+  // (lib/useUrlState.ts) instead of plain useState, so the browser's Back
+  // button undoes one filter change at a time (an instant-apply control
+  // pushes its own history entry; typing settles via `replace` then pushes
+  // once as a single entry when it stops) instead of creating zero history
+  // entries at all, which is what let Back skip past every filter change in
+  // one jump straight out of the page.
+  const [pageStr, setPageUrl] = useUrlState("page", "1");
+  const page = Number(pageStr) || 1;
+  const setPage = useCallback((n: number) => setPageUrl(String(n), "push"), [setPageUrl]);
   // Seeded from the global "rows per page" setting (Settings > List Page Size)
   // instead of a hardcoded 25 -- the dropdown below still lets this one page be
-  // overridden locally.
+  // overridden locally. Not URL-synced -- a display density preference, not a
+  // filter someone expects Back to undo.
   const [pageSize, setPageSize] = useState(() => getCachedListPageSize());
   // searchInput updates on every keystroke (so the box feels responsive); search only
   // catches up 300ms after typing stops, and is what actually drives fetchSales below --
@@ -571,30 +583,70 @@ function SalesLedgerPage() {
   // several sequential DB round trips server-side over the full sales table), which
   // piled up overlapping in-flight requests and was the real cause of "search is slow /
   // sometimes errors" here. Same fix already applied to StockView.tsx's search box.
+  // The same 300ms settle now also pushes one URL/history entry via useUrlState's
+  // debounce, instead of a bare setState with no history entry at all.
   const [searchInput, setSearchInput] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearchUrl] = useUrlState("q", "", { debounceMs: 300 });
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 300);
-    return () => clearTimeout(timer);
+    setSearchUrl(searchInput, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
-  const [paymentFilter, setPaymentFilter] = useState("");
-  const [receivedIntoFilter, setReceivedIntoFilter] = useState("");
+  // Keep searchInput in sync when `search` changes from outside typing (Back/
+  // Forward/refresh, or clearing via setSearchInput("") below).
+  useEffect(() => { setSearchInput(search); }, [search]);
+  const [paymentFilter, setPaymentFilterUrl] = useUrlState("payment", "");
+  const setPaymentFilter = useCallback((v: string) => setPaymentFilterUrl(v, "push"), [setPaymentFilterUrl]);
+  const [receivedIntoFilter, setReceivedIntoFilterUrl] = useUrlState("received_into", "");
+  const setReceivedIntoFilter = useCallback((v: string) => setReceivedIntoFilterUrl(v, "push"), [setReceivedIntoFilterUrl]);
   // Pinning a customer (via the search-suggestion dropdown below) swaps free-text
   // search for an exact customer_id filter -- that's what guarantees EVERY sale for
   // that customer shows, latest first, rather than only whatever still matches the
   // typed text (Zoho's "click a suggested invoice -> see this customer's history").
-  const [customerFilter, setCustomerFilter] = useState<{ id: string; name: string } | null>(null);
+  // Only the id is URL-synced (the display name can't round-trip through a URL
+  // param cheaply) -- the name is re-derived from whichever sale row the user
+  // clicked, or re-resolved below if the page loads straight from a shared/
+  // refreshed URL with only the id present.
+  const [customerFilterId, setCustomerFilterIdUrl] = useUrlState("customer", "");
+  const setCustomerFilterId = useCallback((v: string) => setCustomerFilterIdUrl(v, "push"), [setCustomerFilterIdUrl]);
+  const [customerFilterName, setCustomerFilterName] = useState("");
+  const customerFilter = customerFilterId ? { id: customerFilterId, name: customerFilterName || "…" } : null;
+  const setCustomerFilter = useCallback((v: { id: string; name: string } | null) => {
+    setCustomerFilterId(v?.id || "");
+    setCustomerFilterName(v?.name || "");
+  }, [setCustomerFilterId]);
+  // If the page loads with ?customer=<id> already in the URL (shared link,
+  // refresh, or Back/Forward landing here) but no name cached locally yet,
+  // resolve it once so the filter pill shows a real name instead of "…".
+  useEffect(() => {
+    if (!customerFilterId || customerFilterName) return;
+    const supabase = createClient();
+    supabase.from("customers").select("customer_name").eq("id", customerFilterId).single().then(({ data }: { data: { customer_name: string } | null }) => {
+      if (data?.customer_name) setCustomerFilterName(data.customer_name);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customerFilterId]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   // 'YYYY-MM', native <input type="month">.
-  const [monthFilter, setMonthFilter] = useState("");
+  const [monthFilter, setMonthFilterUrl] = useUrlState("month", "");
+  const setMonthFilter = useCallback((v: string) => setMonthFilterUrl(v, "push"), [setMonthFilterUrl]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [batchErr, setBatchErr] = useState("");
-  const [awaitingInvoiceOnly, setAwaitingInvoiceOnly] = useState(false);
+  const [awaitingInvoiceOnlyStr, setAwaitingInvoiceOnlyUrl] = useUrlState("awaiting_invoice", "");
+  const awaitingInvoiceOnly = awaitingInvoiceOnlyStr === "1";
+  const setAwaitingInvoiceOnly = useCallback(
+    (v: boolean | ((prev: boolean) => boolean)) => {
+      const next = typeof v === "function" ? v(awaitingInvoiceOnly) : v;
+      setAwaitingInvoiceOnlyUrl(next ? "1" : "", "push");
+    },
+    [awaitingInvoiceOnly, setAwaitingInvoiceOnlyUrl]
+  );
   // Voided sales are excluded from the ledger by default (matches every other
   // filter/stat here); toggling this shows ONLY voided ones, as an audit/reference
   // view -- mirrors the Vendors page's "Show deleted" pattern.
-  const [showVoided, setShowVoided] = useState(false);
+  const [showVoidedStr, setShowVoidedUrl] = useUrlState("voided", "");
+  const showVoided = showVoidedStr === "1";
+  const setShowVoided = useCallback((v: boolean) => setShowVoidedUrl(v ? "1" : "", "push"), [setShowVoidedUrl]);
   const [showBatchZoho, setShowBatchZoho] = useState(false);
   const [showBulkEwayBill, setShowBulkEwayBill] = useState(false);
   // Stat cards (Total Sold / Pending / Partial / Awaiting Invoice) need counts over
@@ -655,18 +707,24 @@ function SalesLedgerPage() {
     if (res.ok) setStatCounts(await res.json());
   }, [buildFilterParams]);
 
-  // Any filter change invalidates the current page's meaning -- reset to page 1
-  // during render (React's supported "adjust state while rendering" pattern),
-  // not in a separate effect keyed on the same filters -- that shape fired
-  // fetchSales twice per filter change (once with the new filter but the
-  // stale page, again once the reset effect changed `page`), and on a slow
-  // connection the stale response could land last and overwrite correct rows.
+  // Any filter change invalidates the current page's meaning -- reset to page 1.
+  // The reset itself writes the URL via `replace` (not `push`), so it never
+  // becomes its own Back-undoable step -- Back on a filter change undoes the
+  // filter AND its page reset together in one press, not two. This runs in an
+  // effect (rather than during render, as before useUrlState) because it's now
+  // a real navigation side effect (router.replace), not a bare setState -- but
+  // since useUrlState's commit() updates local state synchronously before
+  // calling router.replace, this still lands in the same React batch as
+  // fetchSales' own effect below, so it does not reintroduce the double-fetch
+  // the old inline-during-render comment was guarding against.
   const filterKey = JSON.stringify([search, customerFilter?.id, paymentFilter, receivedIntoFilter, monthFilter, awaitingInvoiceOnly, showVoided, pageSize]);
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
-    setPage(1);
-  }
+  const prevFilterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey;
+      setPageUrl("1", "replace");
+    }
+  }, [filterKey, setPageUrl]);
 
   useEffect(() => { fetchSales(); }, [fetchSales]);
   useEffect(() => { fetchStats(); }, [fetchStats]);
@@ -984,7 +1042,9 @@ function SalesLedgerPage() {
 export default function SalesPageGuarded() {
   return (
     <RequirePageAccess pageKey="sales">
-      <SalesLedgerPage />
+      <Suspense>
+        <SalesLedgerPage />
+      </Suspense>
     </RequirePageAccess>
   );
 }

@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, Suspense } from 'react'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useUrlState } from '@/lib/useUrlState'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { StatusBadge } from '@/components/StatusBadge'
 import { Button } from '@/components/ui/button'
@@ -241,8 +242,12 @@ function RmaPage() {
   const [accessoryEvents, setAccessoryEvents] = useState<AccessoryRmaEvent[]>([])
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [loading, setLoading] = useState(true)
-  const [directionFilter, setDirectionFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
+  // URL-synced via useUrlState (lib/useUrlState.ts) so browser Back undoes one
+  // filter change at a time, same fix as Sales Ledger.
+  const [directionFilter, setDirectionFilterUrl] = useUrlState('direction', '')
+  const setDirectionFilter = useCallback((v: string) => setDirectionFilterUrl(v, 'push'), [setDirectionFilterUrl])
+  const [statusFilter, setStatusFilterUrl] = useUrlState('status', '')
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, 'push'), [setStatusFilterUrl])
   const [modalOpen, setModalOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const isDesktop = useIsDesktopViewport()
@@ -823,7 +828,9 @@ function RmaPage() {
 export default function RmaPageGuarded() {
   return (
     <RequirePageAccess pageKey="rma">
-      <RmaPage />
+      <Suspense>
+        <RmaPage />
+      </Suspense>
     </RequirePageAccess>
   )
 }

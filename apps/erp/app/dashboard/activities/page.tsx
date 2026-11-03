@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, Suspense } from 'react';
 import dynamic from 'next/dynamic';
+import { useUrlState } from '@/lib/useUrlState';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ActivityList from '@/components/ActivityList';
@@ -19,8 +19,10 @@ import { CalendarDays } from 'lucide-react';
 import RequirePageAccess from '@/components/RequirePageAccess';
 
 function ActivitiesPage() {
-  const [view, setView] = useState<'list' | 'calendar'>('list');
-  const router = useRouter();
+  // URL-synced via useUrlState (lib/useUrlState.ts) so browser Back undoes a
+  // tab switch, same fix as every other list page's filters.
+  const [viewParam, setViewUrl] = useUrlState('view', 'list');
+  const view: 'list' | 'calendar' = viewParam === 'calendar' ? 'calendar' : 'list';
 
   // Poll for reminders every minute
   useEffect(() => {
@@ -59,7 +61,7 @@ function ActivitiesPage() {
         <h1 className="text-2xl font-bold">Activity Hub</h1>
         <CalendarFeedLink />
       </div>
-      <Tabs defaultValue="list" onValueChange={(v) => setView(v as 'list' | 'calendar')}>
+      <Tabs value={view} onValueChange={(v) => setViewUrl(v, 'push')}>
         <TabsList>
           <TabsTrigger value="list">List View</TabsTrigger>
           <TabsTrigger value="calendar">Calendar View</TabsTrigger>
@@ -78,7 +80,9 @@ function ActivitiesPage() {
 export default function ActivitiesPageGuarded() {
   return (
     <RequirePageAccess pageKey="activities">
-      <ActivitiesPage />
+      <Suspense>
+        <ActivitiesPage />
+      </Suspense>
     </RequirePageAccess>
   );
 }

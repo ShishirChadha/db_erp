@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { ArrowLeft, Loader2 } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useUrlState } from '@/lib/useUrlState'
 import { useListPageSize } from '@/lib/useListPageSize'
 import { useRole } from '@/lib/auth/useRole'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -532,14 +533,21 @@ function AccessoriesPage() {
   // searchInput updates on every keystroke; search catches up 300ms after typing
   // stops and is what actually drives fetchAll -- same debounce pattern as
   // StockView/Sales Ledger/Repair Jobs.
+  // Filters/search/page are URL-synced via useUrlState (lib/useUrlState.ts)
+  // instead of plain useState, so browser Back undoes one filter change at a
+  // time instead of skipping past the whole page visit -- same fix as Sales
+  // Ledger.
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearchUrl] = useUrlState('q', '', { debounceMs: 300 })
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 300)
-    return () => clearTimeout(timer)
+    setSearchUrl(searchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
-  const [purchasedFrom, setPurchasedFrom] = useState('')
-  const [purchasedTo, setPurchasedTo] = useState('')
+  useEffect(() => { setSearchInput(search) }, [search])
+  const [purchasedFrom, setPurchasedFromUrl] = useUrlState('purchased_from', '')
+  const setPurchasedFrom = useCallback((v: string) => setPurchasedFromUrl(v, 'push'), [setPurchasedFromUrl])
+  const [purchasedTo, setPurchasedToUrl] = useUrlState('purchased_to', '')
+  const setPurchasedTo = useCallback((v: string) => setPurchasedToUrl(v, 'push'), [setPurchasedToUrl])
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [poBacklog, setPoBacklog] = useState<Map<string, number>>(new Map())
@@ -548,8 +556,12 @@ function AccessoriesPage() {
   // "Cost & Last Vendor" section (fetched fresh per SKU), so the old bulk
   // last-vendors fetch that fed the removed table column is no longer needed.
   const [lastEntries, setLastEntries] = useState<Map<string, { vendor_id: string; vendor_name: string; unit_price: number | null; gst_percentage: number | null; purchase_date: string | null }>>(new Map())
-  const [showArchived, setShowArchived] = useState(false)
-  const [page, setPage] = useState(1)
+  const [showArchivedStr, setShowArchivedUrl] = useUrlState('archived', '')
+  const showArchived = showArchivedStr === '1'
+  const setShowArchived = useCallback((v: boolean) => setShowArchivedUrl(v ? '1' : '', 'push'), [setShowArchivedUrl])
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = useListPageSize()
 
@@ -590,8 +602,20 @@ function AccessoriesPage() {
 
   useEffect(() => { fetchAll() }, [fetchAll])
 
-  // Any filter change invalidates the current page's meaning -- reset to page 1.
-  useEffect(() => { setPage(1) }, [search, purchasedFrom, purchasedTo, showArchived])
+  // Any filter change invalidates the current page's meaning -- reset to page 1,
+  // silently (via `replace`) so the reset itself never becomes its own
+  // Back-undoable step. Guarded by a ref (not just a bare effect) so a page
+  // freshly loaded/refreshed straight into e.g. ?search=x&page=3 doesn't get
+  // its page silently stomped back to 1 on mount -- only an actual CHANGE to
+  // one of these filters after mount should reset the page.
+  const filterKey = JSON.stringify([search, purchasedFrom, purchasedTo, showArchived])
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   useEffect(() => {
     apiFetch('/api/sku-category-templates').then(res => res.json()).then((all) => {
@@ -724,7 +748,9 @@ function AccessoriesPage() {
 export default function AccessoriesPageGuarded() {
   return (
     <RequirePageAccess pageKey="accessories">
-      <AccessoriesPage />
+      <Suspense>
+        <AccessoriesPage />
+      </Suspense>
     </RequirePageAccess>
   )
 }

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useUrlState } from '@/lib/useUrlState'
 import { useListPageSize } from '@/lib/useListPageSize'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
@@ -175,25 +176,34 @@ function QuotationsPage() {
   }
   const [docs, setDocs] = useState<DocSummary[]>([])
   const [loading, setLoading] = useState(true)
-  const [page, setPage] = useState(1)
+  // Filters/search/page are URL-synced via useUrlState (lib/useUrlState.ts) so
+  // browser Back undoes one filter change at a time, same fix as Sales Ledger.
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = useListPageSize()
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
   const isDesktop = useIsDesktopViewport()
   const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('quotations-list-pane-width')
 
-  const [statusFilter, setStatusFilter] = useState('')
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
+  const [statusFilter, setStatusFilterUrl] = useUrlState('status', '')
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, 'push'), [setStatusFilterUrl])
+  const [dateFrom, setDateFromUrl] = useUrlState('date_from', '')
+  const setDateFrom = useCallback((v: string) => setDateFromUrl(v, 'push'), [setDateFromUrl])
+  const [dateTo, setDateToUrl] = useUrlState('date_to', '')
+  const setDateTo = useCallback((v: string) => setDateToUrl(v, 'push'), [setDateToUrl])
   // searchInput updates on every keystroke; search catches up 300ms after typing
   // stops and is what actually drives fetchDocs -- same debounce pattern as
   // StockView/Sales Ledger/Purchase Orders.
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearchUrl] = useUrlState('q', '', { debounceMs: 300 })
+  const setSearch = useCallback((v: string) => setSearchUrl(v, 'push'), [setSearchUrl])
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 300)
-    return () => clearTimeout(timer)
+    setSearchUrl(searchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
+  useEffect(() => { setSearchInput(search) }, [search])
 
   const fetchDocs = useCallback(async () => {
     setLoading(true)
@@ -223,8 +233,18 @@ function QuotationsPage() {
 
   useEffect(() => { fetchDocs() }, [fetchDocs])
 
-  // Switching tabs or any filter invalidates the current page's meaning.
-  useEffect(() => { setPage(1) }, [docType, statusFilter, dateFrom, dateTo, search])
+  // Switching tabs or any filter invalidates the current page's meaning --
+  // reset to page 1 silently (via `replace`) so the reset never becomes its
+  // own Back-undoable step. Guarded by a ref so a freshly loaded/refreshed
+  // URL with filters + page>1 already set doesn't get page stomped on mount.
+  const filterKey = JSON.stringify([docType, statusFilter, dateFrom, dateTo, search])
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   const activeDoc = useMemo(() => docs.find((d) => d.id === activeDocId) ?? null, [docs, activeDocId])
 
@@ -342,7 +362,9 @@ function QuotationsPage() {
 export default function QuotationsPageGuarded() {
   return (
     <RequirePageAccess pageKey="quotations">
-      <QuotationsPage />
+      <Suspense>
+        <QuotationsPage />
+      </Suspense>
     </RequirePageAccess>
   )
 }

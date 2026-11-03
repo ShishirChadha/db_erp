@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useMemo, useState, useCallback, useRef } from 'react'
+import { useUrlState } from '@/lib/useUrlState'
 import Link from 'next/link'
-import { useRouter, usePathname, useSearchParams } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -197,7 +198,6 @@ export default function StockView({
 }) {
   const router = useRouter()
   const pathname = usePathname()
-  const searchParams = useSearchParams()
   const { isOwner, canEditPage } = useRole()
   // "Fix SKU" is the one action here that's already open to any authenticated staff at
   // the API level (app/api/asset-ledger/[id]/reassign-sku has no owner-gating) -- gate it
@@ -207,13 +207,11 @@ export default function StockView({
   const canEdit = isOwner || canEditPage(pageKey)
   // Restores whichever tab was active before navigating away (Sell/Service/Intake's
   // Back button lands on `${pathname}?tab=<tab>` -- see returnToPath below), instead of
-  // always defaulting back to Current.
-  const initialTab = useMemo<Tab>(() => {
-    const t = searchParams.get('tab')
-    return t === 'sold' || t === 'accessories' || t === 'sold_accessories' ? t : 'current'
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
-  const [tab, setTab] = useState<Tab>(initialTab)
+  // always defaulting back to Current. Now a real two-way `useUrlState` sync (was
+  // previously read once on mount and never written back), so switching tabs is
+  // itself a Back-undoable step and survives a refresh, not just a deep link in.
+  const [tabParam, setTabUrl] = useUrlState('tab', 'current')
+  const tab: Tab = tabParam === 'sold' || tabParam === 'accessories' || tabParam === 'sold_accessories' ? tabParam : 'current'
   const isDesktop = useIsDesktopViewport()
   // Mouse-drag-resizable list pane (desktop/tablet only -- mobile is single-pane,
   // full width, so a divider wouldn't mean anything there). One shared width across
@@ -225,28 +223,36 @@ export default function StockView({
   const [accessoryStock, setAccessoryStock] = useState<AccessoryStockRow[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [paymentStatusFilter, setPaymentStatusFilter] = useState('')
+  // Filters/search are URL-synced via useUrlState (lib/useUrlState.ts) so browser
+  // Back undoes one filter change at a time, same fix as Sales Ledger.
+  const [statusFilter, setStatusFilterUrl] = useUrlState('status', '')
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, 'push'), [setStatusFilterUrl])
+  const [paymentStatusFilter, setPaymentStatusFilterUrl] = useUrlState('payment_status', '')
+  const setPaymentStatusFilter = useCallback((v: string) => setPaymentStatusFilterUrl(v, 'push'), [setPaymentStatusFilterUrl])
   // searchInput updates on every keystroke (so the box itself feels responsive);
   // searchTerm only catches up 300ms after typing stops, and is what actually drives
   // the fetch effects below -- without this, every keystroke fired its own full
   // request (each doing several sequential DB round trips server-side), which piled up
   // overlapping in-flight requests and was the real cause of "search is slow / sometimes
-  // errors" rather than any single request being slow on its own.
+  // errors" rather than any single request being slow on its own. The same 300ms
+  // settle now also pushes one URL/history entry, instead of a bare setState.
   const [searchInput, setSearchInput] = useState('')
-  const [searchTerm, setSearchTerm] = useState('')
+  const [searchTerm, setSearchTermUrl] = useUrlState('q', '', { debounceMs: 300 })
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), 300)
-    return () => clearTimeout(timer)
+    setSearchTermUrl(searchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
-  const [monthFilter, setMonthFilter] = useState('')
-  const [yearFilter, setYearFilter] = useState('')
+  useEffect(() => { setSearchInput(searchTerm) }, [searchTerm])
+  const [monthFilter, setMonthFilterUrl] = useUrlState('month', '')
+  const setMonthFilter = useCallback((v: string) => setMonthFilterUrl(v, 'push'), [setMonthFilterUrl])
+  const [yearFilter, setYearFilterUrl] = useUrlState('year', '')
+  const setYearFilter = useCallback((v: string) => setYearFilterUrl(v, 'push'), [setYearFilterUrl])
   const yearOptions = useMemo(() => {
     const currentYear = new Date().getFullYear()
     return Array.from({ length: 8 }, (_, i) => currentYear - i)
   }, [])
-  const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].field)
-  const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT[initialTab === 'sold' ? 'sold' : 'current'].order)
+  const [sortField, setSortField] = useState<SortField>(TAB_DEFAULT_SORT[tab === 'sold' ? 'sold' : 'current'].field)
+  const [sortOrder, setSortOrder] = useState<SortOrder>(TAB_DEFAULT_SORT[tab === 'sold' ? 'sold' : 'current'].order)
   // Sold Accessories has its own date sort toggle (its own route/field, sale_date --
   // not part of SortField/toggleSort, which are asset_ledger-specific).
   const [soldAccOrder, setSoldAccOrder] = useState<SortOrder>('desc')
@@ -257,7 +263,7 @@ export default function StockView({
   // with the OLD tab's sort field firing a split second before the corrected one landed,
   // which could show briefly (or, under an unlucky response race, lastingly) wrong.
   const changeTab = (next: Tab) => {
-    setTab(next)
+    setTabUrl(next, 'push')
     if (next === 'current' || next === 'sold') {
       setSortField(TAB_DEFAULT_SORT[next].field)
       setSortOrder(TAB_DEFAULT_SORT[next].order)
@@ -287,7 +293,9 @@ export default function StockView({
   const [fixSkuAssetId, setFixSkuAssetId] = useState<string | null>(null)
   const [editSaleId, setEditSaleId] = useState<string | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
-  const [page, setPage] = useState(1)
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = useListPageSize()
   // Which unit is open in the right-hand detail pane (current/sold tabs' master-detail
@@ -441,11 +449,13 @@ export default function StockView({
   // those three could land last and overwrite correct rows or raise a toast
   // for a tab the user already left.
   const filterKey = JSON.stringify([tab, statusFilter, paymentStatusFilter, searchTerm, monthFilter, yearFilter, sourceParam])
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey)
-    setPage(1)
-  }
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   const fetchCounts = useCallback(async () => {
     // SQL exact counts (see /api/stock's counts=true branch), not full-row fetch
@@ -746,7 +756,7 @@ export default function StockView({
           </>
         )}
         {(statusFilter || paymentStatusFilter || searchInput || monthFilter || yearFilter) && (
-          <button onClick={() => { setStatusFilter(''); setPaymentStatusFilter(''); setSearchInput(''); setSearchTerm(''); setMonthFilter(''); setYearFilter('') }} className="text-sm text-muted-foreground underline self-center">
+          <button onClick={() => { setStatusFilter(''); setPaymentStatusFilter(''); setSearchInput(''); setSearchTermUrl('', 'push'); setMonthFilter(''); setYearFilter('') }} className="text-sm text-muted-foreground underline self-center">
             Clear filters
           </button>
         )}

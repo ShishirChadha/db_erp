@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
+import { useUrlState } from "@/lib/useUrlState";
 import { useListPageSize } from "@/lib/useListPageSize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -182,14 +183,22 @@ function CustomersPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [customerToDelete, setCustomerToDelete] = useState<Customer | null>(null);
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [searchTerm, setSearchTerm] = useState(""); // GLOBAL SEARCH (debounced)
+  // Filters/search/page are URL-synced via useUrlState (lib/useUrlState.ts) so
+  // browser Back undoes one filter change at a time, same fix as Sales Ledger.
+  const [showDeletedStr, setShowDeletedUrl] = useUrlState("deleted", "");
+  const showDeleted = showDeletedStr === "1";
+  const setShowDeleted = useCallback((v: boolean) => setShowDeletedUrl(v ? "1" : "", "push"), [setShowDeletedUrl]);
+  const [searchTerm, setSearchTermUrl] = useUrlState("q", "", { debounceMs: 300 }); // GLOBAL SEARCH (debounced)
+  const setSearchTerm = useCallback((v: string) => setSearchTermUrl(v, "push"), [setSearchTermUrl]);
   const supabase = createClient();
 
-  const [typeFilter, setTypeFilter] = useState<string>("all");
-  const [nameFilter, setNameFilter] = useState<string>(""); // debounced
+  const [typeFilter, setTypeFilterUrl] = useUrlState("type", "all");
+  const setTypeFilter = useCallback((v: string) => setTypeFilterUrl(v, "push"), [setTypeFilterUrl]);
+  const [nameFilter, setNameFilterUrl] = useUrlState("name", ""); // debounced
+  const setNameFilter = useCallback((v: string) => setNameFilterUrl(v, "push"), [setNameFilterUrl]);
   // "" = everyone, "web" = has a website login, "walkin" = does not.
-  const [webFilter, setWebFilter] = useState<"" | "web" | "walkin">("");
+  const [webFilter, setWebFilterUrl] = useUrlState("web", "");
+  const setWebFilter = useCallback((v: "" | "web" | "walkin") => setWebFilterUrl(v, "push"), [setWebFilterUrl]);
 
   // Both search boxes update their *Input state on every keystroke; the actual
   // fetch-driving state catches up 300ms after typing stops -- same debounce
@@ -197,16 +206,20 @@ function CustomersPage() {
   const [searchInput, setSearchInput] = useState("");
   const [nameFilterInput, setNameFilterInput] = useState("");
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
-    return () => clearTimeout(timer);
+    setSearchTermUrl(searchInput, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
+  useEffect(() => { setSearchInput(searchTerm); }, [searchTerm]);
   useEffect(() => {
-    const timer = setTimeout(() => setNameFilter(nameFilterInput), 300);
-    return () => clearTimeout(timer);
+    setNameFilterUrl(nameFilterInput, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nameFilterInput]);
+  useEffect(() => { setNameFilterInput(nameFilter); }, [nameFilter]);
   const [sortField, setSortField] = useState<SortField>("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
-  const [page, setPage] = useState(1);
+  const [pageStr, setPageUrl] = useUrlState("page", "1");
+  const page = Number(pageStr) || 1;
+  const setPage = useCallback((n: number) => setPageUrl(String(n), "push"), [setPageUrl]);
   const [total, setTotal] = useState(0);
   const PAGE_SIZE = useListPageSize();
   // Which customer is open in the right-hand detail pane.
@@ -279,11 +292,13 @@ function CustomersPage() {
   // change, and on a slow connection the first (stale) response could land
   // last and overwrite the correct rows.
   const filterKey = JSON.stringify([showDeleted, searchTerm, typeFilter, nameFilter, webFilter]);
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
-    setPage(1);
-  }
+  const prevFilterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey;
+      setPageUrl("1", "replace");
+    }
+  }, [filterKey, setPageUrl]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -394,7 +409,7 @@ function CustomersPage() {
           <Label htmlFor="showDeleted">Show deleted records</Label>
         </div>
 
-        <Button variant="secondary" onClick={() => { setSearchTerm(""); setTypeFilter("all"); setNameFilter(""); }}>Clear Filters</Button>
+        <Button variant="secondary" onClick={() => { setSearchInput(""); setSearchTerm(""); setTypeFilter("all"); setNameFilterInput(""); setNameFilter(""); setWebFilter(""); }}>Clear Filters</Button>
       </div>
 
       {loading ? (
@@ -460,7 +475,9 @@ function CustomersPage() {
 export default function CustomersPageGuarded() {
   return (
     <RequirePageAccess pageKey="customers">
-      <CustomersPage />
+      <Suspense>
+        <CustomersPage />
+      </Suspense>
     </RequirePageAccess>
   );
 }

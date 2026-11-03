@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, useRef, Suspense } from 'react'
 import RequireOwner from '@/components/RequireOwner'
 import { apiFetch } from '@/lib/api-client'
 import { ErrorBanner } from '@/components/ErrorBanner'
@@ -12,6 +12,7 @@ import { ORDER_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import { useListPageSize } from '@/lib/useListPageSize'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useUrlState } from '@/lib/useUrlState'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -98,11 +99,19 @@ function WebOrdersPage() {
   const [rows, setRows] = useState<WebOrder[]>([])
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [statusFilter, setStatusFilter] = useState('')
-  const [flag, setFlag] = useState('')
-  const [from, setFrom] = useState('')
-  const [to, setTo] = useState('')
+  // Filters/page are URL-synced via useUrlState (lib/useUrlState.ts) so browser
+  // Back undoes one filter change at a time, same fix as Sales Ledger.
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
+  const [statusFilter, setStatusFilterUrl] = useUrlState('status', '')
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, 'push'), [setStatusFilterUrl])
+  const [flag, setFlagUrl] = useUrlState('flag', '')
+  const setFlag = useCallback((v: string) => setFlagUrl(v, 'push'), [setFlagUrl])
+  const [from, setFromUrl] = useUrlState('from', '')
+  const setFrom = useCallback((v: string) => setFromUrl(v, 'push'), [setFromUrl])
+  const [to, setToUrl] = useUrlState('to', '')
+  const setTo = useCallback((v: string) => setToUrl(v, 'push'), [setToUrl])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -142,7 +151,18 @@ function WebOrdersPage() {
   }, [page, PAGE_SIZE, statusFilter, flag, from, to, isDesktop])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { setPage(1) }, [statusFilter, flag, from, to])
+  // Any filter change invalidates the current page's meaning -- reset to page 1,
+  // silently (via `replace`) so the reset never becomes its own Back-undoable
+  // step. Guarded by a ref so a freshly loaded/refreshed filtered URL with
+  // page>1 doesn't get page stomped on mount.
+  const filterKey = JSON.stringify([statusFilter, flag, from, to])
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   const active = useMemo(() => rows.find((o) => o.id === activeId) ?? null, [rows, activeId])
 
@@ -470,7 +490,9 @@ function WebOrdersPage() {
 export default function WebOrdersPageGuarded() {
   return (
     <RequireOwner>
-      <WebOrdersPage />
+      <Suspense>
+        <WebOrdersPage />
+      </Suspense>
     </RequireOwner>
   )
 }

@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { createClient } from '@/lib/supabase/client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
+import { useUrlState } from '@/lib/useUrlState'
 import { useListPageSize } from '@/lib/useListPageSize'
 import RequireOwner from '@/components/RequireOwner'
 import { Button } from '@/components/ui/button'
@@ -193,13 +194,18 @@ function VendorsPage() {
   // searchInput updates on every keystroke; searchTerm catches up 300ms after
   // typing stops and is what actually drives the fetch -- same debounce pattern
   // as StockView/Sales Ledger/Repair Jobs.
+  // Search/showDeleted/page are URL-synced via useUrlState (lib/useUrlState.ts)
+  // so browser Back undoes one filter change at a time, same fix as Sales Ledger.
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch] = useState('')
+  const [search, setSearchUrl] = useUrlState('q', '', { debounceMs: 300 })
   useEffect(() => {
-    const timer = setTimeout(() => setSearch(searchInput), 300)
-    return () => clearTimeout(timer)
+    setSearchUrl(searchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput])
-  const [showDeleted, setShowDeleted] = useState(false)
+  useEffect(() => { setSearchInput(search) }, [search])
+  const [showDeletedStr, setShowDeletedUrl] = useUrlState('deleted', '')
+  const showDeleted = showDeletedStr === '1'
+  const setShowDeleted = useCallback((v: boolean) => setShowDeletedUrl(v ? '1' : '', 'push'), [setShowDeletedUrl])
   const [showForm, setShowForm] = useState(false)
   const [editingVendor, setEditingVendor] = useState<Vendor | null>(null)
   const [form, setForm] = useState<VendorFormState>(emptyForm)
@@ -207,7 +213,9 @@ function VendorsPage() {
   const [fetchingGst, setFetchingGst] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [vendorToDelete, setVendorToDelete] = useState<Vendor | null>(null)
-  const [page, setPage] = useState(1)
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = useListPageSize()
   // Which vendor is open in the right-hand detail pane.
@@ -250,11 +258,13 @@ function VendorsPage() {
   // stale page, again once the reset effect changed `page`), and on a slow
   // connection the stale response could land last and overwrite correct rows.
   const filterKey = JSON.stringify([showDeleted, search])
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey)
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey)
-    setPage(1)
-  }
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   useEffect(() => { fetchVendors() }, [showDeleted, search, page, PAGE_SIZE])
 
@@ -541,7 +551,9 @@ function VendorsPage() {
 export default function VendorsPageGuarded() {
   return (
     <RequireOwner>
-      <VendorsPage />
+      <Suspense>
+        <VendorsPage />
+      </Suspense>
     </RequireOwner>
   )
 }

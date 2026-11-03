@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import StockView from '@/components/StockView'
 import RequirePageAccess from '@/components/RequirePageAccess'
 
@@ -23,7 +24,9 @@ function MainStockPage() {
 export default function MainStockPageGuarded() {
   return (
     <RequirePageAccess pageKey="stock">
-      <MainStockPage />
+      <Suspense>
+        <MainStockPage />
+      </Suspense>
     </RequirePageAccess>
   )
 }

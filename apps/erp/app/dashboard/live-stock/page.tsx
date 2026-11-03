@@ -1,5 +1,6 @@
 'use client'
 
+import { Suspense } from 'react'
 import StockView from '@/components/StockView'
 import RequirePageAccess from '@/components/RequirePageAccess'
 
@@ -9,13 +10,15 @@ import RequirePageAccess from '@/components/RequirePageAccess'
 export default function LiveStockPage() {
   return (
     <RequirePageAccess pageKey="live_stock">
-      <StockView
-        title="Live Stock"
-        subtitle="Stock entered through Stock Intake and Sell. Always up to date for checking what's available or confirming a sale/warranty."
-        sourceMode="employee_intake"
-        pageKey="live_stock"
-        showServiceActions
-      />
+      <Suspense>
+        <StockView
+          title="Live Stock"
+          subtitle="Stock entered through Stock Intake and Sell. Always up to date for checking what's available or confirming a sale/warranty."
+          sourceMode="employee_intake"
+          pageKey="live_stock"
+          showServiceActions
+        />
+      </Suspense>
     </RequirePageAccess>
   )
 }

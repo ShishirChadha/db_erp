@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
 import { useResizablePaneWidth } from "@/lib/useResizablePaneWidth";
+import { useUrlState } from "@/lib/useUrlState";
 import { useListPageSize } from "@/lib/useListPageSize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -109,21 +110,32 @@ function InvoicesPage() {
   // searchInput updates on every keystroke; searchTerm catches up 300ms after
   // typing stops and is what actually drives fetchInvoices -- same debounce
   // pattern as StockView/Sales Ledger/Purchase Orders.
+  // Filters/search/page are URL-synced via useUrlState (lib/useUrlState.ts) so
+  // browser Back undoes one filter change at a time, same fix as Sales Ledger.
   const [searchInput, setSearchInput] = useState("");
-  const [searchTerm, setSearchTerm] = useState("");
+  const [searchTerm, setSearchTermUrl] = useUrlState("q", "", { debounceMs: 300 });
+  const setSearchTerm = useCallback((v: string) => setSearchTermUrl(v, "push"), [setSearchTermUrl]);
   useEffect(() => {
-    const timer = setTimeout(() => setSearchTerm(searchInput), 300);
-    return () => clearTimeout(timer);
+    setSearchTermUrl(searchInput, "replace");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchInput]);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [showDeleted, setShowDeleted] = useState(false);
+  useEffect(() => { setSearchInput(searchTerm); }, [searchTerm]);
+  const [statusFilter, setStatusFilterUrl] = useUrlState("status", "all");
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, "push"), [setStatusFilterUrl]);
+  const [dateFrom, setDateFromUrl] = useUrlState("date_from", "");
+  const setDateFrom = useCallback((v: string) => setDateFromUrl(v, "push"), [setDateFromUrl]);
+  const [dateTo, setDateToUrl] = useUrlState("date_to", "");
+  const setDateTo = useCallback((v: string) => setDateToUrl(v, "push"), [setDateToUrl]);
+  const [showDeletedStr, setShowDeletedUrl] = useUrlState("deleted", "");
+  const showDeleted = showDeletedStr === "1";
+  const setShowDeleted = useCallback((v: boolean) => setShowDeletedUrl(v ? "1" : "", "push"), [setShowDeletedUrl]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [invoiceToDelete, setInvoiceToDelete] = useState<any>(null);
   const router = useRouter();
   const supabase = createClient();
-  const [page, setPage] = useState(1);
+  const [pageStr, setPageUrl] = useUrlState("page", "1");
+  const page = Number(pageStr) || 1;
+  const setPage = useCallback((n: number) => setPageUrl(String(n), "push"), [setPageUrl]);
   const [total, setTotal] = useState(0);
   const PAGE_SIZE = useListPageSize();
   // Which invoice is open in the right-hand detail pane.
@@ -180,18 +192,18 @@ function InvoicesPage() {
     setLoading(false);
   }, [searchTerm, statusFilter, dateFrom, dateTo, showDeleted, page, PAGE_SIZE, supabase]);
 
-  // Any filter change invalidates the current page's meaning -- reset to page 1
-  // during render (React's supported "adjust state while rendering" pattern),
-  // not in a separate effect keyed on the same filters -- that shape fired the
-  // fetch effect twice per filter change (once with the new filter but the
-  // stale page, again once the reset effect changed `page`), and on a slow
-  // connection the stale response could land last and overwrite correct rows.
+  // Any filter change invalidates the current page's meaning -- reset to page 1,
+  // silently (via `replace`) so the reset never becomes its own Back-undoable
+  // step. Guarded by a ref so a freshly loaded/refreshed filtered URL with
+  // page>1 doesn't get page stomped on mount.
   const filterKey = JSON.stringify([searchTerm, statusFilter, dateFrom, dateTo, showDeleted]);
-  const [prevFilterKey, setPrevFilterKey] = useState(filterKey);
-  if (filterKey !== prevFilterKey) {
-    setPrevFilterKey(filterKey);
-    setPage(1);
-  }
+  const prevFilterKeyRef = useRef(filterKey);
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey;
+      setPageUrl("1", "replace");
+    }
+  }, [filterKey, setPageUrl]);
 
   useEffect(() => {
     fetchInvoices();
@@ -339,7 +351,9 @@ function InvoicesPage() {
 export default function InvoicesPageGuarded() {
   return (
     <RequirePageAccess pageKey="invoices">
-      <InvoicesPage />
+      <Suspense>
+        <InvoicesPage />
+      </Suspense>
     </RequirePageAccess>
   );
 }

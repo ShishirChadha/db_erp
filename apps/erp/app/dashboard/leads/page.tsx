@@ -1,8 +1,9 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, Suspense } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api-client'
+import { useUrlState } from '@/lib/useUrlState'
 import { useRole } from '@/lib/auth/useRole'
 import { useCustomOptions } from '@/lib/useCustomOptions'
 import RequirePageAccess from '@/components/RequirePageAccess'
@@ -848,11 +849,25 @@ function LeadsPageInner() {
   const openLeadId = searchParams.get('open')
   const [leads, setLeads] = useState<Lead[]>([])
   const [loadingLeads, setLoadingLeads] = useState(false)
-  const [page, setPage] = useState(1)
+  // In-set filters/search/page are URL-synced via useUrlState (lib/useUrlState.ts,
+  // namespaced distinctly from `set`/`open` above) so browser Back undoes one
+  // filter change at a time, same fix as Sales Ledger -- the `set`/`open`
+  // top-level navigation above is already correctly push-based and untouched.
+  const [pageStr, setPageUrl] = useUrlState('page', '1')
+  const page = Number(pageStr) || 1
+  const setPage = useCallback((n: number) => setPageUrl(String(n), 'push'), [setPageUrl])
   const [total, setTotal] = useState(0)
-  const [statusFilter, setStatusFilter] = useState('all')
-  const [followupFilter, setFollowupFilter] = useState('all')
-  const [leadSearch, setLeadSearch] = useState('')
+  const [statusFilter, setStatusFilterUrl] = useUrlState('status', 'all')
+  const setStatusFilter = useCallback((v: string) => setStatusFilterUrl(v, 'push'), [setStatusFilterUrl])
+  const [followupFilter, setFollowupFilterUrl] = useUrlState('followup', 'all')
+  const setFollowupFilter = useCallback((v: string) => setFollowupFilterUrl(v, 'push'), [setFollowupFilterUrl])
+  const [leadSearchInput, setLeadSearchInput] = useState('')
+  const [leadSearch, setLeadSearchUrl] = useUrlState('q', '', { debounceMs: 300 })
+  useEffect(() => {
+    setLeadSearchUrl(leadSearchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadSearchInput])
+  useEffect(() => { setLeadSearchInput(leadSearch) }, [leadSearch])
   const PAGE_SIZE = 25
 
   const loadSets = useCallback(async () => {
@@ -916,8 +931,18 @@ function LeadsPageInner() {
     setLoadingLeads(false)
   }, [activeSetId, page, statusFilter, followupFilter, leadSearch])
 
-  // Any filter change should reset back to page 1, not silently show "page 3 of 0".
-  useEffect(() => { setPage(1) }, [activeSetId, statusFilter, followupFilter, leadSearch])
+  // Any filter change should reset back to page 1, not silently show "page 3 of 0" --
+  // silently (via `replace`) so the reset never becomes its own Back-undoable
+  // step. Guarded by a ref so a freshly loaded/refreshed URL with filters +
+  // page>1 doesn't get page stomped on mount.
+  const filterKey = JSON.stringify([activeSetId, statusFilter, followupFilter, leadSearch])
+  const prevFilterKeyRef = useRef(filterKey)
+  useEffect(() => {
+    if (filterKey !== prevFilterKeyRef.current) {
+      prevFilterKeyRef.current = filterKey
+      setPageUrl('1', 'replace')
+    }
+  }, [filterKey, setPageUrl])
 
   useEffect(() => { loadLeads() }, [loadLeads])
 
@@ -945,7 +970,7 @@ function LeadsPageInner() {
 
         <div className="flex flex-wrap gap-2 items-end justify-between">
           <div className="flex flex-wrap gap-2 items-end">
-            <Input value={leadSearch} onChange={(e) => setLeadSearch(e.target.value)} placeholder="Search name, phone, email, identifier..." className="w-64" />
+            <Input value={leadSearchInput} onChange={(e) => setLeadSearchInput(e.target.value)} placeholder="Search name, phone, email, identifier..." className="w-64" />
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="h-9 w-[180px]"><SelectValue /></SelectTrigger>
               <SelectContent>
@@ -997,7 +1022,7 @@ function LeadsPageInner() {
           <LeadDetailModal
             lead={detailLead}
             statusOptions={statusOptions}
-            onClose={() => { setDetailLead(null); router.replace(`/dashboard/leads?set=${activeSetId}`) }}
+            onClose={() => setDetailLead(null)}
             onUpdated={(patch) => {
               setLeads((prev) => prev.map((x) => x.id === detailLead.id ? { ...x, ...patch } : x))
               setDetailLead((prev) => prev ? { ...prev, ...patch } : prev)

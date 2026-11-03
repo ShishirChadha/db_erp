@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useUrlState } from '@/lib/useUrlState'
 import { toast } from 'sonner'
 import { Loader2, RefreshCw, Undo2, SlidersHorizontal, Users } from 'lucide-react'
 import { apiFetch } from '@/lib/api-client'
@@ -37,17 +37,32 @@ const BULK_OPS: { key: BulkOp['type']; label: string; unit: string; placeholder:
 ]
 
 export default function PriceBoard() {
-  const params = useSearchParams()
   const [data, setData] = useState<BoardData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [templates, setTemplates] = useState<ConfigSummaryTemplate[]>([])
   const [draft, setDraft] = useState<Record<string, number>>({})
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [openId, setOpenId] = useState<string | null>(params.get('sku'))
-  const [filter, setFilter] = useState<Filter>('all')
-  const [sort, setSort] = useState<Sort>('age')
-  const [search, setSearch] = useState('')
-  const [brand, setBrand] = useState('')
+  // Filter/sort/search/brand and the open SKU are URL-synced via useUrlState
+  // (lib/useUrlState.ts) so browser Back undoes one filter change at a time --
+  // `openId`/`sku` already half-implemented this (read once on mount, never
+  // written back), so this also completes that into a real two-way sync,
+  // unlike every other page's master-detail selection (deliberately left out
+  // of browser-history scope elsewhere).
+  const [openId, setOpenIdUrl] = useUrlState('sku', '')
+  const setOpenId = useCallback((v: string | null) => setOpenIdUrl(v || '', 'push'), [setOpenIdUrl])
+  const [filter, setFilterUrl] = useUrlState('filter', 'all')
+  const setFilter = useCallback((v: Filter) => setFilterUrl(v, 'push'), [setFilterUrl])
+  const [sort, setSortUrl] = useUrlState('sort', 'age')
+  const setSort = useCallback((v: Sort) => setSortUrl(v, 'push'), [setSortUrl])
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearchUrl] = useUrlState('q', '', { debounceMs: 300 })
+  useEffect(() => {
+    setSearchUrl(searchInput, 'replace')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchInput])
+  useEffect(() => { setSearchInput(search) }, [search])
+  const [brand, setBrandUrl] = useUrlState('brand', '')
+  const setBrand = useCallback((v: string) => setBrandUrl(v, 'push'), [setBrandUrl])
   const [reviewing, setReviewing] = useState(false)
   const [rulesOpen, setRulesOpen] = useState(false)
   const [competitorsOpen, setCompetitorsOpen] = useState(false)
@@ -215,7 +230,7 @@ export default function PriceBoard() {
   const list = (
     <div ref={listRef}>
       <div className="space-y-2 pb-2">
-        <Input placeholder="Search model, CPU, SKU…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <Input placeholder="Search model, CPU, SKU…" value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
         <div className="flex gap-2">
           <select className="h-8 min-w-0 flex-1 rounded-md border bg-background px-2 text-sm" value={brand} onChange={(e) => setBrand(e.target.value)}>
             <option value="">All brands</option>
