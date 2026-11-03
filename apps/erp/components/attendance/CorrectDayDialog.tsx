@@ -11,7 +11,7 @@ import { ATTENDANCE_STATUSES, formatMinutes } from '@/lib/attendance'
 import { StatusBadge } from '@/components/StatusBadge'
 import { ATTENDANCE_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import type { RegisterRow } from '@/components/attendance/DayRegister'
-import { Loader2, Ban, Plus } from 'lucide-react'
+import { Loader2, Ban } from 'lucide-react'
 
 interface PunchRow {
   id: string
@@ -69,10 +69,11 @@ export function CorrectDayDialog({
   const [status, setStatus] = useState<string>('')
   const [reason, setReason] = useState('')
 
-  // Add-punch form state — both In and Out can be set at once
+  // Add-punch form state — In, Out and the status override below are all
+  // part of the one combined save (see `save` below), not gated behind a
+  // separate "Add punch" step.
   const [addInTime, setAddInTime] = useState('')
   const [addOutTime, setAddOutTime] = useState('')
-  const [showAddForm, setShowAddForm] = useState(false)
 
   const loadPunches = useCallback(async () => {
     if (!row) return
@@ -87,20 +88,30 @@ export function CorrectDayDialog({
     setError('')
     setReason('')
     setStatus(row?.day?.status ?? '')
-    setShowAddForm(false)
     setAddInTime('')
     setAddOutTime('')
     loadPunches()
   }, [isOpen, row, loadPunches])
 
-  const addPunch = useAsyncAction(async () => {
+  // One combined save: punch-in, punch-out and the status override all go out
+  // together under the single reason above, in one click -- previously these
+  // were three separate submit actions (Add punch, then Save correction, and
+  // if both In and Out were wanted, sometimes Add punch twice), which made a
+  // routine "they forgot to punch out and their status should be X" fix take
+  // three round trips instead of one. Punches are posted first (in before out,
+  // so the pair is chronologically correct), then the status override, so a
+  // status like "present" lands after the worked-minutes-affecting punches
+  // that justify it.
+  const save = useAsyncAction(async () => {
     const why = reason.trim()
-    if (!why) {
-      setError('Fill in the reason above before adding a punch.')
+    const hasPunchEdit = !!(addInTime || addOutTime)
+    const hasStatusEdit = !!status
+    if (!hasPunchEdit && !hasStatusEdit) {
+      setError('Enter a punch time or choose a status to save.')
       return
     }
-    if (!addInTime && !addOutTime) {
-      setError('Enter at least one time (Punch In or Punch Out).')
+    if (!why) {
+      setError('A reason is required when correcting attendance.')
       return
     }
     setError('')
@@ -115,7 +126,6 @@ export function CorrectDayDialog({
     }
 
     try {
-      // Always save in order: in before out, so the pair is chronologically correct.
       if (addInTime) await postPunch('in', addInTime)
       if (addOutTime) await postPunch('out', addOutTime)
     } catch (err: any) {
@@ -124,61 +134,48 @@ export function CorrectDayDialog({
       return
     }
 
-    setShowAddForm(false)
-    setAddInTime('')
-    setAddOutTime('')
-    await loadPunches()
-    onSaved()
-  })
-
-  const save = useAsyncAction(async () => {
-    if (!reason.trim()) {
-      setError('A reason is required when overriding attendance.')
-      return
-    }
-    if (!status) {
-      setError('Choose a status to set.')
-      return
-    }
-    setError('')
-
-    // No row yet: create it with manual status directly.
-    if (!row?.day) {
-      const res = await apiFetch('/api/attendance', {
-        method: 'POST',
-        body: JSON.stringify({ staff_id: row!.staff.id, work_date: date, status, reason: reason.trim() }),
-      })
-      const json = await res.json().catch(() => ({}))
-      if (!res.ok) {
-        // Race: the nightly scan created the row between our load and save.
-        // Re-use the existing row's id that the API hands back.
-        if (res.status === 409 && json.existing_id) {
-          const patchRes = await apiFetch(`/api/attendance/${json.existing_id}`, {
-            method: 'PATCH',
-            body: JSON.stringify({ status, reason: reason.trim() }),
-          })
-          if (!patchRes.ok) {
-            setError((await patchRes.json().catch(() => ({}))).error || 'Could not save that correction.')
+    if (hasStatusEdit) {
+      // No row yet: create it with manual status directly.
+      if (!row?.day) {
+        const res = await apiFetch('/api/attendance', {
+          method: 'POST',
+          body: JSON.stringify({ staff_id: row!.staff.id, work_date: date, status, reason: why }),
+        })
+        const json = await res.json().catch(() => ({}))
+        if (!res.ok) {
+          // Race: the nightly scan created the row between our load and save.
+          // Re-use the existing row's id that the API hands back.
+          if (res.status === 409 && json.existing_id) {
+            const patchRes = await apiFetch(`/api/attendance/${json.existing_id}`, {
+              method: 'PATCH',
+              body: JSON.stringify({ status, reason: why }),
+            })
+            if (!patchRes.ok) {
+              setError((await patchRes.json().catch(() => ({}))).error || 'Could not save that correction.')
+              await loadPunches()
+              return
+            }
+          } else {
+            setError(json.error || 'Could not save that correction.')
+            await loadPunches()
             return
           }
-        } else {
-          setError(json.error || 'Could not save that correction.')
+        }
+      } else {
+        const res = await apiFetch(`/api/attendance/${row.day.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status, reason: why }),
+        })
+        if (!res.ok) {
+          setError((await res.json().catch(() => ({}))).error || 'Could not save that correction.')
+          await loadPunches()
           return
         }
       }
-      onSaved()
-      onClose()
-      return
     }
 
-    const res = await apiFetch(`/api/attendance/${row.day.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ status, reason: reason.trim() }),
-    })
-    if (!res.ok) {
-      setError((await res.json().catch(() => ({}))).error || 'Could not save that correction.')
-      return
-    }
+    setAddInTime('')
+    setAddOutTime('')
     onSaved()
     onClose()
   })
@@ -254,62 +251,42 @@ export function CorrectDayDialog({
         {/* The punch log, voided rows included -- an append-only ledger is only
             useful if the UI can show what was originally recorded. */}
         <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <div className="text-sm font-medium">Punch log</div>
-            {!showAddForm && (
-              <Button variant="outline" size="sm" className="h-7 text-xs"
-                onClick={() => setShowAddForm(true)}>
-                <Plus className="h-3 w-3 mr-1" /> Add punch
-              </Button>
-            )}
-          </div>
+          <div className="text-sm font-medium mb-1.5">Punch log</div>
 
           {/* Add-punch inline form -- supervisor path, exempt from IP check,
               requires a reason (shared with the reason field below), fully
               audited. The API's isSupervisorAction branch fires because
               staff_id + punched_at are present in the body.
-              Both In and Out can be saved in one action -- In is posted first,
-              Out second, so the pair is always chronologically correct. */}
-          {showAddForm && (
-            <div className="rounded-md border border-border p-3 mb-2 space-y-2 bg-muted/30">
-              <div className="text-xs font-medium text-muted-foreground">
-                Add supervisor punches — IST on {date}
+              Always visible (not gated behind its own "Add punch" step) and
+              part of the single combined Save below, alongside the status
+              override -- punch in, punch out and status all go out together
+              in one click instead of three separate ones. */}
+          <div className="rounded-md border border-border p-3 mb-2 space-y-2 bg-muted/30">
+            <div className="text-xs font-medium text-muted-foreground">
+              Add supervisor punches — IST on {date}
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Punch In time</label>
+                <Input
+                  type="time"
+                  value={addInTime}
+                  onChange={e => setAddInTime(e.target.value)}
+                  className="h-8"
+                />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Punch In time</label>
-                  <Input
-                    type="time"
-                    value={addInTime}
-                    onChange={e => setAddInTime(e.target.value)}
-                    className="h-8"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs text-muted-foreground block mb-1">Punch Out time</label>
-                  <Input
-                    type="time"
-                    value={addOutTime}
-                    onChange={e => setAddOutTime(e.target.value)}
-                    className="h-8"
-                  />
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">Fill one or both. At least one is required.</p>
-              <div className="flex gap-2">
-                <Button size="sm" className="h-7 text-xs"
-                  disabled={addPunch.pending || (!addInTime && !addOutTime)}
-                  onClick={() => addPunch.run()}>
-                  {addPunch.pending && <Loader2 className="h-3 w-3 mr-1 animate-spin" />}
-                  Save punch{addInTime && addOutTime ? 'es' : ''}
-                </Button>
-                <Button variant="ghost" size="sm" className="h-7 text-xs"
-                  onClick={() => { setShowAddForm(false); setAddInTime(''); setAddOutTime('') }}>
-                  Cancel
-                </Button>
+              <div>
+                <label className="text-xs text-muted-foreground block mb-1">Punch Out time</label>
+                <Input
+                  type="time"
+                  value={addOutTime}
+                  onChange={e => setAddOutTime(e.target.value)}
+                  className="h-8"
+                />
               </div>
             </div>
-          )}
+            <p className="text-xs text-muted-foreground">Leave blank to leave punches unchanged. Saved together with the status below.</p>
+          </div>
 
           {loading ? (
             <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
@@ -393,7 +370,7 @@ export function CorrectDayDialog({
             </Button>
           )}
           <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-          <Button size="sm" disabled={save.pending || !status} onClick={() => save.run()}>
+          <Button size="sm" disabled={save.pending || (!status && !addInTime && !addOutTime)} onClick={() => save.run()}>
             {save.pending && <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />}
             Save correction
           </Button>

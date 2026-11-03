@@ -86,7 +86,10 @@ function AttendancePage() {
   // Calendar tab: owns its own correcting state so the refresh can be scoped.
   const [calendarCorrecting, setCalendarCorrecting] = useState<RegisterRow | null>(null)
   const [calendarCorrectingDate, setCalendarCorrectingDate] = useState('')
-  const [calendarKey, setCalendarKey] = useState(0)   // bump to force a re-mount after save
+  // Bumped after a correction is saved to re-fetch the current month/staff in
+  // place -- passed as `reloadToken`, not `key` (a key remount used to reset
+  // the calendar's own month/staff selection back to their defaults).
+  const [calendarKey, setCalendarKey] = useState(0)
 
   // Today and Register are the same view over a different date -- Today pins it
   // to the current IST date so the common case needs no date picking.
@@ -237,9 +240,9 @@ function AttendancePage() {
 
       {tab === 'calendar' && (
         <StaffCalendar
-          key={calendarKey}
           canEdit={canEdit && isManagerOrAbove}
           onCorrect={(row, date) => { setCalendarCorrecting(row); setCalendarCorrectingDate(date) }}
+          reloadToken={calendarKey}
         />
       )}
 

@@ -51,9 +51,15 @@ function currentMonth() {
 export function StaffCalendar({
   canEdit,
   onCorrect,
+  reloadToken,
 }: {
   canEdit: boolean
   onCorrect: (row: RegisterRow, date: string) => void
+  // Bumped by the parent after a correction is saved, to re-fetch the current
+  // month in place -- deliberately NOT a `key` remount (which used to reset
+  // `month`/`selectedId` back to their defaults the moment you saved an edit
+  // on a day in a previous month or for a different staff member).
+  reloadToken?: number
 }) {
   const [staff, setStaff] = useState<StaffOption[]>([])
   const [staffMeta, setStaffMeta] = useState<Record<string, { shift: RegisterRow['shift']; weekly_off_days: number[] }>>({})
@@ -100,7 +106,7 @@ export function StaffCalendar({
     setLoading(false)
   }, [selectedId, month])
 
-  useEffect(() => { loadMonth() }, [loadMonth])
+  useEffect(() => { loadMonth() }, [loadMonth, reloadToken])
 
   // Clear selections when staff or month changes.
   useEffect(() => {
