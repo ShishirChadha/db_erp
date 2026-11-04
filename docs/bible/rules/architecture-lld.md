@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/chunked-in.ts
   - apps/erp/app/api/monitoring/route.ts
   - apps/web/lib/order-to-sale.ts
-updated: 2026-10-23
+updated: 2026-11-04
 ---
 
 ## 1. Authentication — login and request authorisation
@@ -74,12 +74,19 @@ renders `components/ResumeSession.tsx` instead of redirecting to `/login` when
 an auth cookie is present but the token has expired. That happens when the ERP
 is opened the next morning or after the laptop slept. ResumeSession:
 - renews the token from the refresh token;
-- reloads the same page;
+- asks `session-check` about the renewed token. If the server still says
+  401 (account deactivated, device signed off), it signs out locally and goes
+  to `/login`, because reloading would only land back on this screen;
+- otherwise reloads the same page;
 - is guarded by a per-tab attempt counter, which `RoleSeed` resets on a
   successful load.
 
 The login page also renews and skips the form when it is reached with a
-still-valid session.
+still-valid session. After a successful password sign-in it asks
+`session-check` before navigating: a deactivated account still passes
+Supabase Auth, so on a 401 it signs out locally and shows "This account is
+not active" instead of entering the dashboard. Before this check existed,
+such a user looped on "Restoring your session…" (2026-11-04).
 
 ## 2. The 401 → sign-out loop (and why it fired after the migration)
 

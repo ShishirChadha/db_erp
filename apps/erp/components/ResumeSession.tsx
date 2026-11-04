@@ -38,6 +38,20 @@ export function ResumeSession({ mode }: { mode: 'expired' | 'unavailable' }) {
         const { data } = await createClient().auth.getSession()
         if (cancelled) return
         if (!data.session) { window.location.href = '/login'; return }
+        // A token that was merely expired is fine again now. If the server
+        // still refuses it (account deactivated, device signed off), reloading
+        // would land right back here -- sign out and go to the login page.
+        const res = await fetch('/api/auth/session-check', {
+          headers: { Authorization: `Bearer ${data.session.access_token}` },
+          cache: 'no-store',
+        }).catch(() => null)
+        if (cancelled) return
+        if (res?.status === 401) {
+          await createClient().auth.signOut({ scope: 'local' })
+          try { sessionStorage.removeItem(KEY) } catch {}
+          window.location.href = '/login'
+          return
+        }
         window.location.reload()
       } else {
         await new Promise(r => setTimeout(r, 2000 * (attempts + 1)))

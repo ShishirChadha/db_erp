@@ -71,6 +71,21 @@ function LoginForm() {
     // so it needs to land before the dashboard's first request.
     await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
 
+    // The password being right doesn't mean the ERP will let them in -- a
+    // deactivated account (profiles.is_active = false) still signs in to
+    // Supabase Auth. Sending it on to /dashboard loops on "Restoring your
+    // session…" forever, so ask the server first and say why here instead.
+    const { data: { session } } = await supabase.auth.getSession()
+    const check = await fetch('/api/auth/session-check', {
+      headers: { Authorization: `Bearer ${session?.access_token ?? ''}` },
+      cache: 'no-store',
+    }).catch(() => null)
+    if (check?.status === 401) {
+      await supabase.auth.signOut({ scope: 'local' })
+      setError('This account is not active. Please contact the owner.')
+      return
+    }
+
     signedInRef.current = true
     setSignedIn(true)
     router.push('/dashboard')
