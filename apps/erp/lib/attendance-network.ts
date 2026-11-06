@@ -30,6 +30,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 
 const ENFORCEMENT_CATEGORY = 'attendance_settings'
 const ENFORCEMENT_ON = 'ip_enforcement_on'
+const LOGIN_ENFORCEMENT_ON = 'login_enforcement_on'
 
 // Read fresh on every call, deliberately NOT cached.
 //
@@ -46,13 +47,13 @@ const ENFORCEMENT_ON = 'ip_enforcement_on'
 //
 // And the cost genuinely is trivial: punching happens a few dozen times a day
 // across the whole shop, not per page view.
-async function getState(): Promise<{ enforced: boolean; activeCount: number }> {
+async function getState(toggleValue = ENFORCEMENT_ON): Promise<{ enforced: boolean; activeCount: number }> {
   const [{ data: toggle }, { count }] = await Promise.all([
     supabaseAdmin
       .from('custom_options')
       .select('value')
       .eq('category', ENFORCEMENT_CATEGORY)
-      .eq('value', ENFORCEMENT_ON)
+      .eq('value', toggleValue)
       .eq('is_active', true)
       .maybeSingle(),
     supabaseAdmin
@@ -100,8 +101,28 @@ export type IpVerdict =
   | { ok: false; ip: string | null; reason: 'off_network' | 'no_ip' }
 
 export async function checkPunchNetwork(req: NextRequest): Promise<IpVerdict> {
+  return checkNetwork(req, ENFORCEMENT_ON)
+}
+
+// Same allowlist and same rules as punching, under its own toggle, so the owner
+// can restrict one without the other. Owners are never restricted -- the caller
+// checks the role, as registerSession() does for the device cap.
+export async function checkLoginNetwork(req: NextRequest): Promise<IpVerdict> {
+  return checkNetwork(req, LOGIN_ENFORCEMENT_ON)
+}
+
+// The login gate runs when a device session is created, so a browser holding no
+// device-session cookie has not passed it. isSessionRevoked() treats a missing
+// cookie as valid; while the restriction is on, session.ts must not, or signing
+// in directly and calling the API would walk around the gate.
+export async function isLoginRestricted(): Promise<boolean> {
+  const { enforced, activeCount } = await getState(LOGIN_ENFORCEMENT_ON)
+  return enforced && activeCount > 0
+}
+
+async function checkNetwork(req: NextRequest, toggleValue: string): Promise<IpVerdict> {
   const ip = getTrustedClientIp(req)
-  const { enforced, activeCount } = await getState()
+  const { enforced, activeCount } = await getState(toggleValue)
 
   // Fail OPEN when enforcement is off, and also when it is on but no active
   // range exists. The second case is deliberate: the alternative is an owner who

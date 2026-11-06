@@ -5,6 +5,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 
 const ENFORCEMENT_CATEGORY = 'attendance_settings'
 const ENFORCEMENT_ON = 'ip_enforcement_on'
+const LOGIN_ENFORCEMENT_ON = 'login_enforcement_on'
 
 // The office-IP allowlist, plus the master enforcement toggle.
 //
@@ -15,24 +16,27 @@ export async function GET(req: NextRequest) {
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
-  const [{ data: networks }, { data: toggle }] = await Promise.all([
+  const [{ data: networks }, { data: toggles }] = await Promise.all([
     supabaseAdmin.from('attendance_networks')
       .select('id, label, cidr, is_active, notes, created_at, source, last_seen_at')
       .order('created_at', { ascending: false }),
     supabaseAdmin.from('custom_options')
-      .select('id').eq('category', ENFORCEMENT_CATEGORY).eq('value', ENFORCEMENT_ON)
-      .eq('is_active', true).maybeSingle(),
+      .select('value').eq('category', ENFORCEMENT_CATEGORY)
+      .in('value', [ENFORCEMENT_ON, LOGIN_ENFORCEMENT_ON]).eq('is_active', true),
   ])
 
   const rows = networks || []
   const activeCount = rows.filter(n => n.is_active).length
+  const enforced = (toggles || []).some(t => t.value === ENFORCEMENT_ON)
+  const loginEnforced = (toggles || []).some(t => t.value === LOGIN_ENFORCEMENT_ON)
   return NextResponse.json({
     networks: rows,
-    enforced: !!toggle,
+    enforced,
+    login_enforced: loginEnforced,
     // Enforcement on with nothing to match would lock the whole team out, so
     // checkPunchNetwork() fails OPEN in that state. Surfaced here so the
     // Settings tab can warn instead of silently doing nothing.
-    failing_open: !!toggle && activeCount === 0,
+    failing_open: (enforced || loginEnforced) && activeCount === 0,
   })
 }
 
@@ -60,6 +64,25 @@ export async function POST(req: NextRequest) {
       recordLabel: `office-IP enforcement ${body.enforced ? 'enabled' : 'disabled'}`,
     })
     return NextResponse.json({ success: true, enforced: !!body.enforced })
+  }
+
+  // ---------- toggle office-only login ----------
+  if (body.login_enforced !== undefined) {
+    if (body.login_enforced) {
+      await supabaseAdmin.from('custom_options').upsert(
+        { category: ENFORCEMENT_CATEGORY, value: LOGIN_ENFORCEMENT_ON, owner_only: true, is_active: true },
+        { onConflict: 'category,value' },
+      )
+    } else {
+      await supabaseAdmin.from('custom_options')
+        .delete().eq('category', ENFORCEMENT_CATEGORY).eq('value', LOGIN_ENFORCEMENT_ON)
+    }
+    await logAuditEvent({
+      actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+      actionType: 'status_change', module: 'auth', tableName: 'attendance_networks',
+      recordLabel: `office-only login ${body.login_enforced ? 'enabled' : 'disabled'}`,
+    })
+    return NextResponse.json({ success: true, login_enforced: !!body.login_enforced })
   }
 
   // ---------- add a range ----------

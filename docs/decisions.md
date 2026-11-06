@@ -1082,3 +1082,10 @@ This was not a "two windows" problem. Windows and tabs in the same browser alrea
 Verified with a throwaway employee account, deleted afterwards:
 - a double login from one browser left 1 live session;
 - a login from a second browser made 2, and nobody was kicked.
+
+---
+
+**Office-only ERP login reuses the punch allowlist, checked when a device session starts.** (2026-11-06)
+Why: the owner wants staff signing in only at the office. `attendance_networks` and the ProDesk heartbeat already solve "what is the shop's IP today", so a second list would drift. It has its own toggle (`attendance_settings` / `login_enforcement_on`) so punching and login can differ. Owners are exempt so they can't lock themselves out.
+Password sign-in is client-direct to Supabase Auth, so the password itself can't be refused by the ERP. The gate is at `log-event` and `session-register`, and while it is on `lib/auth/session.ts` refuses a non-owner with no device-session cookie, because a missing cookie otherwise counts as valid.
+Impact: it is checked at login only, as asked, so a session started in the office keeps working elsewhere. It remains a deterrent; a staff JWT can still reach RLS-governed tables directly.

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth/session'
+import { checkLoginNetwork } from '@/lib/attendance-network'
 import { SESSION_COOKIE_NAME, registerSession, isSessionRevoked } from '@/lib/auth/device-sessions'
 
 // Backfill point for a browser session that predates this feature (device-limit +
@@ -14,6 +15,12 @@ export async function POST(req: NextRequest) {
   const existing = req.cookies.get(SESSION_COOKIE_NAME)?.value
   if (existing && !(await isSessionRevoked(existing))) {
     return NextResponse.json({ success: true, already_registered: true })
+  }
+
+  // Creating a device session is what the office-network rule guards, so this
+  // backfill path has to honour it as well as the login event.
+  if (sessionUser.role !== 'owner' && !(await checkLoginNetwork(req)).ok) {
+    return NextResponse.json({ error: 'ERP login is allowed only from the office network.', code: 'off_network' }, { status: 403 })
   }
 
   const { sessionId, kickedCount } = await registerSession(sessionUser.id, sessionUser.role, req)

@@ -15,7 +15,9 @@ sources:
   - apps/erp/app/api/attendance/punch/route.ts
   - apps/erp/app/api/attendance/office-heartbeat/route.ts
   - scripts/prodesk/office-heartbeat.sh
-updated: 2026-10-17
+  - apps/erp/app/api/auth/log-event/route.ts
+  - apps/erp/app/api/auth/session-register/route.ts
+updated: 2026-11-06
 ---
 
 ## What this is
@@ -43,6 +45,21 @@ Settings → Attendance & Staff → **Office networks**.
   person with technical knowledge can misrepresent it. It reliably stops casual
   punching from home or mobile data. It is not proof of physical presence, and it
   should not be treated as such in a dispute.
+
+## Restricting ERP login to the office
+
+**Only allow ERP login from the office network**, on the same page, uses the same list
+of networks under its own tick box.
+
+- It applies to everyone except owners, and only when a device session starts.
+- Someone who signed in at the office **stays signed in** after leaving, until they log
+  out or are logged off from Settings → Active Devices. It does not re-check each page.
+- A refused login shows "ERP login is allowed only from the office network" and is written
+  to the audit log as `blocked`.
+- While it is on, a staff browser with no device-session cookie is refused, because it
+  has not passed the check.
+- It is a deterrent, like the punch rule. The wide ranges in the list can also match other
+  customers of the same broadband provider.
 
 ## If it is switched on but nothing is listed
 

@@ -69,7 +69,13 @@ function LoginForm() {
     // Awaited (not fire-and-forget) -- this call also registers the device session
     // and sets the session cookie the device-limit/force-logoff feature relies on,
     // so it needs to land before the dashboard's first request.
-    await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => {})
+    const logged = await apiFetch('/api/auth/log-event', { method: 'POST', body: JSON.stringify({ event: 'login' }) }).catch(() => null)
+    if (logged?.status === 403) {
+      await supabase.auth.signOut({ scope: 'local' })
+      const body = await logged.json().catch(() => null)
+      setError(body?.error || 'You are not allowed to sign in from here.')
+      return
+    }
 
     // The password being right doesn't mean the ERP will let them in -- a
     // deactivated account (profiles.is_active = false) still signs in to

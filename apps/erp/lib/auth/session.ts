@@ -4,6 +4,7 @@ import { jwtVerify, createRemoteJWKSet } from 'jose'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { createClient as createServerClient } from '@/lib/supabase/server'
 import { SESSION_COOKIE_NAME, isSessionRevoked, touchSessionIfStale } from '@/lib/auth/device-sessions'
+import { isLoginRestricted } from '@/lib/attendance-network'
 
 export type Role = 'owner' | 'manager' | 'employee'
 
@@ -67,6 +68,12 @@ async function verifyAccessToken(token: string): Promise<{ id: string; email: st
 
 // A profiles lookup that ERRORED (as opposed to finding no row) is the same
 // "could not check" case as above.
+// Only reached without a device-session cookie, which a normal browser always
+// has after login, so ordinary requests pay nothing for this.
+async function missingRequiredSession(sessionId: string | undefined, role: string): Promise<boolean> {
+  return !sessionId && role !== 'owner' && await isLoginRestricted()
+}
+
 function assertProfileLookup(error: { code?: string; message: string } | null) {
   if (error && error.code !== 'PGRST116') throw new SessionCheckUnavailable(error.message)
 }
@@ -113,6 +120,7 @@ export async function getSessionUser(req: NextRequest, opts?: { skipSessionCheck
   if (revoked) return null
 
   if (!profile || !profile.is_active) return null
+  if (!opts?.skipSessionCheck && await missingRequiredSession(sessionId, profile.role)) return null
 
   const pageEditKeys = (profile.profile_page_actions || [])
     .filter((a: { page_key: string; can_edit: boolean }) => a.can_edit)
@@ -147,6 +155,7 @@ export async function getCookieSessionUser(): Promise<SessionUser | null> {
   if (revoked) return null
 
   if (!profile || !profile.is_active) return null
+  if (await missingRequiredSession(sessionId, profile.role)) return null
 
   const { data: editRows } = await supabase
     .from('profile_page_actions')
@@ -209,6 +218,7 @@ export async function getLayoutSessionUser(): Promise<RoleSnapshot | null> {
   assertProfileLookup(profileError)
   if (revoked) return null
   if (!profile || !profile.is_active) return null
+  if (await missingRequiredSession(sessionId, profile.role)) return null
 
   const pageEditKeys = (profile.profile_page_actions || [])
     .filter((a: { page_key: string; can_edit: boolean }) => a.can_edit)

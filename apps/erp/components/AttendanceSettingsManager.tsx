@@ -92,6 +92,7 @@ export default function AttendanceSettingsManager() {
   const [users, setUsers] = useState<AppUser[]>([])
   const [networks, setNetworks] = useState<Network[]>([])
   const [enforced, setEnforced] = useState(false)
+  const [loginEnforced, setLoginEnforced] = useState(false)
   const [failingOpen, setFailingOpen] = useState(false)
   const [myIp, setMyIp] = useState<string | null>(null)
   const [ipVerifiable, setIpVerifiable] = useState(true)
@@ -124,6 +125,7 @@ export default function AttendanceSettingsManager() {
       const json = await nw.json()
       setNetworks(json.networks || [])
       setEnforced(!!json.enforced)
+      setLoginEnforced(!!json.login_enforced)
       setFailingOpen(!!json.failing_open)
     }
     if (hol.ok) setHolidays(await hol.json())
@@ -178,6 +180,10 @@ export default function AttendanceSettingsManager() {
   })
   const toggleEnforce = useAsyncAction(async (next: boolean) => {
     await mutate('/api/settings/attendance-networks', 'POST', { enforced: next })
+  })
+
+  const toggleLoginEnforce = useAsyncAction(async (next: boolean) => {
+    await mutate('/api/settings/attendance-networks', 'POST', { login_enforced: next })
   })
 
   if (loading) {
@@ -486,12 +492,23 @@ export default function AttendanceSettingsManager() {
                 </span>
               </span>
             </label>
+            <label className="flex items-start gap-2 text-sm">
+              <Checkbox checked={loginEnforced} onCheckedChange={c => toggleLoginEnforce.run(!!c)} />
+              <span>
+                <span className="font-medium">Only allow ERP login from the office network</span>
+                <span className="block text-xs text-muted-foreground">
+                  Applies to everyone except owners, when they sign in. Someone already signed in
+                  stays signed in after leaving the office, until they log out or you log them off
+                  from Active Devices.
+                </span>
+              </span>
+            </label>
             {failingOpen && (
               <div className="flex items-start gap-2 rounded-md bg-warning/10 border border-warning/20 p-2 text-xs text-warning">
                 <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
                 <span>
-                  This is switched on but no network is listed below, so punching is currently
-                  allowed from anywhere. Add your shop&apos;s IP to make it take effect — the
+                  This is switched on but no network is listed below, so these restrictions
+                  are not being applied. Add your shop&apos;s IP to make it take effect — the
                   check deliberately stays open rather than locking everyone out.
                 </span>
               </div>
