@@ -167,19 +167,19 @@ export default function ActivityDescriptionTable({
               {current.columns.map((col, colIndex) => (
                 <th key={colIndex} className="p-1 text-left">
                   {editing ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1 min-w-[120px]">
                       <input
                         value={col}
                         onChange={e => renameColumn(colIndex, e.target.value)}
                         onBlur={() => commit(local)}
-                        className="w-full border rounded px-1.5 py-1 text-xs font-medium bg-background"
+                        className="w-full min-w-[90px] border rounded px-1.5 py-1 text-xs font-medium bg-background"
                       />
                       <button type="button" onClick={() => removeColumn(colIndex)} className="text-muted-foreground hover:text-destructive shrink-0">
                         <Trash2 className="h-3 w-3" />
                       </button>
                     </div>
                   ) : (
-                    <span className="px-1.5 py-1 text-xs font-medium block">{col}</span>
+                    <span className="px-1.5 py-1 text-xs font-medium block whitespace-nowrap min-w-[90px]">{col}</span>
                   )}
                 </th>
               ))}
@@ -196,10 +196,10 @@ export default function ActivityDescriptionTable({
                         value={cell}
                         onChange={e => updateCell(rowIndex, colIndex, e.target.value)}
                         onBlur={() => commit(local)}
-                        className="w-full border rounded px-1.5 py-1 text-xs"
+                        className="w-full min-w-[90px] border rounded px-1.5 py-1 text-xs"
                       />
                     ) : (
-                      <span className="px-1.5 py-1 text-xs block">{cell}</span>
+                      <span className="px-1.5 py-1 text-xs block whitespace-nowrap min-w-[90px]">{cell}</span>
                     )}
                   </td>
                 ))}
