@@ -28,7 +28,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage, asset_id, is_own_stock, job_date')
+    .select('id, status, job_number, customer_id, problem_description, amount_charged, amount_paid, payment_account, gst_percentage, asset_id, is_own_stock, job_date, customer_device_serial')
     .eq('id', id)
     .single()
 
@@ -106,6 +106,10 @@ export async function POST(
         payment_account: job.payment_account,
         entered_by: sessionUser.id,
         finalized: false,
+        // Staff's own internal tracking number for the customer's device (e.g. the
+        // customer's own ticket number) -- stamped onto the sale's serial_number so
+        // it becomes searchable in the Sales Ledger, same as any asset's serial.
+        serial_number: job.is_own_stock ? null : job.customer_device_serial,
       })
       .select('id')
       .single()

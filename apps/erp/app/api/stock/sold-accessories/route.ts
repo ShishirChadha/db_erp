@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('sales')
     .select(
-      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, created_at',
+      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, invoice_id, created_at',
       pagination ? { count: 'exact' } : undefined
     )
     .not('accessory_id', 'is', null)
@@ -75,7 +75,8 @@ export async function GET(req: NextRequest) {
   // already applied to /api/stock and /api/sales.
   const skuIds = [...new Set((sales || []).map((s: any) => s.accessory_id).filter(Boolean))]
   const customerIds = [...new Set((sales || []).map((s: any) => s.customer_id).filter(Boolean))]
-  const [{ data: skus }, { data: customers }, paymentDateBySaleId] = await Promise.all([
+  const invoiceIds = [...new Set((sales || []).map((s: any) => s.invoice_id).filter(Boolean))]
+  const [{ data: skus }, { data: customers }, paymentDateBySaleId, { data: invoices }] = await Promise.all([
     skuIds.length
       ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category').in('id', skuIds))
       : Promise.resolve({ data: [] as any[] }),
@@ -85,9 +86,17 @@ export async function GET(req: NextRequest) {
       ? withRetry(() => supabaseAdmin.from('customers').select('id, type, contact_person, address_line1, address_line2, city, source').in('id', customerIds))
       : Promise.resolve({ data: [] as any[] }),
     latestPaymentDatesBySaleId((sales || []).map((s: any) => s.id)),
+    // The invoice's own grand_total can differ from this sale's sale_total --
+    // e.g. a shipping/custom charge added at the invoice level (see
+    // POST /api/invoices/[id]/items) that has no counterpart on the sale
+    // itself. Surfaced so that extra charge isn't invisible from this tab.
+    invoiceIds.length
+      ? withRetry(() => supabaseAdmin.from('invoices').select('id, grand_total').in('id', invoiceIds))
+      : Promise.resolve({ data: [] as any[] }),
   ])
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
   const customerById = new Map((customers || []).map((c: any) => [c.id, c]))
+  const invoiceById = new Map((invoices || []).map((i: any) => [i.id, i]))
 
   const result = (sales || []).map((s: any) => {
     const sku = skuById.get(s.accessory_id)
@@ -112,6 +121,8 @@ export async function GET(req: NextRequest) {
       sold_by: s.sold_by,
       finalized: s.finalized,
       invoice_number: s.invoice_number,
+      invoice_id: s.invoice_id,
+      invoice_grand_total: s.invoice_id ? (invoiceById.get(s.invoice_id)?.grand_total ?? null) : null,
       created_at: s.created_at,
     }
   })

@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef, Suspense } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
-import { Loader2, ArrowLeft, X, Pencil } from "lucide-react";
+import { Loader2, ArrowLeft, X, Pencil, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { apiFetch } from "@/lib/api-client";
 import { getCachedListPageSize } from "@/lib/useListPageSize";
 import { useIsDesktopViewport } from "@/lib/useIsDesktopViewport";
@@ -68,6 +69,7 @@ interface Sale {
   refund_resolution?: { type: 'refund' | 'credit_note'; amount: number; payment_account?: string | null } | null;
   invoice_number: string | null;
   invoice_date: string | null;
+  invoice_grand_total?: number | null;
   invoice_id?: string | null;
   original_sold_date?: string | null;
   invoice_mode?: "erp" | "external";
@@ -193,7 +195,17 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
       {sale.finalized ? (
         <span className="text-success inline-flex flex-col gap-0.5">
           <span className="inline-flex items-center gap-1.5">
-            ✓ {sale.invoice_number}
+            ✓{" "}
+            {/* Jump straight to the invoice to edit it (e.g. add a custom
+                shipping-charge line) instead of having to find it again by
+                number in the standalone Invoices list. */}
+            {sale.invoice_id ? (
+              <Link href={`/dashboard/invoices/${sale.invoice_id}`} className="underline">
+                {sale.invoice_number}
+              </Link>
+            ) : (
+              sale.invoice_number
+            )}
             {/* Only Zoho-recorded invoices can be missing their PDF -- an ERP-generated
                 one always has its own rendered PDF via /api/invoices/[id]/pdf. */}
             {isExternal && isOwner && sale.invoice_id && (
@@ -384,6 +396,19 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
             <CustomerCell sale={sale} onDone={onDone} canReassign={canEditSale} />
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5"><ItemCell sale={sale} /></p>
+          {/* A stable, pastable reference for support/investigation -- so a
+              specific sale can be handed off by its id instead of describing
+              it ("that laptop sold to X last week"). Search also matches a
+              pasted id directly (see buildFilterParams/api/sales's id.eq
+              clause). */}
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard.writeText(sale.id); toast.success("Sale ID copied."); }}
+            title="Click to copy the full Sale ID"
+            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-mono"
+          >
+            <Copy className="h-3 w-3" /> {sale.id.slice(0, 8)}
+          </button>
         </div>
         <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
           <span className="text-xl font-semibold tabular-nums text-foreground">₹{sale.sale_total?.toFixed(2)}</span>
@@ -426,6 +451,17 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           )}
         </Field>
         {sale.hsn_code && <Field label="HSN Code">{sale.hsn_code}</Field>}
+        {/* Previously invisible anywhere in this pane -- repair_job_number was
+            only ever used as item()'s last-resort label, which never actually
+            fires once a sale has a serial_number (now the common case for a
+            repair-derived part, see the customer_device_serial backfill). */}
+        {sale.repair_job_number && (
+          <Field label="Repair Job">
+            <Link href="/dashboard/repair-jobs" className="text-primary underline">
+              {sale.repair_job_number}
+            </Link>
+          </Field>
+        )}
         <Field label="Price">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
             <span>Base: <span className="tabular-nums font-medium">₹{(sale.sale_base_price ?? 0).toFixed(2)}</span></span>
@@ -442,6 +478,16 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
               </span>
             )}
           </div>
+          {/* The invoice's own grand_total can exceed this sale's own
+              sale_total -- e.g. a shipping/custom charge added at the invoice
+              level (see Edit Sale's "Add Charge to Invoice") that has no
+              counterpart on the sale itself. Surfaced here so that extra
+              charge isn't invisible from the ledger. */}
+          {sale.invoice_grand_total != null && Math.abs(sale.invoice_grand_total - sale.sale_total) > 0.5 && (
+            <div className="text-muted-foreground text-xs mt-0.5">
+              Invoice total: ₹{sale.invoice_grand_total.toFixed(2)} (includes charges beyond this item)
+            </div>
+          )}
         </Field>
         <Field label="E-way Bill"><EwayBillField sale={sale} canEditSale={canEditSale} onDone={onDone} /></Field>
         {sale.bundle_parent && (
@@ -527,6 +573,10 @@ function SaleListItem({ sale, active, selectable, checked, onToggleCheck, onOpen
             {sale.accessory_id && (sale.accessory_quantity ?? 1) > 1 && <span> ×{sale.accessory_quantity}</span>}
             {sale.bundle_parent && <span> · with {sale.bundle_parent.label}</span>}
             {sale.bundle_children && sale.bundle_children.length > 0 && <span> · +{sale.bundle_children.length} accessor{sale.bundle_children.length === 1 ? "y" : "ies"}</span>}
+            {/* A stable, pastable reference for support/investigation --
+                full id + copy button is in the detail pane; this is just
+                enough to recognize/distinguish rows at a glance. */}
+            <span className="font-mono"> · {sale.id.slice(0, 8)}</span>
           </p>
           <div className="flex items-center gap-1.5 shrink-0">
             {accountAbbrev(sale.payment_account) && (
@@ -609,7 +659,15 @@ function SalesLedgerPage() {
   const [customerFilterId, setCustomerFilterIdUrl] = useUrlState("customer", "");
   const setCustomerFilterId = useCallback((v: string) => setCustomerFilterIdUrl(v, "push"), [setCustomerFilterIdUrl]);
   const [customerFilterName, setCustomerFilterName] = useState("");
-  const customerFilter = customerFilterId ? { id: customerFilterId, name: customerFilterName || "…" } : null;
+  // Memoized -- a fresh {id,name} object literal every render (this is derived,
+  // not its own useState) made buildFilterParams/fetchSales below see a "new"
+  // customerFilter on every render once a customer was pinned, which broke
+  // their useCallback memoization and caused fetchSales to re-run in an
+  // infinite loop (the list staying permanently dimmed, unrelated to typing).
+  const customerFilter = useMemo(
+    () => (customerFilterId ? { id: customerFilterId, name: customerFilterName || "…" } : null),
+    [customerFilterId, customerFilterName]
+  );
   const setCustomerFilter = useCallback((v: { id: string; name: string } | null) => {
     setCustomerFilterId(v?.id || "");
     setCustomerFilterName(v?.name || "");
@@ -660,8 +718,11 @@ function SalesLedgerPage() {
 
   const buildFilterParams = useCallback((includeFinalized: boolean) => {
     const params = new URLSearchParams();
+    // Nest filters: a pinned customer and free-text search (description/SKU/
+    // amount/etc.) combine with AND, not either/or -- picking a customer then
+    // typing narrows to that customer's sales matching the search.
     if (customerFilter) params.set("customer_id", customerFilter.id);
-    else if (search) params.set("search", search);
+    if (search) params.set("search", search);
     if (paymentFilter) params.set("payment_status", paymentFilter);
     if (receivedIntoFilter) params.set("received_into", receivedIntoFilter);
     if (monthFilter) params.set("month", monthFilter);
@@ -818,52 +879,55 @@ function SalesLedgerPage() {
       />
 
       <div className="flex gap-2 flex-wrap items-center mb-2">
-        <div className="relative flex-1 min-w-[180px]">
-          {customerFilter ? (
+        <div className="flex flex-col gap-1.5 flex-1 min-w-[180px]">
+          {/* Nested filters: a pinned customer and the search box below it combine
+              (AND) -- picking a customer narrows the list to their sales, then
+              typing a price/description/SKU/etc. narrows further within that
+              customer, instead of the pin replacing the search box entirely. */}
+          {customerFilter && (
             <div className="h-8 flex items-center gap-1.5 px-3 border rounded-md bg-muted text-sm">
-              <span className="truncate">Customer: <span className="font-medium">{customerFilter.name}</span></span>
+              <span className="truncate text-muted-foreground">Customer: <span className="font-medium text-foreground">{customerFilter.name}</span></span>
               <button type="button" onClick={() => setCustomerFilter(null)} className="text-muted-foreground hover:text-foreground ml-auto">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
-          ) : (
-            <>
-              <Input
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onFocus={() => setShowSuggestions(true)}
-                // Delay so a suggestion's onClick fires before the dropdown unmounts.
-                onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
-                placeholder="Search customer, asset, serial, invoice, amount..."
-                className="w-full"
-              />
-              {showSuggestions && searchInput.trim() && (() => {
-                const suggestions = sales.filter((s) => s.customer_id).slice(0, 8);
-                return suggestions.length > 0 ? (
-                  <div className="absolute z-20 top-full left-0 mt-1 w-full max-w-md bg-card border rounded-md shadow-lg max-h-72 overflow-y-auto">
-                    {suggestions.map((s) => (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => {
-                          setCustomerFilter({ id: s.customer_id!, name: s.customer_name || "Unknown customer" });
-                          setSearchInput("");
-                          setShowSuggestions(false);
-                        }}
-                        className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b border-border last:border-0 flex items-baseline justify-between gap-2"
-                      >
-                        <span className="truncate">
-                          <span className="font-medium">{s.customer_name || "—"}</span>
-                          <span className="text-muted-foreground"> · {(s.original_sold_date || s.sale_date)?.slice(0, 10)}</span>
-                        </span>
-                        <span className="tabular-nums shrink-0">₹{s.sale_total?.toFixed(2)}</span>
-                      </button>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-            </>
           )}
+          <div className="relative">
+            <Input
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              onFocus={() => setShowSuggestions(true)}
+              // Delay so a suggestion's onClick fires before the dropdown unmounts.
+              onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
+              placeholder={customerFilter ? "Narrow within this customer: price, description, SKU, invoice..." : "Search customer, asset, serial, invoice, amount..."}
+              className="w-full"
+            />
+            {showSuggestions && !customerFilter && searchInput.trim() && (() => {
+              const suggestions = sales.filter((s) => s.customer_id).slice(0, 8);
+              return suggestions.length > 0 ? (
+                <div className="absolute z-20 top-full left-0 mt-1 w-full max-w-md bg-card border rounded-md shadow-lg max-h-72 overflow-y-auto">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => {
+                        setCustomerFilter({ id: s.customer_id!, name: s.customer_name || "Unknown customer" });
+                        setSearchInput("");
+                        setShowSuggestions(false);
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted border-b border-border last:border-0 flex items-baseline justify-between gap-2"
+                    >
+                      <span className="truncate">
+                        <span className="font-medium">{s.customer_name || "—"}</span>
+                        <span className="text-muted-foreground"> · {(s.original_sold_date || s.sale_date)?.slice(0, 10)}</span>
+                      </span>
+                      <span className="tabular-nums shrink-0">₹{s.sale_total?.toFixed(2)}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null;
+            })()}
+          </div>
         </div>
         <Select value={paymentFilter || "all"} onValueChange={(v) => setPaymentFilter(v === "all" ? "" : v)}>
           <SelectTrigger className="w-auto"><SelectValue placeholder="All Payment Statuses" /></SelectTrigger>

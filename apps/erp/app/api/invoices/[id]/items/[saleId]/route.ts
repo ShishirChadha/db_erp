@@ -73,9 +73,12 @@ export async function DELETE(
 
   const { data: remainingItems } = await supabaseAdmin
     .from('invoice_items')
-    .select('rate, quantity, cgst_amount, sgst_amount, igst_amount, amount')
+    .select('rate, quantity, gst_rate, cgst_amount, sgst_amount, igst_amount, amount')
     .eq('invoice_id', invoiceId)
-  const newSubtotal = (remainingItems || []).reduce((a, r) => a + Number(r.rate) * Number(r.quantity), 0)
+  // `subtotal` is the GST return's "taxable value" -- a 0%-GST line is
+  // excluded from it even though it's included in grand_total. See the
+  // matching comment in the sibling POST .../items route for why.
+  const newSubtotal = (remainingItems || []).filter((r) => Number(r.gst_rate) > 0).reduce((a, r) => a + Number(r.rate) * Number(r.quantity), 0)
   const newTotalGst = (remainingItems || []).reduce((a, r) => a + Number(r.cgst_amount || 0) + Number(r.sgst_amount || 0) + Number(r.igst_amount || 0), 0)
   const newGrandTotal = (remainingItems || []).reduce((a, r) => a + Number(r.amount), 0)
 

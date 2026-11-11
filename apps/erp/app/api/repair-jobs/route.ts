@@ -256,6 +256,7 @@ export async function POST(req: NextRequest) {
       saleDate: resolvedJobDate,
       parts: partsToConsume,
       sessionUserId: sessionUser.id,
+      customerDeviceSerial: is_own_stock ? null : customer_device_serial,
     })
     if (!result.ok) partsWarning = result.message
   }

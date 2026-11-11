@@ -28,6 +28,7 @@ import { SearchableSelect } from "@/components/SearchableSelect";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 import { AddPaymentDialog } from "@/components/AddPaymentDialog";
+import { AddInvoiceLineDialog } from "@/components/AddInvoiceLineDialog";
 import { FixSkuDialog } from "@/components/FixSkuDialog";
 import { useRole } from "@/lib/auth/useRole";
 
@@ -64,6 +65,7 @@ interface SaleDetail {
   notes: string | null;
   finalized: boolean;
   invoice_number: string | null;
+  invoice_id: string | null;
   is_deleted: boolean;
   history: { field_name: string; old_value: string | null; new_value: string | null; changed_at: string; reason: string | null }[];
 }
@@ -108,6 +110,7 @@ export function EditSaleDialog({
   const [notes, setNotes] = useState("");
   const [payments, setPayments] = useState<SalePayment[]>([]);
   const [showAddPayment, setShowAddPayment] = useState(false);
+  const [showAddCharge, setShowAddCharge] = useState(false);
 
   const [bundled, setBundled] = useState<BundledAccessory[]>([]);
   const [bundleSearch, setBundleSearch] = useState("");
@@ -504,11 +507,23 @@ export function EditSaleDialog({
                     {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} of ₹{sale.sale_total?.toFixed(2)}
                   </div>
                 </div>
-                {sale.payment_status !== "paid" && (
-                  <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPayment(true)}>
-                    Add Payment
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {/* Jump straight to adding a line (e.g. a shipping charge)
+                      onto this sale's already-generated invoice, without
+                      leaving the Edit Sale dialog to find it -- see
+                      POST /api/invoices/[id]/items. Owner-only, matching
+                      that route's gate. */}
+                  {isOwner && sale.finalized && sale.invoice_id && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowAddCharge(true)}>
+                      Add Charge to Invoice
+                    </Button>
+                  )}
+                  {sale.payment_status !== "paid" && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPayment(true)}>
+                      Add Payment
+                    </Button>
+                  )}
+                </div>
               </div>
               {payments.length > 0 && (
                 <ul className="text-xs border-t pt-2 divide-y max-h-32 overflow-y-auto">
@@ -613,6 +628,15 @@ export function EditSaleDialog({
             apiFetch(`/api/sales/${saleId}`).then(async (r) => { if (r.ok) setSale(await r.json()); });
             onSaved();
           }}
+        />
+      )}
+
+      {showAddCharge && sale?.invoice_id && (
+        <AddInvoiceLineDialog
+          invoiceId={sale.invoice_id}
+          defaultGstRate={sale.sale_type === "GST" ? 18 : 0}
+          onClose={() => setShowAddCharge(false)}
+          onAdded={onSaved}
         />
       )}
     </Dialog>

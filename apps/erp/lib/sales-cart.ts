@@ -27,6 +27,13 @@ export type BaseSaleFields = {
   payment_account: string | null
   notes: string | null
   finalized: false
+  // Lets a caller stamp a non-asset identifier onto an otherwise-serial_number-less
+  // accessory sale -- e.g. a repair job's customer_device_serial (where staff record
+  // the customer's own internal ticket number for their tracking), so that number
+  // becomes searchable in the Sales Ledger via the same serial_number.ilike search
+  // every asset-backed sale already supports. Only used by the standalone-accessory
+  // branch below; the unit branch always sets its own serial_number from the asset.
+  serial_number?: string | null
   // Display-only: the earliest sale_date in a replacement chain, so Sales Ledger/Stock
   // can show "Originally sold X, replaced Y" instead of losing the original date when a
   // replacement's own sale_date is (correctly) today. See migration

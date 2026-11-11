@@ -50,11 +50,16 @@ export async function consumeRepairParts(input: {
   saleDate: string
   parts: RepairPartInput[]
   sessionUserId: string
+  // The customer's own internal ticket number (repair_jobs.customer_device_serial),
+  // staff-entered for their tracking -- stamped onto the resulting sale(s)' own
+  // serial_number so it becomes searchable in the Sales Ledger. See
+  // lib/sales-cart.ts's BaseSaleFields.serial_number.
+  customerDeviceSerial?: string | null
 }): Promise<
   | { ok: true; saleIds: string[] }
   | { ok: false; status: number; message: string; itemErrors?: Array<{ index: number; error: string }> }
 > {
-  const { jobId, jobNumber, customerId, customerName, paymentAccount, gstPercent, saleDate, sessionUserId } = input
+  const { jobId, jobNumber, customerId, customerName, paymentAccount, gstPercent, saleDate, sessionUserId, customerDeviceSerial } = input
   let parts = input.parts
   if (parts.length === 0) return { ok: true, saleIds: [] }
 
@@ -137,6 +142,7 @@ export async function consumeRepairParts(input: {
     payment_account: paymentAccount,
     notes: `Part used in repair job ${jobNumber}`,
     finalized: false,
+    serial_number: customerDeviceSerial || null,
   }
 
   const committed: Array<{ id: string; saleRow: any }> = []

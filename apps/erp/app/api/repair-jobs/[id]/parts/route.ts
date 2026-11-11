@@ -29,7 +29,7 @@ export async function POST(
 
   const { data: job } = await supabaseAdmin
     .from('repair_jobs')
-    .select('id, job_number, status, customer_id, payment_account, gst_percentage, job_date, customers(customer_name)')
+    .select('id, job_number, status, customer_id, payment_account, gst_percentage, job_date, is_own_stock, customer_device_serial, customers(customer_name)')
     .eq('id', id)
     .single()
   if (!job) return NextResponse.json({ error: 'Repair job not found' }, { status: 404 })
@@ -58,6 +58,7 @@ export async function POST(
     saleDate: sale_date || job.job_date || new Date().toISOString().slice(0, 10),
     parts: [{ sku_id, quantity: Number(quantity), unit_price: Number(unit_price) || 0 }],
     sessionUserId: sessionUser.id,
+    customerDeviceSerial: job.is_own_stock ? null : job.customer_device_serial,
   })
 
   if (!result.ok) {

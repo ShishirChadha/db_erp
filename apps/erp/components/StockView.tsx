@@ -106,6 +106,8 @@ interface SoldAccessoryRow {
   sold_by: string | null
   finalized: boolean
   invoice_number: string | null
+  invoice_id?: string | null
+  invoice_grand_total?: number | null
 }
 
 // Current (in-stock) accessories -- also no asset_ledger row, quantity-only.
@@ -1421,7 +1423,30 @@ function SoldAccessoryDetailPane({ sale, canEdit, onBack, onEdit, onCustomerUpda
         </Field>
         <Field label="Sold By">{sale.sold_by || '—'}</Field>
         <Field label="Invoice">
-          {sale.finalized ? <span className="text-success">✓ {sale.invoice_number}</span> : '—'}
+          {sale.finalized ? (
+            <span className="text-success inline-flex flex-col gap-0.5">
+              <span>
+                ✓{' '}
+                {sale.invoice_id ? (
+                  <Link href={`/dashboard/invoices/${sale.invoice_id}`} className="underline">
+                    {sale.invoice_number}
+                  </Link>
+                ) : (
+                  sale.invoice_number
+                )}
+              </span>
+              {/* The invoice's own grand_total can be higher than this sale's
+                  own total -- e.g. a shipping/custom charge added at the
+                  invoice level (see EditSaleDialog's "Add Charge to Invoice")
+                  that has no counterpart on the sale itself. Surfaced here so
+                  that extra charge isn't invisible from this tab. */}
+              {sale.invoice_grand_total != null && Math.abs(sale.invoice_grand_total - sale.sale_total) > 0.5 && (
+                <span className="text-muted-foreground text-xs">
+                  Invoice total: ₹{sale.invoice_grand_total.toFixed(2)} (includes charges beyond this item)
+                </span>
+              )}
+            </span>
+          ) : '—'}
         </Field>
       </div>
     </div>

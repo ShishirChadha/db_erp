@@ -187,8 +187,11 @@ export function InvoiceForm({
     const quantity = item.quantity || 0;
     const rate = item.rate || 0;
     const amount = quantity * rate;
+    // `?? 18`, not `|| 18` -- a line item with GST deliberately turned off
+    // (gst_rate set to 0, e.g. a pure-reimbursement shipping charge) must stay
+    // at 0; `||` treats 0 as falsy and silently forced it back to 18.
     const gstResult = isGstRegistered
-      ? calculateGST(amount, item.gst_rate || 18, resolvePlaceOfSupply(), entityStateCode)
+      ? calculateGST(amount, item.gst_rate ?? 18, resolvePlaceOfSupply(), entityStateCode)
       : { gstType: null, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalGst: 0 };
     setValue(`items.${index}.gst_type`, gstResult.gstType);
     setValue(`items.${index}.cgst_amount`, gstResult.cgstAmount);
@@ -202,7 +205,7 @@ export function InvoiceForm({
     const quantity = 1;
     const amount = quantity * item.price;
     const gstResult = isGstRegistered
-      ? calculateGST(amount, item.gst_rate || 18, resolvePlaceOfSupply(), entityStateCode)
+      ? calculateGST(amount, item.gst_rate ?? 18, resolvePlaceOfSupply(), entityStateCode)
       : { gstType: null, cgstAmount: 0, sgstAmount: 0, igstAmount: 0, totalGst: 0 };
     const newItem: InvoiceItemFormData = {
       item_type: item.type,
@@ -212,7 +215,7 @@ export function InvoiceForm({
       hsn_code: item.hsn_code || "",
       quantity: quantity,
       rate: item.price,
-      gst_rate: item.gst_rate || 18,
+      gst_rate: item.gst_rate ?? 18,
       gst_type: gstResult.gstType,
       amount: amount,
       cgst_amount: gstResult.cgstAmount,
@@ -221,6 +224,31 @@ export function InvoiceForm({
     };
     append(newItem);
     toast.success(`Added ${item.identifier} to invoice`);
+  };
+
+  // A manual charge with no SKU/asset of its own -- shipping, packing,
+  // installation, a one-off adjustment, etc. GST defaults on (18%) since
+  // that's the common case, but it's a plain editable number right below like
+  // every other line's field, so clearing it to 0 turns GST off for a pure
+  // reimbursement charge -- same "type: 'custom'" shape already used by the
+  // Quotations/Proforma Invoice form (components/SalesDocumentForm.tsx).
+  const addCustomLine = () => {
+    const newItem: InvoiceItemFormData = {
+      item_type: "custom",
+      asset_id: null,
+      accessory_id: null,
+      description: "",
+      hsn_code: "",
+      quantity: 1,
+      rate: 0,
+      gst_rate: isGstRegistered ? 18 : 0,
+      gst_type: null,
+      amount: 0,
+      cgst_amount: 0,
+      sgst_amount: 0,
+      igst_amount: 0,
+    };
+    append(newItem);
   };
 
   const formData = watch();
@@ -362,9 +390,14 @@ export function InvoiceForm({
       </div>
 
       <div className="border rounded-lg p-4 space-y-4">
-        <div className="flex justify-between items-center">
+        <div className="flex justify-between items-center gap-2">
           <h3 className="font-semibold">Line Items</h3>
-          <SearchableItemSelect onSelect={addItem} />
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" size="sm" onClick={addCustomLine}>
+              <Plus className="h-3.5 w-3.5 mr-1" /> Custom Line
+            </Button>
+            <SearchableItemSelect onSelect={addItem} />
+          </div>
         </div>
         {/* Stacked cards instead of an 8-column table -- Description/HSN/Qty/Rate/
             GST%/Tax Type/Amount/remove never fit without a horizontal scrollbar on

@@ -16,6 +16,7 @@ import { StatusBadge } from "@/components/StatusBadge";
 import { INVOICE_STATUS_TONES, toneFor } from "@/lib/status-styles";
 import { useRole } from "@/lib/auth/useRole";
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
+import { AddInvoiceLineDialog } from "@/components/AddInvoiceLineDialog";
 import { SimpleModal } from "@/components/SimpleModal";
 import { CornerRibbon } from "@/components/CornerRibbon";
 import type { Tone } from "@/lib/status-styles";
@@ -48,6 +49,7 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
   const supabase = createClient();
   const { isOwner } = useRole();
   const [removingItem, setRemovingItem] = useState<any>(null);
+  const [addingLine, setAddingLine] = useState(false);
   const [removeErr, setRemoveErr] = useState("");
   const [editingEway, setEditingEway] = useState(false);
   const [ewayNumber, setEwayNumber] = useState("");
@@ -358,6 +360,17 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
           </div>
 
           {/* Line items */}
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-semibold text-muted-foreground">Line Items</div>
+            {/* Not gated to draft -- a shipping/packing charge discovered after
+                an invoice is already approved is the common case this exists
+                for; see POST /api/invoices/[id]/items for the audit trail. */}
+            {isOwner && invoice.invoice_type !== "credit_note" && (
+              <Button variant="outline" size="sm" onClick={() => setAddingLine(true)}>
+                + Add Charge
+              </Button>
+            )}
+          </div>
           <div className="overflow-x-auto max-h-80 overflow-y-auto rounded-md border">
             <table className="w-full text-sm">
               <thead>
@@ -465,6 +478,15 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
           confirmLabel="Remove Item"
           error={removeErr}
           onConfirm={handleRemoveItem}
+        />
+      )}
+
+      {addingLine && (
+        <AddInvoiceLineDialog
+          invoiceId={id}
+          defaultGstRate={items[0]?.gst_rate ?? 18}
+          onClose={() => setAddingLine(false)}
+          onAdded={fetchInvoice}
         />
       )}
     </div>

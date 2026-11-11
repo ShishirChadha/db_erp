@@ -71,6 +71,11 @@ export async function GET(req: NextRequest) {
   // (trimmed of stray whitespace); non-numeric search terms skip this clause
   // entirely rather than risk building a malformed PostgREST filter string.
   const searchAmount = search && /^\d+(\.\d{1,2})?$/.test(search.trim()) ? search.trim() : null
+  // A pasted Sale ID (shown on every row/detail pane as a pastable reference,
+  // see app/dashboard/sales/page.tsx) matches this exact sale directly -- lets
+  // a specific row be handed off and looked up again later without describing
+  // it in words.
+  const searchSaleId = search && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(search.trim()) ? search.trim() : null
   // Item name/SKU search: sales has no item/SKU column of its own (it's resolved via
   // accessory_id or asset_ledger_id -> sku_master, same as the enrichment below) --
   // find matching sku_master rows up front, then OR in every sale that points at one
@@ -111,7 +116,7 @@ export async function GET(req: NextRequest) {
     searchRepairJobIds = (matchingJobs || []).map((j: any) => j.id)
   }
   const searchFilter = search
-    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}${searchAccessoryIds.length ? `,accessory_id.in.(${searchAccessoryIds.join(',')})` : ''}${searchAssetLedgerIds.length ? `,asset_ledger_id.in.(${searchAssetLedgerIds.join(',')})` : ''}${searchRepairJobIds.length ? `,repair_job_id.in.(${searchRepairJobIds.join(',')})` : ''}`
+    ? `customer_name.ilike.%${search}%,asset_number.ilike.%${search}%,serial_number.ilike.%${search}%,invoice_number.ilike.%${search}%${searchCustomerIds.length ? `,customer_id.in.(${searchCustomerIds.join(',')})` : ''}${searchAmount ? `,sale_total.eq.${searchAmount}` : ''}${searchAccessoryIds.length ? `,accessory_id.in.(${searchAccessoryIds.join(',')})` : ''}${searchAssetLedgerIds.length ? `,asset_ledger_id.in.(${searchAssetLedgerIds.join(',')})` : ''}${searchRepairJobIds.length ? `,repair_job_id.in.(${searchRepairJobIds.join(',')})` : ''}${searchSaleId ? `,id.eq.${searchSaleId}` : ''}`
     : ''
 
   // Customers Owed Money mode: two cases where money is owed back that nothing else
@@ -184,7 +189,8 @@ export async function GET(req: NextRequest) {
         if (receivedInto) q = q.eq('payment_account', receivedInto)
         if (customerId) q = q.eq('customer_id', customerId)
         if (monthStart && monthEnd) q = q.gte('effective_sale_date', monthStart).lte('effective_sale_date', monthEnd)
-        if (search && !customerId) q = q.or(searchFilter)
+        // Combines with customerId (AND), not either/or -- see the main query below.
+        if (search) q = q.or(searchFilter)
         return extra(q)
       }
       return withRetry(build)
@@ -205,7 +211,9 @@ export async function GET(req: NextRequest) {
           p_payment_status: paymentStatus || null,
           p_payment_status_ne: paymentStatusNe || null,
           p_payment_account: receivedInto || null,
-          p_search: customerId ? null : (search || null),
+          // sales_ledger_sum ANDs p_customer_id and p_search independently --
+          // both combine, same as the main query/counts above.
+          p_search: search || null,
           p_customer_id: customerId || null,
           p_date_from: monthStart,
           p_date_to: monthEnd,
@@ -266,10 +274,13 @@ export async function GET(req: NextRequest) {
   if (finalized === 'false') query = query.eq('finalized', false)
   if (customerId) query = query.eq('customer_id', customerId)
   if (monthStart && monthEnd) query = query.gte('effective_sale_date', monthStart).lte('effective_sale_date', monthEnd)
-  // An exact customer pin takes priority over free-text search -- the suggestion
-  // dropdown clears searchInput when a suggestion is clicked, but guard here too
-  // in case both ever arrive together.
-  if (search && !customerId) {
+  // A customer pin and free-text search combine (AND), not either/or -- pinning
+  // a customer then typing a description/SKU/amount narrows to that customer's
+  // sales matching the search, same as every other filter here. searchFilter's
+  // own customer-name-lookup clause (searchCustomerIds, above) is a no-op once
+  // customerId is set -- it's only populated when !customerId in the first
+  // place, so it never widens the result past the pinned customer.
+  if (search) {
     query = query.or(searchFilter)
   }
   if (paginateInSql && pagination) {
@@ -363,7 +374,7 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from('rental_agreements').select('id, agreement_number').in('id', chunk)
     ),
     chunkedIn<any>(invoiceIds, chunk =>
-      supabaseAdmin.from('invoices').select('id, invoice_date').in('id', chunk)
+      supabaseAdmin.from('invoices').select('id, invoice_date, grand_total').in('id', chunk)
     ),
     chunkedIn<any>(voidedSaleIds, chunk =>
       supabaseAdmin.from('sale_refunds').select('sale_id, amount, payment_account').in('sale_id', chunk)
@@ -383,6 +394,7 @@ export async function GET(req: NextRequest) {
   const repairJobById = new Map((repairJobs || []).map((r: any) => [r.id, r]))
   const rentalAgreementById = new Map((rentalAgreements || []).map((r: any) => [r.id, r]))
   const invoiceDateById = new Map((invoices || []).map((i: any) => [i.id, i.invoice_date]))
+  const invoiceGrandTotalById = new Map((invoices || []).map((i: any) => [i.id, i.grand_total]))
   const refundBySaleId = new Map((saleRefunds || []).map((r: any) => [r.sale_id, r]))
   const creditBySaleId = new Map((saleCredits || []).map((r: any) => [r.sale_id, r]))
 
@@ -431,6 +443,11 @@ export async function GET(req: NextRequest) {
       ? `${s.rental_period_start} to ${s.rental_period_end}` : null
     withName.payment_date = paymentDateBySaleId.get(s.id) || null
     withName.invoice_date = s.invoice_id ? invoiceDateById.get(s.invoice_id) || null : null
+    // The invoice's own grand_total can exceed this sale's own sale_total --
+    // e.g. a shipping/custom charge added at the invoice level (see
+    // POST /api/invoices/[id]/items) that has no counterpart on the sale
+    // itself. Surfaced so that extra charge isn't invisible from the ledger.
+    withName.invoice_grand_total = s.invoice_id ? invoiceGrandTotalById.get(s.invoice_id) ?? null : null
     const refund = refundBySaleId.get(s.id)
     const credit = creditBySaleId.get(s.id)
     withName.refund_resolution = refund

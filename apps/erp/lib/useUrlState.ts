@@ -36,7 +36,6 @@ export function useUrlState(
   }, [paramValue])
 
   const commit = useCallback((next: string, mode: Mode = 'push') => {
-    setValue(next)
     if (timer.current) clearTimeout(timer.current)
 
     const write = (m: Mode) => {
@@ -48,9 +47,19 @@ export function useUrlState(
     }
 
     if (mode === 'replace' && debounceMs > 0) {
-      write('replace')
-      timer.current = setTimeout(() => write('push'), debounceMs)
+      // Deliberately untouched until the timer fires -- neither the URL nor
+      // the returned `value` update per keystroke. Callers drive an expensive
+      // fetch off the returned value, so updating it (or the URL, which would
+      // feed back into it via the sync-from-URL effect above) on every
+      // keystroke would fire that fetch on every keystroke too, defeating the
+      // whole point of debouncing. Once typing settles, both land together as
+      // one history step.
+      timer.current = setTimeout(() => {
+        setValue(next)
+        write('push')
+      }, debounceMs)
     } else {
+      setValue(next)
       write(mode)
     }
   }, [key, defaultValue, debounceMs, pathname, router, searchParams])
