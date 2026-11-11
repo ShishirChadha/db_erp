@@ -13,7 +13,15 @@ sources:
   - apps/erp/app/dashboard/home/page.tsx
   - apps/erp/lib/leads.ts
   - apps/erp/app/api/users/route.ts
-updated: 2026-10-27
+  - apps/erp/components/UserManager.tsx
+  - apps/erp/app/api/sales/[id]/route.ts
+  - apps/erp/app/api/sales-entry/route.ts
+  - apps/erp/app/api/expenses/[id]/route.ts
+  - apps/erp/app/api/customers/merge/route.ts
+  - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
+  - apps/erp/app/api/stock-intake/[id]/route.ts
+  - supabase/migrations/20261111_rls_lockdown.sql
+updated: 2026-11-11
 ---
 
 ## The three roles
@@ -74,8 +82,15 @@ handler, via `getSessionUser()` (Bearer-token, for API routes) or
 `getCookieSessionUser()` (cookie session, for server components), then
 `isOwner()` / `isManagerOrAbove()` / `hasPageAccess()` / `canEditPage()`. A new
 route that skips this check is a real security hole, not a cosmetic one — the
-whole app runs on `supabaseAdmin` (service role), which bypasses Postgres RLS
-entirely, so RLS policies are not a backstop here.
+app's own writes run on `supabaseAdmin` (service role), which bypasses Postgres RLS.
+
+RLS still matters, because a signed-in browser also holds the public database key
+and can talk to the database directly, skipping the app. Since 2026-11-11 the core
+money and workflow tables (sales, sale payments, invoices, purchase orders, repair
+and replacement jobs, expenses, activities, notifications) can only be *read* by
+staff from the browser; every change goes through an API route. Website customers
+share the same sign-in system as staff, so every policy is written against an
+*active staff profile* (`is_staff()`), never just "is signed in".
 
 ## Owner-only is about money leaving, not about seniority
 
@@ -88,6 +103,76 @@ the business, the same line already drawn around correcting a sale payment.
 
 Generating the GST invoice for a rental needs no new rule at all: it goes through the
 existing owner-only sales finalize routes like every other invoice.
+
+## What a non-owner can change, area by area
+
+Four layers, from least to most access. A person gets everything in the layers
+below the one that names them.
+
+**1. No grant at all (every active employee).** Sees only Settings (Appearance,
+My Navigation, Audit Log) and the DB Guide. Can: re-assign a unit to another SKU;
+swap a unit's RAM/SSD (moves accessory stock; the cost amount is hidden); edit an
+intake unit that is still in QC pending (SKU, serial, notes); add a value to a
+dropdown list (not edit or delete one, and not activity tags); punch in/out, file
+or cancel their own leave, mark their own notifications read; and work on tasks
+they are assigned to or watching (edit, comment, tick checklist items).
+
+**2. A view grant is already enough for some changes.** The page key alone allows:
+- `new_entry` — Sell (creates sales and payments), register intake units, create
+  repair / replacement / accessory-replacement jobs (each creates a sale), create
+  SKUs (cost is dropped), stock receipts and adjustments, edit the vendor / price /
+  GST on an accessory receipt, add an accessory vendor.
+- `live_stock` or `stock` — submit QC (grade, warranty), send a unit back to QC,
+  mark ready for sale.
+- `live_stock`, `new_entry` or `sales` — record a payment on a sale (can be
+  backdated, can use customer credit).
+- `accessories` or `sku_master` — stock receipts and adjustments, edit a receipt's
+  vendor and price.
+- `customers` — merge two customers (rewrites the name on issued invoices).
+- `leads` — for a lead set they hold: add / edit leads and notes, convert to a
+  customer, upload new sets.
+- `activities` — create and assign tasks. `marketing` — generate AI drafts, create
+  and edit assets.
+
+**3. A "Can edit" checkbox (Settings → Users).** Enforced for these only:
+
+| Checkbox | What it adds |
+|---|---|
+| Live Stock, Stock | Edit a unit (including sold / invoiced ones, with a reason); edit a sale's price, customer, payment account and date — including an invoiced sale, and the GST period lock is not checked; bulk e-way bills |
+| Sales | Edit a sale; bulk e-way bills |
+| Repair Jobs | Edit status, payment, amount and GST; add parts; mark done |
+| Replacement Jobs | Edit status and description (payment fields stay owner-only) |
+| Rentals | Open, edit, add / return units, buyout, bill charges, close (deposit fields stay owner-only) |
+| Returns / RMA | Customer-return cases only; vendor returns stay owner-only |
+| Website | The nine web fields and publish toggle on a SKU, photos |
+| Quotations | Create, edit, void, email to any address |
+| Expenses | Create, edit, delete / restore, GST fields, reimbursements, receipt files (owner-only expense types stay hidden) |
+| Marketing | Change an asset's status, delete assets, festivals |
+| Attendance | With the manager role: team attendance, punches, leave decisions |
+
+**Six checkboxes currently do nothing** — no server route or screen checks them:
+New Entry, Accessories, SKU Master, Invoices, Customers and Activity Hub. Ticking
+one changes nothing; layer 2 is what actually applies for those areas. There is no
+checkbox at all for Dashboard, Pending Tasks, Reports or Leads.
+
+**4. Never grantable (owner only).** All purchasing (orders, receiving, payments,
+attaching units), generating / editing / emailing invoices, credit notes, voiding a
+sale, correcting or deleting a payment, GST and filings, bank and reconciliation,
+pricing, editing / deleting vendors, SKU edits beyond the web fields (and delete /
+merge / categories), deleting a unit or adding cost adjustments, replacement-job
+payments and finalizing, rental deposits, vendor RMAs, recurring expenses,
+reimbursement removal, customer tier, users, settings, website admin and SEO,
+backup and restore, audit restore, dropdown edit / delete, the staff roster.
+
+**Manager role** adds, on top of an employee: submitting a purchase order, deleting /
+assigning / reassigning / merging lead sets, and (with the Attendance checkbox)
+team attendance and leave decisions. Nothing else.
+
+**Database level.** Money and workflow tables are read-only from a browser (see
+*Where the enforcement actually lives*). A smaller set of operational tables —
+units, QC records, SKUs, customers, rental agreements, expenses, promotions — can
+still be written by any active staff login at the database level, even though the
+screens never use that path. This is a known tightening item, tracked by the owner.
 
 ## A quick way to answer "can X role do Y?"
 
