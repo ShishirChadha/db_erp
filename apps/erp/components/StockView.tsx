@@ -1039,6 +1039,7 @@ export default function StockView({
                 onSell={() => router.push(`/dashboard/entry/sell?asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
                 onRepair={() => router.push(`/dashboard/entry/service?subtype=repair&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
                 onReturn={() => router.push(`/dashboard/entry/service?subtype=return&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
+                onReplacement={() => router.push(`/dashboard/entry/service?subtype=replacement&asset_id=${activeAssetId}&return_to=${encodeURIComponent(returnToPath)}`)}
                 onSendBackToQc={(asset) => sendBackToQc(asset, identifier(asset))}
                 onFixSku={() => setFixSkuAssetId(activeAssetId)}
                 onDelete={(asset) => deleteAsset(asset, identifier(asset))}
@@ -1133,7 +1134,7 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
 // instead of a table row.
 function AssetDetailPane({
   asset, tab, idx, page, pageSize, canEdit, isOwner, showServiceActions, pendingRowKey, returnToPath, templates,
-  onBack, onSell, onRepair, onReturn, onSendBackToQc, onFixSku, onDelete, onForceDelete,
+  onBack, onSell, onRepair, onReturn, onReplacement, onSendBackToQc, onFixSku, onDelete, onForceDelete,
   onAddPayment, onGenerateInvoice, onRecordZohoInvoice, onChanged,
 }: {
   asset: AssetRow | null
@@ -1151,6 +1152,7 @@ function AssetDetailPane({
   onSell: () => void
   onRepair: () => void
   onReturn: () => void
+  onReplacement: () => void
   onSendBackToQc: (asset: AssetRow) => void
   onFixSku: () => void
   onDelete: (asset: AssetRow) => void
@@ -1210,6 +1212,9 @@ function AssetDetailPane({
           )}
           {tab === 'sold' && showServiceActions && (
             <Button variant="link" size="sm" onClick={onReturn} className="text-warning text-xs">Return</Button>
+          )}
+          {tab === 'sold' && showServiceActions && (
+            <Button variant="link" size="sm" onClick={onReplacement} className="text-warning text-xs">Replacement</Button>
           )}
           {tab === 'sold' && isOwner && (
             asset.invoice_finalized ? (

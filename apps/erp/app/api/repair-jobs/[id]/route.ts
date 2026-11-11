@@ -148,6 +148,18 @@ export async function PATCH(
       .eq('finalized', false)
   }
 
+  // customer_device_serial is just an internal tracking tag stamped onto the linked
+  // sale(s) so it's searchable in the Sales Ledger (see finalize/parts routes) -- unlike
+  // sale_date/amount it never appears on a generated invoice, so there's no "frozen
+  // snapshot" reason to leave an already-invoiced sale stuck on a stale value.
+  if (updates.customer_device_serial !== undefined && !data.is_own_stock) {
+    await supabaseAdmin
+      .from('sales')
+      .update({ serial_number: updates.customer_device_serial || null })
+      .eq('repair_job_id', id)
+      .eq('is_deleted', false)
+  }
+
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
     actionType: 'status' in updates ? 'status_change' : 'update',
