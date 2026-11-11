@@ -4,6 +4,7 @@ import { allocatePaymentLegs } from '@db/shared'
 import { findOrCreateCustomerByPhone } from './customer-identity'
 import { sendEmail } from './email'
 import { setPasswordEmailHtml } from './email-templates'
+import { revalidateProductSkus } from './revalidate-catalog'
 
 // An online order is just another sales channel into the ERP: each
 // order_item becomes a real `sales` row via the same rules the ERP's own
@@ -390,6 +391,9 @@ export async function convertOrderToSales(orderId: string): Promise<{ ok: boolea
   } catch (err) {
     console.error(`[order-to-sale] order ${orderId} converted but cart not cleared:`, err)
   }
+
+  // The sold units' product pages now show stale stock until refreshed.
+  await revalidateProductSkus(orderItems.map((item) => item.sku_id)).catch(() => {})
 
   return { ok: true }
 }

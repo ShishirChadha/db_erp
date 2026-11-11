@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { recordRevision } from '@/lib/seo-admin'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // Single-row site-wide SEO defaults (migration 20261015). Owner-only.
 export async function GET(req: NextRequest) {
@@ -58,5 +59,6 @@ export async function PATCH(req: NextRequest) {
     recordLabel: 'Website SEO defaults',
     metadata: update,
   })
+  revalidateWeb({ all: true })
   return NextResponse.json(data)
 }

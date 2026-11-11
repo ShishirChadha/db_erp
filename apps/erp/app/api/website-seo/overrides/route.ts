@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { recordRevision, validateOverride } from '@/lib/seo-admin'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -50,6 +51,7 @@ export async function PUT(req: NextRequest) {
     recordLabel: key,
     metadata: row,
   })
+  revalidateWeb({ all: true })
   return NextResponse.json({ ...data, warnings })
 }
 
@@ -76,5 +78,6 @@ export async function DELETE(req: NextRequest) {
     recordLabel: key,
     snapshot: row,
   })
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

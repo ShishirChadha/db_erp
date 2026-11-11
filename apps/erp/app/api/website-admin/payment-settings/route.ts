@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // A single row (seeded by migration), never a per-row CRUD list like
 // cross-sell-rules/promotions -- GET returns it, PATCH updates it in place.
@@ -60,5 +61,6 @@ export async function PATCH(req: NextRequest) {
     metadata: update,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

@@ -11,7 +11,7 @@ import { productImageUrl } from "@/lib/image-url";
 // Everything on this page except the policy summary comes from the owner-managed
 // company profile (ERP: Settings -> Website Admin -> Company & About), so it can
 // be edited without a developer. Empty blocks (no photo, no team) simply don't render.
-export const revalidate = 60;
+export const revalidate = 86400;
 
 const baseMetadata: Metadata = {
   title: "About Us",

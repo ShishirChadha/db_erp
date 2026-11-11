@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 const PROMO_TYPES = ['percent_off', 'flat_off', 'free_gift', 'coupon_code'] as const
 const SCOPE_TYPES = ['product', 'brand', 'category', 'sitewide'] as const
@@ -65,5 +66,6 @@ export async function POST(req: NextRequest) {
     recordLabel: name,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

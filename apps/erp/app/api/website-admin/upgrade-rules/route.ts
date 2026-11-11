@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 const ALLOWED_FIELDS = ['ram', 'ssd', 'warranty_months'] as const
 
@@ -65,5 +66,6 @@ export async function POST(req: NextRequest) {
     recordLabel: `${category}/${field_name}: ${from_value} -> ${to_value}`,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

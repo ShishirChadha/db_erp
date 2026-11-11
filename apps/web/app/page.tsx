@@ -11,7 +11,7 @@ import { GoogleReviews } from "@/components/GoogleReviews";
 import { StoreLocation } from "@/components/StoreLocation";
 import { HomeBanners } from "@/components/HomeBanners";
 
-export const revalidate = 60;
+export const revalidate = 3600;
 
 const baseMetadata: Metadata = {
   alternates: { canonical: "/" },

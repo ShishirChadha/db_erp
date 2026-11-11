@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // Restores the prices from one publish batch (the latest undoable one when no batch_id is
 // sent). A SKU whose price has been changed again since is skipped, never overwritten.
@@ -50,6 +51,7 @@ export async function POST(req: NextRequest) {
       fieldCorrectionIds: fc, metadata: { source: 'price_board', undo_of: batchId },
     })
   }
+  revalidateWeb({ skuIds: rows.map((r: any) => r.sku_id) })
   if (restored.length) await supabaseAdmin.from('sku_price_changes').update({ undone_at: now }).in('id', restored)
   return NextResponse.json({ restored: restored.length, skipped })
 }

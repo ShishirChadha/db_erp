@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // ---------- GET (list images for a SKU) ----------
 export async function GET(
@@ -74,5 +75,6 @@ export async function POST(
     metadata: { sku_id: id },
   })
 
+  revalidateWeb({ skuIds: [id] })
   return NextResponse.json(data, { status: 201 })
 }

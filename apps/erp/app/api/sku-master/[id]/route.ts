@@ -8,6 +8,7 @@ import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent, AuditActionType } from '@/lib/audit-log'
 import { addRedirect } from '@/lib/seo-admin'
 import { validatePrice } from '@/lib/pricing'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -257,6 +258,7 @@ export async function PUT(
     }
   }
 
+  revalidateWeb({ skuIds: [id] })
   return NextResponse.json(data)
 }
 
@@ -286,5 +288,7 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 400 })
   }
 
+  // Its slug is gone with the row, so refresh the listings site-wide.
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

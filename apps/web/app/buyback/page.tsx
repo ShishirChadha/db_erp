@@ -5,7 +5,7 @@ import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
-export const revalidate = 60;
+export const revalidate = 86400;
 
 const baseMetadata: Metadata = {
   title: "Trade-in & Buyback Quote",

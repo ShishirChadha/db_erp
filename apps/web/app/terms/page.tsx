@@ -4,7 +4,7 @@ import { withSeoOverride } from "@/lib/seo-data";
 import { PolicyLayout, PolicySection } from "@/components/PolicyLayout";
 import { getSiteProfile, formatLongDate } from "@/lib/site-profile";
 
-export const revalidate = 60;
+export const revalidate = 86400;
 
 // noindex until the owner's CA / lawyer has reviewed the text; flip it from
 // Settings -> Website SEO -> Page metadata (no deploy needed).

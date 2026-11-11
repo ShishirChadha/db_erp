@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { recordRevision } from '@/lib/seo-admin'
 import { validateSiteProfile } from '@/lib/site-profile-admin'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // The owner-managed public company profile (single row) plus the team list.
 // Mirrors payment-settings: owner-only GET/PATCH, validated, audited, and the
@@ -49,5 +50,6 @@ export async function PATCH(req: NextRequest) {
     recordLabel: 'Company & About',
     metadata: { fields: Object.keys(checked.update) },
   })
+  revalidateWeb({ all: true })
   return NextResponse.json(data)
 }

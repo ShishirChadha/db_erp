@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabase/service'
 import { insertAccessoryMovement } from './accessory-movements'
 import { SELLABLE_STATUSES } from './sales-entry'
 import { NON_STOCK_CATEGORIES } from './sku-categories'
+import { revalidateWeb } from './web-revalidate'
 
 // One line in a multi-item Sell-form checkout: either a unit (with optional bundled
 // accessories folded into its own price/row, unchanged from the single-item flow) or a
@@ -222,6 +223,7 @@ export async function processSingleSaleItem(
       }
     }
 
+    revalidateWeb({ skuIds: [accessorySku.id] })
     return {
       ok: true,
       saleRow: {
@@ -321,6 +323,7 @@ export async function processSingleSaleItem(
     })
   }
 
+  revalidateWeb({ skuIds: [asset.sku_id, ...(bundled || []).map((b) => b.accessory_id)] })
   return {
     ok: true,
     saleRow: {

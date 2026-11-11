@@ -14,7 +14,7 @@ import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
 import { collectionPath, getIndexableCollections } from "@/lib/collections";
 import { categoryHeading, categoryPluralLabel } from "@/lib/seo";
 
-export const revalidate = 60;
+export const revalidate = 3600;
 
 // Filters only ship on these two listing pages for now (see plan) -- Laptop
 // and Desktop are the two categories with rich enough specs (CPU/RAM/Storage/

@@ -6,6 +6,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { priceWarnings, validatePrice, type PriceWarning } from '@/lib/pricing'
 import { loadCostMap, loadRules } from '@/lib/pricing-board'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 const MAX_CHANGES = 200
 const REASONS = ['manual', 'bulk', 'suggestion']
@@ -93,5 +94,6 @@ export async function POST(req: NextRequest) {
   }
 
   const skipped = plan.filter((p) => p.noop).length
+  revalidateWeb({ skuIds: applied.map((a) => a.sku_id) })
   return NextResponse.json({ batch_id: applied.length ? batchId : null, applied: applied.length, unchanged: skipped, failed })
 }

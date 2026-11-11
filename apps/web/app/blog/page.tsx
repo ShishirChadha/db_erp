@@ -3,7 +3,7 @@ import { withSeoOverride } from "@/lib/seo-data";
 import Link from "next/link";
 import { getPublishedBlogPosts } from "@/lib/queries";
 
-export const revalidate = 60;
+export const revalidate = 86400;
 
 const baseMetadata: Metadata = {
   title: "Blog",

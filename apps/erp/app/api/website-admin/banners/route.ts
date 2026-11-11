@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 const THEMES = ['default', 'diwali', 'christmas', 'sale', 'custom'] as const
 
@@ -56,5 +57,6 @@ export async function POST(req: NextRequest) {
     recordLabel: title || image_path,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

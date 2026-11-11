@@ -37,7 +37,7 @@ import { ProductGrid } from "@/components/ProductGrid";
 import { StickyBuyBar } from "@/components/StickyBuyBar";
 import { TrackViewItem } from "@/components/TrackViewItem";
 
-export const revalidate = 60;
+export const revalidate = 3600;
 
 // Enumerating known slugs (rather than relying on dynamicParams on-demand
 // generation) is what makes this route ISR-cacheable at all -- without at

@@ -5,7 +5,7 @@ import { getSiteProfile, formatLongDate } from "@/lib/site-profile";
 
 // Metadata can be overridden from the ERP (Settings -> Website SEO), so this
 // page is re-rendered periodically instead of frozen at build time.
-export const revalidate = 60;
+export const revalidate = 86400;
 
 // noindex until the owner's CA / lawyer has reviewed the text; flip it from
 // Settings -> Website SEO -> Page metadata (no deploy needed).

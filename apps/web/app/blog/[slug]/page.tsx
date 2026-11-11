@@ -6,7 +6,7 @@ import { getRedirectTarget, withSeoOverride } from "@/lib/seo-data";
 import { MarkdownBody } from "@/lib/markdown";
 import { SITE_URL } from "@/lib/site-url";
 
-export const revalidate = 60;
+export const revalidate = 86400;
 
 // Enumerating known slugs (rather than relying on dynamicParams on-demand
 // generation) is what makes this route ISR-cacheable at all -- without at

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -49,5 +50,6 @@ export async function POST(req: NextRequest) {
     recordLabel: `${source_category} -> ${suggested_category}`,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // Owner-only authoring for apps/web's blog -- the storefront pages
 // (/blog, /blog/[slug]), its JSON-LD and its sitemap entries already exist
@@ -78,5 +79,6 @@ export async function POST(req: NextRequest) {
     recordLabel: data?.title ?? null,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json(data)
 }

@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { addRedirect, canonicalFilter, recordRevision, validateCollection } from '@/lib/seo-admin'
 import { CATEGORY_SLUG, loadCollectionsWithState } from '@/lib/seo-collections-state'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // Owner-only. Each collection comes back with its live match counts and whether
 // it currently passes the indexing gate (see lib/seo-collections-state.ts).
@@ -77,6 +78,7 @@ export async function PUT(req: NextRequest) {
     recordLabel: `${row.category}:${row.slug}`,
     metadata: { status: row.status },
   })
+  revalidateWeb({ all: true })
   return NextResponse.json({ ...data, warnings, redirected })
 }
 
@@ -112,5 +114,6 @@ export async function DELETE(req: NextRequest) {
     recordLabel: `${row.category}:${row.slug}`,
     snapshot: row,
   })
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

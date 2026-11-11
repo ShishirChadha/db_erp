@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 function slugify(title: string): string {
   return title
@@ -76,6 +77,7 @@ export async function PATCH(
     metadata: update,
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }
 
@@ -102,5 +104,6 @@ export async function DELETE(
     restoreStatus: 'not_applicable',
   })
 
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

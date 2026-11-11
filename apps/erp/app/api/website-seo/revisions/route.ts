@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { recordRevision } from '@/lib/seo-admin'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // GET: recent change history (optionally for one entity).
 export async function GET(req: NextRequest) {
@@ -98,5 +99,6 @@ export async function POST(req: NextRequest) {
     recordLabel: rev.entity_key,
     metadata: { revision_id: id },
   })
+  revalidateWeb({ all: true })
   return NextResponse.json({ success: true })
 }

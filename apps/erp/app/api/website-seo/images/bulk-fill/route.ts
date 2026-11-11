@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { stripPlaceholderSegments } from '@db/shared'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // Gives every published product photo that has no alt text a safe default:
 // "<product name> - photo N of M". It describes nothing the photo might not
@@ -63,5 +64,6 @@ export async function POST(req: NextRequest) {
     recordLabel: 'Bulk alt-text fill',
     metadata: { updated, attempted: updates.length },
   })
+  if (updated > 0) revalidateWeb({ all: true })
   return NextResponse.json({ updated })
 }

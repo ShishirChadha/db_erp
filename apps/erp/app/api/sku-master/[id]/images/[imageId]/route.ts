@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { revalidateWeb } from '@/lib/web-revalidate'
 
 // ---------- PATCH (set as primary) ----------
 export async function PATCH(
@@ -41,6 +42,7 @@ export async function PATCH(
     metadata: { sku_id: id, is_primary: body.is_primary },
   })
 
+  revalidateWeb({ skuIds: [id] })
   return NextResponse.json(data)
 }
 
@@ -80,5 +82,6 @@ export async function DELETE(
     metadata: { sku_id: id },
   })
 
+  revalidateWeb({ skuIds: [id] })
   return NextResponse.json({ success: true })
 }

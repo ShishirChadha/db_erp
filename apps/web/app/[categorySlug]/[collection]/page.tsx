@@ -11,7 +11,7 @@ import { collectionPath, getCollection, getIndexableCollections } from "@/lib/co
 import { MarkdownBody } from "@/lib/markdown";
 import { ProductCard } from "@/components/ProductCard";
 
-export const revalidate = 60;
+export const revalidate = 3600;
 
 // Same reasoning as the category page: an (empty) params list is what makes this
 // dynamic segment ISR-cacheable instead of rendered on every request.
