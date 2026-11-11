@@ -5,7 +5,8 @@ import { useUrlState } from '@/lib/useUrlState'
 import Link from 'next/link'
 import { useRouter, usePathname } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { Loader2, ArrowLeft } from 'lucide-react'
+import { Loader2, ArrowLeft, Copy } from 'lucide-react'
+import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { useIsDesktopViewport } from '@/lib/useIsDesktopViewport'
 import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
@@ -108,6 +109,12 @@ interface SoldAccessoryRow {
   invoice_number: string | null
   invoice_id?: string | null
   invoice_grand_total?: number | null
+  // The repair ticket number (sales.serial_number, copied from repair_jobs.
+  // customer_device_serial), when this part was consumed mid-repair -- see
+  // repair_job_number below. Not a per-unit hardware serial (accessories have
+  // none, see CLAUDE.md).
+  serial_number?: string | null
+  repair_job_number?: string | null
 }
 
 // Current (in-stock) accessories -- also no asset_ledger row, quantity-only.
@@ -1120,6 +1127,11 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
             {tab === 'sold' && asset.original_sold_date && <sup className="ml-0.5">R</sup>}
           </span>
         </div>
+        {/* Abbreviated, pastable reference -- see AssetDetailPane's full copy
+            button for sharing the complete id. */}
+        {tab === 'sold' && asset.sale_id && (
+          <p className="text-xs text-muted-foreground font-mono mt-0.5">{asset.sale_id.slice(0, 8)}</p>
+        )}
       </button>
     </div>
   )
@@ -1209,6 +1221,18 @@ function AssetDetailPane({
           )}
           {tab === 'sold' && asset.sale_id && asset.payment_status !== 'paid' && (
             <Button variant="link" size="sm" onClick={() => onAddPayment(asset)} className="text-success text-xs">Add Payment</Button>
+          )}
+          {/* A stable, pastable reference for support/investigation -- matches the
+              Sales Ledger and Sold Accessories detail panes. */}
+          {tab === 'sold' && asset.sale_id && (
+            <button
+              type="button"
+              onClick={() => { navigator.clipboard.writeText(asset.sale_id!); toast.success('Sale ID copied.') }}
+              title="Click to copy the full Sale ID"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-mono"
+            >
+              <Copy className="h-3 w-3" /> {asset.sale_id.slice(0, 8)}
+            </button>
           )}
           {tab === 'sold' && showServiceActions && (
             <Button variant="link" size="sm" onClick={onReturn} className="text-warning text-xs">Return</Button>
@@ -1356,7 +1380,13 @@ function SoldAccessoryListItem({ sale, active, onOpen }: {
           </span>
         </div>
         <div className="flex items-center justify-between gap-2 mt-1">
-          <p className="text-xs text-muted-foreground truncate">{sale.customer_name || 'Walk-in'} · Qty {sale.accessory_quantity}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {sale.customer_name || 'Walk-in'} · Qty {sale.accessory_quantity}
+            {sale.serial_number && <span> · Ticket {sale.serial_number}</span>}
+            {/* Abbreviated, pastable reference -- see SoldAccessoryDetailPane's
+                full copy button for sharing the complete id. */}
+            <span className="font-mono"> · {sale.id.slice(0, 8)}</span>
+          </p>
           <div className="flex items-center gap-1.5 shrink-0">
             <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
             <span className="text-xs text-muted-foreground whitespace-nowrap">{sale.sale_date?.slice(0, 10) || '—'}</span>
@@ -1391,6 +1421,17 @@ function SoldAccessoryDetailPane({ sale, canEdit, onBack, onEdit, onCustomerUpda
             <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, sale.payment_status)}>{sale.payment_status}</StatusBadge>
             {sale.finalized && <StatusBadge tone="success">Invoiced</StatusBadge>}
           </div>
+          {/* A stable, pastable reference for support/investigation -- so a specific
+              sale can be handed off by its id instead of describing it, matching
+              the Sales Ledger's detail pane. */}
+          <button
+            type="button"
+            onClick={() => { navigator.clipboard.writeText(sale.id); toast.success('Sale ID copied.') }}
+            title="Click to copy the full Sale ID"
+            className="mt-0.5 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground font-mono"
+          >
+            <Copy className="h-3 w-3" /> {sale.id.slice(0, 8)}
+          </button>
         </div>
         {canEdit && (
           <Button variant="outline" size="sm" onClick={onEdit}>Edit</Button>
@@ -1405,6 +1446,14 @@ function SoldAccessoryDetailPane({ sale, canEdit, onBack, onEdit, onCustomerUpda
           )}
         </Field>
         <Field label="Quantity">{sale.accessory_quantity}</Field>
+        {sale.serial_number && <Field label="Ticket #">{sale.serial_number}</Field>}
+        {sale.repair_job_number && (
+          <Field label="Repair Job">
+            <Link href="/dashboard/repair-jobs" className="text-primary underline">
+              {sale.repair_job_number}
+            </Link>
+          </Field>
+        )}
         <Field label="Price">
           <div className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5">
             <span>Base: <span className="tabular-nums font-medium">₹{(sale.sale_base_price ?? 0).toFixed(2)}</span></span>

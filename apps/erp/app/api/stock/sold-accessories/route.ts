@@ -28,7 +28,7 @@ export async function GET(req: NextRequest) {
   let query = supabaseAdmin
     .from('sales')
     .select(
-      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, invoice_id, created_at',
+      'id, sale_date, customer_id, customer_name, accessory_id, accessory_quantity, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, sold_by, finalized, invoice_number, invoice_id, created_at, serial_number, repair_job_id',
       pagination ? { count: 'exact' } : undefined
     )
     .not('accessory_id', 'is', null)
@@ -76,7 +76,8 @@ export async function GET(req: NextRequest) {
   const skuIds = [...new Set((sales || []).map((s: any) => s.accessory_id).filter(Boolean))]
   const customerIds = [...new Set((sales || []).map((s: any) => s.customer_id).filter(Boolean))]
   const invoiceIds = [...new Set((sales || []).map((s: any) => s.invoice_id).filter(Boolean))]
-  const [{ data: skus }, { data: customers }, paymentDateBySaleId, { data: invoices }] = await Promise.all([
+  const repairJobIds = [...new Set((sales || []).map((s: any) => s.repair_job_id).filter(Boolean))]
+  const [{ data: skus }, { data: customers }, paymentDateBySaleId, { data: invoices }, { data: repairJobs }] = await Promise.all([
     skuIds.length
       ? withRetry(() => supabaseAdmin.from('sku_master').select('id, full_sku_code, sku_description, category').in('id', skuIds))
       : Promise.resolve({ data: [] as any[] }),
@@ -93,10 +94,16 @@ export async function GET(req: NextRequest) {
     invoiceIds.length
       ? withRetry(() => supabaseAdmin.from('invoices').select('id, grand_total').in('id', invoiceIds))
       : Promise.resolve({ data: [] as any[] }),
+    // A part consumed mid-repair has repair_job_id set -- surface the job number
+    // here, same as Sales Ledger's item()/repair_job_number.
+    repairJobIds.length
+      ? withRetry(() => supabaseAdmin.from('repair_jobs').select('id, job_number').in('id', repairJobIds))
+      : Promise.resolve({ data: [] as any[] }),
   ])
   const skuById = new Map((skus || []).map((s: any) => [s.id, s]))
   const customerById = new Map((customers || []).map((c: any) => [c.id, c]))
   const invoiceById = new Map((invoices || []).map((i: any) => [i.id, i]))
+  const repairJobById = new Map((repairJobs || []).map((j: any) => [j.id, j]))
 
   const result = (sales || []).map((s: any) => {
     const sku = skuById.get(s.accessory_id)
@@ -124,6 +131,8 @@ export async function GET(req: NextRequest) {
       invoice_id: s.invoice_id,
       invoice_grand_total: s.invoice_id ? (invoiceById.get(s.invoice_id)?.grand_total ?? null) : null,
       created_at: s.created_at,
+      serial_number: s.serial_number,
+      repair_job_number: s.repair_job_id ? (repairJobById.get(s.repair_job_id)?.job_number ?? null) : null,
     }
   })
 

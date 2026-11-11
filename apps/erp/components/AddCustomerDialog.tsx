@@ -25,6 +25,7 @@ import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
 import { gstValidationError } from "@/lib/gst-validation";
+import { stateCodeFromPincode, stateNameFromPincode } from "@/lib/pincode-state";
 
 const emptyForm = {
   customer_name: "",
@@ -78,6 +79,13 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
     // stale value can't get silently submitted while the field is hidden.
     if (field === "has_gst" && value === false) {
       setFormData((prev) => ({ ...prev, has_gst: false, gst_number: "" }));
+      return;
+    }
+    // Without a GSTIN the state comes from the PIN -- it decides CGST+SGST vs IGST.
+    // Ambiguous PIN ranges resolve to null and leave the state blank.
+    if (field === "pincode" && typeof value === "string") {
+      setFormData((prev) => prev.gst_number?.trim() ? { ...prev, pincode: value }
+        : { ...prev, pincode: value, state: stateNameFromPincode(value) || "", state_code: stateCodeFromPincode(value) || "" });
       return;
     }
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -205,6 +213,9 @@ export default function AddCustomerDialog({ onAdd }: { onAdd: (created?: any) =>
               <Label>Pincode *</Label>
               <Input required pattern="\d{6}" title="6-digit PIN code" value={formData.pincode} onChange={(e) => handleChange("pincode", e.target.value)} />
               {pincodeError && <p className="text-xs text-destructive mt-1">{pincodeError}</p>}
+              {!formData.gst_number?.trim() && /^\d{6}$/.test((formData.pincode || "").trim()) && (
+                <p className="text-xs text-muted-foreground mt-1">{formData.state_code ? `State: ${formData.state} (from PIN)` : "State can't be told from this PIN -- check it"}</p>
+              )}
             </div>
             <div>
               <Label>Phone</Label>
