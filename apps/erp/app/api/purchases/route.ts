@@ -12,14 +12,7 @@ import {
 } from '@/lib/purchases-legacy'
 import { logAuditEvent } from '@/lib/audit-log'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 // ---------- POST: create one or more purchase entries (legacy quick-entry door) ----------
 // Writes both a `purchases` row (rich purchase-event detail: invoice/expense/photo/
@@ -27,8 +20,10 @@ async function getUser(req: NextRequest) {
 // legacy_purchase_id. This is the server-side replacement for AddPurchaseDialog.tsx's
 // direct client-side insert + its own asset-numbering logic.
 export async function POST(req: NextRequest) {
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Legacy purchase entry writes vendor, purchase price and SKU base_cost --
+  // owner-only, matching its page (dashboard/purchases is under RequireOwner).
+  const user = await getSessionUser(req)
+  if (!isOwner(user)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const body = await req.json()
 
@@ -139,7 +134,7 @@ export async function POST(req: NextRequest) {
   // guessed.
   for (const purchaseId of createdIds) {
     await logAuditEvent({
-      actor: { id: user.id, email: user.email, role: null },
+      actor: { id: user.id, email: user.email, role: user.role },
       actionType: 'create',
       module: 'purchase_orders',
       tableName: 'purchases',
@@ -218,7 +213,7 @@ export async function POST(req: NextRequest) {
       if (monLedgerErr) throw new Error(monLedgerErr.message)
 
       await logAuditEvent({
-        actor: { id: user.id, email: user.email, role: null },
+        actor: { id: user.id, email: user.email, role: user.role },
         actionType: 'create',
         module: 'purchase_orders',
         tableName: 'purchases',

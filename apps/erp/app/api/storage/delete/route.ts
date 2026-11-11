@@ -9,17 +9,17 @@ const ALLOWED_BUCKETS = ['purchase-files', 'expense-receipts'] as const;
 
 export async function DELETE(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // A staff profile, not just any Supabase login -- see upload-url/route.ts.
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { key, bucket = 'purchase-files' } = await req.json();
   if (!ALLOWED_BUCKETS.includes(bucket)) {
     return NextResponse.json({ error: 'Invalid bucket' }, { status: 400 });
   }
 
-  if (bucket === 'expense-receipts') {
-    const sessionUser = await getCookieSessionUser();
-    if (!canEditPage(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  if (bucket === 'expense-receipts' && !canEditPage(sessionUser, 'expenses')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   const storageClient = bucket === 'expense-receipts' ? supabaseAdmin.storage : supabase.storage;

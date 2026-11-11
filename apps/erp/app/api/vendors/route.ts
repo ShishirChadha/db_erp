@@ -41,6 +41,11 @@ export async function GET(req: NextRequest) {
 // or deleting a vendor, or tagging/untagging an existing one, stays exclusively on the
 // owner-only Vendors page. The owner's own POST path (full fields, no forced tag, no
 // dedup) is unchanged from before.
+const NON_OWNER_VENDOR_FIELDS = [
+  'spoc_name', 'owner_name', 'phone', 'alt_phone', 'address_line1', 'address_line2',
+  'city', 'state', 'pincode', 'email', 'has_gst', 'gst_number', 'gst_company_name', 'remarks',
+] as const;
+
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req);
   const ownerCaller = isOwner(sessionUser);
@@ -79,9 +84,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json(redacted[0], { status: 200 });
     }
 
+    // Only the fields AddVendorDialog collects -- never pass the raw body through,
+    // or a non-owner could set is_deleted, vendor_code, deleted_* or any future column.
+    const fields: Record<string, unknown> = {}
+    for (const key of NON_OWNER_VENDOR_FIELDS) {
+      if (body[key] !== undefined) fields[key] = body[key]
+    }
     const { data, error } = await supabaseAdmin
       .from('vendors')
-      .insert({ ...body, supplies_accessories: true })
+      .insert({ ...fields, company_name: trimmedName, supplies_accessories: true })
       .select()
       .single();
     if (error) return NextResponse.json({ error: error.message }, { status: 500 });

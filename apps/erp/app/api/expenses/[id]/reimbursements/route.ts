@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, hasPageAccess, canEditPage, isOwner, type SessionUser } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
+
+// Same rule as /api/expenses and /api/expenses/[id]: a non-owner must not be able to
+// reach an expense whose type is owner-only, so it 404s rather than confirming it exists.
+async function hiddenFromCaller(sessionUser: SessionUser, expenseType: string | null): Promise<boolean> {
+  if (isOwner(sessionUser)) return false
+  const ownerOnlyTypes = await getOwnerOnlyExpenseTypes()
+  return isOwnerOnlyType(expenseType, ownerOnlyTypes)
+}
 
 // Append-only ledger of reimbursement installments against an expense a staff
 // member paid out of pocket (docs/decisions.md, 2026-09-01). expenses.reimbursed_amount/
@@ -14,6 +23,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   if (!hasPageAccess(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id } = await params
+  const { data: expense } = await supabaseAdmin.from('expenses').select('type').eq('id', id).maybeSingle()
+  if (!expense || await hiddenFromCaller(sessionUser!, expense.type)) {
+    return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
+  }
+
   const { data, error } = await supabaseAdmin
     .from('expense_reimbursements')
     .select('id, amount, payment_account, note, recorded_by, recorded_at, profiles:recorded_by(full_name)')
@@ -54,10 +68,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: expense, error: expenseErr } = await supabaseAdmin
     .from('expenses')
-    .select('id, amount, reimbursed_amount, paid_by_staff, payment_account, is_deleted')
+    .select('id, type, amount, reimbursed_amount, paid_by_staff, payment_account, is_deleted')
     .eq('id', id)
     .single()
-  if (expenseErr || !expense || expense.is_deleted) {
+  if (expenseErr || !expense || expense.is_deleted || await hiddenFromCaller(sessionUser, expense.type)) {
     return NextResponse.json({ error: 'Expense not found' }, { status: 404 })
   }
   if (!expense.paid_by_staff) {

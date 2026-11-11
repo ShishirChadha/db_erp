@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { recalcPOTotals, getVendorName } from '@/lib/purchase-utils'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 export async function POST(req: NextRequest) {
+  if (!isOwner(await getSessionUser(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   try {
     const { data: skus } = await supabaseAdmin
       .from('sku_master')

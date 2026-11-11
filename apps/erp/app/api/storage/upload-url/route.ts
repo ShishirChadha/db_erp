@@ -23,8 +23,10 @@ const ALLOWED_BUCKETS = ['purchase-files', 'documents', 'expense-receipts'] as c
 
 export async function POST(req: NextRequest) {
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  // A staff profile, not just any Supabase login -- website customers share the
+  // `authenticated` role and must not be able to write into staff buckets.
+  const sessionUser = await getCookieSessionUser();
+  if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const { fileName, contentType, assetNumber, folder, fileType, bucket = 'purchase-files' } = await req.json();
   if (!ALLOWED_BUCKETS.includes(bucket)) {
@@ -33,17 +35,15 @@ export async function POST(req: NextRequest) {
 
   // documents holds recon source material (vendor invoices, bank statements) --
   // cost/vendor-bearing, owner-only, same posture as Purchase Orders/Vendors.
-  if (bucket === 'documents') {
-    const sessionUser = await getCookieSessionUser();
-    if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  if (bucket === 'documents' && !isOwner(sessionUser)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   // expense-receipts holds attachments on expense records -- gated by the same
   // 'expenses' edit grant as the rest of the module (receipts aren't cost/vendor/
   // margin data, unlike documents/product-images above).
-  if (bucket === 'expense-receipts') {
-    const sessionUser = await getCookieSessionUser();
-    if (!canEditPage(sessionUser, 'expenses')) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
+  if (bucket === 'expense-receipts' && !canEditPage(sessionUser, 'expenses')) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
   }
 
   const timestamp = Date.now();

@@ -11,14 +11,7 @@ import {
   buildPurchaseRecord,
 } from '@/lib/purchases-legacy'
 import { logAuditEvent } from '@/lib/audit-log'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 
 // Statuses beyond which editing purchase-entry details through this door no longer
 // makes sense -- the unit has moved on to sale or an RMA cycle.
@@ -31,8 +24,9 @@ export async function PATCH(
 ) {
   const { id } = await params
 
-  const user = await getUser(req)
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  // Owner-only, same as the create route and the page itself.
+  const user = await getSessionUser(req)
+  if (!isOwner(user)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { data: purchase } = await supabaseAdmin
     .from('purchases')
@@ -181,7 +175,7 @@ export async function PATCH(
   }
 
   await logAuditEvent({
-    actor: { id: user.id, email: user.email, role: null },
+    actor: { id: user.id, email: user.email, role: user.role },
     actionType: 'update',
     module: 'purchase_orders',
     tableName: 'purchases',

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser } from '@/lib/auth/session'
+import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 
 const PREFIXES = ['DBAS', 'TTAS', 'CSAS', 'OTHR']
@@ -32,6 +32,7 @@ async function findMaxForYear(prefix: string, yearSuffix: string): Promise<numbe
 }
 
 export async function GET(req: NextRequest) {
+  if (!isOwner(await getSessionUser(req))) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   const currentYear = new Date().getFullYear().toString()
 
   const { data: counters } = await supabaseAdmin
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
 
 export async function PUT(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   const body = await req.json()
   const { prefix, last_number, year_suffix } = body
 
@@ -109,6 +111,7 @@ export async function PUT(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   const currentYear = new Date().getFullYear().toString()
 
   const { data: existingCounters } = await supabaseAdmin

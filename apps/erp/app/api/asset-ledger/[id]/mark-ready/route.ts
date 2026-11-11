@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { logAuditEvent } from '@/lib/audit-log'
-
-async function getUser(req: NextRequest) {
-  const authHeader = req.headers.get('authorization')
-  if (!authHeader?.startsWith('Bearer ')) return null
-  const token = authHeader.slice(7)
-  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token)
-  return error ? null : user
-}
+import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 
 // ---------- POST: qc_passed -> ready_for_sale ----------
 export async function POST(
@@ -17,8 +10,10 @@ export async function POST(
 ) {
   const { id } = await params
 
-  const user = await getUser(req)
+  // Same gate as the sibling QC routes (qc, send-back-to-qc).
+  const user = await getSessionUser(req)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!hasPageAccess(user, ['live_stock', 'stock'])) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { data: asset } = await supabaseAdmin
     .from('asset_ledger')
@@ -41,7 +36,7 @@ export async function POST(
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
   await logAuditEvent({
-    actor: { id: user.id, email: user.email, role: null },
+    actor: { id: user.id, email: user.email, role: user.role },
     actionType: 'status_change',
     module: 'stock',
     tableName: 'asset_ledger',
