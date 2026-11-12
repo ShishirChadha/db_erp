@@ -20,6 +20,7 @@ import { AddInvoiceLineDialog } from "@/components/AddInvoiceLineDialog";
 import { SimpleModal } from "@/components/SimpleModal";
 import { CornerRibbon } from "@/components/CornerRibbon";
 import type { Tone } from "@/lib/status-styles";
+import { STATE_CODE_TO_NAME } from "@db/shared";
 
 function money(n: number | null | undefined) {
   return `₹${Number(n || 0).toFixed(2)}`;
@@ -122,6 +123,46 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
     }
     setInvoice((prev: any) => ({ ...prev, eway_bill_number: ewayNumber.trim() || null, eway_bill_date: ewayDate || null }));
     setEditingEway(false);
+  });
+
+  // Place of supply decides CGST+SGST vs IGST. Editable on an issued invoice (owner,
+  // unfiled month) because only the tax head moves -- totals stay the same.
+  const [editingPos, setEditingPos] = useState(false);
+  const [posValue, setPosValue] = useState("");
+  const [posErr, setPosErr] = useState("");
+  const { run: handleSavePos, pending: savingPos } = useAsyncAction(async () => {
+    setPosErr("");
+    const res = await apiFetch(`/api/invoices/${id}/place-of-supply`, {
+      method: "PATCH",
+      body: JSON.stringify({ place_of_supply: posValue }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setPosErr(e.error || "Failed to change place of supply.");
+      return;
+    }
+    setEditingPos(false);
+    await fetchInvoice();
+  });
+
+  // One line's HSN/SAC, via the audited, filed-month-guarded route GST step 6 uses.
+  // Only this invoice line changes -- not the SKU.
+  const [hsnEdit, setHsnEdit] = useState<{ id: string; code: string } | null>(null);
+  const [hsnErr, setHsnErr] = useState("");
+  const { run: handleSaveHsn, pending: savingHsn } = useAsyncAction(async () => {
+    if (!hsnEdit) return;
+    setHsnErr("");
+    const res = await apiFetch(`/api/invoice-items/${hsnEdit.id}/hsn`, {
+      method: "PATCH",
+      body: JSON.stringify({ hsn_code: hsnEdit.code }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setHsnErr(e.error || "Failed to change HSN.");
+      return;
+    }
+    setHsnEdit(null);
+    await fetchInvoice();
   });
 
   const handleRemoveItem = async (reason: string) => {
@@ -274,8 +315,38 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
               <h1 className="text-3xl font-bold tabular-nums">#{invoice.invoice_number}</h1>
               <p className="text-sm text-muted-foreground mt-1">
                 {format(new Date(invoice.invoice_date), "dd MMM yyyy")}
-                {invoice.place_of_supply && ` · Place of Supply: ${invoice.place_of_supply}`}
+                {invoice.place_of_supply && ` · Place of Supply: ${STATE_CODE_TO_NAME[invoice.place_of_supply] ?? ""} (${invoice.place_of_supply})`}
+                {isOwner && invoice.invoice_type !== "credit_note" && !editingPos && (
+                  <button
+                    type="button"
+                    title="Change place of supply"
+                    className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground"
+                    onClick={() => { setPosValue(invoice.place_of_supply || ""); setPosErr(""); setEditingPos(true); }}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </p>
+              {editingPos && (
+                <div className="mt-2 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm"
+                      value={posValue}
+                      onChange={(e) => setPosValue(e.target.value)}
+                    >
+                      <option value="">Select state</option>
+                      {Object.entries(STATE_CODE_TO_NAME).sort((a, b) => a[1].localeCompare(b[1])).map(([code, name]) => (
+                        <option key={code} value={code}>{name} ({code})</option>
+                      ))}
+                    </select>
+                    <Button size="sm" onClick={() => handleSavePos()} loading={savingPos} disabled={!posValue}>Save</Button>
+                    <Button size="sm" variant="outline" onClick={() => setEditingPos(false)} disabled={savingPos}>Cancel</Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Moves the tax between CGST+SGST and IGST. Totals stay the same.</p>
+                  {posErr && <p className="text-xs text-destructive">{posErr}</p>}
+                </div>
+              )}
             </div>
             <StatusBadge tone={toneFor(INVOICE_STATUS_TONES, invoice.status)} className="text-sm px-3 py-1">
               {invoice.status.replace("_", " ").toUpperCase()}
@@ -389,7 +460,35 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                 {items.map((item) => (
                   <tr key={item.id} className="border-t">
                     <td className="py-2.5 px-3">{item.description}</td>
-                    <td className="py-2.5 px-3 text-muted-foreground">{item.hsn_code || "-"}</td>
+                    <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">
+                      {hsnEdit && hsnEdit.id === item.id ? (
+                        <span className="inline-flex flex-col gap-1">
+                          <span className="inline-flex items-center gap-1">
+                            <Input
+                              value={hsnEdit.code}
+                              onChange={(e) => setHsnEdit({ id: item.id, code: e.target.value.replace(/\D/g, "").slice(0, 8) })}
+                              className="w-24 h-7" inputMode="numeric" aria-label="HSN" autoFocus
+                            />
+                            <Button size="sm" className="h-7" onClick={() => handleSaveHsn()} loading={savingHsn} disabled={hsnEdit.code.length < 4}>Save</Button>
+                            <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setHsnEdit(null)} disabled={savingHsn}><X className="h-3.5 w-3.5" /></Button>
+                          </span>
+                          {hsnErr && <span className="text-xs text-destructive whitespace-normal">{hsnErr}</span>}
+                        </span>
+                      ) : (
+                        <>
+                          {item.hsn_code || "-"}
+                          {isOwner && invoice.invoice_type !== "credit_note" && (
+                            <button
+                              type="button" title="Change HSN on this line"
+                              className="ml-1.5 inline-flex align-middle text-muted-foreground hover:text-foreground"
+                              onClick={() => { setHsnErr(""); setHsnEdit({ id: item.id, code: item.hsn_code || "" }); }}
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{item.quantity}</td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{money(item.rate)}</td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{item.gst_rate}%</td>

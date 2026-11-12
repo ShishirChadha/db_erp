@@ -130,6 +130,35 @@ const STEP_WHY: Record<number, string> = {
   10: 'Pay the tax (cash and ITC) and file GSTR-3B on the portal, then record the ARN here and lock Purchases through month-end.',
 }
 
+// The order of work for the filing steps, in plain words -- shown at the top of the panel.
+const STEP_TODO: Record<number, string[]> = {
+  6: [
+    'Upload Zoho\'s "Summary of Outward Supplies (GSTR-1)" Excel below (Zoho: Reports → Taxes). One file covers every section — B2B, B2C, HSN, documents. Every row should say Matches.',
+    'Review the working papers below (the figures that will be filed).',
+    'Click "Portal JSON" in the working papers to download one file with all sections.',
+    'Click Approve at the bottom. If any invoice changes after this, you will be asked to approve again.',
+  ],
+  7: [
+    'On gst.gov.in: Returns → Returns Dashboard → pick the month → GSTR-1 → Prepare Offline → Upload, and choose the Portal JSON from step 6. All sections go in one upload — no need to enter them one by one.',
+    'Wait for the upload to process, then open GSTR-1 → Generate Summary and check it shows the same totals as step 6.',
+    'File with DSC or EVC, and copy the ARN the portal shows.',
+    'Enter the ARN below and save. That marks the month filed and keeps Sales locked through month-end.',
+  ],
+}
+
+function StepTodo({ n }: { n: number }) {
+  const items = STEP_TODO[n]
+  if (!items) return null
+  return (
+    <div className="rounded-md border bg-muted/30 p-3">
+      <p className="text-sm font-medium mb-1">What to do now</p>
+      <ol className="list-decimal pl-5 space-y-1 text-sm text-muted-foreground">
+        {items.map((t, i) => <li key={i}>{t}</li>)}
+      </ol>
+    </div>
+  )
+}
+
 function dueLabel(periodFrom: string, day: number) {
   const [y, m] = periodFrom.split('-').map(Number)
   return new Date(y, m, day).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
@@ -493,6 +522,12 @@ function ZohoGstr1Check({ entity, from, to }: { entity: string; from: string; to
             In Zoho: Reports → Taxes → Summary of Outward Supplies, set the month, Export as Excel. Compared by the app itself (no AI); nothing is stored.
           </p>
         </div>
+        <div className="flex gap-2">
+        {/* The result is kept per tab (sessionStorage), so it goes stale once ERP data changes --
+            re-run it from the same file without picking it again. */}
+        {res && b64 && (
+          <Button size="sm" variant="outline" disabled={busy} onClick={() => compare(b64, fileName)}>Re-check against ERP</Button>
+        )}
         <label className="inline-flex">
           <input type="file" accept=".xls,.xlsx" className="hidden" disabled={busy}
             onChange={(e) => { onFile(e.target.files?.[0]); e.target.value = '' }} />
@@ -500,6 +535,7 @@ function ZohoGstr1Check({ entity, from, to }: { entity: string; from: string; to
             {busy ? 'Comparing…' : res ? 'Upload again' : 'Upload Zoho Excel'}
           </span>
         </label>
+        </div>
       </div>
       {err && <p className="text-sm text-destructive">{err}</p>}
 
@@ -1006,6 +1042,7 @@ export default function GstClient() {
           {s.reason && <p className={`text-sm font-medium ${tone.text}`}>{s.reason}</p>}
         </CardHeader>
         <CardContent className="space-y-4">
+          <StepTodo n={n} />
           {n === 2 && (
             <>
               <UninvoicedSales entity={entity} period={period} onChanged={load} />
@@ -1872,6 +1909,16 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
 
   useEffect(() => { loadImports() }, [loadImports])
 
+  // Step 5 is a to-do list, not an upload screen: open the latest Zoho upload for
+  // this month straight away so the invoices that need a decision are listed.
+  useEffect(() => {
+    if (focus !== 'heads' || active) return
+    const latest = imports
+      .filter((i) => i.kind === 'zoho_invoices' && i.period_start <= from && i.period_end >= to)
+      .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)))[0]
+    if (latest) openImport(latest.id)
+  }, [focus, imports, from, to]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const openImport = async (id: string) => {
     setErr(''); setMsg('')
     const r = await apiFetch(`/api/gst/recon?import_id=${id}`)
@@ -1917,19 +1964,20 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
     }
   }
 
-  const resolve = async (lineId: string, resolution: string) => {
+  const resolve = async (lineId: string, resolution: string, extra?: Record<string, unknown>, defaultNote?: string) => {
     // A resolution with no reason is just a label -- next month (or the next
     // person looking at this) has no way to tell "checked, genuinely fine"
     // from "clicked through to make the warning go away." Required, not
     // optional, since the column already existed but nothing ever asked for it.
-    const note = window.prompt(`Why ${resolution.replace(/_/g, ' ')}? (shown next to this row, and kept for audit)`)
+    const note = window.prompt(`Why ${resolution.replace(/_/g, ' ')}? (shown next to this row, and kept for audit)`, defaultNote ?? '')
     if (note === null) return // cancelled
     if (!note.trim()) { setErr('A reason is required to resolve a row.'); return }
     const r = await apiFetch('/api/gst/recon', {
       method: 'PATCH',
-      body: JSON.stringify({ id: lineId, resolution, resolution_note: note.trim() }),
+      body: JSON.stringify({ id: lineId, resolution, resolution_note: note.trim(), ...extra }),
     })
-    if (r.ok && active) { await openImport(active.id); changed() }
+    if (!r.ok) { const d = await r.json().catch(() => null); setErr(d?.error || 'Could not save that decision.'); return }
+    if (active) { await openImport(active.id); changed() }
   }
 
   // Clearing a resolution needs no reason -- there's nothing left to explain
@@ -1987,7 +2035,7 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
       {err && <ErrorBanner message={err} />}
       {msg && <p className="text-sm text-success">{msg}</p>}
 
-      <div className={`grid gap-4 ${kinds && kinds.length === 1 ? '' : 'md:grid-cols-2'}`}>
+      {focus !== 'heads' && <div className={`grid gap-4 ${kinds && kinds.length === 1 ? '' : 'md:grid-cols-2'}`}>
         {UPLOAD_KINDS.filter((k) => !kinds || kinds.includes(k.kind)).map((k) => (
           <Card key={k.kind}>
             <CardHeader className="pb-2"><CardTitle className="text-base">{k.label}</CardTitle></CardHeader>
@@ -2007,9 +2055,9 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
             </CardContent>
           </Card>
         ))}
-      </div>
+      </div>}
 
-      {imports.filter((i) => !kinds || kinds.includes(i.kind)).length > 0 && (
+      {focus !== 'heads' && imports.filter((i) => !kinds || kinds.includes(i.kind)).length > 0 && (
         <div>
           <h3 className="text-sm font-medium mb-2">Previous uploads</h3>
           <div className="overflow-x-auto rounded-md border">
@@ -2066,6 +2114,15 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
             {active.kind === 'gstr2b' ? 'GSTR-2B' : 'Zoho'} · {active.period_start}
             {active.notes && <span className="ml-2 text-xs text-warning">{active.notes}</span>}
           </h3>
+          {focus === 'heads' && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => recheckImport(active)}
+                title="Re-run the Zoho match against the ERP as it is now, keeping decisions already made">
+                Re-check against ERP
+              </Button>
+              <span className="text-xs text-muted-foreground">Use after correcting an invoice, to see it move to Matched.</span>
+            </div>
+          )}
           {BUCKETS.map((b) => {
             const rows = lines.filter((l) => l.match_status === b.key && inFocus(l))
             if (rows.length === 0) return null
@@ -2091,7 +2148,11 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
                       {rows.slice(0, 60).map((l) => (
                         <tr key={l.id} className="border-t align-top">
                           <td className="px-3 py-2 whitespace-nowrap">{l.doc_date || '—'}</td>
-                          <td className="px-3 py-2 font-mono text-xs">{l.doc_number || '—'}</td>
+                          <td className="px-3 py-2 font-mono text-xs">
+                            {l.matched_type === 'invoice' && l.matched_id
+                              ? <a href={`/dashboard/invoices/${l.matched_id}`} target="_blank" rel="noreferrer" className="underline underline-offset-2 hover:text-primary">{l.doc_number}</a>
+                              : (l.doc_number || '—')}
+                          </td>
                           <td className="px-3 py-2">
                             {l.counterparty_name || '—'}
                             {l.counterparty_gstin && <span className="block text-xs text-muted-foreground font-mono">{l.counterparty_gstin}</span>}
@@ -2131,6 +2192,22 @@ function MatchUploads({ entity, from, to, kinds, focus, onChanged }: {
                                   )}
                                   {active.kind === 'gstr2b' && l.match_status === 'matched' && (
                                     <Button size="sm" variant="outline" onClick={() => resolve(l.id, 'itc_claimed')}>Claim ITC</Button>
+                                  )}
+                                  {focus === 'heads' && l.matched_type === 'invoice' && l.place_of_supply && (
+                                    <Button
+                                      size="sm" variant="outline"
+                                      title="Change the ERP invoice's place of supply to Zoho's and re-split its tax (total tax unchanged)"
+                                      onClick={() => resolve(l.id, 'entered_in_erp', { apply_zoho_pos: true },
+                                        `ERP invoice set to Zoho's place of supply ${STATE_CODE_TO_NAME[l.place_of_supply] ?? l.place_of_supply} (${l.place_of_supply})`)}
+                                    >
+                                      Use Zoho's state
+                                    </Button>
+                                  )}
+                                  {focus === 'heads' && (
+                                    <Button size="sm" variant="outline" title="The ERP's place of supply and tax head are correct; file as the ERP has it"
+                                      onClick={() => resolve(l.id, 'accepted', undefined, 'ERP place of supply and tax head are correct')}>
+                                      Keep ERP
+                                    </Button>
                                   )}
                                   <Button size="sm" variant="ghost" onClick={() => resolve(l.id, 'ignored')}>Ignore</Button>
                                 </div>

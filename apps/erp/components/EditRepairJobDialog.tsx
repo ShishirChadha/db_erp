@@ -25,6 +25,7 @@ import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
+import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 
 // Repair-only display label -- see app/dashboard/repair-jobs/page.tsx's
 // repairPaymentLabel for why 'pending' reads as "Open" here specifically.
@@ -107,10 +108,12 @@ interface PartOption {
 // the itemized sale_lines fetched below are the real source of truth.
 export function EditRepairJobDialog({
   job,
+  isOwner,
   onClose,
   onSaved,
 }: {
   job: RepairJobDetail;
+  isOwner: boolean;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -232,6 +235,17 @@ export function EditRepairJobDialog({
     return () => clearTimeout(timer);
   }, [partSearch]);
 
+  // Shared by Add Part / Remove Part / Remove Charge -- refreshes this dialog's own
+  // detail (parts + sale lines) in place, without closing it.
+  const refreshDetail = async () => {
+    setLoadingDetail(true);
+    const detail = await (await apiFetch(`/api/repair-jobs/${job.id}`)).json();
+    setSaleLines(Array.isArray(detail.sale_lines) ? detail.sale_lines : []);
+    setPartsInstalled(Array.isArray(detail.parts_installed) ? detail.parts_installed : []);
+    setLoadingDetail(false);
+    onSaved();
+  };
+
   const { run: addPart, pending: addingPart } = useAsyncAction(async () => {
     if (!newPart) return;
     setErr("");
@@ -248,14 +262,97 @@ export function EditRepairJobDialog({
     setPartSearch("");
     setPartOptions([]);
     setShowAddPart(false);
-    // Refresh this dialog's own detail (parts + a new sale line) without closing it.
-    setLoadingDetail(true);
-    const detail = await (await apiFetch(`/api/repair-jobs/${job.id}`)).json();
-    setSaleLines(Array.isArray(detail.sale_lines) ? detail.sale_lines : []);
-    setPartsInstalled(Array.isArray(detail.parts_installed) ? detail.parts_installed : []);
-    setLoadingDetail(false);
-    onSaved();
+    await refreshDetail();
   });
+
+  // ---------- Remove Part (owner-only, reverses stock and voids its sale if priced) ----------
+  const [removingPart, setRemovingPart] = useState<PartInstalled | null>(null);
+  const [removePartErr, setRemovePartErr] = useState("");
+
+  const handleRemovePart = async (reason: string) => {
+    if (!removingPart) return;
+    setRemovePartErr("");
+    let res = await apiFetch(`/api/repair-jobs/${job.id}/parts`, {
+      method: "DELETE",
+      body: JSON.stringify({ part_id: removingPart.id, reason }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      if (e.error_code === "already_invoiced") {
+        if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
+        res = await apiFetch(`/api/repair-jobs/${job.id}/parts`, {
+          method: "DELETE",
+          body: JSON.stringify({ part_id: removingPart.id, reason, confirm_despite_invoice: true }),
+        });
+      }
+      if (!res.ok) {
+        const e2 = await res.json().catch(() => ({}));
+        setRemovePartErr(e2.error || "Failed to remove part.");
+        throw new Error(e2.error || "Failed to remove part.");
+      }
+    }
+    setRemovingPart(null);
+    await refreshDetail();
+  };
+
+  // ---------- Edit Amount (labor or part charge) -- corrects sale_base_price directly
+  // via the same PATCH /api/sales/[id] route the Sales Ledger uses, rather than
+  // remove+recreate -- a job already marked Done can't re-trigger a new labor sale
+  // (Mark Done refuses a second call), so editing the linked sale's price in place is
+  // the only way to correct a wrong labor charge after the fact.
+  const [editingSale, setEditingSale] = useState<SaleLine | null>(null);
+  const [editAmount, setEditAmount] = useState<number | "">("");
+  const [editSaleErr, setEditSaleErr] = useState("");
+
+  const { run: saveEditAmount, pending: savingEditAmount } = useAsyncAction(async () => {
+    if (!editingSale) return;
+    setEditSaleErr("");
+    let res = await apiFetch(`/api/sales/${editingSale.id}`, {
+      method: "PATCH",
+      body: JSON.stringify({ sale_base_price: Number(editAmount) || 0, reason: "Repair job charge correction" }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      if (e.error_code === "already_invoiced") {
+        if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
+        res = await apiFetch(`/api/sales/${editingSale.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({ sale_base_price: Number(editAmount) || 0, reason: "Repair job charge correction", confirm_despite_invoice: true }),
+        });
+      }
+      if (!res.ok) {
+        const e2 = await res.json().catch(() => ({}));
+        setEditSaleErr(e2.error || "Failed to update amount.");
+        return;
+      }
+    }
+    setEditingSale(null);
+    await refreshDetail();
+  });
+
+  // ---------- Remove Charge (labor line) -- same /void endpoint EditSaleDialog uses ----------
+  const [removingSale, setRemovingSale] = useState<SaleLine | null>(null);
+  const [removeSaleErr, setRemoveSaleErr] = useState("");
+
+  const handleRemoveSale = async (reason: string) => {
+    if (!removingSale) return;
+    setRemoveSaleErr("");
+    let res = await apiFetch(`/api/sales/${removingSale.id}/void`, { method: "POST", body: JSON.stringify({ reason }) });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      if (e.error_code === "already_invoiced") {
+        if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
+        res = await apiFetch(`/api/sales/${removingSale.id}/void`, { method: "POST", body: JSON.stringify({ reason, confirm_despite_invoice: true }) });
+      }
+      if (!res.ok) {
+        const e2 = await res.json().catch(() => ({}));
+        setRemoveSaleErr(e2.error || "Failed to remove charge.");
+        throw new Error(e2.error || "Failed to remove charge.");
+      }
+    }
+    setRemovingSale(null);
+    await refreshDetail();
+  };
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -374,11 +471,16 @@ export function EditRepairJobDialog({
             ) : (
               <ul className="text-sm space-y-1">
                 {partsInstalled.map((p) => (
-                  <li key={p.id} className="flex justify-between">
+                  <li key={p.id} className="flex justify-between items-center">
                     <span>{p.label} x{p.quantity}</span>
-                    <span className="tabular-nums text-muted-foreground">
+                    <span className="tabular-nums text-muted-foreground flex items-center gap-2">
                       {p.unit_price != null ? `₹${p.unit_price.toFixed(2)} each` : "—"}
                       {p.payment_status && <span className="ml-2">({repairPaymentLabel(p.payment_status)})</span>}
+                      {isOwner && !p.finalized && (
+                        <Button type="button" size="sm" variant="ghost" className="text-destructive h-6 px-1.5" onClick={() => setRemovingPart(p)}>
+                          Remove
+                        </Button>
+                      )}
                     </span>
                   </li>
                 ))}
@@ -468,9 +570,24 @@ export function EditRepairJobDialog({
                         {line.finalized ? (
                           <span className="text-success text-xs">✓ {line.invoice_number}</span>
                         ) : (
-                          <Button type="button" size="sm" variant="outline" onClick={() => setPayingSale(line)}>
-                            Add Payment
-                          </Button>
+                          <>
+                            <Button type="button" size="sm" variant="outline" onClick={() => setPayingSale(line)}>
+                              Add Payment
+                            </Button>
+                            {isOwner && (
+                              <Button
+                                type="button" size="sm" variant="ghost"
+                                onClick={() => { setEditingSale(line); setEditAmount(line.sale_base_price); setEditSaleErr(""); }}
+                              >
+                                Edit Amount
+                              </Button>
+                            )}
+                            {isOwner && line.kind === "labor" && (
+                              <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => setRemovingSale(line)}>
+                                Remove
+                              </Button>
+                            )}
+                          </>
                         )}
                       </div>
                     </li>
@@ -520,6 +637,59 @@ export function EditRepairJobDialog({
 
       {showZohoDialog && unfinalizedLines.length > 0 && (
         <RecordZohoInvoiceDialog saleIds={unfinalizedLines.map((s) => s.id)} onClose={() => setShowZohoDialog(false)} onRecorded={onSaved} />
+      )}
+      {editingSale && (
+        <Dialog open onOpenChange={(o) => !o && setEditingSale(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Edit Amount</DialogTitle>
+              <DialogDescription>{editingSale.label}</DialogDescription>
+            </DialogHeader>
+            {editSaleErr && <div className="text-destructive text-sm">{editSaleErr}</div>}
+            <div>
+              <Label>{editingSale.sale_gst > 0 ? "Amount (₹, pre-GST)" : "Amount (₹)"}</Label>
+              <Input
+                type="number"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                className="text-right"
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingSale(null)} disabled={savingEditAmount}>Cancel</Button>
+              <Button onClick={() => saveEditAmount()} disabled={savingEditAmount} loading={savingEditAmount}>
+                {savingEditAmount && <Loader2 className="size-4 animate-spin" />}
+                Save
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
+      {removingPart && (
+        <ReasonConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRemovingPart(null)}
+          title={`Remove ${removingPart.label}?`}
+          description={
+            removingPart.sale_id
+              ? "Reverses stock and voids this part's charge. Does not touch an already-generated invoice."
+              : "Restores the stock this part used."
+          }
+          confirmLabel="Remove Part"
+          error={removePartErr}
+          onConfirm={handleRemovePart}
+        />
+      )}
+      {removingSale && (
+        <ReasonConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRemovingSale(null)}
+          title="Remove this labor charge?"
+          description="Voids this charge from the Sales Ledger. Does not touch an already-generated invoice. You can re-enter a corrected charge afterward."
+          confirmLabel="Remove Charge"
+          error={removeSaleErr}
+          onConfirm={handleRemoveSale}
+        />
       )}
       {payingSale && (
         <AddPaymentDialog

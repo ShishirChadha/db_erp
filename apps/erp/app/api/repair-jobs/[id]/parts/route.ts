@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
-import { getSessionUser, canEditPage } from '@/lib/auth/session'
+import { getSessionUser, canEditPage, isOwner } from '@/lib/auth/session'
 import { resolveRepairGstPercent, consumeRepairParts } from '@/lib/repair-jobs'
+import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
+import { insertAccessoryMovement } from '@/lib/accessory-movements'
+import { NON_STOCK_CATEGORIES } from '@/lib/sku-categories'
+import { checkPeriodLock, periodLockedResponse } from '@/lib/period-lock'
+import { logFieldCorrections } from '@/lib/field-corrections'
+import { logAuditEvent } from '@/lib/audit-log'
 
 // ---------- POST: add a part to an existing job (after intake) ----------
 // Real repairs often discover a needed part mid-job, after diagnosis -- this is the
@@ -66,4 +72,103 @@ export async function POST(
   }
 
   return NextResponse.json({ success: true, sale_id: result.saleIds[0] }, { status: 201 })
+}
+
+// ---------- DELETE: remove a part that was added to a job in error ----------
+// Owner-only, matching the generic sale /void convention this reuses -- removing a
+// part reverses real money/stock, not an operational edit like status or problem
+// description (those stay on the repair_jobs page-edit grant). A priced part voids its
+// linked sale exactly like /api/sales/[id]/void (same period-lock/already-invoiced
+// guards); an unpriced/internal part (sale_id null, see consumeRepairParts) just
+// reverses its own stock adjustment. Either way the repair_job_parts row is deleted
+// afterward so it stops showing in "Parts Installed."
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+  const partId = body.part_id
+  const reason = (body.reason || '').trim()
+  if (!partId) return NextResponse.json({ error: 'part_id is required.' }, { status: 400 })
+  if (!reason) return NextResponse.json({ error: 'A reason is required to remove a part.' }, { status: 400 })
+
+  const { data: part } = await supabaseAdmin
+    .from('repair_job_parts')
+    .select('*')
+    .eq('id', partId)
+    .eq('repair_job_id', id)
+    .single()
+  if (!part) return NextResponse.json({ error: 'Part not found on this job.' }, { status: 404 })
+
+  if (part.sale_id) {
+    const { data: sale } = await supabaseAdmin.from('sales').select('*').eq('id', part.sale_id).single()
+    if (sale && !sale.is_deleted) {
+      const lock = await checkPeriodLock('sales', sale.effective_sale_date || sale.sale_date, sale.payment_account)
+      if (lock.locked) return NextResponse.json(periodLockedResponse(lock), { status: 409 })
+
+      if (sale.finalized && !body.confirm_despite_invoice) {
+        return NextResponse.json({
+          error: `This part is already invoiced (${sale.invoice_number || sale.invoice_id}) -- removing it will NOT retract or update that invoice, which will then disagree with the (now removed) part. Confirm to proceed anyway.`,
+          error_code: 'already_invoiced',
+        }, { status: 409 })
+      }
+
+      const { error: reverseErr } = await reverseSaleInventoryEffects(sale, {
+        reason: `Repair part removed -- ${reason}`,
+        userId: sessionUser.id,
+      })
+      if (reverseErr) {
+        const status = reverseErr.includes('no longer in') ? 409 : (reverseErr.includes('not found') ? 404 : 500)
+        return NextResponse.json({ error: reverseErr }, { status })
+      }
+
+      await supabaseAdmin.from('sales').update({ is_deleted: true }).eq('id', sale.id)
+
+      const fieldCorrectionIds = await logFieldCorrections(
+        'sales', sale.id,
+        [{ field: 'is_deleted', oldValue: false, newValue: true }],
+        sessionUser.id, reason
+      )
+      await logAuditEvent({
+        actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+        actionType: 'void',
+        module: 'sales',
+        tableName: 'sales',
+        recordId: sale.id,
+        recordLabel: sale.invoice_number || sale.id,
+        fieldCorrectionIds,
+        reason,
+      })
+    }
+  } else {
+    const { data: sku } = await supabaseAdmin.from('sku_master').select('category').eq('id', part.sku_id).maybeSingle()
+    if (!NON_STOCK_CATEGORIES.includes(sku?.category)) {
+      const { error: moveErr } = await insertAccessoryMovement({
+        skuId: part.sku_id,
+        movementType: 'adjustment',
+        quantityChange: part.quantity,
+        notes: `Repair part removed -- ${reason}`,
+        createdBy: sessionUser.id,
+      })
+      if (moveErr) return NextResponse.json({ error: moveErr.message }, { status: 400 })
+    }
+  }
+
+  await supabaseAdmin.from('repair_job_parts').delete().eq('id', partId)
+
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'soft_delete',
+    module: 'repair_jobs',
+    tableName: 'repair_job_parts',
+    recordId: partId,
+    recordLabel: `Part removed from job ${id}`,
+    reason,
+  })
+
+  return NextResponse.json({ success: true })
 }

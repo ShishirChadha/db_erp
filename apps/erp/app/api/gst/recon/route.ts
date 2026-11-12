@@ -13,6 +13,7 @@ import { matchZohoInvoices, type ZohoInvoiceRow } from '@/lib/recon/gst-zoho-mat
 import { matchGstr2b, parseGstr2bJson } from '@/lib/recon/gst-2b-matcher'
 import { docNumberKey } from '@/lib/recon/gst-doc-key'
 import { normalizePlaceOfSupply } from '@/lib/recon/gst-pos'
+import { applyPlaceOfSupply } from '@/lib/gst-place-of-supply'
 
 const KINDS = ['zoho_invoices', 'gstr2b'] as const
 
@@ -346,6 +347,24 @@ export async function PATCH(req: NextRequest) {
   // reason -- there's nothing left to explain at that point.
   if (body.resolution && !String(body.resolution_note ?? '').trim()) {
     return NextResponse.json({ error: 'A reason is required to resolve a row.' }, { status: 400 })
+  }
+
+  // Step 5's "Use Zoho's state": the ERP invoice takes Zoho's place of supply
+  // (lib/gst-place-of-supply.ts -- tax head re-split, totals unchanged).
+  if (body.apply_zoho_pos) {
+    const { data: line } = await supabaseAdmin
+      .from('gst_recon_lines').select('matched_type, matched_id, place_of_supply').eq('id', body.id).single()
+    if (line?.matched_type !== 'invoice' || !line.matched_id || !line.place_of_supply) {
+      return NextResponse.json({ error: 'This row has no matched ERP invoice or Zoho place of supply.' }, { status: 400 })
+    }
+    const result = await applyPlaceOfSupply(line.matched_id, line.place_of_supply)
+    if (!result.ok) return NextResponse.json({ error: result.message }, { status: result.status })
+    await logAuditEvent({
+      actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+      actionType: 'update', module: 'gst', tableName: 'invoices',
+      recordId: line.matched_id, recordLabel: 'place of supply from Zoho (step 5)',
+      metadata: { from: result.from, to: line.place_of_supply },
+    })
   }
 
   const { data, error } = await supabaseAdmin

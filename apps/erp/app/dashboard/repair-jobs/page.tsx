@@ -212,7 +212,7 @@ function JobDetailPane({ job, canEdit, isOwner, onDone, onBack }: {
         <Field label="Invoice"><RepairInvoiceCell job={job} isOwner={isOwner} onDone={onDone} /></Field>
       </div>
 
-      {showEdit && <EditRepairJobDialog job={job} onClose={() => setShowEdit(false)} onSaved={onDone} />}
+      {showEdit && <EditRepairJobDialog job={job} isOwner={isOwner} onClose={() => setShowEdit(false)} onSaved={onDone} />}
     </div>
   )
 }
