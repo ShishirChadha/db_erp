@@ -638,8 +638,16 @@ export default function CustomerForm({
             <Textarea rows={2} className="min-h-14" placeholder="Street 2" {...text("address_line2", "shipping_address_line2")} />
           </div>
         </AddrRow>
+        <AddrRow label="Pin Code" required={pinRequired}>
+          <Input inputMode="numeric" maxLength={6} value={b ? v.pincode : v.shipping_pincode} onChange={(e) => (b ? setPincode(e.target.value) : setShippingPincode(e.target.value))} />
+          <FieldError msg={b ? errors.pincode : errors.shipping_pincode} />
+          {pinInfo[kind].loading && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Looking up city…</p>
+          )}
+          {pinInfo[kind].note && <p className="mt-1 text-xs text-muted-foreground">{pinInfo[kind].note}</p>}
+        </AddrRow>
         <AddrRow label="City" required={b}>
-          <Input placeholder="Filled from the PIN code" list={`city-options-${kind}`} {...text("city", "shipping_city")} />
+          <Input placeholder="Filled from the Pin Code" list={`city-options-${kind}`} {...text("city", "shipping_city")} />
           <datalist id={`city-options-${kind}`}>
             {(pinInfo[kind].options || []).map((o) => <option key={o} value={o} />)}
           </datalist>
@@ -655,14 +663,6 @@ export default function CustomerForm({
               placeholder="Select or type to add"
             />
           )}
-        </AddrRow>
-        <AddrRow label="Pin Code" required={pinRequired}>
-          <Input inputMode="numeric" maxLength={6} value={b ? v.pincode : v.shipping_pincode} onChange={(e) => (b ? setPincode(e.target.value) : setShippingPincode(e.target.value))} />
-          <FieldError msg={b ? errors.pincode : errors.shipping_pincode} />
-          {pinInfo[kind].loading && (
-            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Looking up city…</p>
-          )}
-          {pinInfo[kind].note && <p className="mt-1 text-xs text-muted-foreground">{pinInfo[kind].note}</p>}
         </AddrRow>
         <AddrRow label="Phone">
           <PhoneInput value={b ? v.billing_phone : v.shipping_phone} onChange={(val) => set(b ? "billing_phone" : "shipping_phone", val)} placeholder="" />
