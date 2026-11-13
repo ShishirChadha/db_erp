@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
-import { mintSalesDocumentNumber, computeLineGst } from '@/lib/sales-documents'
+import { mintSalesDocumentNumber, computeLineGst, missingHsnError } from '@/lib/sales-documents'
 import { parsePagination } from '@/lib/pagination'
 import { logAuditEvent } from '@/lib/audit-log'
 import { withRetry } from '@/lib/db-retry'
@@ -85,6 +85,8 @@ export async function POST(req: NextRequest) {
     .eq('key', entity_key)
     .single()
   if (!entity) return NextResponse.json({ error: `No business profile configured for entity '${entity_key}'` }, { status: 400 })
+  const hsnError = missingHsnError(entity, items)
+  if (hsnError) return NextResponse.json({ error: hsnError }, { status: 400 })
 
   const { data: customer } = await supabaseAdmin
     .from('customers')

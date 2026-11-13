@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/StatusBadge'
 import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
 import PdfPreviewDialog from '@/components/PdfPreviewDialog'
 import { downloadPdfFromResponse, previewablePdfUrl } from '@/lib/download-pdf'
-import { EditSalesDocumentDialog } from '@/components/SalesDocumentForm'
+import { SalesDocumentEditorDialog } from '@/components/SalesDocumentForm'
 import { CornerRibbon } from '@/components/CornerRibbon'
 import type { Tone } from '@/lib/status-styles'
 
@@ -79,40 +79,12 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
     alert(res.ok ? `Sent to ${data.sent_to}.` : (data.error || 'Failed to send email.'))
   })
 
-  // A fresh copy: same entity/customer/line items/notes/terms, but a brand-new
-  // document number and today's date -- reuses the exact same create endpoint the
-  // "New Quotation/Proforma" form posts to, rather than a dedicated clone route,
-  // since there's nothing clone-specific happening server-side (status/date/number
-  // are already always freshly assigned on create).
-  const { run: cloneDoc, pending: cloning } = useAsyncAction(async () => {
-    const res = await apiFetch('/api/sales-documents', {
-      method: 'POST',
-      body: JSON.stringify({
-        doc_type: doc.doc_type,
-        entity_key: doc.entity_key,
-        customer_id: doc.customer_id,
-        notes: doc.notes || undefined,
-        terms_conditions: doc.terms_conditions || undefined,
-        shipping_address: doc.shipping_address || '',
-        items: doc.items.map((i: any) => ({
-          item_type: i.item_type,
-          sku_id: i.sku_id || undefined,
-          accessory_id: i.accessory_id || undefined,
-          description: i.description,
-          hsn_code: i.hsn_code || undefined,
-          quantity: Number(i.quantity),
-          rate: Number(i.rate),
-          gst_rate: Number(i.gst_rate) || 0,
-        })),
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) { alert(data.error || 'Failed to clone.'); return }
-    if (embedded && onCloned) onCloned(data.id)
-    else router.push(`/dashboard/quotations/${data.id}`)
-  })
+  // Clone opens the normal New form prefilled from this document (entity,
+  // customer, Ship To, line items, notes/terms) -- nothing is created until the
+  // user saves it, and Cancel leaves no trace and consumes no number.
+  const [cloning, setCloning] = useState(false)
 
-  const busy = changingStatus || downloading || previewing || emailing || cloning
+  const busy = changingStatus || downloading || previewing || emailing
 
   const convertLine = (item: any) => {
     const params = new URLSearchParams({
@@ -149,7 +121,7 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
               <Pencil className="mr-2 h-4 w-4" /> Edit
             </Button>
           )}
-          <Button variant="outline" onClick={() => cloneDoc()} disabled={busy} loading={cloning} title={`Create a new draft ${docLabel.toLowerCase()} with the same customer and line items`}>
+          <Button variant="outline" onClick={() => setCloning(true)} disabled={busy} title={`Start a new ${docLabel.toLowerCase()} prefilled from this one`}>
             <Copy className="mr-2 h-4 w-4" /> Clone
           </Button>
           {doc.status === 'draft' && (
@@ -301,10 +273,25 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
       </div>
 
       {editing && (
-        <EditSalesDocumentDialog
-          doc={doc}
+        <SalesDocumentEditorDialog
+          mode="edit"
+          docType={doc.doc_type}
+          source={doc}
           onClose={() => setEditing(false)}
           onSaved={async () => { setEditing(false); await fetchDoc() }}
+        />
+      )}
+      {cloning && (
+        <SalesDocumentEditorDialog
+          mode="clone"
+          docType={doc.doc_type}
+          source={doc}
+          onClose={() => setCloning(false)}
+          onSaved={(newId) => {
+            setCloning(false)
+            if (embedded && onCloned) onCloned(newId)
+            else router.push(`/dashboard/quotations/${newId}`)
+          }}
         />
       )}
       {previewUrl && (

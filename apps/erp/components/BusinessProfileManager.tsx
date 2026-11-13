@@ -275,6 +275,19 @@ export default function BusinessProfileManager() {
               </div>
             </div>
 
+            {/* Prefilled into every new Quotation, Proforma Invoice and Invoice issued
+                under this entity -- still editable per document. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Default Notes</label>
+                <textarea className="border p-2 w-full rounded text-sm" rows={3} value={e.default_notes || ''} onChange={(ev) => updateField(p.key, 'default_notes', ev.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-muted-foreground mb-1">Default Terms &amp; Conditions</label>
+                <textarea className="border p-2 w-full rounded text-sm" rows={3} value={e.default_terms || ''} onChange={(ev) => updateField(p.key, 'default_terms', ev.target.value)} />
+              </div>
+            </div>
+
             <div className="flex gap-6">
               {IMAGE_FIELDS.map(({ field, label }) => {
                 const value = (e as any)[field]

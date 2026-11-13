@@ -2265,7 +2265,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales_document_items
 
-~214 rows (estimate)
+~240 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
-import { computeLineGst } from '@/lib/sales-documents'
+import { computeLineGst, missingHsnError } from '@/lib/sales-documents'
 
 const VALID_STATUSES = ['draft', 'sent', 'accepted', 'rejected', 'expired', 'void']
 
@@ -114,6 +114,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       if (!Array.isArray(sourceItems) || sourceItems.length === 0) {
         return NextResponse.json({ error: 'At least one line item is required' }, { status: 400 })
       }
+      const hsnError = missingHsnError(entity, sourceItems)
+      if (hsnError) return NextResponse.json({ error: hsnError }, { status: 400 })
       const computedItems = sourceItems.map((item: any) => {
         const quantity = Number(item.quantity) || 1
         const rate = Number(item.rate) || 0

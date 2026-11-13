@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
@@ -23,7 +23,6 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -43,7 +42,6 @@ import { SearchableCustomerSelect } from "./SearchableCustomerSelect";
 import { SearchableItemSelect } from "./SearchableItemSelect";
 import { calculateGST } from "@/lib/gstCalculation";
 import { invoiceSchema, InvoiceFormData, InvoiceItemFormData } from "@/lib/schemas/invoiceSchema";
-import { useRememberedDefault } from "@/lib/useRememberedDefault";
 import { apiFetch } from "@/lib/api-client";
 
 interface BusinessProfileOption {
@@ -51,6 +49,8 @@ interface BusinessProfileOption {
   legal_name: string;
   state_code: string | null;
   is_gst_registered: boolean;
+  default_notes: string | null;
+  default_terms: string | null;
 }
 
 interface InvoiceFormProps {
@@ -120,12 +120,24 @@ export function InvoiceForm({
   const watchedItems = watch("items");
   const watchedCustomerGst = watch("customer_gst");
   const watchedPlaceOfSupply = watch("place_of_supply");
-  // Keyed by entity for parity with the Quotation/Proforma form -- invoices are
-  // Digitalbluez-only today (no entity picker on this form yet), so this
-  // currently resolves to a single default, but is already scoped correctly
-  // for whenever Techtenth/Cash invoicing ships.
-  const notesDefault = useRememberedDefault("invoice-notes-default-digitalbluez", watch("notes") || "", (v) => setValue("notes", v));
-  const termsDefault = useRememberedDefault("invoice-terms-default-digitalbluez", watch("terms_conditions") || "", (v) => setValue("terms_conditions", v));
+  // A new invoice starts with the issuing entity's default Notes/T&C (Settings ->
+  // Business Profiles), same as a new Quotation/Proforma. Switching entity swaps
+  // them only while the field is empty or still holds the previous entity's
+  // default, so typed text is never clobbered. Editing an existing invoice never
+  // touches them.
+  const prevEntityDefaultsRef = useRef<BusinessProfileOption | null>(null);
+  useEffect(() => {
+    if (initialData) return;
+    const entity = entities.find((e) => e.key === entityKey);
+    if (!entity) return;
+    const prev = prevEntityDefaultsRef.current;
+    const curNotes = watch("notes") || "";
+    const curTerms = watch("terms_conditions") || "";
+    if (curNotes === "" || (prev && curNotes === (prev.default_notes || ""))) setValue("notes", entity.default_notes || "");
+    if (curTerms === "" || (prev && curTerms === (prev.default_terms || ""))) setValue("terms_conditions", entity.default_terms || "");
+    prevEntityDefaultsRef.current = entity;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entities, entityKey, initialData]);
 
   useEffect(() => {
     if (invoiceNumber && !initialData?.invoice_number) {
@@ -495,18 +507,10 @@ export function InvoiceForm({
         <div>
           <Label htmlFor="notes">Notes</Label>
           <Textarea id="notes" {...register("notes")} />
-          <div className="flex items-center gap-1.5 mt-1">
-            <Checkbox id="notes-remember" checked={notesDefault.remember} onCheckedChange={(v) => notesDefault.toggle(!!v)} />
-            <Label htmlFor="notes-remember" className="text-xs text-muted-foreground font-normal cursor-pointer">Use this as the default next time</Label>
-          </div>
         </div>
         <div>
           <Label htmlFor="terms_conditions">Terms & Conditions</Label>
           <Textarea id="terms_conditions" {...register("terms_conditions")} />
-          <div className="flex items-center gap-1.5 mt-1">
-            <Checkbox id="terms-remember" checked={termsDefault.remember} onCheckedChange={(v) => termsDefault.toggle(!!v)} />
-            <Label htmlFor="terms-remember" className="text-xs text-muted-foreground font-normal cursor-pointer">Use this as the default next time</Label>
-          </div>
         </div>
       </div>
       <div>

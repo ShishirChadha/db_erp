@@ -12,6 +12,8 @@ sources:
   - apps/erp/components/SalesDocumentForm.tsx
   - apps/erp/app/api/sales-documents/route.ts
   - apps/erp/app/api/sales-documents/[id]/route.ts
+  - apps/erp/app/api/sales-documents/defaults/route.ts
+  - apps/erp/lib/sales-documents.ts
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/documents/renderSalesDocumentPdf.ts
 updated: 2026-11-13
@@ -38,23 +40,45 @@ per-page edit model every other module uses, so this isn't owner-exclusive.
    pick the Quotations or Proforma Invoices tab.
 2. Click **New Quotation** / **New Proforma Invoice**.
 3. Choose the entity (Digitalbluez / Techtenth / Cash — determines GST
-   treatment), pick or quick-add the customer, and for a quotation
-   optionally set Valid Until. Once a customer is picked, **Bill To** shows
+   treatment). Directly below it the form shows the **number this document
+   will get** (e.g. `PI2026/27-00059`). That is only a read-only peek at the
+   entity's counter (`GET /api/sales-documents/defaults`) — nothing is
+   reserved, so **Cancel leaves no trace in the database and burns no
+   number**. The real number is minted atomically on Save; if someone else
+   saved first in the meantime you get the next one and a message saying so.
+   Then pick or quick-add the customer, and for a quotation optionally set
+   Valid Until. Once a customer is picked, **Bill To** shows
    their billing address (read-only) and **Ship To** is prefilled from their
    saved shipping address — edit it for this document only, or leave it
    blank to ship to the billing address. Both are snapshotted onto the
    document (`customer_address` / `shipping_address`), and the PDF prints
    them side by side.
-4. Add line items — search a SKU by model/code (auto-fills description,
-   HSN, the SKU's default selling price, and 18% GST) or add a free-text
-   "Custom line" — and set qty/rate/GST% per line.
-5. Optionally add notes/terms. Save. This mints a real, sequential document
-   number via the same kind of atomic numbering RPC used everywhere else in
-   the app (its own series, separate from the DBI invoice series), and
-   computes subtotal/GST/grand total server-side.
+4. Fill the **Item Table** (Zoho-style: Item Details / Quantity / Rate / Tax /
+   Amount). Type in the "add an item" box to pull a SKU (auto-fills
+   description, HSN, the SKU's default selling price, and 18% GST) or click
+   **Add New Row** for a free-text line.
+   - For a **GST-registered entity** (Digitalbluez) each line shows an
+     **HSN/SAC** field under the item — **mandatory** (the form and both
+     POST/PATCH routes reject a line without it) — plus a **Tax** dropdown
+     and an **Amounts are Tax Exclusive / Tax Inclusive** switch, the same
+     Before/After GST choice as the Sell page. In Inclusive mode rates are
+     typed GST-included and reduced to their pre-GST base on save (the
+     server always stores pre-GST `rate`); switching modes converts every
+     line so the customer's total stays the same.
+   - For a **non-GST entity** (Techtenth/Cash) HSN, Tax and the switch are
+     hidden — the rate is simply what the customer pays (Bill of Supply).
+5. **Notes** and **Terms & Conditions** start prefilled with the entity's
+   defaults from Settings → Business Profiles (see
+   **manage-business-profiles**); edit freely. Save — this mints the number
+   and computes subtotal/GST/grand total server-side.
 6. From the document's detail page, move it through **Mark Sent / Mark
    Accepted / Mark Rejected / Void**, and preview/download/email/print the
    PDF.
+7. **Clone** opens the same New form prefilled from the document (entity,
+   customer, Ship To, line items, notes/terms; Valid Until left blank).
+   Change anything, then Save (new number, new draft) or Cancel (nothing
+   created). New, Edit and Clone all use one dialog
+   (`SalesDocumentEditorDialog`).
 
 ## Converting a line to a real sale
 

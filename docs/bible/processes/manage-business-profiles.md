@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/business-profiles/route.ts
   - apps/erp/app/api/business-profiles/[key]/route.ts
   - apps/erp/app/api/business-profiles/[key]/set-invoice-counter/route.ts
-updated: 2026-09-16
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -47,11 +47,17 @@ financially-sensitive owner-only screen.
    (auto-uppercased).
 4. **Bank details** — Bank Name, A/c Holder, Account No., IFSC, UPI ID. This
    block feeds the payment details printed on invoices for this entity.
-5. **Logo / Signature / Stamp / Payment QR** — each has an **Upload**
+5. **Default Notes / Default Terms & Conditions** (`default_notes` /
+   `default_terms`) — prefilled into every *new* Quotation, Proforma Invoice
+   and Invoice issued under this entity. Staff can still edit them per
+   document; switching Entity on the form swaps in the other entity's
+   defaults unless the text was already edited. Editing an existing
+   document never re-applies them.
+6. **Logo / Signature / Stamp / Payment QR** — each has an **Upload**
    button (goes through the general storage upload-URL flow) and, once set,
    a **View** link that opens a short-lived signed URL rather than a public
    one.
-6. Click **Save** on that entity's card. Saving is per-entity, not global —
+7. Click **Save** on that entity's card. Saving is per-entity, not global —
    each card has its own Save button and its own in-flight guard, so saving
    one entity never touches another's unsaved edits.
 

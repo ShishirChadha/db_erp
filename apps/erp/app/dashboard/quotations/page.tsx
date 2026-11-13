@@ -8,16 +8,13 @@ import { useResizablePaneWidth } from '@/lib/useResizablePaneWidth'
 import { useUrlState } from '@/lib/useUrlState'
 import { useListPageSize } from '@/lib/useListPageSize'
 import RequirePageAccess from '@/components/RequirePageAccess'
-import { useAsyncAction } from '@/lib/useAsyncAction'
-import { Dialog, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { ResizableDialogContent } from '@/components/ResizableDialogContent'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Pagination } from '@/components/Pagination'
 import { StatusBadge } from '@/components/StatusBadge'
 import { SALES_DOCUMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { DocumentFormFields, SalesDocType, SalesDocLineItem } from '@/components/SalesDocumentForm'
+import { SalesDocumentEditorDialog, SalesDocType, DOC_LABELS } from '@/components/SalesDocumentForm'
 import { ViewSalesDocumentPage } from './[id]/page'
 import { cn } from '@/lib/utils'
 
@@ -32,77 +29,6 @@ interface DocSummary {
   grand_total: number
   status: string
   sales_document_items: { id: string; converted: boolean }[]
-}
-
-// ---------- Create dialog ----------
-function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; onCreated: () => void }) {
-  const [open, setOpen] = useState(false)
-  const [entityKey, setEntityKey] = useState('digitalbluez')
-  const [customerId, setCustomerId] = useState<string | null>(null)
-  const [validUntil, setValidUntil] = useState('')
-  const [notes, setNotes] = useState('')
-  const [terms, setTerms] = useState('')
-  const [shippingAddress, setShippingAddress] = useState('')
-  const [items, setItems] = useState<SalesDocLineItem[]>([])
-  const [error, setError] = useState('')
-
-  const reset = () => {
-    setEntityKey('digitalbluez'); setCustomerId(null); setValidUntil(''); setNotes(''); setTerms(''); setShippingAddress(''); setItems([])
-    setError('')
-  }
-
-  const { run: handleSave, pending: saving } = useAsyncAction(async () => {
-    setError('')
-    if (!customerId) { setError('Select a customer.'); return }
-    if (items.length === 0) { setError('Add at least one line item.'); return }
-    if (items.some((it) => !it.description.trim())) { setError('Every line needs a description.'); return }
-
-    const res = await apiFetch('/api/sales-documents', {
-      method: 'POST',
-      body: JSON.stringify({
-        doc_type: docType,
-        entity_key: entityKey,
-        customer_id: customerId,
-        valid_until: docType === 'quotation' && validUntil ? validUntil : undefined,
-        notes: notes || undefined,
-        terms_conditions: terms || undefined,
-        items,
-        shipping_address: shippingAddress,
-      }),
-    })
-    const data = await res.json().catch(() => ({}))
-    if (!res.ok) { setError(data.error || 'Failed to create.'); return }
-    setOpen(false)
-    reset()
-    onCreated()
-  })
-
-  return (
-    <Dialog open={open} onOpenChange={(o) => { setOpen(o); if (!o) reset() }}>
-      <Button onClick={() => setOpen(true)}>New {docType === 'quotation' ? 'Quotation' : 'Proforma Invoice'}</Button>
-      <ResizableDialogContent storageKey="new-sales-document-dialog-size" defaultWidth={820} defaultHeight={680}>
-        <DialogHeader><DialogTitle>New {docType === 'quotation' ? 'Quotation' : 'Proforma Invoice'}</DialogTitle></DialogHeader>
-
-        <DocumentFormFields
-          docType={docType}
-          entityKey={entityKey} setEntityKey={setEntityKey}
-          customerId={customerId} setCustomerId={setCustomerId}
-          validUntil={validUntil} setValidUntil={setValidUntil}
-          notes={notes} setNotes={setNotes}
-          terms={terms} setTerms={setTerms}
-          items={items} setItems={setItems}
-          shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
-        />
-
-        {error && <p className="text-destructive text-sm mt-2">{error}</p>}
-
-        <div className="flex justify-end gap-2 mt-4">
-          <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-          <Button onClick={() => handleSave()} loading={saving}>Create</Button>
-        </div>
-      </ResizableDialogContent>
-    </Dialog>
-  )
 }
 
 // Right-pane detail view -- the full document (customer, line items with
@@ -187,6 +113,7 @@ function QuotationsPage() {
   const [total, setTotal] = useState(0)
   const PAGE_SIZE = useListPageSize()
   const [activeDocId, setActiveDocId] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
   const isDesktop = useIsDesktopViewport()
   const { width: listPaneWidth, handleMouseDown: handlePaneResize } = useResizablePaneWidth('quotations-list-pane-width')
 
@@ -270,8 +197,16 @@ function QuotationsPage() {
             <button onClick={() => selectDocType('proforma')} className={`px-3 py-1.5 text-xs font-medium ${docType === 'proforma' ? 'bg-primary text-primary-foreground' : 'bg-card text-muted-foreground'}`}>Proforma Invoices</button>
           </div>
         </div>
-        <CreateDocumentDialog docType={docType} onCreated={fetchDocs} />
+        <Button onClick={() => setCreating(true)}>New {DOC_LABELS[docType]}</Button>
       </div>
+      {creating && (
+        <SalesDocumentEditorDialog
+          mode="create"
+          docType={docType}
+          onClose={() => setCreating(false)}
+          onSaved={(newId) => { setCreating(false); setActiveDocId(newId); fetchDocs() }}
+        />
+      )}
 
       <div className="flex flex-wrap gap-2 mb-2 items-center">
         <Select value={statusFilter || 'all'} onValueChange={(v) => setStatusFilter(v === 'all' ? '' : v)}>
