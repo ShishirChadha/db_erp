@@ -36,6 +36,14 @@ generated only via `generate_po_number`-style atomic RPCs
 (`increment_invoice_number`/`next_document_number`) — never a client-side
 guess. See **business-rules**.
 
+Entry forms (New Invoice, New Quotation/Proforma) show the *next* number as a
+read-only preview — `peekDocumentNumber()` in `lib/sales-documents.ts`, served
+by `GET /api/invoices/next-number` and `GET /api/sales-documents/defaults`. It
+reads the counter without incrementing it, so an abandoned form burns no
+number; the real number is still minted atomically on save. An entity in Zoho
+transition mode (`invoicing_mode = 'external'`) can't mint invoice numbers from
+the manual form at all — see **raise-a-gst-invoice**.
+
 ## Payments are an append-only ledger
 
 `sale_payments` — any role can add an installment; only the owner can delete/

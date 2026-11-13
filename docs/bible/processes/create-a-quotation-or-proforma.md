@@ -41,7 +41,8 @@ per-page edit model every other module uses, so this isn't owner-exclusive.
 2. Click **New Quotation** / **New Proforma Invoice**.
 3. Choose the entity (Digitalbluez / Techtenth / Cash — determines GST
    treatment). Directly below it the form shows the **number this document
-   will get** (e.g. `PI2026/27-00059`). That is only a read-only peek at the
+   will get** (e.g. `PI2026/27-00059`). That is only a read-only peek
+   (`peekDocumentNumber()`, shared with New Invoice) at the
    entity's counter (`GET /api/sales-documents/defaults`) — nothing is
    reserved, so **Cancel leaves no trace in the database and burns no
    number**. The real number is minted atomically on Save; if someone else
