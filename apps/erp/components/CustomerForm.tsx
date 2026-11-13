@@ -398,6 +398,17 @@ export default function CustomerForm({
       if (errors.phone) setErrors((e) => ({ ...e, phone: "" }));
       return;
     }
+    // Display Name flows into both Attention fields the same way.
+    if (field === "customer_name") {
+      setV((prev) => ({
+        ...prev,
+        customer_name: value as string,
+        billing_attention: !prev.billing_attention || prev.billing_attention === prev.customer_name ? (value as string) : prev.billing_attention,
+        shipping_attention: !prev.shipping_attention || prev.shipping_attention === prev.customer_name ? (value as string) : prev.shipping_attention,
+      }));
+      if (errors.customer_name) setErrors((e) => ({ ...e, customer_name: "" }));
+      return;
+    }
     setV((prev) => ({ ...prev, [field]: value }));
     if (errors[field as string]) setErrors((e) => ({ ...e, [field as string]: "" }));
   };
@@ -541,6 +552,8 @@ export default function CustomerForm({
         ...prev,
         company_name: data.company_name || prev.company_name,
         customer_name: prev.customer_name || data.company_name || "",
+        billing_attention: prev.billing_attention || prev.customer_name || data.company_name || "",
+        shipping_attention: prev.shipping_attention || prev.customer_name || data.company_name || "",
         address_line1: data.address || prev.address_line1,
         state: data.state || prev.state,
         state_code: data.state_code || prev.state_code,
