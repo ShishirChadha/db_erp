@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
+import { financialYear } from '@db/shared'
 
 // Everything that references one customer, for the Customers page detail pane:
 // sales (with their invoice numbers), invoices, and counts of the other linked
@@ -45,6 +46,34 @@ export async function GET(
     count('sales_documents'),
     count('rental_agreements'),
   ])
+  // Purchases per financial year (Apr-Mar), over every live sale -- not just the
+  // listed ones -- so read in pages past PostgREST's 1000-row cap.
+  const byYear = new Map<string, { fy: string; sales: number; total: number; paid: number; due: number }>()
+  for (let from = 0; ; from += 1000) {
+    const { data: page, error: pageErr } = await supabaseAdmin
+      .from('sales')
+      .select('sale_date, sale_total, amount_paid')
+      .eq('customer_id', id)
+      .eq('is_deleted', false)
+      .order('id')
+      .range(from, from + 999)
+    if (pageErr) return NextResponse.json({ error: pageErr.message }, { status: 500 })
+    for (const r of page || []) {
+      if (!r.sale_date) continue
+      const fy = financialYear(new Date(`${String(r.sale_date).slice(0, 10)}T12:00:00`))
+      const y = byYear.get(fy) || { fy, sales: 0, total: 0, paid: 0, due: 0 }
+      y.sales += 1
+      y.total += Number(r.sale_total) || 0
+      y.paid += Number(r.amount_paid) || 0
+      y.due += Math.max(0, (Number(r.sale_total) || 0) - (Number(r.amount_paid) || 0))
+      byYear.set(fy, y)
+    }
+    if (!page || page.length < 1000) break
+  }
+  const years = [...byYear.values()]
+    .map((y) => ({ ...y, total: Math.round(y.total * 100) / 100, paid: Math.round(y.paid * 100) / 100, due: Math.round(y.due * 100) / 100 }))
+    .sort((a, b) => b.fy.localeCompare(a.fy))
+
   const failed = [sales, voidedSales, invoices, repairJobs, replacementJobs, accessoryJobs, quotations, rentals].find((r) => r.error)
   if (failed?.error) return NextResponse.json({ error: failed.error.message }, { status: 500 })
 
@@ -58,6 +87,7 @@ export async function GET(
     sales: {
       count: sales.count ?? 0,
       voided: voidedSales.count ?? 0,
+      years,
       list: (sales.data || []).map((s: any) => ({
         id: s.id,
         sale_date: s.sale_date,

@@ -17,6 +17,7 @@ interface Activity {
   sales: {
     count: number;
     voided: number;
+    years: { fy: string; sales: number; total: number; paid: number; due: number }[];
     list: { id: string; sale_date: string; invoice_number: string | null; invoice_id: string | null; item: string | null; sale_total: number | null }[];
   };
   invoices: {
@@ -29,6 +30,7 @@ interface Activity {
 const SALES_PREVIEW = 10;
 const money = (n: number | null) =>
   n == null ? "—" : `₹${Number(n).toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+const amount = (n: number) => `₹${n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const date = (d: string) =>
   new Date(d).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
@@ -114,6 +116,58 @@ export default function CustomerActivity({ customerId }: { customerId: string })
           {otherParts.length ? ` and ${otherParts.join(", ")}` : ""} still reference this customer.
         </p>
       ) : null}
+
+      {data.sales.years.length > 0 && (() => {
+        const years = data.sales.years;
+        const t = years.reduce((a, y) => ({ sales: a.sales + y.sales, total: a.total + y.total, paid: a.paid + y.paid, due: a.due + y.due }), { sales: 0, total: 0, paid: 0, due: 0 });
+        const rows = years.length > 1 ? [...years.map((y) => ({ ...y, label: `FY ${y.fy}` })), { fy: "total", label: "Total", ...t }] : years.map((y) => ({ ...y, label: `FY ${y.fy}` }));
+        const due = (n: number) => <span className={cn(n > 0.5 && "text-destructive")}>{amount(n)}</span>;
+        return (
+          <div className="@container">
+            <div className="mb-1 text-xs text-muted-foreground">Purchases by financial year</div>
+            {/* Table when the pane is wide enough, stacked rows when it isn't --
+                never a sideways-scrolling table. */}
+            <div className="hidden rounded-md border @md:block">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50 text-muted-foreground">
+                  <tr>
+                    <th className="px-2.5 py-1.5 text-left font-medium">Year</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium">Sales</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium">Amount</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium">Received</th>
+                    <th className="px-2.5 py-1.5 text-right font-medium">Due</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {rows.map((y) => (
+                    <tr key={y.fy} className={cn(y.fy === "total" && "bg-muted/30 font-medium")}>
+                      <td className="whitespace-nowrap px-2.5 py-1.5">{y.label}</td>
+                      <td className="px-2.5 py-1.5 text-right tabular-nums">{y.sales}</td>
+                      <td className="px-2.5 py-1.5 text-right tabular-nums">{amount(y.total)}</td>
+                      <td className="px-2.5 py-1.5 text-right tabular-nums">{amount(y.paid)}</td>
+                      <td className="px-2.5 py-1.5 text-right tabular-nums">{due(y.due)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <ul className="divide-y rounded-md border text-xs @md:hidden">
+              {rows.map((y) => (
+                <li key={y.fy} className={cn("px-2.5 py-1.5", y.fy === "total" && "bg-muted/30 font-medium")}>
+                  <div className="flex justify-between gap-2">
+                    <span>{y.label} <span className="text-muted-foreground">· {y.sales} sale{y.sales === 1 ? "" : "s"}</span></span>
+                    <span className="tabular-nums">{amount(y.total)}</span>
+                  </div>
+                  <div className="flex justify-between gap-2 text-muted-foreground tabular-nums">
+                    <span>Received {amount(y.paid)}</span>
+                    <span>Due {due(y.due)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        );
+      })()}
 
       {allInvoiceNumbers.length > 0 && (
         <div>

@@ -22,7 +22,8 @@ Each customer's detail view shows what references it (sales, invoice
 numbers, repair/replacement/quotation/rental counts) via
 `GET /api/customers/[id]/activity`, with counts that open the Sales Ledger
 filtered to that customer, so an unused or duplicate customer can be spotted
-before it's deleted. See **manage-customers**.
+before it's deleted, plus the customer's purchases per financial year. See
+**manage-customers**.
 
 ## Vendors — owner-only, with one employee exception
 

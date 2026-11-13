@@ -142,6 +142,11 @@ selling-side columns only, no cost/vendor/margin):
   numbers recorded on the sales. Also opens the filtered Sales Ledger.
 - **Other records**: repair, replacement, quotation/proforma and rental
   counts.
+- **Purchases by financial year** (Apr–Mar, `financialYear` from `@db/shared`):
+  per year the number of active sales, amount (`sale_total`), received
+  (`amount_paid`) and due (summed per sale, so one overpaid sale can't hide
+  another's balance), with a total row. Covers every active sale, not just
+  the listed ones. A table when the pane is wide, stacked rows when narrow.
 - The **invoice numbers** themselves (ERP invoices link to their page) and
   the **sales** list: date, item, short Sale ID (the same ID the Sales Ledger
   shows and can search by), invoice number or "Not invoiced", amount.
