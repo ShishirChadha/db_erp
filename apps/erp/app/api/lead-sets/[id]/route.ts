@@ -18,7 +18,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { data: fullSet } = await supabaseAdmin
     .from('lead_sets')
     .select(`
-      id, name, description, source_type, status, current_assignee_id, cloned_from_set_id, working_copy_of_set_id,
+      id, name, description, source_type, status, current_assignee_id, cloned_from_set_id, working_copy_of_set_id, field_labels,
       created_by, created_at, updated_at,
       current_assignee:profiles!lead_sets_current_assignee_id_fkey ( id, full_name )
     `)

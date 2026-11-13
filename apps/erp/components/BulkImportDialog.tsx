@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Papa from "papaparse";
 import {
   Dialog,
@@ -15,6 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Upload } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
+import { useRole } from "@/lib/auth/useRole";
 import { toast } from "sonner";
 
 export interface ImportField {
@@ -117,12 +118,31 @@ export default function BulkImportDialog({
   fields?: ImportField[];
   onImported: () => void;
 }) {
+  const { isManagerOrAbove } = useRole();
   const [file, setFile] = useState<File | null>(null);
   const [setName, setSetName] = useState("");
   const [description, setDescription] = useState("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rawRows, setRawRows] = useState<Record<string, string>[]>([]);
   const [mapping, setMapping] = useState<Record<string, string>>({});
+
+  // A manager/owner handing a brand-new, empty Set to someone to fill in
+  // themselves (no CSV exists yet) is a real case -- so a file is optional
+  // here. Assigning it directly to someone else at creation is manager/owner
+  // only, same tier as every other "who gets this Set" decision in the
+  // module; a plain employee's own self-serve import still always lands on
+  // themselves (assigneeId stays "").
+  const [assigneeId, setAssigneeId] = useState("");
+  const [assignableUsers, setAssignableUsers] = useState<{ id: string; full_name: string | null; role: string }[]>([]);
+  useEffect(() => {
+    if (!open || !isManagerOrAbove) return;
+    apiFetch("/api/lead-sets/assignable-users").then((r) => r.json()).then((d) => setAssignableUsers(d || []));
+  }, [open, isManagerOrAbove]);
+
+  // Per-Set column relabeling (e.g. "Flat No." instead of the generic
+  // "Identifier" for a society list) -- blank means "use default", which is
+  // also the entire meaning of leaving this section untouched.
+  const [labelOverrides, setLabelOverrides] = useState<Record<string, string>>({});
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const picked = e.target.files?.[0];
@@ -165,8 +185,9 @@ export default function BulkImportDialog({
     });
   }, [rawRows, mapping, fields]);
 
+  const hasRows = rawRows.length > 0;
   const { run: handleUpload, pending: loading } = useAsyncAction(async () => {
-    if (!setName.trim() || rawRows.length === 0 || requiredFieldMissing) return;
+    if (!setName.trim() || (hasRows && requiredFieldMissing)) return;
     const rows = rawRows.map((row) => {
       const mapped: Record<string, string | null> = {};
       for (const f of fields) {
@@ -175,9 +196,17 @@ export default function BulkImportDialog({
       }
       return mapped;
     });
+    const fieldLabels: Record<string, string> = {};
+    for (const f of fields) {
+      if (!f.required && labelOverrides[f.key]?.trim()) fieldLabels[f.key] = labelOverrides[f.key].trim();
+    }
     const res = await apiFetch(endpoint, {
       method: "POST",
-      body: JSON.stringify({ name: setName.trim(), description: description.trim() || undefined, rows }),
+      body: JSON.stringify({
+        name: setName.trim(), description: description.trim() || undefined, rows,
+        assignee_id: assigneeId || undefined,
+        field_labels: Object.keys(fieldLabels).length > 0 ? fieldLabels : undefined,
+      }),
     });
     const json = await res.json().catch(() => ({}));
     if (!res.ok) {
@@ -185,6 +214,8 @@ export default function BulkImportDialog({
     } else {
       if (Array.isArray(json.duplicate_warnings) && json.duplicate_warnings.length > 0) {
         toast.warning(`Imported, but ${json.duplicate_warnings.length} phone number(s) already appear in another set.`);
+      } else if (json.row_count === 0) {
+        toast.success(`Created "${json.name}" -- empty and ready for its assignee to add leads.`);
       } else {
         toast.success(`Created "${json.name}" with ${json.row_count} contact(s).`);
       }
@@ -201,6 +232,8 @@ export default function BulkImportDialog({
     setHeaders([]);
     setRawRows([]);
     setMapping({});
+    setAssigneeId("");
+    setLabelOverrides({});
   };
 
   return (
@@ -224,9 +257,51 @@ export default function BulkImportDialog({
             <Label>Description (optional)</Label>
             <Input value={description} onChange={(e) => setDescription(e.target.value)} className="mt-1" />
           </div>
-          <div>
-            <Label>Upload CSV file</Label>
-            <input type="file" accept=".csv" onChange={handleFileChange} className="mt-1 block text-sm" />
+          {isManagerOrAbove && (
+            <div>
+              <Label>Assign to</Label>
+              <Select value={assigneeId || NONE} onValueChange={(v) => setAssigneeId(v === NONE ? "" : v)}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Myself" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NONE}>Myself</SelectItem>
+                  {assignableUsers.map((u) => <SelectItem key={u.id} value={u.id}>{u.full_name || u.role}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <div>
+              <Label>Upload CSV file (optional)</Label>
+              <input type="file" accept=".csv" onChange={handleFileChange} className="mt-1 block text-sm" />
+            </div>
+            {!hasRows && (
+              <p className="text-xs text-muted-foreground">
+                No file? Leave this blank and just name the Set below -- it's created empty, and whoever it's
+                assigned to can add their own leads one at a time from inside it.
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2 border rounded-md p-3">
+            <p className="text-sm font-medium">Customize column labels (optional)</p>
+            <p className="text-xs text-muted-foreground">
+              Rename a column for what this particular list actually needs (e.g. "Flat No." instead of
+              "Identifier") -- leave blank to use the default.
+            </p>
+            <div className="grid grid-cols-2 gap-3">
+              {fields.filter((f) => !f.required).map((f) => (
+                <div key={f.key}>
+                  <Label className="text-xs">{f.label}</Label>
+                  <Input
+                    value={labelOverrides[f.key] || ""}
+                    onChange={(e) => setLabelOverrides((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.label}
+                    className="mt-1"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
 
           {headers.length > 0 && (
@@ -278,8 +353,8 @@ export default function BulkImportDialog({
 
           <div className="flex justify-end space-x-2">
             <Button variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button onClick={() => handleUpload()} disabled={!file || !setName.trim() || rawRows.length === 0 || requiredFieldMissing} loading={loading}>
-              <Upload className="mr-2 h-4 w-4" /> Import {rawRows.length > 0 ? `(${rawRows.length})` : ""}
+            <Button onClick={() => handleUpload()} disabled={!setName.trim() || (hasRows && requiredFieldMissing)} loading={loading}>
+              <Upload className="mr-2 h-4 w-4" /> {hasRows ? `Import (${rawRows.length})` : "Create empty Set"}
             </Button>
           </div>
         </div>

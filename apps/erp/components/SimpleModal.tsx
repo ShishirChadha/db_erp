@@ -20,7 +20,12 @@ export function SimpleModal({
   if (!isOpen) return null;
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={closeOnBackdropClick ? onClose : undefined}>
-      <div className={`bg-card rounded-lg ${wide ? 'max-w-2xl' : 'max-w-lg'} w-full mx-4 p-6 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
+      {/* min-w-0 is load-bearing: this div is a flex item of the centering row
+          above, and a flex item's default min-width is its own max-content size,
+          not 0 -- without this, a long unbreakable string inside (a SKU code, a
+          long name) refuses to wrap and blows straight through max-w-lg/2xl,
+          the same "flexbox/grid blowout" class of bug fixed in dialog.tsx. */}
+      <div className={`bg-card rounded-lg ${wide ? 'max-w-2xl' : 'max-w-lg'} w-full min-w-0 mx-4 p-6 max-h-[85vh] overflow-y-auto`} onClick={(e) => e.stopPropagation()}>
         <div className="flex justify-between items-center mb-4">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground">

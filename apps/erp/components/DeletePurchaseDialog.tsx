@@ -33,7 +33,7 @@ export default function DeletePurchaseDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Delete Purchase: {purchase.asset_number}</DialogTitle>
         </DialogHeader>

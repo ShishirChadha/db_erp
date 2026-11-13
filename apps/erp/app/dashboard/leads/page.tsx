@@ -33,8 +33,24 @@ interface LeadSet {
   assignee_name: string | null
   cloned_from_set_id: string | null
   working_copy_of_set_id: string | null
+  field_labels: Partial<Record<'phone' | 'email' | 'address' | 'external_identifier', string>> | null
   created_at: string
   counts: { total: number; worked: number; converted: number }
+}
+
+// Mirrors resolveFieldLabels()/DEFAULT_FIELD_LABELS in lib/leads.ts, duplicated
+// here rather than imported -- that file pulls in the service-role Supabase
+// client, which must never reach a 'use client' bundle. A Set can relabel
+// Phone/Email/Address/Identifier for what it actually needs (e.g. "Flat No."
+// for a society list) at creation; missing keys fall back to these defaults.
+const DEFAULT_FIELD_LABELS = { phone: 'Phone', email: 'Email', address: 'Address', external_identifier: 'Identifier' }
+function resolveFieldLabels(custom: LeadSet['field_labels'] | undefined) {
+  return {
+    phone: custom?.phone?.trim() || DEFAULT_FIELD_LABELS.phone,
+    email: custom?.email?.trim() || DEFAULT_FIELD_LABELS.email,
+    address: custom?.address?.trim() || DEFAULT_FIELD_LABELS.address,
+    external_identifier: custom?.external_identifier?.trim() || DEFAULT_FIELD_LABELS.external_identifier,
+  }
 }
 
 interface Lead {
@@ -209,7 +225,7 @@ function LeadRow({
   )
 }
 
-function AddLeadModal({ setId, onClose, onAdded }: { setId: string; onClose: () => void; onAdded: (lead: Lead) => void }) {
+function AddLeadModal({ setId, fieldLabels, onClose, onAdded }: { setId: string; fieldLabels: ReturnType<typeof resolveFieldLabels>; onClose: () => void; onAdded: (lead: Lead) => void }) {
   const [name, setName] = useState('')
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
@@ -247,19 +263,19 @@ function AddLeadModal({ setId, onClose, onAdded }: { setId: string; onClose: () 
           <Input value={name} onChange={(e) => setName(e.target.value)} className="mt-1" placeholder="e.g. referred by an existing lead" />
         </div>
         <div>
-          <Label className="text-xs">Phone</Label>
+          <Label className="text-xs">{fieldLabels.phone}</Label>
           <Input value={phone} onChange={(e) => setPhone(e.target.value)} className="mt-1" />
         </div>
         <div>
-          <Label className="text-xs">Email</Label>
+          <Label className="text-xs">{fieldLabels.email}</Label>
           <Input value={email} onChange={(e) => setEmail(e.target.value)} className="mt-1" />
         </div>
         <div>
-          <Label className="text-xs">Address</Label>
+          <Label className="text-xs">{fieldLabels.address}</Label>
           <Input value={address} onChange={(e) => setAddress(e.target.value)} className="mt-1" />
         </div>
         <div>
-          <Label className="text-xs">Identifier (optional)</Label>
+          <Label className="text-xs">{fieldLabels.external_identifier} (optional)</Label>
           <Input value={identifier} onChange={(e) => setIdentifier(e.target.value)} className="mt-1" />
         </div>
         <div className="flex justify-end gap-2">
@@ -271,7 +287,7 @@ function AddLeadModal({ setId, onClose, onAdded }: { setId: string; onClose: () 
   )
 }
 
-function LeadDetailModal({ lead, statusOptions, onClose, onUpdated }: { lead: Lead; statusOptions: string[]; onClose: () => void; onUpdated: (patch: Partial<Lead>) => void }) {
+function LeadDetailModal({ lead, statusOptions, fieldLabels, onClose, onUpdated }: { lead: Lead; statusOptions: string[]; fieldLabels: ReturnType<typeof resolveFieldLabels>; onClose: () => void; onUpdated: (patch: Partial<Lead>) => void }) {
   const [comments, setComments] = useState<{ id: string; author_name: string; body: string; created_at: string }[]>([])
   const [loadingThread, setLoadingThread] = useState(true)
   const [noteText, setNoteText] = useState('')
@@ -378,20 +394,20 @@ function LeadDetailModal({ lead, statusOptions, onClose, onUpdated }: { lead: Le
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label className="text-xs">Phone</Label>
+                <Label className="text-xs">{fieldLabels.phone}</Label>
                 <Input value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="mt-1" />
               </div>
               <div>
-                <Label className="text-xs">Email</Label>
+                <Label className="text-xs">{fieldLabels.email}</Label>
                 <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="mt-1" />
               </div>
             </div>
             <div>
-              <Label className="text-xs">Address</Label>
+              <Label className="text-xs">{fieldLabels.address}</Label>
               <Input value={editAddress} onChange={(e) => setEditAddress(e.target.value)} className="mt-1" />
             </div>
             <div>
-              <Label className="text-xs">Identifier</Label>
+              <Label className="text-xs">{fieldLabels.external_identifier}</Label>
               <Input value={editIdentifier} onChange={(e) => setEditIdentifier(e.target.value)} className="mt-1" />
             </div>
             <div className="flex justify-end gap-2 pt-1">
@@ -405,10 +421,10 @@ function LeadDetailModal({ lead, statusOptions, onClose, onUpdated }: { lead: Le
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3 text-sm relative">
-            <div><span className="text-muted-foreground">Phone:</span> {lead.phone || '-'}</div>
-            <div><span className="text-muted-foreground">Email:</span> {lead.email || '-'}</div>
-            <div className="col-span-2"><span className="text-muted-foreground">Address:</span> {lead.address || '-'}</div>
-            <div className="col-span-2"><span className="text-muted-foreground">Identifier:</span> {lead.external_identifier || '-'}</div>
+            <div><span className="text-muted-foreground">{fieldLabels.phone}:</span> {lead.phone || '-'}</div>
+            <div><span className="text-muted-foreground">{fieldLabels.email}:</span> {lead.email || '-'}</div>
+            <div className="col-span-2"><span className="text-muted-foreground">{fieldLabels.address}:</span> {lead.address || '-'}</div>
+            <div className="col-span-2"><span className="text-muted-foreground">{fieldLabels.external_identifier}:</span> {lead.external_identifier || '-'}</div>
             <Button size="sm" variant="outline" className="col-span-2 w-fit" onClick={() => setEditingContact(true)}>Edit contact details</Button>
           </div>
         )}
@@ -912,6 +928,7 @@ function LeadsPageInner() {
   useEffect(() => { loadSets() }, [loadSets])
 
   const activeSet = useMemo(() => sets.find((s) => s.id === activeSetId) || null, [sets, activeSetId])
+  const fieldLabels = useMemo(() => resolveFieldLabels(activeSet?.field_labels), [activeSet])
 
   const loadLeads = useCallback(async () => {
     if (!activeSetId) return
@@ -996,8 +1013,8 @@ function LeadsPageInner() {
               <table className="w-full text-sm">
                 <thead className="bg-muted/50 text-left text-muted-foreground">
                   <tr>
-                    <th className="p-2">Added</th><th className="p-2">Name</th><th className="p-2">Phone</th>
-                    <th className="p-2">Email</th><th className="p-2">Address</th><th className="p-2">Identifier</th>
+                    <th className="p-2">Added</th><th className="p-2">Name</th><th className="p-2">{fieldLabels.phone}</th>
+                    <th className="p-2">{fieldLabels.email}</th><th className="p-2">{fieldLabels.address}</th><th className="p-2">{fieldLabels.external_identifier}</th>
                     <th className="p-2">Last remark</th><th className="p-2">Follow-up</th>
                     <th className="p-2">Status</th><th className="p-2"></th>
                   </tr>
@@ -1022,6 +1039,7 @@ function LeadsPageInner() {
           <LeadDetailModal
             lead={detailLead}
             statusOptions={statusOptions}
+            fieldLabels={fieldLabels}
             onClose={() => setDetailLead(null)}
             onUpdated={(patch) => {
               setLeads((prev) => prev.map((x) => x.id === detailLead.id ? { ...x, ...patch } : x))
@@ -1032,6 +1050,7 @@ function LeadsPageInner() {
         {showAddLead && (
           <AddLeadModal
             setId={activeSetId}
+            fieldLabels={fieldLabels}
             onClose={() => setShowAddLead(false)}
             onAdded={(lead) => {
               setShowAddLead(false)

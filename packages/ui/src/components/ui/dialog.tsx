@@ -61,7 +61,36 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          // grid-cols-1 (not bare `grid`) is load-bearing: it gives the implicit
+          // single column an explicit `minmax(0, 1fr)` track. Without it, a child
+          // with a long unbreakable string (a SKU code, a long customer/vendor
+          // name) sizes the grid track to its own max-content width and blows
+          // straight through max-w-lg/sm/etc -- the classic CSS Grid "blowout"
+          // (https://css-tricks.com/preventing-a-grid-blowout/). Caught via an
+          // actual rendered screenshot of EditSaleDialog, not by auditing
+          // className strings -- this bug is invisible to a text-based audit.
+          //
+          // The mobile edge-gutter now lives on WIDTH (`w-[calc(100%-2rem)]`),
+          // not max-width -- previously it was `w-full` + `max-w-[calc(100%-2rem)]`
+          // with a `sm:max-w-sm` cap, which relied on that max-w surviving
+          // tailwind-merge. It never did: every caller here passes its own
+          // plain `max-w-*` override with no variant prefix, and tailwind-merge
+          // only drops a conflicting utility when both sides share the same
+          // variant -- so a caller's `max-w-2xl` could never actually beat a
+          // hardcoded `sm:max-w-sm` (different variant groups, both survive;
+          // at >=640px the `sm:` one won the cascade by source order
+          // regardless of DOM class order), AND the base max-w providing the
+          // mobile gutter got silently stripped by the caller's own override,
+          // leaving dialogs edge-to-edge on a phone with no `sm:` override to
+          // catch it. Every dialog's max-w override in this app was silently
+          // losing to this exact default until caught by reading
+          // getComputedStyle() on a live render, not by reading source.
+          // Putting the gutter on `width` instead fixes both at once: width
+          // and max-width are different utility groups, so a caller's own
+          // max-w-* now cleanly replaces just the default max-w-md cap via
+          // tailwind-merge, while the gutter-bearing width is untouched and
+          // still shrinks the dialog on a narrow phone regardless of that cap.
+          "fixed top-1/2 left-1/2 z-50 grid grid-cols-1 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className
         )}
         {...props}

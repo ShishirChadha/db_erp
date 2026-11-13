@@ -356,7 +356,7 @@ export function EditRepairJobDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Repair Job</DialogTitle>
           <DialogDescription>{job.job_number}</DialogDescription>
@@ -640,7 +640,7 @@ export function EditRepairJobDialog({
       )}
       {editingSale && (
         <Dialog open onOpenChange={(o) => !o && setEditingSale(null)}>
-          <DialogContent className="max-w-sm">
+          <DialogContent className="max-w-sm max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Edit Amount</DialogTitle>
               <DialogDescription>{editingSale.label}</DialogDescription>

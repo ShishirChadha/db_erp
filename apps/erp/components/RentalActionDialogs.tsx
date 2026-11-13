@@ -38,7 +38,7 @@ export function RentalReturnDialog({ agreementId, item, onClose, onDone }: {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Return {unitLabel(item)}</DialogTitle></DialogHeader>
         {error && <ErrorBanner message={error} />}
         <div className="space-y-4">
@@ -99,7 +99,7 @@ export function RentalBuyoutDialog({ agreementId, item, defaultAccount, onClose,
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Buyout — {unitLabel(item)}</DialogTitle></DialogHeader>
         {error && <ErrorBanner message={error} />}
         <div className="space-y-4">
@@ -173,7 +173,7 @@ export function RentalDepositDialog({ agreementId, held, onClose, onDone }: {
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader><DialogTitle>Settle security deposit</DialogTitle></DialogHeader>
         {error && <ErrorBanner message={error} />}
         <div className="space-y-4">

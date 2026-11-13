@@ -1,6 +1,34 @@
 # Current Progress
 
-Last updated: 2026-10-27 — Leads module: master/working-copy split, merge-with-dedupe, contact-field editing, delete lockdown. See "Leads: master/working copies, merge, contact-field editing (2026-10-27)" below for full detail. Prior entry: 2026-10-13 — Leads module follow-up fixes: a real-world CSV with a blank header row crashed the import dialog (Radix Select forbids an empty-string item value), the New Lead Set dialog was clipped on desktop (shadcn's built-in `sm:max-w-sm` beating an unprefixed override), and "Add Lead" is now gated on view access instead of the edit grant so an owner can hand out a narrower "can add, can't edit" right. Prior entry: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS.
+Last updated: 2026-11-13 — Leads module: empty-Set creation (no CSV needed) with direct assignment and per-Set custom column labels, "Worked" count fixed to also catch status-only changes, status editing moved into the lead detail view only. See "Leads: empty-Set creation, custom column labels, Worked-count fix (2026-11-13)" below. Prior entry: 2026-10-27 — Leads module: master/working-copy split, merge-with-dedupe, contact-field editing, delete lockdown. See "Leads: master/working copies, merge, contact-field editing (2026-10-27)" below for full detail. Prior entry: 2026-10-13 — Leads module follow-up fixes: a real-world CSV with a blank header row crashed the import dialog (Radix Select forbids an empty-string item value), the New Lead Set dialog was clipped on desktop (shadcn's built-in `sm:max-w-sm` beating an unprefixed override), and "Add Lead" is now gated on view access instead of the edit grant so an owner can hand out a narrower "can add, can't edit" right. Prior entry: 2026-10-12 — GST Returns rebuilt as a guided 10-step monthly checklist with computed green/yellow/red tiles, owner sign-offs, hash-frozen approvals, Zoho tax-head matching and a daily GST news feed; bank reconciliation removed from the GST module; GST tables locked down with RLS.
+
+## Leads: empty-Set creation, custom column labels, Worked-count fix (2026-11-13)
+
+Three real gaps from using the module:
+
+1. **Creating a Set always required a CSV, even when the admin just wants to
+   hand a staff member a blank Set to fill in themselves.** `BulkImportDialog`'s
+   file input is now optional -- leaving it blank changes the submit button to
+   "Create empty Set" and `POST /api/lead-sets` accepts `rows` empty/omitted.
+   The same creation request can now also set `assignee_id` directly (a
+   manager/owner creates it already assigned to someone else, instead of
+   self-assign-then-Reassign) and `field_labels` (relabel Phone/Email/Address/
+   Identifier for what this list actually needs, e.g. "Flat No." for a society
+   list -- blank/omitted keys fall back to the defaults). New column
+   `lead_sets.field_labels` (jsonb, nullable).
+2. **"Worked" only counted a logged remark, never a status change** -- an
+   employee working entirely by changing status (no typed remark) saw the
+   Worked/Total counter stuck at 0 the whole time despite real engagement.
+   `isLeadWorked()` now also counts any status change off the default.
+3. **Status could be changed from two different places** (the Set-detail
+   row's own dropdown, and nowhere obviously else) -- moved into
+   `LeadDetailModal` only; the outer list/card now shows a read-only
+   `StatusBadge` reflecting whatever was last set there.
+
+Migration: `backups/20261113_lead_sets_field_labels.sql` (one nullable jsonb
+column). Applied to production 2026-11-13 (fresh backup, SSH+base64+stdin,
+`NOTIFY pgrst, 'reload schema';` -- confirmed live). `npx tsc --noEmit -p .`
+and `npx next build` both clean; `npm run bible:check` clean (86 chapters).
 
 ## Leads: master/working copies, merge, contact-field editing (2026-10-27)
 

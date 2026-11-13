@@ -116,7 +116,7 @@ return (
 <Plus className="mr-2 h-3 w-3" /> Add New Vendor
 </Button>
 </DialogTrigger>
-<DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+<DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
 <DialogHeader>
 <DialogTitle>Add New Vendor</DialogTitle>
 <DialogDescription className="sr-only">Fill in all vendor details</DialogDescription>

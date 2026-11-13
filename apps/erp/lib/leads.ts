@@ -19,6 +19,26 @@ export interface LeadSetRow {
   current_assignee_id: string | null
 }
 
+// A Set's optional custom column labels -- e.g. a Set of society residents might
+// want "Flat No." instead of the generic "Identifier". Name is never customized
+// (always required, always "Name"); these four are the ones worth relabeling per
+// Set. Stored as lead_sets.field_labels (jsonb, nullable) -- null/missing keys
+// fall back to the default here, which is what "use default" means at creation.
+export const LEAD_FIELD_LABEL_KEYS = ['phone', 'email', 'address', 'external_identifier'] as const
+export type LeadFieldLabelKey = (typeof LEAD_FIELD_LABEL_KEYS)[number]
+export const DEFAULT_FIELD_LABELS: Record<LeadFieldLabelKey, string> = {
+  phone: 'Phone', email: 'Email', address: 'Address', external_identifier: 'Identifier',
+}
+
+export function resolveFieldLabels(custom: Partial<Record<LeadFieldLabelKey, string>> | null | undefined): Record<LeadFieldLabelKey, string> {
+  return {
+    phone: custom?.phone?.trim() || DEFAULT_FIELD_LABELS.phone,
+    email: custom?.email?.trim() || DEFAULT_FIELD_LABELS.email,
+    address: custom?.address?.trim() || DEFAULT_FIELD_LABELS.address,
+    external_identifier: custom?.external_identifier?.trim() || DEFAULT_FIELD_LABELS.external_identifier,
+  }
+}
+
 // "Worked" for the Sets list's Worked/Total count and the Set-detail counts.
 // Used to only count activity_id (a logged remark/follow-up) -- but changing
 // a lead's status (e.g. New -> Contacted) is just as real a sign of effort

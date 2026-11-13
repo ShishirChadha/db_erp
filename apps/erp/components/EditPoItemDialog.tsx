@@ -128,7 +128,7 @@ export function EditPoItemDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Line Item</DialogTitle>
           <DialogDescription>{item.sku_code}</DialogDescription>

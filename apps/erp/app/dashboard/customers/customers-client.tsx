@@ -214,7 +214,7 @@ export default function CustomersClient({ initialData }: { initialData: Customer
 
       {/* Add Customer Dialog */}
       <Dialog open={showForm} onOpenChange={setShowForm}>
-        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Add New Customer</DialogTitle>
           </DialogHeader>
@@ -367,7 +367,7 @@ export default function CustomersClient({ initialData }: { initialData: Customer
 
       {/* View Customer Detail Dialog */}
       <Dialog open={!!viewItem} onOpenChange={() => setViewItem(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{viewItem?.customer_name}</DialogTitle>
           </DialogHeader>

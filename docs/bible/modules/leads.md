@@ -4,14 +4,14 @@ title: Leads / Calling Lists
 kind: module
 audience: [owner, manager, employee]
 routes: ['/dashboard/leads', '/dashboard/leads/[id]']
-keywords: [lead, leads, calling list, lead set, cold calling, pitch, sales pitch, follow up, followup, remark, remarks, telecalling, referral, convert to customer, golden data, lead recycling, master set, working copy, merge, dedupe, duplicate]
+keywords: [lead, leads, calling list, lead set, cold calling, pitch, sales pitch, follow up, followup, remark, remarks, telecalling, referral, convert to customer, golden data, lead recycling, master set, working copy, merge, dedupe, duplicate, empty set, field labels, column labels, worked count]
 sources:
   - apps/erp/app/api/lead-sets/**
   - apps/erp/app/api/leads/**
   - apps/erp/app/dashboard/leads/**
   - apps/erp/lib/leads.ts
   - apps/erp/components/BulkImportDialog.tsx
-updated: 2026-10-27
+updated: 2026-11-13
 ---
 
 ## What this covers
@@ -196,6 +196,54 @@ both "Golden Data" and "Google Data".
 
 Referrals (an existing lead mentions someone else worth pitching) go through a
 single-lead **Add Lead** action inside a Set (`POST /api/leads`), not a CSV round-trip.
+
+## Creating an empty Set for someone to fill in themselves (2026-11-13)
+
+A Set doesn't require a CSV. `POST /api/lead-sets` accepts `rows` empty or
+omitted entirely -- `BulkImportDialog`'s file input is optional, and leaving
+it blank changes the submit button to "Create empty Set" instead of
+"Import (N)". This is for the real, common case of an admin wanting to hand a
+staff member a fresh, empty Set to populate themselves (no data exists yet to
+upload) rather than always needing a CSV round-trip first.
+
+The same request can also set two more things at creation time instead of
+needing a follow-up action:
+
+- **`assignee_id`** — a manager/owner can create the Set already assigned to
+  someone else, instead of the normal self-assign-on-import default followed
+  by a separate Reassign/Assign-copy step. A plain employee's own self-serve
+  import is unaffected and always still lands on themselves.
+- **`field_labels`** (jsonb on `lead_sets`, nullable) — relabels
+  Phone/Email/Address/Identifier for what this particular list actually needs
+  (e.g. "Flat No." for a society list). `resolveFieldLabels()` (`lib/leads.ts`
+  server-side; duplicated client-side in `page.tsx` since that file can never
+  import the service-role client) merges custom labels over the defaults, so
+  a missing key is just "use the default" — never a broken display. Every
+  label an employee sees for a lead in this Set (Add Lead, the detail view,
+  the leads table header) reads from this, not a hardcoded string.
+
+## "Worked" counts a status change too, not only a logged remark (2026-11-13)
+
+The Sets list's Worked/Total count (and the Set-detail breakdown) used to
+count only `leads.activity_id is not null` -- i.e. a lead with at least one
+remark or follow-up date logged via the Activity Hub. Changing a lead's
+status alone (`PATCH /api/leads/[id]`) never touches `activity_id`, so an
+employee working entirely by status change (no typed remark) could visibly
+work through hundreds of leads while the counter read 0 the whole time --
+reported as "stuck at 0" even though real work was happening.
+`isLeadWorked()` (`lib/leads.ts`) now also counts any lead whose status has
+moved off `DEFAULT_LEAD_STATUS` ('New'), used identically by both
+`GET /api/lead-sets` and `GET /api/lead-sets/[id]`.
+
+## Status changes only from inside the lead detail view (2026-11-13)
+
+The per-lead status dropdown used to live in the Set-detail table/card row
+itself (`LeadRow`), which meant two different places could each independently
+PATCH the same lead's status. It was moved into `LeadDetailModal` (alongside
+remarks/follow-up/convert), and the outer list now renders status as a
+read-only `StatusBadge` -- one place changes it, the list just reflects
+whatever was last set there, with no second control that can drift out of
+sync with it.
 
 ## Converting a lead
 
