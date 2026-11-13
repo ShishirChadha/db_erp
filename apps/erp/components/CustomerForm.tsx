@@ -386,6 +386,18 @@ export default function CustomerForm({
   const registered = REGISTERED.includes(v.gst_treatment);
 
   const set = <K extends keyof CustomerFormValues>(field: K, value: CustomerFormValues[K]) => {
+    // The main Mobile flows into the billing/shipping address phones while those
+    // are blank or still mirror it -- a different number typed there is kept.
+    if (field === "phone") {
+      setV((prev) => ({
+        ...prev,
+        phone: value as string,
+        billing_phone: !prev.billing_phone || prev.billing_phone === prev.phone ? (value as string) : prev.billing_phone,
+        shipping_phone: !prev.shipping_phone || prev.shipping_phone === prev.phone ? (value as string) : prev.shipping_phone,
+      }));
+      if (errors.phone) setErrors((e) => ({ ...e, phone: "" }));
+      return;
+    }
     setV((prev) => ({ ...prev, [field]: value }));
     if (errors[field as string]) setErrors((e) => ({ ...e, [field as string]: "" }));
   };
