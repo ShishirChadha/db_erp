@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -326,6 +326,18 @@ function PhoneInput({ value, onChange, placeholder, className }: { value: string
   );
 }
 
+// Zoho's address columns: label-left rows inside each of Billing / Shipping.
+// Must live at module level -- declared inside CustomerForm it would be a new
+// component type on every render, remounting its input on each keystroke.
+function AddrRow({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
+  return (
+    <div className="grid gap-1.5 @md:grid-cols-[120px_1fr] @md:items-start">
+      <Label className={cn("text-sm font-normal @md:min-h-8 @md:flex @md:items-center", required && "text-destructive")}>{label}{required && "*"}</Label>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+}
+
 function StateSelect({ value, onChange, placeholder }: { value: string; onChange: (code: string) => void; placeholder: string }) {
   const codes = Object.keys(STATE_CODE_TO_NAME).filter((c) => !RETIRED_STATE_CODES.includes(c) || c === value);
   return (
@@ -404,6 +416,49 @@ export default function CustomerForm({
     setErrors((e) => ({ ...e, gst_number: "" }));
   };
 
+  // PIN -> City/State via /api/pincode (India Post). City is only filled when
+  // it's blank or still holds the previous auto-filled value, so a city typed
+  // by hand is never overwritten.
+  type AddrKind = "billing" | "shipping";
+  const autoCity = useRef<Record<AddrKind, string>>({ billing: "", shipping: "" });
+  const [pinInfo, setPinInfo] = useState<Record<AddrKind, { loading?: boolean; note?: string; options?: string[] }>>({ billing: {}, shipping: {} });
+  const lookupPin = async (kind: AddrKind, pin: string) => {
+    setPinInfo((p) => ({ ...p, [kind]: { loading: true } }));
+    try {
+      const res = await apiFetch(`/api/pincode?pin=${pin}`);
+      const data = await res.json();
+      if (!res.ok) {
+        setPinInfo((p) => ({ ...p, [kind]: { note: data.error || "Couldn't look up this PIN; type the city." } }));
+        return;
+      }
+      const cityKey = kind === "billing" ? "city" : "shipping_city";
+      const pinKey = kind === "billing" ? "pincode" : "shipping_pincode";
+      setV((prev) => {
+        if (prev[pinKey].trim() !== pin) return prev; // PIN changed while the lookup ran
+        const next = { ...prev };
+        const current = prev[cityKey].trim();
+        if (data.city && (!current || current === autoCity.current[kind])) {
+          next[cityKey] = data.city;
+          autoCity.current[kind] = data.city;
+        }
+        if (data.state_code && STATE_CODE_TO_NAME[data.state_code]) {
+          // A GSTIN (or Overseas) fixes the billing state; otherwise India Post's
+          // state is more reliable than the PIN-range guess.
+          if (kind === "billing" && !prev.gst_number.trim() && prev.gst_treatment !== "overseas") {
+            next.state_code = data.state_code;
+            next.state = STATE_CODE_TO_NAME[data.state_code];
+          }
+          if (kind === "shipping") next.shipping_state = STATE_CODE_TO_NAME[data.state_code];
+        }
+        return next;
+      });
+      setErrors((e) => ({ ...e, [cityKey]: "" }));
+      setPinInfo((p) => ({ ...p, [kind]: { options: Array.from(new Set([data.city, data.district].filter(Boolean))) } }));
+    } catch {
+      setPinInfo((p) => ({ ...p, [kind]: { note: "Couldn't look up this PIN; type the city." } }));
+    }
+  };
+
   // Without a GSTIN the place of supply comes from the billing PIN -- it decides
   // CGST+SGST vs IGST. Ambiguous PIN ranges resolve to null and leave it blank.
   const setPincode = (pincode: string) => {
@@ -413,6 +468,8 @@ export default function CustomerForm({
       return code ? { ...prev, pincode, state_code: code, state: stateNameFromPincode(pincode) || STATE_CODE_TO_NAME[code] || "" } : { ...prev, pincode };
     });
     setErrors((e) => ({ ...e, pincode: "", state_code: "" }));
+    if (PIN_RE.test(pincode.trim())) lookupPin("billing", pincode.trim());
+    else setPinInfo((p) => ({ ...p, billing: {} }));
   };
 
   const setPlaceOfSupply = (code: string) => {
@@ -423,6 +480,8 @@ export default function CustomerForm({
   const setShippingPincode = (pincode: string) => {
     setV((prev) => ({ ...prev, shipping_pincode: pincode, shipping_state: stateNameFromPincode(pincode) || prev.shipping_state }));
     setErrors((e) => ({ ...e, shipping_pincode: "" }));
+    if (PIN_RE.test(pincode.trim())) lookupPin("shipping", pincode.trim());
+    else setPinInfo((p) => ({ ...p, shipping: {} }));
   };
 
   const copyBilling = () => {
@@ -557,14 +616,6 @@ export default function CustomerForm({
 
   const tabHasError = (t: TabKey) => Object.entries(errors).some(([k, msg]) => msg && FIELD_TAB[k] === t);
 
-  // Zoho's address columns: label-left rows inside each of Billing / Shipping.
-  const AddrRow = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
-    <div className="grid gap-1.5 @md:grid-cols-[120px_1fr] @md:items-start">
-      <Label className={cn("text-sm font-normal @md:min-h-8 @md:flex @md:items-center", required && "text-destructive")}>{label}{required && "*"}</Label>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-
   const addressBlock = (kind: "billing" | "shipping") => {
     const b = kind === "billing";
     const k = (billing: keyof CustomerFormValues, shipping: keyof CustomerFormValues) => (b ? billing : shipping);
@@ -584,7 +635,10 @@ export default function CustomerForm({
           </div>
         </AddrRow>
         <AddrRow label="City" required={b}>
-          <Input {...text("city", "shipping_city")} />
+          <Input placeholder="Filled from the PIN code" list={`city-options-${kind}`} {...text("city", "shipping_city")} />
+          <datalist id={`city-options-${kind}`}>
+            {(pinInfo[kind].options || []).map((o) => <option key={o} value={o} />)}
+          </datalist>
           {b && <FieldError msg={errors.city} />}
         </AddrRow>
         <AddrRow label="State">
@@ -601,6 +655,10 @@ export default function CustomerForm({
         <AddrRow label="Pin Code" required={pinRequired}>
           <Input inputMode="numeric" maxLength={6} value={b ? v.pincode : v.shipping_pincode} onChange={(e) => (b ? setPincode(e.target.value) : setShippingPincode(e.target.value))} />
           <FieldError msg={b ? errors.pincode : errors.shipping_pincode} />
+          {pinInfo[kind].loading && (
+            <p className="mt-1 flex items-center gap-1 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" /> Looking up city…</p>
+          )}
+          {pinInfo[kind].note && <p className="mt-1 text-xs text-muted-foreground">{pinInfo[kind].note}</p>}
         </AddrRow>
         {!b && (
           <AddrRow label="Phone">

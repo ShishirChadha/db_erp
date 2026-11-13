@@ -12,6 +12,7 @@ sources:
   - apps/erp/components/EditCustomerDialog.tsx
   - apps/erp/components/CustomerForm.tsx
   - apps/erp/components/CustomerDetailDialog.tsx
+  - apps/erp/app/api/pincode/route.ts
   - apps/erp/components/BulkAddDialog.tsx
   - apps/erp/app/api/customers/[id]/tier/route.ts
 updated: 2026-11-13
@@ -74,6 +75,14 @@ scrolls sideways.
    `address_line1/2`, `city`, `state`, `pincode` columns (and the composed
    flat `address`); shipping is `shipping_*` plus the composed
    `shipping_address`. Leave shipping blank to ship to the billing address.
+   Entering a 6-digit **Pin Code** (billing or shipping) looks it up via
+   `GET /api/pincode` (staff-only proxy to India Post's public directory,
+   cached 30 days) and fills **City** with the Head Post Office name (e.g.
+   201301 → Noida, not the district "Gautam Buddha Nagar"; District when the
+   PIN has no head office) and **State**. City is only filled when it's blank
+   or still holds the last auto-filled value, so a city typed by hand is
+   never overwritten. Without a GSTIN, the billing State also sets Place of
+   Supply. If the lookup fails, type the city yourself.
 5. **Contact Persons** tab (both types, as in Zoho): any number of extra
    contacts (salutation, name, email, work phone, mobile) in a table, which
    becomes one card per contact on a phone. Stored in

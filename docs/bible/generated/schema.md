@@ -2978,7 +2978,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summarised by ops_web_vitals_summary() for the daily health report. 30-day retention.
 
-~3,678 rows (estimate)
+~3,952 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
