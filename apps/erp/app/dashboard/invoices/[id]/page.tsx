@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark, X, Truck, Pencil } from "lucide-react";
+import { ArrowLeft, Edit, Printer, FileText, Mail, Eye, Building2, User, Landmark, X, Truck, Pencil, Copy } from "lucide-react";
 import { format } from "date-fns";
 import { apiFetch } from "@/lib/api-client";
 import RequirePageAccess from "@/components/RequirePageAccess";
@@ -236,6 +236,13 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
           {invoice.status === "draft" && (
             <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/${id}/edit`)}>
               <Edit className="mr-2 h-4 w-4" /> Edit
+            </Button>
+          )}
+          {/* Opens the New Invoice form prefilled from this one; nothing is created
+              until it's saved there. */}
+          {invoice.invoice_type !== "credit_note" && (
+            <Button variant="outline" onClick={() => router.push(`/dashboard/invoices/new?clone=${id}`)} title="Start a new invoice prefilled from this one">
+              <Copy className="mr-2 h-4 w-4" /> Clone
             </Button>
           )}
           <Button variant="outline" onClick={() => handlePreviewPDF()} loading={previewing}>

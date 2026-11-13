@@ -67,6 +67,7 @@ function EditInvoicePage() {
           terms_conditions: invoiceData.terms_conditions,
           bank_details: invoiceData.bank_details,
           subtotal: invoiceData.subtotal,
+          total_amount: invoiceData.subtotal,
           total_gst: invoiceData.total_gst,
           grand_total: invoiceData.grand_total,
           status: invoiceData.status,

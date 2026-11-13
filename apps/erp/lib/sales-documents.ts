@@ -47,40 +47,51 @@ export interface SalesDocumentDefaults {
   place_of_supply: string | null
 }
 
+// The number the next document of this type will *probably* get -- a read-only
+// peek at the counter. Nothing is reserved, so an abandoned form leaves no trace in
+// the database and burns no number; the real number is still minted atomically on
+// save via next_document_number(), and if someone else saves first this one gets the
+// next. Formatting mirrors next_document_number()'s own {prefix}/{fy}/{seq:5}
+// substitution and per-type prefix column.
+export async function peekDocumentNumber(entityKey: string, docType: SalesDocType | 'sales_invoice'): Promise<string | null> {
+  const { data: profile } = await supabaseAdmin
+    .from('business_profiles')
+    .select('invoice_number_format, invoice_prefix, quotation_prefix, proforma_prefix')
+    .eq('key', entityKey)
+    .maybeSingle()
+  if (!profile) return null
+  const prefix = docType === 'quotation' ? profile.quotation_prefix
+    : docType === 'proforma' ? profile.proforma_prefix
+    : profile.invoice_prefix
+  if (!prefix || !profile.invoice_number_format) return null
+
+  const fy = financialYear()
+  const { data: seq } = await supabaseAdmin
+    .from('invoice_sequences')
+    .select('last_number')
+    .eq('entity_key', entityKey)
+    .eq('doc_type', docType)
+    .eq('financial_year', fy)
+    .maybeSingle()
+  return String(profile.invoice_number_format)
+    .replace('{prefix}', prefix)
+    .replace('{fy}', fy.replace('-', '/'))
+    .replace('{seq:5}', String((seq?.last_number ?? 0) + 1).padStart(5, '0'))
+}
+
 // What the New/Clone form shows before anything is saved: the entity's GST
-// status (drives HSN/Tax visibility), its default Notes/T&C, and the number the
-// document will *probably* get. The number is a read-only peek at the counter --
-// nothing is reserved, so cancelling the form leaves no trace in the database and
-// burns no number. The real number is still minted atomically on save via
-// next_document_number(); if someone else saves first, this one gets the next.
-// Formatting mirrors next_document_number()'s own {prefix}/{fy}/{seq:5} substitution.
+// status (drives HSN/Tax visibility), its default Notes/T&C, and the number
+// preview (see peekDocumentNumber).
 // When a customer is given, also resolves the place of supply exactly as the
 // POST/PATCH routes do (GSTIN prefix -> customer state_code -> entity's own state),
 // so the form's per-line CGST/SGST-vs-IGST split matches what gets saved.
 export async function getSalesDocumentDefaults(entityKey: string, docType: SalesDocType, customerId?: string | null): Promise<SalesDocumentDefaults | null> {
   const { data: profile } = await supabaseAdmin
     .from('business_profiles')
-    .select('is_gst_registered, state_code, default_notes, default_terms, invoice_number_format, quotation_prefix, proforma_prefix')
+    .select('is_gst_registered, state_code, default_notes, default_terms')
     .eq('key', entityKey)
     .maybeSingle()
   if (!profile) return null
-
-  const fy = financialYear()
-  const prefix = docType === 'quotation' ? profile.quotation_prefix : profile.proforma_prefix
-  let nextNumber: string | null = null
-  if (prefix && profile.invoice_number_format) {
-    const { data: seq } = await supabaseAdmin
-      .from('invoice_sequences')
-      .select('last_number')
-      .eq('entity_key', entityKey)
-      .eq('doc_type', docType)
-      .eq('financial_year', fy)
-      .maybeSingle()
-    nextNumber = String(profile.invoice_number_format)
-      .replace('{prefix}', prefix)
-      .replace('{fy}', fy.replace('-', '/'))
-      .replace('{seq:5}', String((seq?.last_number ?? 0) + 1).padStart(5, '0'))
-  }
 
   let customer: { gst_number: string | null; state_code: string | null } | null = null
   if (customerId) {
@@ -90,7 +101,7 @@ export async function getSalesDocumentDefaults(entityKey: string, docType: Sales
   const placeOfSupply = customer?.gst_number?.trim().slice(0, 2) || customer?.state_code || profile.state_code || null
 
   return {
-    next_number: nextNumber,
+    next_number: await peekDocumentNumber(entityKey, docType),
     entity_state_code: profile.state_code,
     place_of_supply: placeOfSupply,
     is_gst_registered: !!profile.is_gst_registered,

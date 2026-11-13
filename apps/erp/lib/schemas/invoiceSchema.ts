@@ -30,7 +30,8 @@ export const invoiceSchema = z.object({
   customer_gst: z.string().optional(),
   customer_address: z.string().optional(),
   customer_phone: z.string().optional(),
-  customer_email: z.string().email().optional(),
+  // '' is what a picked customer with no email on file sets -- must not block saving.
+  customer_email: z.string().email().optional().or(z.literal('')),
   shipping_address: z.string().optional(),
   subject: z.string().optional(),   // ✅ changed from z.string() to optional
   notes: z.string().optional(),

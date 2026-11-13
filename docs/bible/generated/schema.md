@@ -1348,7 +1348,7 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~590 rows (estimate)
+~593 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
