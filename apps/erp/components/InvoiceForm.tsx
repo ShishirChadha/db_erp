@@ -291,12 +291,12 @@ export function InvoiceForm({
   // A manual charge with no SKU/asset of its own -- shipping, packing,
   // installation, a one-off adjustment, etc. GST defaults to 18%; pick "No GST"
   // in the Tax column for a pure reimbursement charge.
-  const addCustomLine = () => {
+  const addCustomLine = (description = "") => {
     append({
       item_type: "custom",
       asset_id: null,
       accessory_id: null,
-      description: "",
+      description,
       hsn_code: "",
       quantity: 1,
       rate: 0,
@@ -304,6 +304,14 @@ export function InvoiceForm({
       amount: 0,
       ...emptyTax,
     });
+  };
+
+  // Typed text that isn't picked from the SKU list becomes a free-text line as-is.
+  const addTypedLine = () => {
+    const text = skuSearch.trim();
+    if (!text) return;
+    addCustomLine(text);
+    setSkuSearch(""); setSkuResults([]);
   };
 
   // Turns the form's as-entered lines into what's stored: pre-GST rate, derived
@@ -576,11 +584,15 @@ export function InvoiceForm({
               <input
                 value={skuSearch}
                 onChange={(e) => setSkuSearch(e.target.value)}
-                placeholder="Type to add an item from SKU master…"
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); addTypedLine(); } }}
+                placeholder="Type an item — pick from SKU master or press Enter to use your text"
                 className="border p-1.5 w-full rounded text-sm bg-background"
               />
-              {skuResults.length > 0 && (
-                <ul className="border rounded mt-1 max-h-40 overflow-y-auto absolute bg-card w-full z-10 shadow">
+              {skuSearch.trim() && (
+                <ul className="border rounded mt-1 max-h-48 overflow-y-auto absolute bg-card w-full z-10 shadow">
+                  <li onClick={addTypedLine} className="p-2 hover:bg-muted cursor-pointer border-b text-sm">
+                    + Add &quot;<span className="font-medium">{skuSearch.trim()}</span>&quot; as a new line <span className="text-xs text-muted-foreground">(Enter)</span>
+                  </li>
                   {skuResults.map((sku) => (
                     <li key={sku.id} onClick={() => addSkuLine(sku)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
                       <div className="font-medium">{sku.full_sku_code}</div>
@@ -590,7 +602,7 @@ export function InvoiceForm({
                 </ul>
               )}
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={addCustomLine}>
+            <Button type="button" variant="outline" size="sm" onClick={() => addCustomLine()}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Add New Row
             </Button>
           </div>

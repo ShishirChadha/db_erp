@@ -130,7 +130,14 @@ export function DocumentFormFields({
     }])
     setSkuSearch(''); setSkuResults([])
   }
-  const addCustomLine = () => setItems((prev) => [...prev, { item_type: 'custom', description: '', hsn_code: '', quantity: 1, rate: 0, gst_rate: 18 }])
+  const addCustomLine = (description = '') => setItems((prev) => [...prev, { item_type: 'custom', description, hsn_code: '', quantity: 1, rate: 0, gst_rate: 18 }])
+  // Typed text that isn't picked from the SKU list becomes a free-text line as-is.
+  const addTypedLine = () => {
+    const text = skuSearch.trim()
+    if (!text) return
+    addCustomLine(text)
+    setSkuSearch(''); setSkuResults([])
+  }
   const updateItem = (idx: number, field: keyof SalesDocLineItem, value: any) => setItems((prev) => prev.map((it, i) => i === idx ? { ...it, [field]: value } : it))
   const removeItem = (idx: number) => setItems((prev) => prev.filter((_, i) => i !== idx))
 
@@ -322,11 +329,15 @@ export function DocumentFormFields({
               <input
                 value={skuSearch}
                 onChange={(e) => setSkuSearch(e.target.value)}
-                placeholder="Type to add an item from SKU master…"
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTypedLine() } }}
+                placeholder="Type an item — pick from SKU master or press Enter to use your text"
                 className="border p-1.5 w-full rounded text-sm"
               />
-              {skuResults.length > 0 && (
-                <ul className="border rounded mt-1 max-h-40 overflow-y-auto absolute bg-card w-full z-10 shadow">
+              {skuSearch.trim() && (
+                <ul className="border rounded mt-1 max-h-48 overflow-y-auto absolute bg-card w-full z-10 shadow">
+                  <li onClick={addTypedLine} className="p-2 hover:bg-muted cursor-pointer border-b text-sm">
+                    + Add &quot;<span className="font-medium">{skuSearch.trim()}</span>&quot; as a new line <span className="text-xs text-muted-foreground">(Enter)</span>
+                  </li>
                   {skuResults.map((sku) => (
                     <li key={sku.id} onClick={() => addSkuLine(sku)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
                       <div className="font-medium">{sku.full_sku_code}</div>
@@ -336,7 +347,7 @@ export function DocumentFormFields({
                 </ul>
               )}
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={addCustomLine}>
+            <Button type="button" variant="outline" size="sm" onClick={() => addCustomLine()}>
               <Plus className="size-3.5 mr-1" /> Add New Row
             </Button>
           </div>
