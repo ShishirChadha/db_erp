@@ -8,7 +8,7 @@ keywords: [customer, vendor, contact, tier, supplier, add customer, add vendor, 
 sources:
   - apps/erp/app/api/customers/**
   - apps/erp/app/api/vendors/**
-updated: 2026-08-29
+updated: 2026-11-13
 ---
 
 ## Customers
@@ -17,6 +17,12 @@ Visible to any signed-in staff (page key `customers`). Customer tiers exist
 for pricing/loyalty purposes; a customer cannot self-change their own tier
 (`prevent_self_tier_change()` guards this on the website-facing side too, per
 `customer_profiles`).
+
+Each customer's detail view shows what references it (sales, invoice
+numbers, repair/replacement/quotation/rental counts) via
+`GET /api/customers/[id]/activity`, with counts that open the Sales Ledger
+filtered to that customer, so an unused or duplicate customer can be spotted
+before it's deleted. See **manage-customers**.
 
 ## Vendors — owner-only, with one employee exception
 
