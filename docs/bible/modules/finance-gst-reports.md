@@ -35,7 +35,7 @@ sources:
   - apps/erp/app/api/gst/news/route.ts
   - apps/erp/app/api/gst/news/run/route.ts
   - apps/erp/app/dashboard/gst/gst-news-panel.tsx
-updated: 2026-10-16
+updated: 2026-11-13
 ---
 
 ## The single reporting dispatcher
@@ -476,6 +476,10 @@ role checks are what actually protect the data.
 (`business_profiles.credit_note_prefix`, default `CN`) because a credit note is
 a separate document nature in Table 13 — doc_num **5**, not 1 — and sharing the
 invoice series would corrupt both ranges.
+
+A credit note copies the original invoice's customer snapshot, including the
+billing (`customer_address`) and shipping (`shipping_address`) addresses, so
+it shows the same parties as the invoice it reverses.
 
 **Amounts are stored positive, exactly like an invoice.** This is the part most
 easily got wrong. The portal wants positive values in `cdnr` and derives the

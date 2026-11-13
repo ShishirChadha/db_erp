@@ -42,7 +42,13 @@ column stacks above each field and the tab strip becomes a dropdown — nothing
 scrolls sideways.
 
 1. Open **Customers** (`/dashboard/customers`), or any sell screen, and click
-   **Add Customer**.
+   **Add Customer**. From the Customers page it opens full-screen (Zoho's own
+   New Customer page); from sell screens it's an 850px dialog. Either way
+   the title and the Save/Cancel bar stay put while the form scrolls.
+   Customer Type defaults to **Business**, as in Zoho. The blue **Prefill**
+   strip at the top takes a GSTIN and turns the form into a Registered
+   Business with GSTIN, state, PAN, company name and billing Street 1 filled
+   in from the GST portal.
 2. Top block: **Customer Type** (Business / Individual), **Primary Contact**
    (salutation + first + last name), **Company Name** (Business only),
    **Display Name\*** (stored as `customer_name`; the dropdown suggests
@@ -50,7 +56,8 @@ scrolls sideways.
    **Phone** — Work Phone and **Mobile\*** (stored as `phone`; saved as the
    bare 10 digits, so "+91 98765 43210" and "09876543210" both become
    `9876543210`), and **Communication Channels** (Email/SMS/WhatsApp).
-   Switching to Individual clears Company, GSTIN and Contact Persons.
+   Switching to Individual clears Company and GSTIN and sets GST Treatment
+   to Consumer.
 3. **Other Details** tab: **GST Treatment\*** (Registered – Regular,
    Registered – Composition, Unregistered Business, Consumer, Overseas;
    written to `gst_treatment`, which GSTR-1 routing reads), **GSTIN** (shown
@@ -67,8 +74,9 @@ scrolls sideways.
    `address_line1/2`, `city`, `state`, `pincode` columns (and the composed
    flat `address`); shipping is `shipping_*` plus the composed
    `shipping_address`. Leave shipping blank to ship to the billing address.
-5. **Contact Persons** tab (Business only): any number of extra contacts
-   (salutation, name, email, work phone, mobile), stored in
+5. **Contact Persons** tab (both types, as in Zoho): any number of extra
+   contacts (salutation, name, email, work phone, mobile) in a table, which
+   becomes one card per contact on a phone. Stored in
    `contact_persons` (jsonb). The first one's name is also written to the
    legacy `contact_person` text column that Sales/Stock listings read.
 6. **Remarks** tab: internal-only notes.

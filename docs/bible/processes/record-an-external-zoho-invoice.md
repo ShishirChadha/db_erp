@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/invoice-finalize.ts
   - apps/erp/components/AttachInvoiceFileDialog.tsx
   - apps/erp/app/api/invoices/[id]/attachments/route.ts
-updated: 2026-10-04
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -98,6 +98,11 @@ attach). It opens `AttachInvoiceFileDialog` against the invoice's own id —
 attaching a file to the **invoice**, not the sale — and appends/dedupes
 against whatever's already there rather than replacing it, so a re-upload
 never silently drops an earlier file.
+
+Recording an external invoice goes through the same `lib/invoice-finalize.ts`
+path as an ERP-generated one, so its invoice row also snapshots the customer's
+billing and shipping addresses (`customer_address`, `shipping_address`) at the
+moment it's recorded.
 
 ## Common mix-ups
 

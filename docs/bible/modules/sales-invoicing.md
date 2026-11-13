@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/sales-entry.ts
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-10-05
+updated: 2026-11-13
 ---
 
 ## What this covers
@@ -55,6 +55,12 @@ purchase cost against one month of rent), and it invoices as `item_type = 'renta
 with **SAC 997315** rather than a goods HSN, because renting goods is a supply of
 service. A **rent-to-own buyout** does carry `asset_ledger_id` and is billed as the
 ordinary unit sale it is. See **rentals**.
+
+Every invoice generated from sales (`lib/invoice-finalize.ts`, which also backs repair
+jobs and rentals) snapshots the customer's billing address into `customer_address` and
+their shipping address into `shipping_address`. The PDF's Ship To falls back to billing
+when it's blank, and a later edit to the customer never rewrites an issued invoice. See
+**manage-customers**.
 
 ## Related
 

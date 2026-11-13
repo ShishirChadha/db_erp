@@ -15,7 +15,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowDown, Loader2, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, ChevronRight, FileDown, Info, Loader2, Mail, PlusCircle, Trash2 } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
@@ -33,7 +33,7 @@ import { cn } from "@/lib/utils";
 // dialog on the Sell screens.
 
 // Dialog shell sizes, matching Zoho: the Customers page opens it near full-page
-// (Zoho's own New Customer page), sell-side flows open Zoho's ~850px modal.
+// (Zoho's own full-width New Customer page), sell-side flows open Zoho's ~850px modal.
 // Either way the header and the Save/Cancel footer stay fixed while the body
 // scrolls; on phones it fills the screen. `sm:` widths are explicit because the
 // shared DialogContent defaults to sm:max-w-sm, which beats a plain max-w-*.
@@ -42,12 +42,12 @@ export function customerDialogClass(size: CustomerDialogSize = "modal") {
   return cn(
     "flex flex-col gap-0 overflow-hidden p-0 max-w-[calc(100%-1rem)] h-[calc(100dvh-1rem)]",
     size === "page"
-      ? "sm:max-w-[min(1200px,calc(100%-3rem))] sm:h-[94vh]"
-      : "sm:max-w-[850px] sm:h-[90vh]",
+      ? "sm:max-w-[calc(100%-2rem)] sm:h-[calc(100dvh-2rem)]"
+      : "sm:max-w-[850px] sm:h-[calc(100dvh-2rem)]",
   );
 }
 export const customerDialogHeaderClass = "border-b px-6 py-4 text-left";
-export const customerDialogTitleClass = "text-xl font-normal";
+export const customerDialogTitleClass = "text-2xl font-normal";
 
 export const SALUTATIONS = ["Mr.", "Mrs.", "Ms.", "Miss", "Dr."];
 
@@ -124,7 +124,7 @@ export interface CustomerFormValues {
 }
 
 const emptyValues: CustomerFormValues = {
-  type: "Individual",
+  type: "Business",
   salutation: "",
   first_name: "",
   last_name: "",
@@ -134,7 +134,7 @@ const emptyValues: CustomerFormValues = {
   work_phone: "",
   phone: "",
   communication_channels: ["email"],
-  gst_treatment: "consumer",
+  gst_treatment: "",
   gst_number: "",
   state: "",
   state_code: "",
@@ -248,11 +248,9 @@ const FIELD_TAB: Record<string, TabKey | null> = {
 function toPayload(v: CustomerFormValues) {
   const isBusiness = v.type === "Business";
   const registered = REGISTERED.includes(v.gst_treatment);
-  const contacts = isBusiness
-    ? v.contact_persons
-        .map((p) => ({ ...p, mobile: p.mobile ? normalizeMobile(p.mobile) : "" }))
-        .filter((p) => p.first_name.trim() || p.last_name.trim() || p.email.trim() || p.mobile.trim() || p.work_phone.trim())
-    : [];
+  const contacts = v.contact_persons
+    .map((p) => ({ ...p, mobile: p.mobile ? normalizeMobile(p.mobile) : "" }))
+    .filter((p) => p.first_name.trim() || p.last_name.trim() || p.email.trim() || p.mobile.trim() || p.work_phone.trim());
   const primaryContactName = [v.salutation, v.first_name, v.last_name].map((x) => x.trim()).filter(Boolean).join(" ");
   const firstContactName = contacts[0] ? [contacts[0].first_name, contacts[0].last_name].map((x) => x.trim()).filter(Boolean).join(" ") : "";
   const shippingAddress = composeAddress(v.shipping_address_line1, v.shipping_address_line2, v.shipping_city, v.shipping_state, v.shipping_pincode);
@@ -293,16 +291,22 @@ function toPayload(v: CustomerFormValues) {
     shipping_address: shippingAddress || null,
     contact_persons: contacts,
     // Legacy single-name column still read by Sales/Stock listings.
-    contact_person: isBusiness ? firstContactName || primaryContactName || null : null,
+    contact_person: firstContactName || (isBusiness ? primaryContactName : "") || null,
     remarks: v.remarks.trim() || null,
   };
 }
 
-function Row({ label, required, children, className }: { label: string; required?: boolean; children: React.ReactNode; className?: string }) {
+// Zoho geometry: a 180px label column and fixed-width fields (330px standard,
+// 138/150/150 for the name, 210px per phone) once the container is wide enough;
+// below that, labels stack above full-width fields.
+const FIELD_W = "@2xl:w-[330px]";
+
+function Row({ label, required, hint, children, className }: { label: string; required?: boolean; hint?: string; children: React.ReactNode; className?: string }) {
   return (
-    <div className={cn("grid gap-1.5 @2xl:grid-cols-[10rem_1fr] @2xl:items-center @2xl:gap-4", className)}>
-      <Label className={cn("text-sm font-normal", required && "text-destructive")}>
+    <div className={cn("grid gap-1.5 @2xl:grid-cols-[180px_1fr] @2xl:items-start @2xl:gap-x-0", className)}>
+      <Label className={cn("flex items-center gap-1 text-sm font-normal @2xl:min-h-8 @2xl:pr-3", required && "text-destructive")}>
         {label}{required && "*"}
+        {hint && <span title={hint} className="text-muted-foreground"><Info className="h-3.5 w-3.5" /></span>}
       </Label>
       <div className="min-w-0">{children}</div>
     </div>
@@ -313,11 +317,11 @@ function FieldError({ msg }: { msg?: string }) {
   return msg ? <p className="text-xs text-destructive mt-1">{msg}</p> : null;
 }
 
-function PhoneInput({ value, onChange, placeholder }: { value: string; onChange: (v: string) => void; placeholder: string }) {
+function PhoneInput({ value, onChange, placeholder, className }: { value: string; onChange: (v: string) => void; placeholder: string; className?: string }) {
   return (
-    <div className="flex">
-      <span className="inline-flex h-8 items-center rounded-l-md border border-r-0 border-input bg-muted px-2 text-sm text-muted-foreground">+91</span>
-      <Input className="rounded-l-none" inputMode="tel" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
+    <div className={cn("flex", className)}>
+      <span className="inline-flex h-8 shrink-0 items-center rounded-l-md border border-r-0 border-input bg-muted px-2.5 text-sm text-muted-foreground">+91</span>
+      <Input className="min-w-0 rounded-l-none" inputMode="tel" placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -371,10 +375,11 @@ export default function CustomerForm({
   };
 
   const setType = (type: string) => {
-    // Business-only fields don't apply to an Individual -- clear them so a stale
-    // value can't get silently submitted while hidden.
+    // Company and GSTIN don't apply to an Individual -- clear them so a stale
+    // value can't get silently submitted while hidden. Contact persons stay
+    // (Zoho keeps them for both types).
     setV((prev) => type === "Individual"
-      ? { ...prev, type, company_name: "", contact_persons: [], gst_number: "", gst_treatment: "consumer" }
+      ? { ...prev, type, company_name: "", gst_number: "", gst_treatment: "consumer" }
       : { ...prev, type, gst_treatment: prev.gst_treatment === "consumer" ? "" : prev.gst_treatment });
   };
 
@@ -448,12 +453,12 @@ export default function CustomerForm({
     return Array.from(new Set(opts));
   }, [v.first_name, v.last_name, v.salutation, v.company_name]);
 
-  const handleFetchGst = async () => {
-    if (!v.gst_number.trim()) return;
+  const handleFetchGst = async (gstin: string = v.gst_number) => {
+    if (!gstin.trim()) return;
     setGstFetching(true);
     setGstNote("");
     try {
-      const res = await apiFetch(`/api/gst?gst=${encodeURIComponent(v.gst_number.trim())}`);
+      const res = await apiFetch(`/api/gst?gst=${encodeURIComponent(gstin.trim())}`);
       const data = await res.json();
       // The lookup returns one flat address string -- dropped into Street 1 as a
       // starting point, still editable/splittable by hand.
@@ -471,6 +476,20 @@ export default function CustomerForm({
     } finally {
       setGstFetching(false);
     }
+  };
+
+  // Zoho's top banner: enter a GSTIN once and it becomes a Registered Business
+  // with GSTIN, state, PAN, company and billing Street 1 filled in.
+  const [prefillOpen, setPrefillOpen] = useState(false);
+  const [prefillGstin, setPrefillGstin] = useState("");
+  const runPrefill = async () => {
+    const gst = prefillGstin.toUpperCase().replace(/\s/g, "");
+    if (!gst) return;
+    setV((prev) => ({ ...prev, type: "Business", gst_treatment: prev.gst_treatment === "registered_composition" ? prev.gst_treatment : "registered_regular" }));
+    setGstNumber(gst);
+    setTab("other");
+    await handleFetchGst(gst);
+    setPrefillOpen(false);
   };
 
   const validate = (): Record<string, string> => {
@@ -538,277 +557,323 @@ export default function CustomerForm({
 
   const tabHasError = (t: TabKey) => Object.entries(errors).some(([k, msg]) => msg && FIELD_TAB[k] === t);
 
+  // Zoho's address columns: label-left rows inside each of Billing / Shipping.
+  const AddrRow = ({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) => (
+    <div className="grid gap-1.5 @md:grid-cols-[120px_1fr] @md:items-start">
+      <Label className={cn("text-sm font-normal @md:min-h-8 @md:flex @md:items-center", required && "text-destructive")}>{label}{required && "*"}</Label>
+      <div className="min-w-0">{children}</div>
+    </div>
+  );
+
   const addressBlock = (kind: "billing" | "shipping") => {
     const b = kind === "billing";
     const k = (billing: keyof CustomerFormValues, shipping: keyof CustomerFormValues) => (b ? billing : shipping);
+    const text = (billing: keyof CustomerFormValues, shipping: keyof CustomerFormValues) => ({
+      value: v[k(billing, shipping)] as string,
+      onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(k(billing, shipping), e.target.value as any),
+    });
+    const pinRequired = b && v.gst_treatment !== "overseas";
     return (
       <div className="space-y-3">
-        <div className="space-y-1.5">
-          <Label className="font-normal">Attention</Label>
-          <Input value={v[k("billing_attention", "shipping_attention")] as string} onChange={(e) => set(k("billing_attention", "shipping_attention"), e.target.value as any)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label className={cn("font-normal", b && "text-destructive")}>Address{b && "*"}</Label>
-          <Textarea rows={2} placeholder="Street 1" value={v[k("address_line1", "shipping_address_line1")] as string} onChange={(e) => set(k("address_line1", "shipping_address_line1"), e.target.value as any)} />
-          {b && <FieldError msg={errors.address_line1} />}
-          <Textarea rows={2} placeholder="Street 2" value={v[k("address_line2", "shipping_address_line2")] as string} onChange={(e) => set(k("address_line2", "shipping_address_line2"), e.target.value as any)} />
-        </div>
-        <div className="grid grid-cols-1 gap-3 @md:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label className={cn("font-normal", b && "text-destructive")}>City{b && "*"}</Label>
-            <Input value={v[k("city", "shipping_city")] as string} onChange={(e) => set(k("city", "shipping_city"), e.target.value as any)} />
-            {b && <FieldError msg={errors.city} />}
+        <AddrRow label="Attention"><Input {...text("billing_attention", "shipping_attention")} /></AddrRow>
+        <AddrRow label="Address" required={b}>
+          <div className="space-y-2">
+            <Textarea rows={2} className="min-h-14" placeholder="Street 1" {...text("address_line1", "shipping_address_line1")} />
+            {b && <FieldError msg={errors.address_line1} />}
+            <Textarea rows={2} className="min-h-14" placeholder="Street 2" {...text("address_line2", "shipping_address_line2")} />
           </div>
-          <div className="space-y-1.5">
-            <Label className={cn("font-normal", b && v.gst_treatment !== "overseas" && "text-destructive")}>Pin Code{b && v.gst_treatment !== "overseas" && "*"}</Label>
-            <Input inputMode="numeric" maxLength={6} value={b ? v.pincode : v.shipping_pincode} onChange={(e) => (b ? setPincode(e.target.value) : setShippingPincode(e.target.value))} />
-            <FieldError msg={b ? errors.pincode : errors.shipping_pincode} />
-          </div>
-        </div>
-        <div className="space-y-1.5">
-          <Label className="font-normal">State</Label>
+        </AddrRow>
+        <AddrRow label="City" required={b}>
+          <Input {...text("city", "shipping_city")} />
+          {b && <FieldError msg={errors.city} />}
+        </AddrRow>
+        <AddrRow label="State">
           {b ? (
-            <>
-              <StateSelect value={v.state_code} onChange={setPlaceOfSupply} placeholder="Select state" />
-              <p className="text-xs text-muted-foreground">Same as Place of Supply.</p>
-            </>
+            <StateSelect value={v.state_code} onChange={setPlaceOfSupply} placeholder="Select or type to add" />
           ) : (
             <StateSelect
               value={Object.keys(STATE_CODE_TO_NAME).find((c) => STATE_CODE_TO_NAME[c] === v.shipping_state) || ""}
               onChange={(code) => set("shipping_state", STATE_CODE_TO_NAME[code] || "")}
-              placeholder="Select state"
+              placeholder="Select or type to add"
             />
           )}
-        </div>
+        </AddrRow>
+        <AddrRow label="Pin Code" required={pinRequired}>
+          <Input inputMode="numeric" maxLength={6} value={b ? v.pincode : v.shipping_pincode} onChange={(e) => (b ? setPincode(e.target.value) : setShippingPincode(e.target.value))} />
+          <FieldError msg={b ? errors.pincode : errors.shipping_pincode} />
+        </AddrRow>
         {!b && (
-          <div className="space-y-1.5">
-            <Label className="font-normal">Phone</Label>
-            <PhoneInput value={v.shipping_phone} onChange={(val) => set("shipping_phone", val)} placeholder="Delivery contact" />
-          </div>
+          <AddrRow label="Phone">
+            <PhoneInput value={v.shipping_phone} onChange={(val) => set("shipping_phone", val)} placeholder="" />
+          </AddrRow>
         )}
       </div>
     );
   };
 
+  const updateContact = (i: number, field: keyof ContactPerson, val: string) =>
+    set("contact_persons", v.contact_persons.map((cp, j) => (j === i ? { ...cp, [field]: val } : cp)));
+
   return (
     <form onSubmit={handleSubmit} className="@container flex min-h-0 flex-1 flex-col" noValidate>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-6 py-5">
-      <div className="space-y-3">
-        <Row label="Customer Type">
-          <div className="flex h-8 items-center gap-5">
-            {["Business", "Individual"].map((t) => (
-              <label key={t} className="flex cursor-pointer items-center gap-2 text-sm">
-                <input type="radio" name="customer_type" className="h-4 w-4 accent-primary" checked={v.type === t} onChange={() => setType(t)} />
-                {t}
-              </label>
-            ))}
-          </div>
-        </Row>
-        <Row label="Primary Contact">
-          <div className="grid grid-cols-1 gap-2 @md:grid-cols-[8rem_1fr_1fr]">
-            <Select value={v.salutation || undefined} onValueChange={(val) => set("salutation", val)}>
-              <SelectTrigger className="w-full"><SelectValue placeholder="Salutation" /></SelectTrigger>
-              <SelectContent>{SALUTATIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
-            </Select>
-            <Input placeholder="First Name" value={v.first_name} onChange={(e) => set("first_name", e.target.value)} />
-            <Input placeholder="Last Name" value={v.last_name} onChange={(e) => set("last_name", e.target.value)} />
-          </div>
-        </Row>
-        {isBusiness && (
-          <Row label="Company Name">
-            <Input className="@2xl:max-w-sm" value={v.company_name} onChange={(e) => set("company_name", e.target.value)} />
-          </Row>
-        )}
-        <Row label="Display Name" required>
-          <Input
-            className="@2xl:max-w-sm"
-            list="customer-display-name-options"
-            placeholder="Select or type to add"
-            value={v.customer_name}
-            onChange={(e) => set("customer_name", e.target.value)}
-          />
-          <datalist id="customer-display-name-options">
-            {displayNameOptions.map((o) => <option key={o} value={o} />)}
-          </datalist>
-          <FieldError msg={errors.customer_name} />
-        </Row>
-        <Row label="Email Address">
-          <Input className="@2xl:max-w-sm" type="email" value={v.email} onChange={(e) => set("email", e.target.value)} />
-          <FieldError msg={errors.email} />
-        </Row>
-        <Row label="Phone" required>
-          <div className="grid grid-cols-1 gap-2 @md:grid-cols-2 @2xl:max-w-lg">
-            <PhoneInput value={v.work_phone} onChange={(val) => set("work_phone", val)} placeholder="Work Phone" />
-            <div>
-              <PhoneInput value={v.phone} onChange={(val) => set("phone", val)} placeholder="Mobile*" />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {/* Zoho's GST portal prefill strip */}
+        <div className="border-b bg-primary/5 px-6 py-2.5 text-sm">
+          {!prefillOpen ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <FileDown className="h-4 w-4 shrink-0 text-primary" />
+              <span>Prefill Customer details from the GST portal using the Customer&apos;s GSTIN.</span>
+              <button type="button" className="inline-flex items-center font-medium text-primary hover:underline" onClick={() => setPrefillOpen(true)}>
+                Prefill <ChevronRight className="h-4 w-4" />
+              </button>
             </div>
-          </div>
-          <FieldError msg={errors.phone} />
-        </Row>
-        <Row label="Communication Channels">
-          <div className="flex flex-wrap items-center gap-5">
-            {CHANNELS.map((ch) => (
-              <label key={ch.value} className="flex cursor-pointer items-center gap-2 text-sm">
-                <Checkbox
-                  checked={v.communication_channels.includes(ch.value)}
-                  onCheckedChange={(checked) => set("communication_channels", checked
-                    ? [...v.communication_channels, ch.value]
-                    : v.communication_channels.filter((c) => c !== ch.value))}
-                />
-                {ch.label}
-              </label>
-            ))}
-          </div>
-        </Row>
-      </div>
-
-      <Tabs value={tab} onValueChange={(t) => setTab(t as TabKey)}>
-        {/* Narrow containers swap the strip for a dropdown so nothing scrolls sideways. */}
-        <div className="@xl:hidden">
-          <Select value={tab} onValueChange={(t) => setTab(t as TabKey)}>
-            <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              {TABS.filter((t) => isBusiness || t.value !== "contacts").map((t) => (
-                <SelectItem key={t.value} value={t.value}>{t.label}{tabHasError(t.value) ? " •" : ""}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <TabsList variant="line" className="hidden w-full justify-start border-b @xl:flex">
-          {TABS.filter((t) => isBusiness || t.value !== "contacts").map((t) => (
-            <TabsTrigger key={t.value} value={t.value} className={cn("flex-none px-3", tabHasError(t.value) && "text-destructive")}>
-              {t.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        <TabsContent value="other" className="space-y-3 pt-3">
-          <Row label="GST Treatment" required>
-            <Select value={v.gst_treatment || undefined} onValueChange={setGstTreatment}>
-              <SelectTrigger className="w-full @2xl:max-w-sm"><SelectValue placeholder="Select a GST treatment" /></SelectTrigger>
-              <SelectContent>
-                {GST_TREATMENTS.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {v.gst_treatment && <p className="text-xs text-muted-foreground mt-1">{GST_TREATMENTS.find((t) => t.value === v.gst_treatment)?.hint}</p>}
-            <FieldError msg={errors.gst_treatment} />
-          </Row>
-          {registered && (
-            <Row label="GSTIN" required>
-              <div className="flex gap-2 @2xl:max-w-sm">
-                <Input value={v.gst_number} maxLength={15} placeholder="e.g. 09AAICD2790D1ZM" onChange={(e) => setGstNumber(e.target.value)} />
-                <Button type="button" variant="outline" disabled={gstFetching || !v.gst_number.trim()} onClick={handleFetchGst}>
-                  {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Prefill"}
-                </Button>
-              </div>
-              {gstNote && <p className="text-xs text-muted-foreground mt-1">{gstNote}</p>}
-              <FieldError msg={errors.gst_number} />
-            </Row>
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="shrink-0">GSTIN</span>
+              <Input
+                autoFocus
+                className="w-[220px] bg-background"
+                maxLength={15}
+                placeholder="e.g. 09AAICD2790D1ZM"
+                value={prefillGstin}
+                onChange={(e) => setPrefillGstin(e.target.value.toUpperCase())}
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runPrefill(); } }}
+              />
+              <Button type="button" size="sm" disabled={gstFetching || !prefillGstin.trim()} onClick={runPrefill}>
+                {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Prefill"}
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setPrefillOpen(false)}>Cancel</Button>
+            </div>
           )}
-          <Row label="Place of Supply" required>
-            <div className="@2xl:max-w-sm">
-              <StateSelect value={v.state_code} onChange={setPlaceOfSupply} placeholder="Select state" />
-            </div>
-            {!errors.state_code && !v.gst_number.trim() && v.gst_treatment !== "overseas" && (
-              <p className="text-xs text-muted-foreground mt-1">Filled from the billing PIN code; change it if that's wrong.</p>
-            )}
-            <FieldError msg={errors.state_code} />
-          </Row>
-          <Row label="PAN">
-            <Input className="@2xl:max-w-sm" maxLength={10} value={v.pan} onChange={(e) => set("pan", e.target.value.toUpperCase())} />
-            <FieldError msg={errors.pan} />
-          </Row>
-          <Row label="Email 2">
-            <Input className="@2xl:max-w-sm" type="email" value={v.alt_email} onChange={(e) => set("alt_email", e.target.value)} />
-            <FieldError msg={errors.alt_email} />
-          </Row>
-          <Row label="Source">
-            <Input className="@2xl:max-w-sm" value={v.source} onChange={(e) => set("source", e.target.value)} />
-          </Row>
-          <Row label="Social Following">
-            <Select value={v.social_following} onValueChange={(val) => set("social_following", val)}>
-              <SelectTrigger className="w-full @2xl:max-w-sm"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {["FB", "Insta", "Both", "None"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-              </SelectContent>
-            </Select>
-          </Row>
-          <Row label="Google Review">
-            <label className="flex h-8 cursor-pointer items-center gap-2 text-sm">
-              <Checkbox checked={v.google_review} onCheckedChange={(c) => set("google_review", !!c)} />
-              Customer has left a Google review
-            </label>
-          </Row>
-        </TabsContent>
+          {gstNote && !prefillOpen && <p className="mt-1 text-xs text-muted-foreground">{gstNote}</p>}
+        </div>
 
-        <TabsContent value="address" className="pt-3">
-          <div className="grid grid-cols-1 gap-6 @3xl:grid-cols-2">
-            <div>
-              <h4 className="mb-3 font-semibold">Billing Address</h4>
-              {addressBlock("billing")}
-            </div>
-            <div>
-              <h4 className="mb-3 flex flex-wrap items-center gap-1 font-semibold">
-                Shipping Address
-                <button type="button" onClick={copyBilling} className="inline-flex items-center gap-0.5 text-sm font-normal text-primary hover:underline">
-                  (<ArrowDown className="h-3.5 w-3.5" />Copy billing address)
-                </button>
-              </h4>
-              {addressBlock("shipping")}
-              <p className="mt-2 text-xs text-muted-foreground">Leave blank to ship to the billing address.</p>
-            </div>
+        <div className="space-y-6 px-6 py-5">
+          <div className="space-y-3">
+            <Row label="Customer Type" hint="Business customers have a company; Individuals are walk-in consumers.">
+              <div className="flex h-8 items-center gap-5">
+                {["Business", "Individual"].map((t) => (
+                  <label key={t} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input type="radio" name="customer_type" className="h-4 w-4 accent-primary" checked={v.type === t} onChange={() => setType(t)} />
+                    {t}
+                  </label>
+                ))}
+              </div>
+            </Row>
+            <Row label="Primary Contact" hint="The person you deal with at this customer.">
+              <div className="grid grid-cols-1 gap-2 @md:grid-cols-[138px_1fr_1fr] @2xl:grid-cols-[138px_150px_150px]">
+                <Select value={v.salutation || undefined} onValueChange={(val) => set("salutation", val)}>
+                  <SelectTrigger className="w-full"><SelectValue placeholder="Salutation" /></SelectTrigger>
+                  <SelectContent>{SALUTATIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                </Select>
+                <Input placeholder="First Name" value={v.first_name} onChange={(e) => set("first_name", e.target.value)} />
+                <Input placeholder="Last Name" value={v.last_name} onChange={(e) => set("last_name", e.target.value)} />
+              </div>
+            </Row>
+            {isBusiness && (
+              <Row label="Company Name">
+                <Input className={FIELD_W} value={v.company_name} onChange={(e) => set("company_name", e.target.value)} />
+              </Row>
+            )}
+            <Row label="Display Name" required hint="The name shown on invoices, quotations and everywhere this customer is picked.">
+              <Input
+                className={FIELD_W}
+                list="customer-display-name-options"
+                placeholder="Select or type to add"
+                value={v.customer_name}
+                onChange={(e) => set("customer_name", e.target.value)}
+              />
+              <datalist id="customer-display-name-options">
+                {displayNameOptions.map((o) => <option key={o} value={o} />)}
+              </datalist>
+              <FieldError msg={errors.customer_name} />
+            </Row>
+            <Row label="Email Address" hint="Invoices and quotations are emailed here.">
+              <div className={cn("relative", FIELD_W)}>
+                <Mail className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input className="pl-8" type="email" value={v.email} onChange={(e) => set("email", e.target.value)} />
+              </div>
+              <FieldError msg={errors.email} />
+            </Row>
+            <Row label="Phone" required hint="Mobile is required and must be unique per customer.">
+              <div className="grid grid-cols-1 gap-2 @md:grid-cols-2 @2xl:grid-cols-[210px_210px] @2xl:gap-x-[30px]">
+                <PhoneInput value={v.work_phone} onChange={(val) => set("work_phone", val)} placeholder="Work Phone" />
+                <PhoneInput value={v.phone} onChange={(val) => set("phone", val)} placeholder="Mobile*" />
+              </div>
+              <FieldError msg={errors.phone} />
+            </Row>
+            <Row label="Communication Channels">
+              <div className="flex min-h-8 flex-wrap items-center gap-x-8 gap-y-2">
+                {CHANNELS.map((ch) => (
+                  <label key={ch.value} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={v.communication_channels.includes(ch.value)}
+                      onCheckedChange={(checked) => set("communication_channels", checked
+                        ? [...v.communication_channels, ch.value]
+                        : v.communication_channels.filter((c) => c !== ch.value))}
+                    />
+                    {ch.label}
+                  </label>
+                ))}
+              </div>
+            </Row>
           </div>
-        </TabsContent>
 
-        {isBusiness && (
-          <TabsContent value="contacts" className="space-y-3 pt-3">
-            {v.contact_persons.length === 0 && (
-              <p className="text-sm text-muted-foreground">No additional contact persons.</p>
-            )}
-            {v.contact_persons.map((p, i) => {
-              const update = (field: keyof ContactPerson, val: string) =>
-                set("contact_persons", v.contact_persons.map((cp, j) => (j === i ? { ...cp, [field]: val } : cp)));
-              return (
-                <div key={i} className="space-y-2 rounded-md border p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Contact {i + 1}</span>
-                    <Button type="button" variant="ghost" size="sm" onClick={() => set("contact_persons", v.contact_persons.filter((_, j) => j !== i))}>
-                      <Trash2 className="h-4 w-4" />
+          <Tabs value={tab} onValueChange={(t) => setTab(t as TabKey)} className="gap-0">
+            {/* Narrow containers swap the strip for a dropdown so nothing scrolls sideways. */}
+            <div className="@xl:hidden">
+              <Select value={tab} onValueChange={(t) => setTab(t as TabKey)}>
+                <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {TABS.map((t) => (
+                    <SelectItem key={t.value} value={t.value}>{t.label}{tabHasError(t.value) ? " •" : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <TabsList variant="line" className="hidden h-auto w-full max-w-[1050px] justify-start gap-6 rounded-none border-b p-0 @xl:flex">
+              {TABS.map((t) => (
+                <TabsTrigger
+                  key={t.value}
+                  value={t.value}
+                  className={cn(
+                    "flex-none rounded-none px-0 pb-2 pt-1 font-normal data-active:font-semibold group-data-[variant=line]/tabs-list:data-active:after:bg-primary",
+                    tabHasError(t.value) && "text-destructive",
+                  )}
+                >
+                  {t.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+
+            <TabsContent value="other" className="space-y-3 pt-5">
+              <Row label="GST Treatment" required>
+                <Select value={v.gst_treatment || undefined} onValueChange={setGstTreatment}>
+                  <SelectTrigger className={cn("w-full", FIELD_W)}><SelectValue placeholder="Select a GST treatment" /></SelectTrigger>
+                  <SelectContent>
+                    {GST_TREATMENTS.map((t) => (
+                      <SelectItem key={t.value} value={t.value}>
+                        <span className="flex flex-col">
+                          <span>{t.label}</span>
+                          <span className="text-xs text-muted-foreground">{t.hint}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FieldError msg={errors.gst_treatment} />
+              </Row>
+              {registered && (
+                <Row label="GSTIN" required hint="15-character GST Identification Number.">
+                  <div className={cn("flex gap-2", FIELD_W)}>
+                    <Input value={v.gst_number} maxLength={15} placeholder="e.g. 09AAICD2790D1ZM" onChange={(e) => setGstNumber(e.target.value)} />
+                    <Button type="button" variant="outline" disabled={gstFetching || !v.gst_number.trim()} onClick={() => handleFetchGst()}>
+                      {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
                     </Button>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 @md:grid-cols-[8rem_1fr_1fr]">
-                    <Select value={p.salutation || undefined} onValueChange={(val) => update("salutation", val)}>
+                  <FieldError msg={errors.gst_number} />
+                </Row>
+              )}
+              <Row label="Place of Supply" required>
+                <div className={FIELD_W}>
+                  <StateSelect value={v.state_code} onChange={setPlaceOfSupply} placeholder="" />
+                </div>
+                <FieldError msg={errors.state_code} />
+              </Row>
+              <Row label="PAN" hint="Filled automatically from the GSTIN.">
+                <Input className={FIELD_W} maxLength={10} value={v.pan} onChange={(e) => set("pan", e.target.value.toUpperCase())} />
+                <FieldError msg={errors.pan} />
+              </Row>
+              <Row label="Email 2">
+                <Input className={FIELD_W} type="email" value={v.alt_email} onChange={(e) => set("alt_email", e.target.value)} />
+                <FieldError msg={errors.alt_email} />
+              </Row>
+              <Row label="Source">
+                <Input className={FIELD_W} value={v.source} onChange={(e) => set("source", e.target.value)} />
+              </Row>
+              <Row label="Social Following">
+                <Select value={v.social_following} onValueChange={(val) => set("social_following", val)}>
+                  <SelectTrigger className={cn("w-full", FIELD_W)}><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["FB", "Insta", "Both", "None"].map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </Row>
+              <Row label="Google Review">
+                <label className="flex h-8 cursor-pointer items-center gap-2 text-sm">
+                  <Checkbox checked={v.google_review} onCheckedChange={(c) => set("google_review", !!c)} />
+                  Customer has left a Google review
+                </label>
+              </Row>
+            </TabsContent>
+
+            <TabsContent value="address" className="pt-5">
+              <div className="grid max-w-[1050px] grid-cols-1 gap-x-12 gap-y-8 @3xl:grid-cols-2">
+                <div>
+                  <h4 className="mb-4 text-base font-semibold">Billing Address</h4>
+                  {addressBlock("billing")}
+                </div>
+                <div>
+                  <h4 className="mb-4 flex flex-wrap items-center gap-1 text-base font-semibold">
+                    Shipping Address
+                    <button type="button" onClick={copyBilling} className="inline-flex items-center gap-0.5 text-sm font-normal text-primary hover:underline">
+                      (<ArrowDown className="h-3.5 w-3.5" />Copy billing address)
+                    </button>
+                  </h4>
+                  {addressBlock("shipping")}
+                </div>
+              </div>
+              <div className="mt-6 max-w-[1050px] border-l-2 border-warning pl-3 text-xs text-muted-foreground">
+                Leave the shipping address blank to ship to the billing address. Invoices, quotations and proformas copy
+                both addresses when they are created, so editing them here later doesn&apos;t change documents already issued.
+              </div>
+            </TabsContent>
+
+            <TabsContent value="contacts" className="pt-5">
+              {/* Table on wide containers (Zoho), one stacked card per contact when narrow. */}
+              <div className="max-w-[1050px] rounded-md border">
+                <div className="hidden grid-cols-[104px_1fr_1fr_1.3fr_1.2fr_1.2fr_36px] border-b bg-muted/50 text-[11px] font-medium uppercase tracking-wide text-muted-foreground @3xl:grid">
+                  {["Salutation", "First Name", "Last Name", "Email Address", "Work Phone", "Mobile", ""].map((h, i) => (
+                    <div key={i} className="border-r px-2 py-2 last:border-r-0">{h}</div>
+                  ))}
+                </div>
+                {v.contact_persons.length === 0 && (
+                  <p className="px-3 py-4 text-sm text-muted-foreground">No contact persons added.</p>
+                )}
+                {v.contact_persons.map((p, i) => (
+                  <div key={i} className="grid grid-cols-1 gap-2 border-b p-3 last:border-b-0 @md:grid-cols-2 @3xl:grid-cols-[104px_1fr_1fr_1.3fr_1.2fr_1.2fr_36px] @3xl:gap-0 @3xl:p-0 [&>*]:@3xl:border-r [&>*:last-child]:@3xl:border-r-0 @3xl:[&_input]:rounded-none @3xl:[&_input]:border-0 @3xl:[&_input]:shadow-none @3xl:[&_span]:border-0 @3xl:[&_span]:rounded-none @3xl:[&_button]:border-0 @3xl:[&_button]:shadow-none @3xl:[&_button]:rounded-none">
+                    <Select value={p.salutation || undefined} onValueChange={(val) => updateContact(i, "salutation", val)}>
                       <SelectTrigger className="w-full"><SelectValue placeholder="Salutation" /></SelectTrigger>
                       <SelectContent>{SALUTATIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
                     </Select>
-                    <Input placeholder="First Name" value={p.first_name} onChange={(e) => update("first_name", e.target.value)} />
-                    <Input placeholder="Last Name" value={p.last_name} onChange={(e) => update("last_name", e.target.value)} />
+                    <Input placeholder="First Name" value={p.first_name} onChange={(e) => updateContact(i, "first_name", e.target.value)} />
+                    <Input placeholder="Last Name" value={p.last_name} onChange={(e) => updateContact(i, "last_name", e.target.value)} />
+                    <Input type="email" placeholder="Email Address" value={p.email} onChange={(e) => updateContact(i, "email", e.target.value)} />
+                    <PhoneInput value={p.work_phone} onChange={(val) => updateContact(i, "work_phone", val)} placeholder="Work Phone" />
+                    <PhoneInput value={p.mobile} onChange={(val) => updateContact(i, "mobile", val)} placeholder="Mobile" />
+                    <div className="flex items-center justify-end @3xl:justify-center">
+                      <Button type="button" variant="ghost" size="sm" aria-label="Remove contact" onClick={() => set("contact_persons", v.contact_persons.filter((_, j) => j !== i))}>
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-1 gap-2 @xl:grid-cols-3">
-                    <Input type="email" placeholder="Email Address" value={p.email} onChange={(e) => update("email", e.target.value)} />
-                    <PhoneInput value={p.work_phone} onChange={(val) => update("work_phone", val)} placeholder="Work Phone" />
-                    <PhoneInput value={p.mobile} onChange={(val) => update("mobile", val)} placeholder="Mobile" />
-                  </div>
-                </div>
-              );
-            })}
-            <Button type="button" variant="secondary" size="sm" onClick={() => set("contact_persons", [...v.contact_persons, { ...emptyContact }])}>
-              <Plus className="mr-1 h-4 w-4" /> Add Contact Person
-            </Button>
-          </TabsContent>
-        )}
+                ))}
+              </div>
+              <Button type="button" variant="secondary" size="sm" className="mt-3" onClick={() => set("contact_persons", [...v.contact_persons, { ...emptyContact }])}>
+                <PlusCircle className="mr-1 h-4 w-4 text-primary" /> Add Contact Person
+              </Button>
+            </TabsContent>
 
-        <TabsContent value="remarks" className="space-y-1.5 pt-3">
-          <Label className="font-normal">Remarks <span className="text-muted-foreground">(For Internal Use)</span></Label>
-          <Textarea rows={4} value={v.remarks} onChange={(e) => set("remarks", e.target.value)} />
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="remarks" className="space-y-1.5 pt-5">
+              <Label className="font-normal">Remarks <span className="text-muted-foreground">(For Internal Use)</span></Label>
+              <Textarea rows={3} className="max-w-[690px]" value={v.remarks} onChange={(e) => set("remarks", e.target.value)} />
+            </TabsContent>
+          </Tabs>
 
-      {duplicateWarning && (
-        <p className="text-xs text-warning bg-warning/10 rounded px-3 py-2">{duplicateWarning}</p>
-      )}
+          {duplicateWarning && (
+            <p className="text-xs text-warning bg-warning/10 rounded px-3 py-2">{duplicateWarning}</p>
+          )}
+        </div>
       </div>
       <div className="flex shrink-0 items-center gap-2 border-t bg-popover px-6 py-3">
         <Button type="submit" loading={saving}>{submitLabel}</Button>
