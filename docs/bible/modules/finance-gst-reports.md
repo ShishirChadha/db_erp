@@ -235,7 +235,10 @@ rate > 0, 3.1(c) nil/exempt takes rate = 0), so a line charging 18% with a store
 of 0 had its tax filed as nil/exempt -- found on DBI2026/27-00726, where it made 3B
 3.1 understate tax by Rs 881.70 versus GSTR-1. The sale-edit sync
 (`api/sales/[id]`) now sets `gst_rate` and derives inter-state from the invoice's
-place of supply, not from the line's current IGST.
+place of supply, not from the line's current IGST. A customer change on an invoiced
+sale can also move the invoice to the new customer (owner only, month neither filed
+nor locked) -- re-copying name/GSTIN/address and the place of supply, which can turn
+a B2C invoice into B2B for that month (see `edit-or-correct-a-sale`).
 
 ### Step 6 — Zoho GSTR-1 summary match (since 2026-10-12)
 

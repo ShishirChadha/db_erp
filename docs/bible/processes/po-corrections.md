@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/EditPoItemDialog.tsx
   - apps/erp/components/EditPoVendorDialog.tsx
   - apps/erp/lib/po-gst-calc.ts
-updated: 2026-09-15
+updated: 2026-11-13
 ---
 
 ## What this is

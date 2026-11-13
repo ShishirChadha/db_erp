@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/sales/[id]/route.ts
   - apps/erp/app/api/sales/[id]/void/route.ts
   - apps/erp/app/api/invoices/[id]/attachments/route.ts
-updated: 2026-10-11
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -49,7 +49,8 @@ same sale row).
    if the unit was logged against the wrong SKU.
 4. Save. If the sale is already invoiced (`finalized = true`) and you're
    changing price, GST, or bundled accessories, you'll be warned and must
-   confirm ("confirm despite invoice") to proceed.
+   confirm ("confirm despite invoice") to proceed. Changing the **customer**
+   on an invoiced sale shows its own prompt instead (see below).
 5. Every field change is written to the sale's correction history (visible
    via "Show correction history"), with an optional reason.
 
@@ -69,6 +70,32 @@ where a post-invoice price edit silently desynced the invoice from Zoho's
 copy, and surfaced as a GST reconciliation mismatch weeks later.
 Bundled-accessory changes and edits to invoices with no `sale_id`-linked
 item still don't sync — those remain genuinely frozen; see below.
+
+## Changing the customer on an invoiced sale
+
+An invoice keeps its own copy of the customer (name, GSTIN, address, phone,
+email), so changing only the sale's customer leaves the invoice billed to the
+old one, and the old customer's detail pane keeps listing that invoice
+(found on `DBI2026/27-00623`, 2026-11-13, after its three sales moved from
+"Gaurav" to Moptra). Since then, saving a customer change on a sale with an
+`invoice_id` returns `error_code: 'invoiced_customer_change'` and the dialog
+asks what to do with the invoice:
+
+- **Save and move the invoice too** — offered only when every other live
+  sale on that invoice already has the new customer (an invoice has one
+  customer), the user is the owner, and the invoice's month is neither
+  GSTR-1-filed nor period-locked. It re-copies the customer block from the
+  customer record (same fields `invoice-finalize` copies at creation) and,
+  if the new customer is in another state, moves the place of supply through
+  `applyPlaceOfSupply` — CGST+SGST/IGST re-split, totals unchanged. Logged
+  as an `invoices` audit event with before/after.
+- **Save the sale only** — the invoice stays as it is. For a multi-sale
+  invoice, change the other sales first; the last one offers the move.
+
+When the move isn't allowed, the prompt says why (other sales still on the
+old customer, not the owner, month filed, or month locked — unlock a window
+first). Logic: `lib/invoice-customer.ts`. Moving a B2C invoice to a customer
+with a GSTIN makes it B2B in GSTR-1 for that month.
 
 ## What stays locked
 

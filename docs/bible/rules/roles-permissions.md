@@ -21,7 +21,7 @@ sources:
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/app/api/stock-intake/[id]/route.ts
   - supabase/migrations/20261111_rls_lockdown.sql
-updated: 2026-11-11
+updated: 2026-11-13
 ---
 
 ## The three roles

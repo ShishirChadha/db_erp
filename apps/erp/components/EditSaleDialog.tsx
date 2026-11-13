@@ -92,6 +92,11 @@ export function EditSaleDialog({
   const [sale, setSale] = useState<SaleDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
+  // Set when the server says this invoiced sale's customer change needs a
+  // decision about the invoice (see PATCH /api/sales/[id], invoice_customer).
+  const [invoicePrompt, setInvoicePrompt] = useState<{
+    invoiceNumber: string; invoiceCustomer: string; canMove: boolean; blockedReason: string;
+  } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [voidErr, setVoidErr] = useState("");
@@ -222,11 +227,15 @@ export function EditSaleDialog({
     }
   };
 
-  const { run: save, pending: saving } = useAsyncAction(async () => {
+  const { run: save, pending: saving } = useAsyncAction(async (invoiceChoice?: "move" | "keep") => {
     setErr("");
+    setInvoicePrompt(null);
     try {
       const body: Record<string, unknown> = {
         customer_id: customerId,
+        // The answer to the invoiced-customer prompt also acknowledges the
+        // invoiced-price warning, so the owner sees one question, not two.
+        ...(invoiceChoice ? { invoice_customer: invoiceChoice, confirm_despite_invoice: true } : {}),
         sold_by: soldBy,
         sale_type: saleType,
         sale_date: saleDate,
@@ -241,6 +250,15 @@ export function EditSaleDialog({
       let res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify(body) });
       if (!res.ok) {
         const e = await res.json().catch(() => ({}));
+        if (e.error_code === "invoiced_customer_change") {
+          setInvoicePrompt({
+            invoiceNumber: e.invoice_number || "",
+            invoiceCustomer: e.invoice_customer_name || "",
+            canMove: !!e.can_move_invoice,
+            blockedReason: e.move_blocked_reason || "",
+          });
+          return;
+        }
         if (e.error_code === "already_invoiced") {
           if (!confirm(`${e.error}\n\nProceed anyway?`)) return;
           res = await apiFetch(`/api/sales/${saleId}`, { method: "PATCH", body: JSON.stringify({ ...body, confirm_despite_invoice: true }) });
@@ -251,6 +269,8 @@ export function EditSaleDialog({
           return;
         }
       }
+      const saved = await res.json().catch(() => ({}));
+      if (saved.invoice_move_error) alert(`The sale was saved, but the invoice still has the old customer:\n${saved.invoice_move_error}`);
       onSaved();
       onClose();
     } catch (e: any) {
@@ -591,6 +611,28 @@ export function EditSaleDialog({
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {invoicePrompt && (
+          <div className="space-y-2 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
+            <p>
+              This sale is on invoice <span className="font-mono">{invoicePrompt.invoiceNumber}</span>, billed to{" "}
+              <strong>{invoicePrompt.invoiceCustomer || "the old customer"}</strong>. The invoice keeps its own copy of the
+              customer, so it won&apos;t change unless you move it too.
+            </p>
+            {!invoicePrompt.canMove && invoicePrompt.blockedReason && (
+              <p className="text-muted-foreground">The invoice can&apos;t be moved now: {invoicePrompt.blockedReason}</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              {invoicePrompt.canMove && (
+                <Button size="sm" onClick={() => save("move")} disabled={saving}>Save and move the invoice too</Button>
+              )}
+              <Button size="sm" variant="outline" onClick={() => save("keep")} disabled={saving}>
+                Save the sale only
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setInvoicePrompt(null)} disabled={saving}>Back</Button>
+            </div>
           </div>
         )}
 

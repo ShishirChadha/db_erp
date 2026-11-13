@@ -5,6 +5,7 @@ import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
+import { checkInvoiceCustomerMove, moveInvoiceToCustomer, type InvoiceMoveCheck } from '@/lib/invoice-customer'
 
 // ---------- GET: fetch one sale ----------
 // Reachable from both the Sales ledger page and the Live Stock asset detail page's
@@ -119,6 +120,30 @@ export async function PATCH(
   // A price edit on an already-invoiced sale silently desyncs the printed/sent
   // invoice from the live record (the invoice is a frozen snapshot, never
   // retroactively updated by this route) -- warn and require explicit confirmation.
+  // A customer change on an invoiced sale must say what happens to the invoice,
+  // which holds its own copy of the customer: body.invoice_customer = 'move'
+  // (re-bill the invoice to the new customer) or 'keep'. Asked before the price
+  // warning so the dialog shows one prompt, not two.
+  let invoiceMove: InvoiceMoveCheck | null = null
+  if (existing.invoice_id && body.customer_id !== undefined && body.customer_id !== existing.customer_id) {
+    invoiceMove = await checkInvoiceCustomerMove(existing.invoice_id, id, body.customer_id, isOwner(sessionUser))
+    if (!invoiceMove.already_matches) {
+      if (body.invoice_customer !== 'move' && body.invoice_customer !== 'keep') {
+        return NextResponse.json({
+          error: `This sale is on invoice ${invoiceMove.invoice_number || existing.invoice_number}, billed to ${invoiceMove.invoice_customer_name || 'the old customer'}. Changing the sale's customer does not change the invoice by itself.`,
+          error_code: 'invoiced_customer_change',
+          invoice_number: invoiceMove.invoice_number || existing.invoice_number,
+          invoice_customer_name: invoiceMove.invoice_customer_name,
+          can_move_invoice: invoiceMove.can_move,
+          move_blocked_reason: invoiceMove.reason,
+        }, { status: 409 })
+      }
+      if (body.invoice_customer === 'move' && !invoiceMove.can_move) {
+        return NextResponse.json({ error: invoiceMove.reason || "The invoice can't be moved." }, { status: 409 })
+      }
+    }
+  }
+
   const editingPrice = body.sale_base_price !== undefined || body.gst_percentage !== undefined || body.bundled_accessories !== undefined
   if (existing.finalized && editingPrice && !body.confirm_despite_invoice) {
     return NextResponse.json({
@@ -327,6 +352,22 @@ export async function PATCH(
     fieldCorrectionIds,
     reason: body.reason || null,
   })
+
+  // The sale is saved either way; a failed invoice move is reported back so the
+  // dialog can say the invoice still needs correcting, not silently dropped.
+  if (body.invoice_customer === 'move' && invoiceMove?.can_move && body.customer_id) {
+    const moved = await moveInvoiceToCustomer(invoiceMove.invoice_id, body.customer_id)
+    if (!moved.ok) return NextResponse.json({ ...data, invoice_move_error: moved.message })
+    await logAuditEvent({
+      actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+      actionType: 'update',
+      module: 'sales',
+      tableName: 'invoices',
+      recordId: invoiceMove.invoice_id,
+      recordLabel: invoiceMove.invoice_number,
+      metadata: { customer_reassigned: true, via_sale: id, before: moved.before, after: moved.after, place_of_supply: moved.placeOfSupply },
+    })
+  }
 
   return NextResponse.json(data)
 }
