@@ -34,6 +34,8 @@ interface SalesDocumentDefaults {
   is_gst_registered: boolean
   default_notes: string | null
   default_terms: string | null
+  entity_state_code: string | null
+  place_of_supply: string | null
 }
 
 export const ENTITY_LABELS: Record<string, string> = { digitalbluez: 'Digitalbluez', techtenth: 'Techtenth', cash: 'Cash' }
@@ -46,6 +48,19 @@ const round2 = (n: number) => Math.round(n * 100) / 100
 const toExclusive = (rate: number, gstRate: number) => round2(rate / (1 + gstRate / 100))
 const toInclusive = (rate: number, gstRate: number) => round2(rate * (1 + gstRate / 100))
 
+// One line's base / tax split / total, computed exactly like computeLineGst() in
+// lib/sales-documents.ts (same rounding) from the pre-GST rate the server will
+// store -- so what the form shows per line is what gets saved, in either mode.
+function lineBreakdown(it: SalesDocLineItem, inclusive: boolean, isGstRegistered: boolean, isIntraState: boolean) {
+  const base = it.quantity * (inclusive ? toExclusive(it.rate, it.gst_rate) : it.rate)
+  const gst = isGstRegistered ? Math.round(base * it.gst_rate * 100) / 10000 : 0
+  const cgst = isGstRegistered && isIntraState ? gst / 2 : 0
+  const igst = isGstRegistered && !isIntraState ? gst : 0
+  return { base, cgst, sgst: cgst, igst, gst, total: base + gst }
+}
+
+const money = (n: number) => `₹${n.toFixed(2)}`
+
 // Grid templates for the Zoho-style item table (Item Details / Qty / Rate / Tax /
 // Amount / remove). Only applied once the dialog itself is wide enough
 // (@2xl container query, not the viewport) -- narrower, each line stacks so the
@@ -57,7 +72,7 @@ const GRID_NO_TAX = '@2xl:grid-cols-[minmax(0,1fr)_5rem_7.5rem_7rem_2rem]'
 // Used by every way a quotation/proforma is entered (New, Edit, Clone) via
 // SalesDocumentEditorDialog below, so all three look and behave identically.
 export function DocumentFormFields({
-  docType, documentNumber, numberIsPreview, isGstRegistered, entityKey, setEntityKey, customerId, setCustomerId,
+  docType, documentNumber, numberIsPreview, isGstRegistered, isIntraState, entityKey, setEntityKey, customerId, setCustomerId,
   validUntil, setValidUntil, notes, setNotes, terms, setTerms, items, setItems, shippingAddress, setShippingAddress,
   priceMode, setPriceMode, showErrors,
 }: {
@@ -65,6 +80,7 @@ export function DocumentFormFields({
   documentNumber: string | null
   numberIsPreview: boolean
   isGstRegistered: boolean
+  isIntraState: boolean
   entityKey: string; setEntityKey: (v: string) => void
   customerId: string | null; setCustomerId: (v: string | null) => void
   validUntil: string; setValidUntil: (v: string) => void
@@ -129,9 +145,11 @@ export function DocumentFormFields({
     setPriceMode(mode)
   }
 
-  const baseRate = (it: SalesDocLineItem) => inclusive ? toExclusive(it.rate, it.gst_rate) : it.rate
-  const subtotal = items.reduce((sum, it) => sum + it.quantity * baseRate(it), 0)
-  const estGst = isGstRegistered ? items.reduce((sum, it) => sum + (it.quantity * baseRate(it) * it.gst_rate) / 100, 0) : 0
+  const lines = items.map((it) => lineBreakdown(it, inclusive, isGstRegistered, isIntraState))
+  const totals = lines.reduce(
+    (acc, l) => ({ base: acc.base + l.base, cgst: acc.cgst + l.cgst, sgst: acc.sgst + l.sgst, igst: acc.igst + l.igst, total: acc.total + l.total }),
+    { base: 0, cgst: 0, sgst: 0, igst: 0, total: 0 },
+  )
   const gridCols = isGstRegistered ? GRID_WITH_TAX : GRID_NO_TAX
   const docLabel = DOC_LABELS[docType]
 
@@ -217,13 +235,15 @@ export function DocumentFormFields({
             <span className="text-right">Quantity</span>
             <span className="text-right">Rate{isGstRegistered && (inclusive ? ' (incl.)' : ' (excl.)')}</span>
             {isGstRegistered && <span>Tax</span>}
-            <span className="text-right">Amount</span>
+            <span className="text-right">Amount{isGstRegistered && ' (incl.)'}</span>
             <span />
           </div>
 
           {items.map((it, idx) => {
             const hsnMissing = showErrors && isGstRegistered && !String(it.hsn_code || '').trim()
             const descMissing = showErrors && !it.description.trim()
+            const line = lines[idx]
+            const halfRate = it.gst_rate / 2
             return (
               <div key={idx} className={cn('grid grid-cols-2 gap-2 px-3 py-2 border-b items-start', gridCols)}>
                 <div className="col-span-2 @2xl:col-span-1 space-y-1.5">
@@ -272,12 +292,27 @@ export function DocumentFormFields({
                   </label>
                 )}
                 <div className="flex flex-col gap-0.5 text-xs text-right">
-                  <span className="text-muted-foreground @2xl:hidden">Amount</span>
-                  <span className="text-sm font-medium tabular-nums py-1.5">₹{(it.quantity * it.rate).toFixed(2)}</span>
+                  <span className="text-muted-foreground @2xl:hidden">Amount{isGstRegistered && ' (incl. GST)'}</span>
+                  <span className="text-sm font-medium tabular-nums py-1.5">{money(line.total)}</span>
                 </div>
                 <button type="button" onClick={() => removeItem(idx)} className="hidden @2xl:block text-destructive py-1.5" title="Remove line">
                   <X className="size-4" />
                 </button>
+                {/* Per-line split, shown in both Tax Exclusive and Inclusive modes. */}
+                {isGstRegistered && (
+                  <div className="col-span-2 @2xl:col-span-full flex flex-wrap justify-end gap-x-4 gap-y-0.5 text-xs text-muted-foreground tabular-nums">
+                    <span>Base <span className="text-foreground">{money(line.base)}</span></span>
+                    {isIntraState ? (
+                      <>
+                        <span>CGST {halfRate}% <span className="text-foreground">{money(line.cgst)}</span></span>
+                        <span>SGST {halfRate}% <span className="text-foreground">{money(line.sgst)}</span></span>
+                      </>
+                    ) : (
+                      <span>IGST {it.gst_rate}% <span className="text-foreground">{money(line.igst)}</span></span>
+                    )}
+                    <span>Total <span className="font-medium text-foreground">{money(line.total)}</span></span>
+                  </div>
+                )}
               </div>
             )
           })}
@@ -309,11 +344,16 @@ export function DocumentFormFields({
 
         <div className="flex justify-end">
           <div className="w-full max-w-xs space-y-1 text-sm rounded-md bg-muted/40 p-3">
-            <div className="flex justify-between"><span className="text-muted-foreground">Sub Total{isGstRegistered && ' (before GST)'}</span><span className="tabular-nums">₹{subtotal.toFixed(2)}</span></div>
-            {isGstRegistered && (
-              <div className="flex justify-between"><span className="text-muted-foreground">Est. GST</span><span className="tabular-nums">₹{estGst.toFixed(2)}</span></div>
-            )}
-            <div className="flex justify-between font-bold border-t pt-1"><span>Total (₹)</span><span className="tabular-nums">₹{(subtotal + estGst).toFixed(2)}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Sub Total{isGstRegistered && ' (before GST)'}</span><span className="tabular-nums">{money(totals.base)}</span></div>
+            {isGstRegistered && (isIntraState ? (
+              <>
+                <div className="flex justify-between"><span className="text-muted-foreground">CGST</span><span className="tabular-nums">{money(totals.cgst)}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">SGST</span><span className="tabular-nums">{money(totals.sgst)}</span></div>
+              </>
+            ) : (
+              <div className="flex justify-between"><span className="text-muted-foreground">IGST</span><span className="tabular-nums">{money(totals.igst)}</span></div>
+            ))}
+            <div className="flex justify-between font-bold border-t pt-1"><span>Total (₹)</span><span className="tabular-nums">{money(totals.total)}</span></div>
           </div>
         </div>
       </div>
@@ -372,11 +412,14 @@ export function SalesDocumentEditorDialog({ mode, docType, source, onClose, onSa
   // Entity defaults (GST status, number preview, Notes/T&C). Notes/T&C are only
   // swapped in while the field is empty or still holds the previous entity's
   // default, so switching Entity never clobbers text the user actually typed --
-  // and a clone's own copied notes are kept. Edit never touches them.
+  // and a clone's own copied notes are kept. Edit never touches them. Re-fetched
+  // on customer change too, since the customer decides CGST+SGST vs IGST.
   const prevDefaultsRef = useRef<SalesDocumentDefaults | null>(null)
   useEffect(() => {
     let cancelled = false
-    apiFetch(`/api/sales-documents/defaults?doc_type=${docType}&entity_key=${encodeURIComponent(entityKey)}`)
+    const qs = new URLSearchParams({ doc_type: docType, entity_key: entityKey })
+    if (customerId) qs.set('customer_id', customerId)
+    apiFetch(`/api/sales-documents/defaults?${qs.toString()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((d: SalesDocumentDefaults | null) => {
         if (cancelled || !d) return
@@ -389,9 +432,10 @@ export function SalesDocumentEditorDialog({ mode, docType, source, onClose, onSa
         setDefaults(d)
       })
     return () => { cancelled = true }
-  }, [docType, entityKey, mode])
+  }, [docType, entityKey, customerId, mode])
 
   const isGstRegistered = defaults?.is_gst_registered ?? false
+  const isIntraState = !!defaults?.entity_state_code && defaults.entity_state_code === defaults.place_of_supply
   const docLabel = DOC_LABELS[docType]
 
   const { run: handleSave, pending: saving } = useAsyncAction(async () => {
@@ -450,6 +494,7 @@ export function SalesDocumentEditorDialog({ mode, docType, source, onClose, onSa
           documentNumber={mode === 'edit' ? source.document_number : (defaults?.next_number ?? null)}
           numberIsPreview={mode !== 'edit'}
           isGstRegistered={isGstRegistered}
+          isIntraState={isIntraState}
           entityKey={entityKey} setEntityKey={setEntityKey}
           customerId={customerId} setCustomerId={setCustomerId}
           validUntil={validUntil} setValidUntil={setValidUntil}

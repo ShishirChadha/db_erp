@@ -41,6 +41,10 @@ export interface SalesDocumentDefaults {
   is_gst_registered: boolean
   default_notes: string | null
   default_terms: string | null
+  // Entity's own state vs. the resolved place of supply -- equal means
+  // CGST+SGST, different means IGST (same rule as computeLineGst()).
+  entity_state_code: string | null
+  place_of_supply: string | null
 }
 
 // What the New/Clone form shows before anything is saved: the entity's GST
@@ -50,10 +54,13 @@ export interface SalesDocumentDefaults {
 // burns no number. The real number is still minted atomically on save via
 // next_document_number(); if someone else saves first, this one gets the next.
 // Formatting mirrors next_document_number()'s own {prefix}/{fy}/{seq:5} substitution.
-export async function getSalesDocumentDefaults(entityKey: string, docType: SalesDocType): Promise<SalesDocumentDefaults | null> {
+// When a customer is given, also resolves the place of supply exactly as the
+// POST/PATCH routes do (GSTIN prefix -> customer state_code -> entity's own state),
+// so the form's per-line CGST/SGST-vs-IGST split matches what gets saved.
+export async function getSalesDocumentDefaults(entityKey: string, docType: SalesDocType, customerId?: string | null): Promise<SalesDocumentDefaults | null> {
   const { data: profile } = await supabaseAdmin
     .from('business_profiles')
-    .select('is_gst_registered, default_notes, default_terms, invoice_number_format, quotation_prefix, proforma_prefix')
+    .select('is_gst_registered, state_code, default_notes, default_terms, invoice_number_format, quotation_prefix, proforma_prefix')
     .eq('key', entityKey)
     .maybeSingle()
   if (!profile) return null
@@ -75,8 +82,17 @@ export async function getSalesDocumentDefaults(entityKey: string, docType: Sales
       .replace('{seq:5}', String((seq?.last_number ?? 0) + 1).padStart(5, '0'))
   }
 
+  let customer: { gst_number: string | null; state_code: string | null } | null = null
+  if (customerId) {
+    const { data } = await supabaseAdmin.from('customers').select('gst_number, state_code').eq('id', customerId).maybeSingle()
+    customer = data
+  }
+  const placeOfSupply = customer?.gst_number?.trim().slice(0, 2) || customer?.state_code || profile.state_code || null
+
   return {
     next_number: nextNumber,
+    entity_state_code: profile.state_code,
+    place_of_supply: placeOfSupply,
     is_gst_registered: !!profile.is_gst_registered,
     default_notes: profile.default_notes,
     default_terms: profile.default_terms,

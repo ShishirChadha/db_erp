@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "doc_type must be 'quotation' or 'proforma'" }, { status: 400 })
   }
 
-  const defaults = await getSalesDocumentDefaults(entityKey, docType)
+  const defaults = await getSalesDocumentDefaults(entityKey, docType, searchParams.get('customer_id'))
   if (!defaults) return NextResponse.json({ error: `No business profile configured for entity '${entityKey}'` }, { status: 400 })
   return NextResponse.json(defaults)
 }

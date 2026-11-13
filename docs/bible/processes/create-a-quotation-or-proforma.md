@@ -65,6 +65,13 @@ per-page edit model every other module uses, so this isn't owner-exclusive.
      typed GST-included and reduced to their pre-GST base on save (the
      server always stores pre-GST `rate`); switching modes converts every
      line so the customer's total stays the same.
+   - In **either** mode every line shows its own **Base**, **CGST + SGST**
+     (customer in the entity's state) or **IGST** (other state), and
+     **Total**; the Amount column is the GST-inclusive total and the totals
+     box splits CGST/SGST or IGST. The place of supply comes from
+     `GET /api/sales-documents/defaults?customer_id=…` using the same rule
+     as save (GSTIN prefix → customer state_code → entity state), and the
+     math mirrors `computeLineGst()`, so the form shows what gets stored.
    - For a **non-GST entity** (Techtenth/Cash) HSN, Tax and the switch are
      hidden — the rate is simply what the customer pays (Bill of Supply).
 5. **Notes** and **Terms & Conditions** start prefilled with the entity's
