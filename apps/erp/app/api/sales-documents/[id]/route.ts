@@ -43,7 +43,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { id } = await params
   const body = await req.json()
-  const { status, notes, terms_conditions, valid_until, customer_id, entity_key, items } = body
+  const { status, notes, terms_conditions, valid_until, customer_id, entity_key, items, shipping_address } = body
 
   const { data: existing, error: existingErr } = await supabaseAdmin
     .from('sales_documents')
@@ -86,7 +86,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!resolvedCustomerId) return NextResponse.json({ error: 'customer_id is required' }, { status: 400 })
     const { data: customer } = await supabaseAdmin
       .from('customers')
-      .select('customer_name, gst_number, address, phone, email, state_code')
+      .select('customer_name, gst_number, address, shipping_address, phone, email, state_code')
       .eq('id', resolvedCustomerId)
       .single()
     if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
@@ -98,6 +98,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.customer_name = customerRow.customer_name
     updates.customer_gst = customerRow.gst_number || null
     updates.customer_address = customerRow.address || null
+    updates.shipping_address = customerRow.shipping_address || null
     updates.customer_phone = customerRow.phone || null
     updates.customer_email = customerRow.email || null
     updates.place_of_supply = placeOfSupplyStateCode
@@ -148,6 +149,15 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       const { error: insertErr } = await supabaseAdmin.from('sales_document_items').insert(itemRows)
       if (insertErr) return NextResponse.json({ error: insertErr.message }, { status: 500 })
     }
+  }
+
+  // An explicit Ship To from the form wins over the customer's saved one copied
+  // above. Same editable window as the rest of the content.
+  if (shipping_address !== undefined) {
+    if (existing.status === 'void' || !['draft', 'sent'].includes(existing.status)) {
+      return NextResponse.json({ error: `Ship To can only be edited while a document is 'draft' or 'sent' (current status: ${existing.status}).` }, { status: 409 })
+    }
+    updates.shipping_address = String(shipping_address || '').trim() || null
   }
 
   const { data, error } = await supabaseAdmin

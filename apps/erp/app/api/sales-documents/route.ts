@@ -69,7 +69,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { doc_type, entity_key, customer_id, valid_until, notes, terms_conditions, items } = body
+  const { doc_type, entity_key, customer_id, valid_until, notes, terms_conditions, items, shipping_address } = body
 
   if (!['quotation', 'proforma'].includes(doc_type)) {
     return NextResponse.json({ error: "doc_type must be 'quotation' or 'proforma'" }, { status: 400 })
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
 
   const { data: customer } = await supabaseAdmin
     .from('customers')
-    .select('customer_name, gst_number, address, phone, email, state_code')
+    .select('customer_name, gst_number, address, shipping_address, phone, email, state_code')
     .eq('id', customer_id)
     .single()
   if (!customer) return NextResponse.json({ error: 'Customer not found' }, { status: 404 })
@@ -141,6 +141,9 @@ export async function POST(req: NextRequest) {
       customer_name: customer.customer_name,
       customer_gst: customer.gst_number || null,
       customer_address: customer.address || null,
+      // Ship To is a snapshot like Bill To: the form's (possibly edited) value when
+      // sent, else the customer's saved shipping address; null = ship to billing.
+      shipping_address: shipping_address !== undefined ? (String(shipping_address || '').trim() || null) : (customer.shipping_address || null),
       customer_phone: customer.phone || null,
       customer_email: customer.email || null,
       place_of_supply: placeOfSupplyStateCode,

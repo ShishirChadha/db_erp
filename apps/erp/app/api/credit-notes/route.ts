@@ -151,6 +151,7 @@ export async function POST(req: NextRequest) {
       customer_name: original.customer_name,
       customer_gst: original.customer_gst,
       customer_address: original.customer_address,
+      shipping_address: original.shipping_address,
       customer_phone: original.customer_phone,
       customer_email: original.customer_email,
       place_of_supply: original.place_of_supply,

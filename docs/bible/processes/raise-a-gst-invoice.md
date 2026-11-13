@@ -9,7 +9,7 @@ keywords: [invoice, gst invoice, raise invoice, generate invoice, billing, tax i
 sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-10-04
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -29,7 +29,11 @@ to it. Can combine multiple sale line items into a single invoice document.
    state UP-09 for Digitalbluez; see **finance-gst-reports**).
 4. Generate. The invoice number is minted via the atomic numbering RPC (DBI
    series, continuing from wherever the FY series left off) — never a manual
-   guess. This also flips the linked sale(s) `finalized`.
+   guess. This also flips the linked sale(s) `finalized`. The customer's
+   billing address (`customers.address`) and shipping address
+   (`customers.shipping_address`) are snapshotted onto the invoice as
+   `customer_address` / `shipping_address`; the PDF prints Ship To, falling
+   back to the billing address when the customer has none.
 
 ## Related
 

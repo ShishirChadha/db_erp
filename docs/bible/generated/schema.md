@@ -218,7 +218,7 @@ Live schema snapshot -- 141 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~153 rows (estimate)
+~179 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -308,7 +308,7 @@ Live schema snapshot -- 141 tables. Regenerate with `npm run bible:generate`.
 
 ## activity_watchers
 
-~0 rows (estimate)
+~48 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -437,7 +437,7 @@ Live schema snapshot -- 141 tables. Regenerate with `npm run bible:generate`.
 
 One derived row per staff per IST calendar day. status_source gates whether recompute_attendance_day() may rewrite status, so a manual override, approved leave, holiday or week-off is never silently undone by a later punch or the nightly scan.
 
-~56 rows (estimate)
+~115 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -469,7 +469,7 @@ One derived row per staff per IST calendar day. status_source gates whether reco
 
 Owner-managed office-IP allowlist for self-service punching. Enforcement is gated by the custom_options attendance_settings toggle and fails OPEN when no active row exists, so an empty list can never lock the team out. A deterrent against casual off-site punching, not a tamper-proof boundary -- see docs/bible/processes/configure-office-punch-networks.md.
 
-~13 rows (estimate)
+~15 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -488,7 +488,7 @@ Owner-managed office-IP allowlist for self-service punching. Enforcement is gate
 
 Append-only punch-event log. A correction is a new row plus a void on the old one; rows are never edited or deleted. attendance_days is derived from this by recompute_attendance_day() -- the sale_payments/sync_sale_payment_totals pattern.
 
-~56 rows (estimate)
+~113 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -512,7 +512,7 @@ Append-only punch-event log. A correction is a new row plus a void on the old on
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~5,139 rows (estimate)
+~8,835 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -870,6 +870,24 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | alt_email | text | yes |  |  |  |
 | contact_person | text | yes |  |  |  |
 | gst_treatment | text | yes |  |  | GSTR-1 section routing. Registered -> B2B (Table 4); unregistered/consumer -> B2CL or B2CS by value and inter/intra state; overseas -> exports. Explicit rather than derived from gst_number, because a null GSTIN cannot distinguish an unregistered business from a consumer. |
+| salutation | text | yes |  |  |  |
+| first_name | text | yes |  |  |  |
+| last_name | text | yes |  |  |  |
+| company_name | text | yes |  |  |  |
+| work_phone | text | yes |  |  |  |
+| pan | text | yes |  |  |  |
+| remarks | text | yes |  |  |  |
+| billing_attention | text | yes |  |  |  |
+| shipping_attention | text | yes |  |  |  |
+| shipping_address_line1 | text | yes |  |  |  |
+| shipping_address_line2 | text | yes |  |  |  |
+| shipping_city | text | yes |  |  |  |
+| shipping_state | text | yes |  |  |  |
+| shipping_pincode | text | yes |  |  |  |
+| shipping_phone | text | yes |  |  |  |
+| shipping_address | text | yes |  |  | Composed flat shipping address (from shipping_* parts), snapshotted onto invoices/sales_documents.shipping_address at document creation. Null = ship to billing address. |
+| contact_persons | jsonb | no | `'[]'::jsonb` |  | Additional contact persons: [{salutation, first_name, last_name, email, work_phone, mobile}]. contact_person (text) mirrors the first one's name for legacy readers. |
+| communication_channels | text[] | no | `'{email}'::text[]` |  |  |
 
 ## digest_channel_config
 
@@ -960,7 +978,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## expenses
 
-~193 rows (estimate)
+~230 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1031,7 +1049,7 @@ Plain reference calendar of major/minor Indian festivals for the Marketing Studi
 
 ## field_corrections
 
-~1,799 rows (estimate)
+~2,250 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1104,7 +1122,7 @@ One row per entity x return type x period. "filed" is a LOCAL state transition o
 
 ## gst_news_sources
 
-~0 rows (estimate)
+~3 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1122,7 +1140,7 @@ One row per entity x return type x period. "filed" is a LOCAL state transition o
 
 One uploaded reconciliation source: a Zoho invoice register (outward, checks nothing is missing from GSTR-1) or a GSTR-2B download (inward, checks ITC against what suppliers actually filed).
 
-~9 rows (estimate)
+~13 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1147,7 +1165,7 @@ One uploaded reconciliation source: a Zoho invoice register (outward, checks not
 
 ## gst_recon_lines
 
-~358 rows (estimate)
+~542 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1234,7 +1252,7 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 
 ## invoice_items
 
-~153 rows (estimate)
+~203 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1278,7 +1296,7 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 
 ## invoices
 
-~90 rows (estimate)
+~112 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1323,12 +1341,13 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 | eway_bill_date | date | yes |  |  |  |
 | credit_note_of_invoice_id | uuid | yes |  | FK -> invoices.id | The invoice this credit note reverses. GSTR-1 does not carry it (the reference was removed from cdnr in 2018) but it prevents double-crediting and makes the audit trail legible. |
 | credit_note_reason | text | yes |  |  |  |
+| non_gst_charges | numeric(12,2) | no | `0` |  |  |
 
 ## kb_chapter_sections
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~587 rows (estimate)
+~590 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1378,7 +1397,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 
 ## lead_sets
 
-~0 rows (estimate)
+~4 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1393,10 +1412,11 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 | created_at | timestamp with time zone | no | `now()` |  |  |
 | updated_at | timestamp with time zone | no | `now()` |  |  |
 | is_deleted | boolean | no | `false` |  |  |
+| working_copy_of_set_id | uuid | yes |  | FK -> lead_sets.id |  |
 
 ## leads
 
-~1,406 rows (estimate)
+~1,592 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1415,6 +1435,9 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 | created_at | timestamp with time zone | no | `now()` |  |  |
 | updated_at | timestamp with time zone | no | `now()` |  |  |
 | is_deleted | boolean | no | `false` |  |  |
+| source_lead_id | uuid | yes |  | FK -> leads.id |  |
+| source_snapshot | jsonb | yes |  |  |  |
+| merge_status | text | no | `'merged'::text` |  |  |
 
 ## leave_requests
 
@@ -1524,7 +1547,7 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 
 ## notifications
 
-~1,288 rows (estimate)
+~1,418 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1544,7 +1567,7 @@ Singleton config for the marketing content generator (brand voice, default CTA/c
 
 Findings from ops_health_reports. Owner approves/rejects on System Health; the "Apply approved health fixes" routine turns approved code findings into GitHub PRs.
 
-~20 rows (estimate)
+~50 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2058,7 +2081,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## repair_job_parts
 
-~0 rows (estimate)
+~52 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2071,7 +2094,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## repair_jobs
 
-~111 rows (estimate)
+~123 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2159,7 +2182,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sale_payments
 
-~508 rows (estimate)
+~596 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2189,7 +2212,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales
 
-~561 rows (estimate)
+~666 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2241,7 +2264,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales_document_items
 
-~184 rows (estimate)
+~214 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2266,7 +2289,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales_documents
 
-~0 rows (estimate)
+~63 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2293,6 +2316,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 | created_by | uuid | yes |  | FK -> users.id |  |
 | created_at | timestamp with time zone | no | `now()` |  |  |
 | updated_at | timestamp with time zone | no | `now()` |  |  |
+| shipping_address | text | yes |  |  |  |
 
 ## seo_404_log
 
@@ -2529,7 +2553,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~33,841 rows (estimate)
+~34,091 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2666,7 +2690,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## sku_master
 
-~408 rows (estimate)
+~425 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2837,7 +2861,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~149 rows (estimate)
+~165 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2954,7 +2978,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summarised by ops_web_vitals_summary() for the daily health report. 30-day retention.
 
-~993 rows (estimate)
+~3,678 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2970,7 +2994,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~3,411 rows (estimate)
+~4,281 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

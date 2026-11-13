@@ -42,11 +42,12 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
   const [validUntil, setValidUntil] = useState('')
   const [notes, setNotes] = useState('')
   const [terms, setTerms] = useState('')
+  const [shippingAddress, setShippingAddress] = useState('')
   const [items, setItems] = useState<SalesDocLineItem[]>([])
   const [error, setError] = useState('')
 
   const reset = () => {
-    setEntityKey('digitalbluez'); setCustomerId(null); setValidUntil(''); setNotes(''); setTerms(''); setItems([])
+    setEntityKey('digitalbluez'); setCustomerId(null); setValidUntil(''); setNotes(''); setTerms(''); setShippingAddress(''); setItems([])
     setError('')
   }
 
@@ -66,6 +67,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
         notes: notes || undefined,
         terms_conditions: terms || undefined,
         items,
+        shipping_address: shippingAddress,
       }),
     })
     const data = await res.json().catch(() => ({}))
@@ -89,6 +91,7 @@ function CreateDocumentDialog({ docType, onCreated }: { docType: SalesDocType; o
           notes={notes} setNotes={setNotes}
           terms={terms} setTerms={setTerms}
           items={items} setItems={setItems}
+          shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
         />
 
         {error && <p className="text-destructive text-sm mt-2">{error}</p>}

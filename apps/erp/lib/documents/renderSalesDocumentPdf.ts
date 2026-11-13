@@ -143,30 +143,40 @@ export async function renderSalesDocumentPdf(documentId: string): Promise<Render
     pdf.text(`: ${doc.valid_until}`, margin + contentW * 0.55 + 34, metaY + 11)
   }
 
-  // ---------- To box ----------
-  // Box height is measured from actual wrapped line counts (not a fixed
-  // guess) so a long customer address never overflows the border and runs
-  // into the item table below it.
+  // ---------- Bill To | Ship To boxes ----------
+  // Side by side, matching the invoice PDF. Box height is measured from actual
+  // wrapped line counts (not a fixed guess) so a long address never overflows
+  // the border and runs into the item table below it. Ship To falls back to
+  // the billing address when the document has none of its own.
   const boxY = metaY + metaH + 4
-  const toLines: string[] = []
-  if (doc.customer_address) toLines.push(...pdf.splitTextToSize(doc.customer_address, contentW - 6))
-  if (doc.customer_phone) toLines.push(`Mobile: ${doc.customer_phone}`)
-  if (isGst && doc.customer_gst) toLines.push(`GSTIN: ${doc.customer_gst}`)
-  const boxH = Math.max(26, 10 + toLines.length * 4 + 3)
+  const halfW = contentW / 2
+  const billLines: string[] = []
+  if (doc.customer_address) billLines.push(...pdf.splitTextToSize(doc.customer_address, halfW - 6))
+  if (doc.customer_phone) billLines.push(`Mobile: ${doc.customer_phone}`)
+  if (isGst && doc.customer_gst) billLines.push(`GSTIN: ${doc.customer_gst}`)
+  const shipAddress = doc.shipping_address || doc.customer_address
+  const shipLines: string[] = shipAddress ? pdf.splitTextToSize(shipAddress, halfW - 6) : []
+  const boxH = Math.max(26, 10 + Math.max(billLines.length, shipLines.length) * 4 + 3)
 
   pdf.setFillColor(245, 245, 245)
   pdf.rect(margin, boxY, contentW, 6, 'F')
   pdf.setDrawColor(...BORDER_GRAY)
   pdf.rect(margin, boxY, contentW, boxH)
+  pdf.line(margin + halfW, boxY, margin + halfW, boxY + boxH)
   pdf.setFontSize(8.5)
   pdf.setFont('helvetica', 'bold')
-  pdf.text('To', margin + 3, boxY + 4.2)
+  pdf.text('Bill To', margin + 3, boxY + 4.2)
+  pdf.text('Ship To', margin + halfW + 3, boxY + 4.2)
 
-  let toY = boxY + 10
-  pdf.setFont('helvetica', 'bold')
-  pdf.text(doc.customer_name || 'Customer', margin + 3, toY)
-  pdf.setFont('helvetica', 'normal')
-  toLines.forEach((line) => { toY += 4; pdf.text(line, margin + 3, toY) })
+  const drawParty = (x: number, lines: string[]) => {
+    let y = boxY + 10
+    pdf.setFont('helvetica', 'bold')
+    pdf.text(doc.customer_name || 'Customer', x, y)
+    pdf.setFont('helvetica', 'normal')
+    lines.forEach((line) => { y += 4; pdf.text(line, x, y) })
+  }
+  drawParty(margin + 3, billLines)
+  drawParty(margin + halfW + 3, shipLines)
 
   // ---------- Line items ----------
   const rows = items || []

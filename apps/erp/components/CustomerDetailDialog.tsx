@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
+import { GST_TREATMENTS } from "@/components/CustomerForm";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import AddCustomerDialog from "@/components/AddCustomerDialog";
 import { apiFetch } from "@/lib/api-client";
@@ -36,6 +37,15 @@ interface Customer {
   state?: string;
   state_code?: string;
   created_at?: string;
+  company_name?: string | null;
+  work_phone?: string | null;
+  pan?: string | null;
+  gst_treatment?: string | null;
+  billing_attention?: string | null;
+  shipping_attention?: string | null;
+  shipping_address?: string | null;
+  contact_persons?: { salutation?: string; first_name?: string; last_name?: string; email?: string; work_phone?: string; mobile?: string }[] | null;
+  remarks?: string | null;
 }
 
 const Field = ({ label, value }: { label: string; value: React.ReactNode }) => (
@@ -144,7 +154,11 @@ export function CustomerDetailDialog({
               {customer.type === "Business" && (
                 <Field label="Contact Person" value={customer.contact_person} />
               )}
-              <Field label="Phone" value={customer.phone} />
+              {customer.type === "Business" && customer.company_name && (
+                <Field label="Company Name" value={customer.company_name} />
+              )}
+              <Field label="Mobile" value={customer.phone} />
+              {customer.work_phone && <Field label="Work Phone" value={customer.work_phone} />}
               <Field label="Email" value={customer.email} />
               <Field label="Email 2" value={customer.alt_email} />
               {customer.type === "Business" && (
@@ -153,6 +167,8 @@ export function CustomerDetailDialog({
                   {customer.has_gst && <Field label="GST Number" value={customer.gst_number} />}
                 </>
               )}
+              <Field label="GST Treatment" value={GST_TREATMENTS.find((t) => t.value === customer.gst_treatment)?.label} />
+              {customer.pan && <Field label="PAN" value={customer.pan} />}
               <Field label="City" value={customer.city} />
               <Field label="Pincode" value={customer.pincode} />
               <Field label="State" value={customer.state ? `${customer.state} (${customer.state_code || "—"})` : null} />
@@ -166,12 +182,34 @@ export function CustomerDetailDialog({
                 <Field label="Credit Available" value={`₹${creditBalance.toFixed(2)}`} />
               )}
             </div>
-            <Field
-              label="Address"
-              value={
-                [customer.address_line1, customer.address_line2].filter(Boolean).join(", ") || customer.address
-              }
-            />
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="Billing Address"
+                value={[customer.billing_attention, customer.address].filter(Boolean).join(" — ")}
+              />
+              <Field
+                label="Shipping Address"
+                value={customer.shipping_address
+                  ? [customer.shipping_attention, customer.shipping_address].filter(Boolean).join(" — ")
+                  : "Same as billing"}
+              />
+            </div>
+            {!!customer.contact_persons?.length && (
+              <div>
+                <div className="text-xs text-muted-foreground">Contact Persons</div>
+                <ul className="text-sm space-y-0.5">
+                  {customer.contact_persons.map((p, i) => (
+                    <li key={i}>
+                      {[p.salutation, p.first_name, p.last_name].filter(Boolean).join(" ") || "—"}
+                      {[p.mobile, p.work_phone, p.email].filter(Boolean).length > 0 && (
+                        <span className="text-muted-foreground"> · {[p.mobile, p.work_phone, p.email].filter(Boolean).join(" · ")}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {customer.remarks && <Field label="Remarks" value={<span className="whitespace-pre-wrap">{customer.remarks}</span>} />}
 
             {showChange && (
               <div className="border rounded p-3 space-y-2">

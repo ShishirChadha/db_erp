@@ -93,6 +93,7 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
         customer_id: doc.customer_id,
         notes: doc.notes || undefined,
         terms_conditions: doc.terms_conditions || undefined,
+        shipping_address: doc.shipping_address || '',
         items: doc.items.map((i: any) => ({
           item_type: i.item_type,
           sku_id: i.sku_id || undefined,
@@ -210,16 +211,23 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
         </div>
 
         <div className="p-5 md:p-6 space-y-6">
-          {/* Customer */}
-          <div className="border rounded-lg p-4 max-w-md">
-            <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-2">
-              <User className="h-4 w-4" /> Customer
+          {/* Customer: Bill To + Ship To */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-3xl">
+            <div className="border rounded-lg p-4">
+              <div className="flex items-center gap-2 text-sm font-semibold text-muted-foreground mb-2">
+                <User className="h-4 w-4" /> Bill To
+              </div>
+              <p className="text-base font-medium">{doc.customer_name}</p>
+              {doc.customer_address && <p className="text-sm text-muted-foreground mt-0.5">{doc.customer_address}</p>}
+              {doc.customer_gst && <p className="text-sm text-muted-foreground mt-0.5">GSTIN: {doc.customer_gst}</p>}
+              {doc.customer_phone && <p className="text-sm text-muted-foreground mt-0.5">Phone: {doc.customer_phone}</p>}
+              {doc.customer_email && <p className="text-sm text-muted-foreground mt-0.5">Email: {doc.customer_email}</p>}
             </div>
-            <p className="text-base font-medium">{doc.customer_name}</p>
-            {doc.customer_address && <p className="text-sm text-muted-foreground mt-0.5">{doc.customer_address}</p>}
-            {doc.customer_gst && <p className="text-sm text-muted-foreground mt-0.5">GSTIN: {doc.customer_gst}</p>}
-            {doc.customer_phone && <p className="text-sm text-muted-foreground mt-0.5">Phone: {doc.customer_phone}</p>}
-            {doc.customer_email && <p className="text-sm text-muted-foreground mt-0.5">Email: {doc.customer_email}</p>}
+            <div className="border rounded-lg p-4">
+              <div className="text-sm font-semibold text-muted-foreground mb-2">Ship To</div>
+              <p className="text-base font-medium">{doc.customer_name}</p>
+              <p className="text-sm text-muted-foreground mt-0.5">{doc.shipping_address || doc.customer_address || 'Same as billing address'}</p>
+            </div>
           </div>
 
           {/* Line items */}

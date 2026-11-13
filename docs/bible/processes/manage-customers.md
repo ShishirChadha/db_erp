@@ -5,14 +5,16 @@ kind: process
 audience: [owner, manager, employee]
 module: customers-vendors
 routes: [/dashboard/customers]
-keywords: [customer, add customer, edit customer, delete customer, restore customer, bulk add, csv import, gstin, gst fetch, duplicate customer, phone number, customer type, business, individual, naya customer, customer tier, vip, wholesale]
+keywords: [customer, add customer, billing address, shipping address, ship to, contact persons, pan, gst treatment, place of supply, mobile mandatory, edit customer, delete customer, restore customer, bulk add, csv import, gstin, gst fetch, duplicate customer, phone number, customer type, business, individual, naya customer, customer tier, vip, wholesale]
 sources:
   - apps/erp/app/dashboard/customers/page.tsx
   - apps/erp/components/AddCustomerDialog.tsx
   - apps/erp/components/EditCustomerDialog.tsx
+  - apps/erp/components/CustomerForm.tsx
+  - apps/erp/components/CustomerDetailDialog.tsx
   - apps/erp/components/BulkAddDialog.tsx
   - apps/erp/app/api/customers/[id]/tier/route.ts
-updated: 2026-09-16
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -31,37 +33,88 @@ can add, edit, delete, and restore. There is no owner-approval step.
 
 ## Steps — add a customer
 
-1. Open **Customers** (`/dashboard/customers`) and click **Add Customer**.
-2. Enter **Customer Name** (required) and pick **Type** — Business or
-   Individual. Switching to Individual clears Contact Person and the GST
-   fields if they were set, since they don't apply.
-3. For a Business customer, optionally check **Has GST** and enter the
-   **GST Number**, then click **Fetch** — this calls `/api/gst` and
-   auto-fills the legal company name, Address Line 1, and the state/state
-   code (the state code is what the GST engine needs later to decide
-   IGST vs CGST/SGST on an invoice). The lookup only returns one flat
-   address string, so it lands in Address Line 1 as a starting point —
-   still fully editable.
-4. Fill in Address Line 1/2, City, Pincode, Phone, Email, and the optional
-   Email 2, Source, Google Review checkbox, and Social Following.
-5. Click **Add Customer**. Before inserting, the form checks for a duplicate:
-   - If a non-deleted customer already has this exact **phone number**, the
+The form follows Zoho Books' "New Customer" layout. It is one component
+(`CustomerForm`) behind both **Add Customer** and **Edit**, and the same
+dialog opens from the Customers page and from every sell-side flow (Sell,
+Service, Quotation/Proforma, Customer Detail → Change Customer). Its layout
+follows the dialog's own width (container queries), so on a phone the label
+column stacks above each field and the tab strip becomes a dropdown — nothing
+scrolls sideways.
+
+1. Open **Customers** (`/dashboard/customers`), or any sell screen, and click
+   **Add Customer**.
+2. Top block: **Customer Type** (Business / Individual), **Primary Contact**
+   (salutation + first + last name), **Company Name** (Business only),
+   **Display Name\*** (stored as `customer_name`; the dropdown suggests
+   combinations of the name/company, free text allowed), **Email**,
+   **Phone** — Work Phone and **Mobile\*** (stored as `phone`; saved as the
+   bare 10 digits, so "+91 98765 43210" and "09876543210" both become
+   `9876543210`), and **Communication Channels** (Email/SMS/WhatsApp).
+   Switching to Individual clears Company, GSTIN and Contact Persons.
+3. **Other Details** tab: **GST Treatment\*** (Registered – Regular,
+   Registered – Composition, Unregistered Business, Consumer, Overseas;
+   written to `gst_treatment`, which GSTR-1 routing reads), **GSTIN** (shown
+   and required only for the two Registered treatments; **Prefill** calls
+   `/api/gst` and fills company name, billing Street 1 and state), **Place of
+   Supply\*** (= `state_code`/`state`; set automatically from the GSTIN's
+   first two digits, or from the billing PIN when there's no GSTIN, and still
+   overridable), **PAN** (auto-filled from GSTIN characters 3–12), plus our
+   own Email 2, Source, Social Following and Google Review.
+4. **Address** tab: **Billing Address** — Attention, **Street 1\***, Street
+   2, **City\***, **Pin Code\*** (not required for Overseas), State — and
+   **Shipping Address** with the same fields plus a delivery phone and a
+   **Copy billing address** link. Billing is the long-standing
+   `address_line1/2`, `city`, `state`, `pincode` columns (and the composed
+   flat `address`); shipping is `shipping_*` plus the composed
+   `shipping_address`. Leave shipping blank to ship to the billing address.
+5. **Contact Persons** tab (Business only): any number of extra contacts
+   (salutation, name, email, work phone, mobile), stored in
+   `contact_persons` (jsonb). The first one's name is also written to the
+   legacy `contact_person` text column that Sales/Stock listings read.
+6. **Remarks** tab: internal-only notes.
+7. Click **Save**. If a required field sits on a tab you're not looking at,
+   the form switches to that tab and marks the field. Then the duplicate
+   check runs:
+   - If a non-deleted customer already has this exact **mobile number**, the
      save is **blocked** with an inline error naming the existing customer —
      you're expected to use that customer record instead of creating a new
      one.
    - If a customer with the same **name** already exists but a different
-     phone number, you get a non-blocking warning and can still save — this
+     mobile number, you get a non-blocking warning and can still save — this
      creates a second, separate customer.
-   - A race where two staff save the same new phone number at the same
-     moment is caught server-side too (the `customers_active_phone_unique`
-     index), surfacing the same blocking message.
+   - A race where two staff save the same new number at the same moment is
+     caught server-side too (the `customers_active_phone_unique` index),
+     surfacing the same blocking message.
+
+Required fields are enforced by the form only — the table columns stay
+nullable because the storefront signup and lead → customer conversion also
+insert customers. An older customer missing a now-required field (no mobile,
+no billing address) has to have it filled in the next time someone edits
+them.
+
+## How the addresses reach documents
+
+Every document keeps its own **snapshot** of Bill To and Ship To, copied from
+the customer when the document is created (or its customer is changed). A
+later edit to the customer never rewrites a document already issued.
+
+- **Invoices** generated from sales (Sales Ledger, finalize-batch, repair
+  jobs, rentals — all via `lib/invoice-finalize.ts`) copy `address` →
+  `customer_address` and `shipping_address` → `shipping_address`. The manual
+  invoice form prefills **Ship To** from the customer, still editable.
+  Credit notes copy both from the original invoice.
+- **Quotations and Proforma Invoices** show Bill To read-only and an
+  editable **Ship To** prefilled from the customer, saved to
+  `sales_documents.shipping_address`. Their PDF prints Bill To and Ship To
+  side by side.
+- Both PDFs fall back to the billing address when Ship To is blank.
 
 ## Steps — edit or delete a customer
 
 6. Click **Edit** on any row to open the same form pre-filled. A customer
    created before the structured address fields existed (only the old flat
-   `address` column has data) has that value shown in Address Line 1 rather
-   than a blank form, so it isn't silently dropped on next save.
+   `address` column has data) has that value shown in billing Street 1
+   rather than a blank form, so it isn't silently dropped on next save.
 7. Click **Delete** to soft-delete — you're prompted for a reason
    (`DeleteRecordDialog`), which is stored in **Deleted Remarks** and shown
    in the list when **Show deleted records** is checked. The row isn't
@@ -78,9 +131,11 @@ can add, edit, delete, and restore. There is no owner-approval step.
     shared component also used on the Expenses page) parses it client-side
     with PapaParse and maps each row to: `customer_name`, `type`,
     `contact_person`, `has_gst` (accepts `true`/`TRUE`/boolean), `gst_number`,
-    `address`, `phone`, `email`, `source`, `google_review`
-    (`true`/`TRUE`/boolean), `social_following`. Every imported row is
-    inserted as `is_deleted: false`.
+    `address` (billing), `shipping_address`, `pan`, `work_phone`, `phone`,
+    `email`, `source`, `google_review` (`true`/`TRUE`/boolean),
+    `social_following`. `gst_treatment` is set to Registered – Regular when
+    the row has a GSTIN, else Consumer. Every imported row is inserted as
+    `is_deleted: false`.
 11. Click **Upload**. This is a single client-side `insert()` of every parsed
     row — **there is no duplicate-phone check on this path** (unlike the
     single Add Customer form), so a CSV containing a phone number that

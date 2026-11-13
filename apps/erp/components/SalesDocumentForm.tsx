@@ -32,7 +32,7 @@ export const ENTITY_LABELS: Record<string, string> = { digitalbluez: 'Digitalblu
 // with, not a stripped-down variant.
 export function DocumentFormFields({
   docType, entityKey, setEntityKey, customerId, setCustomerId, validUntil, setValidUntil,
-  notes, setNotes, terms, setTerms, items, setItems,
+  notes, setNotes, terms, setTerms, items, setItems, shippingAddress, setShippingAddress,
 }: {
   docType: SalesDocType
   entityKey: string; setEntityKey: (v: string) => void
@@ -41,7 +41,17 @@ export function DocumentFormFields({
   notes: string; setNotes: (v: string) => void
   terms: string; setTerms: (v: string) => void
   items: SalesDocLineItem[]; setItems: React.Dispatch<React.SetStateAction<SalesDocLineItem[]>>
+  shippingAddress: string; setShippingAddress: (v: string) => void
 }) {
+  // Billing is shown read-only (it's the customer record's address, snapshotted
+  // server-side); Ship To defaults to the customer's saved shipping address and
+  // stays editable per document. Only set on an actual pick, so editing an
+  // existing document keeps its own saved Ship To until the customer changes.
+  const [billingAddress, setBillingAddress] = useState<string | null>(null)
+  const pickCustomer = (c: any) => {
+    setBillingAddress(c?.address || null)
+    setShippingAddress(c?.shipping_address || '')
+  }
   const [skuSearch, setSkuSearch] = useState('')
   const [skuResults, setSkuResults] = useState<any[]>([])
   // Scoped per entity -- Digitalbluez/Techtenth/Cash are run as separate
@@ -101,11 +111,32 @@ export function DocumentFormFields({
         <label className="block text-sm font-medium mb-1">Customer</label>
         <div className="flex gap-2 items-start">
           <div className="flex-1">
-            <SearchableCustomerSelect value={customerId} onChange={setCustomerId} onCustomerData={() => {}} />
+            <SearchableCustomerSelect value={customerId} onChange={setCustomerId} onCustomerData={pickCustomer} />
           </div>
-          <AddCustomerDialog onAdd={(created) => created && setCustomerId(created.id)} />
+          <AddCustomerDialog onAdd={(created) => { if (created) { setCustomerId(created.id); pickCustomer(created) } }} />
         </div>
       </div>
+
+      {customerId && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Bill To</label>
+            <p className="text-sm text-muted-foreground whitespace-pre-wrap border rounded p-2 min-h-[4.5rem] bg-muted/40">
+              {billingAddress || 'From the customer record'}
+            </p>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Ship To</label>
+            <textarea
+              value={shippingAddress}
+              onChange={(e) => setShippingAddress(e.target.value)}
+              placeholder="Leave blank to ship to the billing address"
+              rows={3}
+              className="border p-2 w-full rounded text-sm"
+            />
+          </div>
+        </div>
+      )}
 
       <div className="border rounded p-3 space-y-2">
         <div className="flex justify-between items-center">
@@ -210,6 +241,7 @@ export function EditSalesDocumentDialog({ doc, onClose, onSaved }: { doc: any; o
   const [validUntil, setValidUntil] = useState(doc.valid_until || '')
   const [notes, setNotes] = useState(doc.notes || '')
   const [terms, setTerms] = useState(doc.terms_conditions || '')
+  const [shippingAddress, setShippingAddress] = useState(doc.shipping_address || '')
   const [items, setItems] = useState<SalesDocLineItem[]>(doc.items.map((i: any) => ({
     item_type: i.item_type,
     sku_id: i.sku_id || undefined,
@@ -237,6 +269,7 @@ export function EditSalesDocumentDialog({ doc, onClose, onSaved }: { doc: any; o
         notes: notes || null,
         terms_conditions: terms || null,
         items,
+        shipping_address: shippingAddress,
       }),
     })
     const data = await res.json().catch(() => ({}))
@@ -257,6 +290,7 @@ export function EditSalesDocumentDialog({ doc, onClose, onSaved }: { doc: any; o
           notes={notes} setNotes={setNotes}
           terms={terms} setTerms={setTerms}
           items={items} setItems={setItems}
+          shippingAddress={shippingAddress} setShippingAddress={setShippingAddress}
         />
 
         {error && <p className="text-destructive text-sm mt-2">{error}</p>}

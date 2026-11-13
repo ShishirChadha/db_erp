@@ -41,6 +41,10 @@ interface Customer {
   has_gst: boolean;
   gst_number: string;
   address: string;
+  shipping_address?: string | null;
+  company_name?: string | null;
+  work_phone?: string | null;
+  pan?: string | null;
   phone: string;
   email: string;
   source: string;
@@ -150,10 +154,14 @@ function CustomerDetailPane({ customer, onEdit, onDelete, onRestore, restoring, 
         {customer.type === "Business" && (
           <Field label="Contact Person">{customer.contact_person || "—"}</Field>
         )}
-        <Field label="Phone">{customer.phone || "—"}</Field>
+        {customer.company_name && <Field label="Company">{customer.company_name}</Field>}
+        <Field label="Mobile">{customer.phone || "—"}</Field>
+        {customer.work_phone && <Field label="Work Phone">{customer.work_phone}</Field>}
         <Field label="Email">{customer.email || "—"}</Field>
-        <Field label="Address">{customer.address || "—"}</Field>
+        <Field label="Billing Address">{customer.address || "—"}</Field>
+        <Field label="Shipping Address">{customer.shipping_address || (customer.address ? "Same as billing" : "—")}</Field>
         <Field label="GST">{customer.has_gst ? (customer.gst_number || "Yes") : "No"}</Field>
+        {customer.pan && <Field label="PAN">{customer.pan}</Field>}
         <Field label="Source">{customer.source || "—"}</Field>
         <Field label="Website account">
           {customer.customer_profiles?.length
@@ -328,7 +336,7 @@ function CustomersPage() {
       <div className="flex flex-wrap justify-between items-center gap-2 mb-2">
         <h1 className="text-xl font-bold">Customers</h1>
         <div className="space-x-2">
-          <AddCustomerDialog onAdd={fetchCustomers} />
+          <AddCustomerDialog size="page" onAdd={fetchCustomers} />
           <BulkAddDialog
             tableName="customers"
             onAdd={fetchCustomers}
@@ -338,7 +346,13 @@ function CustomersPage() {
               contact_person: row.contact_person,
               has_gst: row.has_gst === "true" || row.has_gst === "TRUE" || row.has_gst === true,
               gst_number: row.gst_number,
+              // Bulk rows only carry flat addresses; gst_treatment follows the same
+              // seed rule the 2026-10-04 migration used for existing customers.
               address: row.address,
+              shipping_address: row.shipping_address || null,
+              gst_treatment: String(row.gst_number || "").trim() ? "registered_regular" : "consumer",
+              pan: row.pan || null,
+              work_phone: row.work_phone || null,
               phone: row.phone,
               email: row.email,
               source: row.source,
@@ -466,7 +480,7 @@ function CustomersPage() {
         </div>
       )}
 
-      {editingCustomer && <EditCustomerDialog customer={editingCustomer} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchCustomers} />}
+      {editingCustomer && <EditCustomerDialog size="page" customer={editingCustomer} open={dialogOpen} onOpenChange={setDialogOpen} onUpdate={fetchCustomers} />}
       {customerToDelete && <DeleteRecordDialog title="Delete Customer" identifier={customerToDelete.customer_name} open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen} onConfirm={handleSoftDelete} />}
     </div>
   );

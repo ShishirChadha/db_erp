@@ -1,387 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase/client";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
-import { apiFetch } from "@/lib/api-client";
-import { useAsyncAction } from "@/lib/useAsyncAction";
-import { checkDuplicateCustomer } from "@/lib/customer-dedupe";
-import { gstValidationError } from "@/lib/gst-validation";
-import { stateCodeFromPincode, stateNameFromPincode } from "@/lib/pincode-state";
-
-interface Customer {
-  id: string;
-  customer_name: string;
-  type: string;
-  contact_person?: string | null;
-  has_gst: boolean;
-  gst_number: string;
-  address: string;
-  address_line1?: string | null;
-  address_line2?: string | null;
-  city?: string | null;
-  pincode?: string | null;
-  phone: string;
-  email: string;
-  alt_email?: string | null;
-  source: string;
-  google_review: boolean;
-  social_following: string;
-  state?: string;
-  state_code?: string;
-}
-
-// Composes the legacy flat `address` column from the structured sub-fields on
-// every save -- see the matching comment in AddCustomerDialog.tsx.
-function composeAddress(f: { address_line1?: string | null; address_line2?: string | null; city?: string | null; state?: string | null; pincode?: string | null }): string {
-  return [f.address_line1, f.address_line2, f.city, [f.state, f.pincode].filter(Boolean).join(" - ")]
-    .filter(Boolean)
-    .join(", ");
-}
+import CustomerForm, {
+  customerDialogClass,
+  customerDialogHeaderClass,
+  customerDialogTitleClass,
+  type CustomerDialogSize,
+} from "@/components/CustomerForm";
 
 export default function EditCustomerDialog({
   customer,
   open,
   onOpenChange,
   onUpdate,
+  size = "modal",
 }: {
-  customer: Customer;
+  customer: { id: string; customer_name: string; [key: string]: any };
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onUpdate: () => void;
+  size?: CustomerDialogSize;
 }) {
-  const [formData, setFormData] = useState<Partial<Customer>>({});
-  const [gstFetching, setGstFetching] = useState(false);
-  const [gstError, setGstError] = useState("");
-  const [pincodeError, setPincodeError] = useState("");
-  const [duplicateError, setDuplicateError] = useState("");
-  const [duplicateWarning, setDuplicateWarning] = useState("");
-  const supabase = createClient();
-
-  useEffect(() => {
-    // A customer created before structured address fields existed has them all
-    // null with the old data only in the flat `address` -- fall back to showing
-    // that in Address Line 1 rather than presenting a blank form and silently
-    // discarding it the next time this customer is saved.
-    const needsAddressFallback = !customer.address_line1 && !customer.address_line2 && !customer.city && !customer.pincode && customer.address;
-    const base = needsAddressFallback ? { ...customer, address_line1: customer.address } : customer;
-    // An older customer saved with a PIN but no state picks it up from the PIN.
-    const pinCode = !base.state_code && !base.gst_number?.trim() ? stateCodeFromPincode(base.pincode) : null;
-    setFormData(pinCode ? { ...base, state_code: pinCode, state: stateNameFromPincode(base.pincode) || "" } : base);
-    setGstError("");
-    setPincodeError("");
-    setDuplicateError("");
-    setDuplicateWarning("");
-  }, [customer]);
-
-  const handleChange = (field: keyof Customer, value: string | boolean) => {
-    // Business-only fields (contact person, GST) don't apply to an Individual --
-    // clear them on switch so a stale value can't get silently submitted while hidden.
-    if (field === "type" && value === "Individual") {
-      setFormData((prev) => ({ ...prev, type: value, contact_person: "", has_gst: false, gst_number: "" }));
-      return;
-    }
-    // GST Number only applies once Has GST is checked -- clear it on uncheck so a
-    // stale value can't get silently submitted while the field is hidden.
-    if (field === "has_gst" && value === false) {
-      setFormData((prev) => ({ ...prev, has_gst: false, gst_number: "" }));
-      return;
-    }
-    // Without a GSTIN the state comes from the PIN -- it decides CGST+SGST vs IGST.
-    // Ambiguous PIN ranges resolve to null and leave the state blank.
-    if (field === "pincode" && typeof value === "string") {
-      setFormData((prev) => prev.gst_number?.trim() ? { ...prev, pincode: value }
-        : { ...prev, pincode: value, state: stateNameFromPincode(value) || "", state_code: stateCodeFromPincode(value) || "" });
-      return;
-    }
-    setFormData((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handleFetchGst = async () => {
-    if (!formData.gst_number?.trim()) return;
-    setGstFetching(true);
-    setGstError("");
-    try {
-      const res = await apiFetch(`/api/gst?gst=${encodeURIComponent(formData.gst_number.trim())}`);
-      const data = await res.json();
-      setFormData((prev) => ({
-        ...prev,
-        customer_name: data.company_name || prev.customer_name,
-        address_line1: data.address || prev.address_line1,
-        state: data.state || prev.state,
-        state_code: data.state_code || prev.state_code,
-      }));
-      if (!res.ok) setGstError(data.error || "Could not verify this GSTIN, but state was derived from it.");
-    } catch (err: any) {
-      setGstError("Failed to reach GST lookup service.");
-    } finally {
-      setGstFetching(false);
-    }
-  };
-
-  const { run: handleSubmit, pending: loading } = useAsyncAction(async (e: React.FormEvent) => {
-    e.preventDefault();
-    setDuplicateError("");
-    setDuplicateWarning("");
-    setGstError("");
-
-    if (formData.type === "Business" && formData.has_gst) {
-      const err = gstValidationError(formData.gst_number || "", formData.state_code);
-      if (err) {
-        setGstError(err);
-        return;
-      }
-    }
-
-    setPincodeError("");
-    if (!/^\d{6}$/.test((formData.pincode || "").trim())) {
-      setPincodeError("Pincode is required (6 digits) -- it's what place of supply gets guessed from when recording a Zoho invoice.");
-      return;
-    }
-
-    const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
-      customer_name: formData.customer_name || "",
-      phone: formData.phone || "",
-      excludeId: customer.id,
-    });
-    if (blockingMatch) {
-      setDuplicateError(`A customer with this phone number already exists: "${blockingMatch.customer_name}". Use that customer instead of creating a duplicate.`);
-      return;
-    }
-    if (nameWarningMatch) {
-      setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different phone number.`);
-    }
-
-    // Built as an explicit allow-list, not a spread of `formData` -- the `customer`
-    // prop comes from a query that joins `customer_profiles(id, created_at)` (for the
-    // "registered on website" badge), and that nested field riding along into the
-    // update payload makes PostgREST reject the whole request with PGRST204
-    // ("Could not find the 'customer_profiles' column"), silently breaking every edit.
-    const payload = {
-      customer_name: formData.customer_name,
-      type: formData.type,
-      contact_person: formData.contact_person,
-      has_gst: formData.has_gst,
-      gst_number: formData.has_gst ? (formData.gst_number || "").trim().toUpperCase() : "",
-      phone: formData.phone,
-      email: formData.email,
-      alt_email: formData.alt_email,
-      source: formData.source,
-      google_review: formData.google_review,
-      social_following: formData.social_following,
-      state: formData.state,
-      state_code: formData.state_code,
-      address_line1: formData.address_line1,
-      address_line2: formData.address_line2,
-      city: formData.city,
-      pincode: formData.pincode,
-      address: composeAddress(formData),
-    };
-    const { error } = await supabase
-      .from("customers")
-      .update(payload)
-      .eq("id", customer.id);
-    if (error) {
-      console.error(error);
-      // 23505 = unique_violation -- the customers_active_phone_unique index catching a
-      // race the pre-check above missed.
-      if ((error as any).code === "23505") {
-        setDuplicateError("A customer with this phone number already exists.");
-      } else {
-        alert(error.message || "Update failed.");
-      }
-    } else {
-      onOpenChange(false);
-      onUpdate();
-    }
-  });
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Edit Customer: {customer.customer_name}</DialogTitle>
+      <DialogContent className={customerDialogClass(size)}>
+        <DialogHeader className={customerDialogHeaderClass}>
+          <DialogTitle className={customerDialogTitleClass}>Edit Customer: {customer.customer_name}</DialogTitle>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Customer Name</Label>
-              <Input
-                value={formData.customer_name || ""}
-                onChange={(e) => handleChange("customer_name", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Type</Label>
-              <Select
-                value={formData.type || ""}
-                onValueChange={(val) => handleChange("type", val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Business">Business</SelectItem>
-                  <SelectItem value="Individual">Individual</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {formData.type === "Business" && (
-              <div>
-                <Label>Contact Person</Label>
-                <Input
-                  value={formData.contact_person || ""}
-                  onChange={(e) => handleChange("contact_person", e.target.value)}
-                />
-              </div>
-            )}
-            {formData.type === "Business" && (
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="has_gst"
-                  checked={formData.has_gst || false}
-                  onCheckedChange={(v) => handleChange("has_gst", !!v)}
-                />
-                <Label htmlFor="has_gst">Has GST</Label>
-              </div>
-            )}
-            {formData.type === "Business" && formData.has_gst && (
-              <div>
-                <Label>GST Number</Label>
-                <div className="flex gap-2">
-                  <Input
-                    value={formData.gst_number || ""}
-                    onChange={(e) => handleChange("gst_number", e.target.value.toUpperCase())}
-                  />
-                  <Button type="button" variant="outline" disabled={gstFetching || !formData.gst_number?.trim()} onClick={handleFetchGst}>
-                    {gstFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : "Fetch"}
-                  </Button>
-                </div>
-                {gstError && <p className="text-xs text-destructive mt-1">{gstError}</p>}
-                {formData.state && <p className="text-xs text-muted-foreground mt-1">State: {formData.state} ({formData.state_code})</p>}
-              </div>
-            )}
-            <div className="col-span-2">
-              <Label>Address Line 1</Label>
-              <Input
-                value={formData.address_line1 || ""}
-                onChange={(e) => handleChange("address_line1", e.target.value)}
-              />
-            </div>
-            <div className="col-span-2">
-              <Label>Address Line 2</Label>
-              <Input
-                value={formData.address_line2 || ""}
-                onChange={(e) => handleChange("address_line2", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>City</Label>
-              <Input
-                value={formData.city || ""}
-                onChange={(e) => handleChange("city", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Pincode *</Label>
-              <Input
-                required
-                pattern="\d{6}"
-                title="6-digit PIN code"
-                value={formData.pincode || ""}
-                onChange={(e) => handleChange("pincode", e.target.value)}
-              />
-              {pincodeError && <p className="text-xs text-destructive mt-1">{pincodeError}</p>}
-              {!formData.gst_number?.trim() && /^\d{6}$/.test((formData.pincode || "").trim()) && (
-                <p className="text-xs text-muted-foreground mt-1">{formData.state_code ? `State: ${formData.state} (from PIN)` : "State can't be told from this PIN -- check it"}</p>
-              )}
-            </div>
-            <div>
-              <Label>Phone</Label>
-              <Input
-                value={formData.phone || ""}
-                onChange={(e) => { handleChange("phone", e.target.value); setDuplicateError(""); }}
-              />
-              {duplicateError && <p className="text-xs text-destructive mt-1">{duplicateError}</p>}
-            </div>
-            <div>
-              <Label>Email</Label>
-              <Input
-                type="email"
-                value={formData.email || ""}
-                onChange={(e) => handleChange("email", e.target.value)}
-              />
-            </div>
-            <div className="col-span-2">
-              <Label>Email 2 (optional)</Label>
-              <Input
-                type="email"
-                value={formData.alt_email || ""}
-                onChange={(e) => handleChange("alt_email", e.target.value)}
-              />
-            </div>
-            <div>
-              <Label>Source</Label>
-              <Input
-                value={formData.source || ""}
-                onChange={(e) => handleChange("source", e.target.value)}
-              />
-            </div>
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="google_review"
-                checked={formData.google_review || false}
-                onCheckedChange={(v) => handleChange("google_review", !!v)}
-              />
-              <Label htmlFor="google_review">Google Review</Label>
-            </div>
-            <div>
-              <Label>Social Following</Label>
-              <Select
-                value={formData.social_following || ""}
-                onValueChange={(val) => handleChange("social_following", val)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FB">FB</SelectItem>
-                  <SelectItem value="Insta">Insta</SelectItem>
-                  <SelectItem value="Both">Both</SelectItem>
-                  <SelectItem value="None">None</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          {duplicateWarning && (
-            <p className="text-xs text-warning bg-warning/10 rounded px-3 py-2">{duplicateWarning}</p>
-          )}
-          <div className="flex justify-end space-x-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={loading}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={loading}>
-              Save Changes
-            </Button>
-          </div>
-        </form>
+        {open && (
+          <CustomerForm
+            customer={customer}
+            submitLabel="Save"
+            onCancel={() => onOpenChange(false)}
+            onSaved={() => {
+              onOpenChange(false);
+              onUpdate();
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

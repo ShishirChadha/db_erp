@@ -13,7 +13,8 @@ sources:
   - apps/erp/app/api/sales-documents/route.ts
   - apps/erp/app/api/sales-documents/[id]/route.ts
   - apps/erp/app/api/sales-entry/route.ts
-updated: 2026-10-05
+  - apps/erp/lib/documents/renderSalesDocumentPdf.ts
+updated: 2026-11-13
 ---
 
 ## What this is
@@ -38,7 +39,12 @@ per-page edit model every other module uses, so this isn't owner-exclusive.
 2. Click **New Quotation** / **New Proforma Invoice**.
 3. Choose the entity (Digitalbluez / Techtenth / Cash — determines GST
    treatment), pick or quick-add the customer, and for a quotation
-   optionally set Valid Until.
+   optionally set Valid Until. Once a customer is picked, **Bill To** shows
+   their billing address (read-only) and **Ship To** is prefilled from their
+   saved shipping address — edit it for this document only, or leave it
+   blank to ship to the billing address. Both are snapshotted onto the
+   document (`customer_address` / `shipping_address`), and the PDF prints
+   them side by side.
 4. Add line items — search a SKU by model/code (auto-fills description,
    HSN, the SKU's default selling price, and 18% GST) or add a free-text
    "Custom line" — and set qty/rate/GST% per line.

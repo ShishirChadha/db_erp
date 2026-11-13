@@ -102,6 +102,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | kb_chapters | kind | kb_chapters_kind_check | `CHECK ((kind = ANY (ARRAY['module'::text, 'process'::text, 'rule'::text, 'generated'::text])))` |
 | lead_sets | source_type | lead_sets_source_type_check | `CHECK ((source_type = ANY (ARRAY['upload'::text, 'manual'::text, 'scrape'::text, 'customers_snapshot'::text])))` |
 | lead_sets | status | lead_sets_status_check | `CHECK ((status = ANY (ARRAY['active'::text, 'archived'::text])))` |
+| leads | merge_status | leads_merge_status_check | `CHECK ((merge_status = ANY (ARRAY['pending'::text, 'merged'::text, 'skipped'::text])))` |
 | leave_requests | to_date | leave_requests_date_order_check | `CHECK ((to_date >= from_date))` |
 | leave_requests | day_part | leave_requests_day_part_check | `CHECK ((day_part = ANY (ARRAY['full'::text, 'first_half'::text, 'second_half'::text])))` |
 | leave_requests | decided_at | leave_requests_decision_pair_check | `CHECK (((decided_at IS NULL) = (decided_by IS NULL)))` |

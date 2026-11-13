@@ -270,7 +270,7 @@ export async function createInvoiceFromSales(opts: {
   const customerId = sales[0].customer_id
   const { data: customer } = await supabaseAdmin
     .from('customers')
-    .select('customer_name, gst_number, address, phone, email, state_code')
+    .select('customer_name, gst_number, address, shipping_address, phone, email, state_code')
     .eq('id', customerId)
     .single()
 
@@ -320,6 +320,7 @@ export async function createInvoiceFromSales(opts: {
       customer_name: customer?.customer_name || sales[0].customer_name,
       customer_gst: customer?.gst_number || null,
       customer_address: customer?.address || null,
+      shipping_address: customer?.shipping_address || null,
       customer_phone: customer?.phone || null,
       customer_email: customer?.email || null,
       place_of_supply: placeOfSupply,

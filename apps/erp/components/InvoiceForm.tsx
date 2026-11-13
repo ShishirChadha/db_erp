@@ -354,6 +354,7 @@ export function InvoiceForm({
                 setValue("customer_name", customer?.customer_name || "");
                 setValue("customer_gst", customer?.gst_number || "");
                 setValue("customer_address", customer?.address || "");
+                setValue("shipping_address", customer?.shipping_address || "");
                 setValue("customer_phone", customer?.phone || "");
                 setValue("customer_email", customer?.email || "");
                 if (customer?.place_of_supply) setValue("place_of_supply", customer.place_of_supply);
@@ -370,7 +371,7 @@ export function InvoiceForm({
             <Input id="customer_gst" {...register("customer_gst")} />
           </div>
           <div className="col-span-2">
-            <Label htmlFor="customer_address">Address</Label>
+            <Label htmlFor="customer_address">Billing Address</Label>
             <Input id="customer_address" {...register("customer_address")} />
           </div>
           <div>

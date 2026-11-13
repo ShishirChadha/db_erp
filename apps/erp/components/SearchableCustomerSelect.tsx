@@ -11,6 +11,7 @@ interface Customer {
   contact_person?: string | null;
   gst_number: string | null;
   address: string | null;
+  shipping_address?: string | null;
   city: string | null;
   state: string | null;
   phone: string | null;
@@ -57,7 +58,7 @@ export function SearchableCustomerSelect({
     const timer = setTimeout(async () => {
       let query = supabase
         .from("customers")
-        .select("id, customer_name, type, contact_person, gst_number, address, city, state, phone, email")
+        .select("id, customer_name, type, contact_person, gst_number, address, shipping_address, city, state, phone, email")
         .eq("is_deleted", false);
 
       if (searchTerm) {
