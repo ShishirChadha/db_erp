@@ -162,7 +162,7 @@ export default function ActivityDescriptionTable({
 
       <div className="border rounded overflow-x-auto">
         <table className="min-w-full text-sm">
-          <thead className="bg-muted">
+          <thead className="bg-muted sticky top-0 z-10">
             <tr>
               {current.columns.map((col, colIndex) => (
                 <th key={colIndex} className="p-1 text-left">
