@@ -5,6 +5,8 @@ export const invoiceItemSchema = z.object({
   item_type: z.enum(['asset', 'accessory', 'custom']),
   asset_id: z.string().nullable().optional(),
   accessory_id: z.string().nullable().optional(),
+  // SKU master row a line was picked from (same column the sale-to-invoice path fills).
+  sku_id: z.string().nullable().optional(),
   description: z.string().min(1, 'Description is required'),
   hsn_code: z.string().optional(),
   quantity: z.number().min(0.01, 'Quantity must be greater than 0'),

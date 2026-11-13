@@ -71,8 +71,13 @@ for a standalone invoice that isn't generated from a sale (its lines carry no
   total, the same convention the sale-to-invoice path and "+ Add Charge"
   use (the form used to store the pre-GST amount, which understated Grand
   Total after an Add Charge). `invoices.total_amount` = pre-GST subtotal.
-- **Notes / T&C** — prefilled from the entity's defaults (Settings →
-  Business Profiles).
+- **Adding items** — type in "Type to add an item from SKU master…" (the
+  same type-ahead as Quotations/PI: fills description, HSN, default selling
+  price, 18% GST; the line keeps `sku_id`) or **Add New Row** for a free-text
+  line. Every field stays editable.
+- **Notes / T&C / Bank Details** — prefilled from the entity's defaults
+  (Settings → Business Profiles); Bank Details uses the same wording the PDF
+  prints from the profile's bank details.
 - **Clone** (invoice detail toolbar, not on credit notes) opens this form
   prefilled via `?clone=<id>`: customer, place of supply, addresses,
   notes/terms/bank details and lines (as standalone custom lines — sale and

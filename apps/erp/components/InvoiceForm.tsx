@@ -23,7 +23,6 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { SearchableCustomerSelect } from "./SearchableCustomerSelect";
-import { SearchableItemSelect } from "./SearchableItemSelect";
 import AddCustomerDialog from "./AddCustomerDialog";
 import { ENTITY_LABELS } from "./SalesDocumentForm";
 import { calculateGST } from "@/lib/gstCalculation";
@@ -38,6 +37,13 @@ interface BusinessProfileOption {
   is_gst_registered: boolean;
   default_notes: string | null;
   default_terms: string | null;
+  bank_details: Record<string, string> | null;
+}
+
+// Same wording the invoice PDF prints from the entity's bank details.
+function formatBankDetails(bank: Record<string, string> | null): string {
+  if (!bank?.bank_name) return "";
+  return `A/C Holder: ${bank.account_holder_name || ""}\nBank: ${bank.bank_name}\nA/c No.: ${bank.account_number || ""}\nIFSC: ${bank.ifsc_code || ""}`;
 }
 
 interface InvoiceFormProps {
@@ -134,8 +140,8 @@ export function InvoiceForm({
   const watchedCustomerGst = watch("customer_gst");
   const watchedPlaceOfSupply = watch("place_of_supply");
 
-  // A new invoice starts with the issuing entity's default Notes/T&C (Settings ->
-  // Business Profiles), same as a new Quotation/Proforma. Switching entity swaps
+  // A new invoice starts with the issuing entity's default Notes/T&C and its bank
+  // details (Settings -> Business Profiles), same as a new Quotation/Proforma. Switching entity swaps
   // them only while the field is empty or still holds the previous entity's
   // default, so typed text is never clobbered. Editing an existing invoice never
   // touches them, and a clone keeps its own copied text unless it was empty.
@@ -149,6 +155,8 @@ export function InvoiceForm({
     const curTerms = watch("terms_conditions") || "";
     if (curNotes === "" || (prev && curNotes === (prev.default_notes || ""))) setValue("notes", entity.default_notes || "");
     if (curTerms === "" || (prev && curTerms === (prev.default_terms || ""))) setValue("terms_conditions", entity.default_terms || "");
+    const curBank = watch("bank_details") || "";
+    if (curBank === "" || (prev && curBank === formatBankDetails(prev.bank_details))) setValue("bank_details", formatBankDetails(entity.bank_details));
     prevEntityDefaultsRef.current = entity;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [entities, entityKey, isNew]);
@@ -247,23 +255,37 @@ export function InvoiceForm({
 
   const emptyTax = { gst_type: null, cgst_amount: 0, sgst_amount: 0, igst_amount: 0 } as const;
 
-  const addItem = (item: any) => {
-    if (!item) return;
-    const gstRate = item.gst_rate ?? 18;
-    const newItem: InvoiceItemFormData = {
-      item_type: item.type,
-      asset_id: item.type === "asset" ? item.id : null,
-      accessory_id: item.type === "accessory" ? item.id : null,
-      description: `${item.identifier} - ${item.description}`,
-      hsn_code: item.hsn_code || "",
+  // Type-ahead over SKU master, the same item search the Quotation/PI form uses:
+  // picking one adds a line with its description, HSN and default selling price,
+  // all still editable. Lines can also be typed freely via "Add New Row".
+  const [skuSearch, setSkuSearch] = useState("");
+  const [skuResults, setSkuResults] = useState<any[]>([]);
+  useEffect(() => {
+    if (!skuSearch.trim()) { setSkuResults([]); return; }
+    const timer = setTimeout(async () => {
+      const res = await apiFetch(`/api/sku-master?search=${encodeURIComponent(skuSearch)}`);
+      const data = await res.json().catch(() => []);
+      setSkuResults(Array.isArray(data) ? data.slice(0, 15) : []);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [skuSearch]);
+
+  const addSkuLine = (sku: any) => {
+    const price = Number(sku.selling_price_default) || 0;
+    append({
+      item_type: "custom",
+      asset_id: null,
+      accessory_id: null,
+      sku_id: sku.id,
+      description: sku.sku_description || sku.full_sku_code,
+      hsn_code: sku.hsn_code || "",
       quantity: 1,
-      rate: inclusive ? toInclusive(item.price, gstRate) : item.price,
-      gst_rate: gstRate,
+      rate: inclusive ? toInclusive(price, 18) : price,
+      gst_rate: isGstRegistered ? 18 : 0,
       amount: 0,
       ...emptyTax,
-    };
-    append(newItem);
-    toast.success(`Added ${item.identifier} to invoice`);
+    });
+    setSkuSearch(""); setSkuResults([]);
   };
 
   // A manual charge with no SKU/asset of its own -- shipping, packing,
@@ -550,7 +572,24 @@ export function InvoiceForm({
           })}
 
           <div className="flex flex-wrap items-center gap-2 p-2">
-            <SearchableItemSelect onSelect={addItem} />
+            <div className="relative flex-1 min-w-[14rem]">
+              <input
+                value={skuSearch}
+                onChange={(e) => setSkuSearch(e.target.value)}
+                placeholder="Type to add an item from SKU master…"
+                className="border p-1.5 w-full rounded text-sm bg-background"
+              />
+              {skuResults.length > 0 && (
+                <ul className="border rounded mt-1 max-h-40 overflow-y-auto absolute bg-card w-full z-10 shadow">
+                  {skuResults.map((sku) => (
+                    <li key={sku.id} onClick={() => addSkuLine(sku)} className="p-2 hover:bg-muted cursor-pointer border-b last:border-b-0 text-sm">
+                      <div className="font-medium">{sku.full_sku_code}</div>
+                      <div className="text-xs text-muted-foreground">{sku.sku_description} — {sku.quantity_in_stock} in stock</div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
             <Button type="button" variant="outline" size="sm" onClick={addCustomLine}>
               <Plus className="h-3.5 w-3.5 mr-1" /> Add New Row
             </Button>

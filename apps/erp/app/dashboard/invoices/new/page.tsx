@@ -57,6 +57,7 @@ function NewInvoicePage() {
             item_type: "custom",
             asset_id: null,
             accessory_id: null,
+            sku_id: l.sku_id || null,
             description: l.description || "",
             hsn_code: l.hsn_code || "",
             quantity: Number(l.quantity) || 1,
