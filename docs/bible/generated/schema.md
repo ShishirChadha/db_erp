@@ -888,6 +888,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 | shipping_address | text | yes |  |  | Composed flat shipping address (from shipping_* parts), snapshotted onto invoices/sales_documents.shipping_address at document creation. Null = ship to billing address. |
 | contact_persons | jsonb | no | `'[]'::jsonb` |  | Additional contact persons: [{salutation, first_name, last_name, email, work_phone, mobile}]. contact_person (text) mirrors the first one's name for legacy readers. |
 | communication_channels | text[] | no | `'{email}'::text[]` |  |  |
+| billing_phone | text | yes |  |  |  |
 
 ## digest_channel_config
 

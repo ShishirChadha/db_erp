@@ -118,6 +118,7 @@ export interface CustomerFormValues {
   shipping_city: string;
   shipping_state: string;
   shipping_pincode: string;
+  billing_phone: string;
   shipping_phone: string;
   contact_persons: ContactPerson[];
   remarks: string;
@@ -154,6 +155,7 @@ const emptyValues: CustomerFormValues = {
   shipping_city: "",
   shipping_state: "",
   shipping_pincode: "",
+  billing_phone: "",
   shipping_phone: "",
   contact_persons: [],
   remarks: "",
@@ -204,6 +206,7 @@ function valuesFromCustomer(c: any): CustomerFormValues {
     shipping_city: s(c.shipping_city),
     shipping_state: s(c.shipping_state),
     shipping_pincode: s(c.shipping_pincode),
+    billing_phone: s(c.billing_phone),
     shipping_phone: s(c.shipping_phone),
     contact_persons: Array.isArray(c.contact_persons)
       ? c.contact_persons.map((p: any) => ({ ...emptyContact, ...p }))
@@ -287,6 +290,7 @@ function toPayload(v: CustomerFormValues) {
     shipping_city: v.shipping_city.trim() || null,
     shipping_state: v.shipping_state || null,
     shipping_pincode: v.shipping_pincode.trim() || null,
+    billing_phone: v.billing_phone.trim() || null,
     shipping_phone: v.shipping_phone.trim() || null,
     shipping_address: shippingAddress || null,
     contact_persons: contacts,
@@ -493,7 +497,7 @@ export default function CustomerForm({
       shipping_city: prev.city,
       shipping_state: prev.state,
       shipping_pincode: prev.pincode,
-      shipping_phone: prev.shipping_phone || prev.phone,
+      shipping_phone: prev.billing_phone || prev.shipping_phone || prev.phone,
     }));
   };
 
@@ -660,11 +664,9 @@ export default function CustomerForm({
           )}
           {pinInfo[kind].note && <p className="mt-1 text-xs text-muted-foreground">{pinInfo[kind].note}</p>}
         </AddrRow>
-        {!b && (
-          <AddrRow label="Phone">
-            <PhoneInput value={v.shipping_phone} onChange={(val) => set("shipping_phone", val)} placeholder="" />
-          </AddrRow>
-        )}
+        <AddrRow label="Phone">
+          <PhoneInput value={b ? v.billing_phone : v.shipping_phone} onChange={(val) => set(b ? "billing_phone" : "shipping_phone", val)} placeholder="" />
+        </AddrRow>
       </div>
     );
   };
