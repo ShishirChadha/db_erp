@@ -5,6 +5,7 @@ import { getSessionUser, isOwner, hasPageAccess, canEditPage } from '@/lib/auth/
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
+import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { checkInvoiceCustomerMove, moveInvoiceToCustomer, type InvoiceMoveCheck } from '@/lib/invoice-customer'
 
 // ---------- GET: fetch one sale ----------
@@ -80,12 +81,23 @@ export async function GET(
     invoiceDate = invoiceRow?.invoice_date || null
   }
 
+  // Same entity -> invoicing_mode resolution as /api/sales's list route -- lets
+  // EditSaleDialog offer "Record Zoho Invoice #" only for an entity still issuing
+  // invoices externally during the transition.
+  const { data: profile } = await supabaseAdmin
+    .from('business_profiles')
+    .select('invoicing_mode')
+    .eq('key', resolveEntityKey(data.payment_account))
+    .maybeSingle()
+  const invoiceMode = profile?.invoicing_mode === 'external' ? 'external' : 'erp'
+
   return NextResponse.json({
     ...data,
     bundled_accessories: bundledAccessories,
     unit_sku_description: unitSkuDescription,
     unit_full_sku_code: unitFullSkuCode,
     invoice_date: invoiceDate,
+    invoice_mode: invoiceMode,
     history: history || [],
   })
 }

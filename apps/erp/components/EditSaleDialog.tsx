@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Loader2 } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { apiFetch } from "@/lib/api-client";
 import { useAsyncAction } from "@/lib/useAsyncAction";
 import { useCustomOptions } from "@/lib/useCustomOptions";
@@ -29,6 +29,7 @@ import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect"
 import { ReasonConfirmDialog } from "@/components/ReasonConfirmDialog";
 import { AddPaymentDialog } from "@/components/AddPaymentDialog";
 import { AddInvoiceLineDialog } from "@/components/AddInvoiceLineDialog";
+import { RecordZohoInvoiceDialog } from "@/components/RecordZohoInvoiceDialog";
 import { FixSkuDialog } from "@/components/FixSkuDialog";
 import { useRole } from "@/lib/auth/useRole";
 
@@ -66,6 +67,9 @@ interface SaleDetail {
   finalized: boolean;
   invoice_number: string | null;
   invoice_id: string | null;
+  invoice_mode?: "erp" | "external";
+  eway_bill_number: string | null;
+  eway_bill_date: string | null;
   is_deleted: boolean;
   history: { field_name: string; old_value: string | null; new_value: string | null; changed_at: string; reason: string | null }[];
 }
@@ -116,6 +120,11 @@ export function EditSaleDialog({
   const [payments, setPayments] = useState<SalePayment[]>([]);
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showAddCharge, setShowAddCharge] = useState(false);
+  const [showZohoDialog, setShowZohoDialog] = useState(false);
+  const [editingEway, setEditingEway] = useState(false);
+  const [ewayNumber, setEwayNumber] = useState("");
+  const [ewayDate, setEwayDate] = useState("");
+  const [ewayErr, setEwayErr] = useState("");
 
   const [bundled, setBundled] = useState<BundledAccessory[]>([]);
   const [bundleSearch, setBundleSearch] = useState("");
@@ -303,8 +312,26 @@ export function EditSaleDialog({
     onClose();
   };
 
+  const { run: saveEway, pending: savingEway } = useAsyncAction(async () => {
+    setEwayErr("");
+    const res = await apiFetch(`/api/sales/${saleId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ eway_bill_number: ewayNumber.trim() || null, eway_bill_date: ewayDate || null }),
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      setEwayErr(e.error || "Failed to save.");
+      throw new Error(e.error || "Failed to save.");
+    }
+    setEditingEway(false);
+    apiFetch(`/api/sales/${saleId}`).then(async (r) => { if (r.ok) setSale(await r.json()); });
+    onSaved();
+  });
+
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    // Hidden (not closed) while the Zoho pop-up is up: it is a plain overlay, and
+    // under an open Radix dialog it sits behind the backdrop and gets no clicks.
+    <Dialog open={!showZohoDialog} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Sale</DialogTitle>
@@ -538,6 +565,16 @@ export function EditSaleDialog({
                       Add Charge to Invoice
                     </Button>
                   )}
+                  {/* Same transition-period shortcut as Sales Ledger's own detail
+                      pane -- records the invoice number Zoho already issued for
+                      this sale rather than generating a new one in the ERP. Only
+                      offered while the sale isn't yet invoiced and its entity is
+                      still on external (Zoho) invoicing. */}
+                  {isOwner && !sale.finalized && sale.invoice_mode === "external" && (
+                    <Button type="button" size="sm" variant="outline" onClick={() => setShowZohoDialog(true)}>
+                      Record Zoho Invoice #
+                    </Button>
+                  )}
                   {sale.payment_status !== "paid" && (
                     <Button type="button" size="sm" variant="outline" onClick={() => setShowAddPayment(true)}>
                       Add Payment
@@ -579,6 +616,44 @@ export function EditSaleDialog({
                     </li>
                   ))}
                 </ul>
+              )}
+            </div>
+
+            {/* Not every sale needs an e-way bill (only GST goods movement above
+                the threshold) -- a quiet, optional field filled in after the
+                fact once the bill is raised, same field/gating as Sales
+                Ledger's own EwayBillField. */}
+            <div className="border rounded p-3">
+              <Label>E-way Bill</Label>
+              {editingEway ? (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                  <Input value={ewayNumber} onChange={(e) => setEwayNumber(e.target.value)} placeholder="E-way bill number" className="h-8 w-40" />
+                  <Input type="date" value={ewayDate} onChange={(e) => setEwayDate(e.target.value)} className="h-8 w-36" />
+                  <Button size="sm" onClick={() => saveEway()} disabled={savingEway} loading={savingEway}>Save</Button>
+                  <Button size="sm" variant="outline" onClick={() => setEditingEway(false)} disabled={savingEway}>Cancel</Button>
+                  {ewayErr && <span className="text-destructive text-xs">{ewayErr}</span>}
+                </div>
+              ) : (
+                <div className="text-sm mt-1 inline-flex items-center gap-1.5">
+                  {sale.eway_bill_number || sale.eway_bill_date ? (
+                    <>
+                      {sale.eway_bill_number || "—"}
+                      {sale.eway_bill_date && ` · dated ${sale.eway_bill_date.slice(0, 10)}`}
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">Not set</span>
+                  )}
+                  {isOwner && (
+                    <button
+                      type="button"
+                      title="Edit e-way bill"
+                      onClick={() => { setEwayNumber(sale.eway_bill_number || ""); setEwayDate(sale.eway_bill_date || ""); setEwayErr(""); setEditingEway(true); }}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
 
@@ -679,6 +754,17 @@ export function EditSaleDialog({
           defaultGstRate={sale.sale_type === "GST" ? 18 : 0}
           onClose={() => setShowAddCharge(false)}
           onAdded={onSaved}
+        />
+      )}
+
+      {showZohoDialog && (
+        <RecordZohoInvoiceDialog
+          saleIds={[saleId]}
+          onClose={() => setShowZohoDialog(false)}
+          onRecorded={() => {
+            apiFetch(`/api/sales/${saleId}`).then(async (r) => { if (r.ok) setSale(await r.json()); });
+            onSaved();
+          }}
         />
       )}
     </Dialog>
