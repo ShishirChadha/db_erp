@@ -103,6 +103,12 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
   // A document can only be content-edited (entity/customer/line items) while nothing on
   // it has been converted into a real sale yet -- see the PATCH route's own guard, which
   // is the actual enforcement; this just decides whether to show the button at all.
+  // Per-line split straight from the stored row: amount is the GST-inclusive
+  // total, the tax heads are what the server computed, and base = amount - tax.
+  const isGstDoc = doc.items.some((i: any) => i.gst_type)
+  const sumOf = (field: string) => doc.items.reduce((a: number, i: any) => a + Number(i[field] || 0), 0)
+  const isIntra = doc.items.some((i: any) => i.gst_type === 'CGST_SGST')
+
   const canEditContent = ['draft', 'sent'].includes(doc.status) && !doc.items.some((i: any) => i.converted)
   const docLabel = doc.doc_type === 'quotation' ? 'Quotation' : 'Proforma Invoice'
 
@@ -208,8 +214,11 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
               <thead>
                 <tr className="bg-muted/50 text-left text-muted-foreground">
                   <th className="py-2.5 px-3 font-medium">Description</th>
+                  {isGstDoc && <th className="py-2.5 px-3 font-medium">HSN</th>}
                   <th className="py-2.5 px-3 font-medium text-right">Qty</th>
                   <th className="py-2.5 px-3 font-medium text-right">Rate</th>
+                  {isGstDoc && <th className="py-2.5 px-3 font-medium text-right">Base</th>}
+                  {isGstDoc && <th className="py-2.5 px-3 font-medium text-right">GST</th>}
                   <th className="py-2.5 px-3 font-medium text-right">Amount</th>
                   <th className="py-2.5 px-3 font-medium"></th>
                 </tr>
@@ -218,8 +227,22 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
                 {doc.items.map((item: any) => (
                   <tr key={item.id} className="border-t">
                     <td className="py-2.5 px-3">{item.description}</td>
+                    {isGstDoc && <td className="py-2.5 px-3 text-muted-foreground whitespace-nowrap">{item.hsn_code || '-'}</td>}
                     <td className="py-2.5 px-3 text-right tabular-nums">{item.quantity}</td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{money(item.rate)}</td>
+                    {isGstDoc && <td className="py-2.5 px-3 text-right tabular-nums">{money(Number(item.amount) - Number(item.cgst_amount || 0) - Number(item.sgst_amount || 0) - Number(item.igst_amount || 0))}</td>}
+                    {isGstDoc && (
+                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-xs">
+                        {item.gst_type === 'IGST' ? (
+                          <div>IGST {Number(item.gst_rate)}% {money(item.igst_amount)}</div>
+                        ) : item.gst_type ? (
+                          <>
+                            <div>CGST {Number(item.gst_rate) / 2}% {money(item.cgst_amount)}</div>
+                            <div>SGST {Number(item.gst_rate) / 2}% {money(item.sgst_amount)}</div>
+                          </>
+                        ) : '-'}
+                      </td>
+                    )}
                     <td className="py-2.5 px-3 text-right tabular-nums font-medium">{money(item.amount)}</td>
                     <td className="py-2.5 px-3 text-right">
                       {item.converted ? (
@@ -238,13 +261,26 @@ export function ViewSalesDocumentPage({ docId, embedded, onUpdated, onCloned }: 
           <div className="flex justify-end">
             <div className="w-full max-w-xs space-y-1.5">
               <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Subtotal</span>
+                <span className="text-muted-foreground">Subtotal{isGstDoc && ' (before GST)'}</span>
                 <span className="tabular-nums">{money(doc.subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Est. GST</span>
-                <span className="tabular-nums">{money(doc.total_gst)}</span>
-              </div>
+              {isGstDoc && (isIntra ? (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">CGST</span>
+                    <span className="tabular-nums">{money(sumOf('cgst_amount'))}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">SGST</span>
+                    <span className="tabular-nums">{money(sumOf('sgst_amount'))}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">IGST</span>
+                  <span className="tabular-nums">{money(sumOf('igst_amount'))}</span>
+                </div>
+              ))}
               <div className="flex justify-between text-lg font-bold border-t pt-2 mt-1">
                 <span>Total</span>
                 <span className="tabular-nums">{money(doc.grand_total)}</span>

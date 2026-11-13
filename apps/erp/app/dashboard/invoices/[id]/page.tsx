@@ -222,6 +222,15 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
   if (!invoice) return <div className="p-6 text-muted-foreground">Invoice not found</div>;
 
   const isGst = items.some((i) => i.gst_type);
+  // Per-line split from the stored row. `amount` is the GST-inclusive line total
+  // that Grand Total is built from, so Base is derived as amount - tax rather than
+  // qty x rate: some Zoho-imported lines store `rate` as the whole line's pre-GST
+  // value (e.g. qty 2, rate 420, amount 495.60), so qty x rate would overstate them.
+  const lineTax = (i: any) => Number(i.cgst_amount || 0) + Number(i.sgst_amount || 0) + Number(i.igst_amount || 0);
+  const lineBase = (i: any) => Number(i.amount || 0) - lineTax(i);
+  const sumOf = (field: string) => items.reduce((a, i) => a + Number(i[field] || 0), 0);
+  const isIntra = items.some((i) => i.gst_type === "CGST_SGST");
+  const hasIgst = items.some((i) => i.gst_type === "IGST");
 
   return (
     <div className={embedded ? "space-y-6" : "max-w-5xl mx-auto space-y-6"}>
@@ -457,8 +466,8 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                   <th className="py-2.5 px-3 font-medium">HSN</th>
                   <th className="py-2.5 px-3 font-medium text-right">Qty</th>
                   <th className="py-2.5 px-3 font-medium text-right">Rate</th>
-                  <th className="py-2.5 px-3 font-medium text-right">GST%</th>
-                  <th className="py-2.5 px-3 font-medium text-right">Tax</th>
+                  <th className="py-2.5 px-3 font-medium text-right">Base</th>
+                  {isGst && <th className="py-2.5 px-3 font-medium text-right">GST</th>}
                   <th className="py-2.5 px-3 font-medium text-right">Amount</th>
                   {isOwner && <th className="py-2.5 px-3 font-medium"></th>}
                 </tr>
@@ -498,14 +507,19 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                     </td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{item.quantity}</td>
                     <td className="py-2.5 px-3 text-right tabular-nums">{money(item.rate)}</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums">{item.gst_rate}%</td>
-                    <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
-                      {item.gst_type === 'IGST'
-                        ? `IGST ${money(item.igst_amount)}`
-                        : item.gst_type
-                          ? `C ${money(item.cgst_amount)} / S ${money(item.sgst_amount)}`
-                          : '-'}
-                    </td>
+                    <td className="py-2.5 px-3 text-right tabular-nums">{money(lineBase(item))}</td>
+                    {isGst && (
+                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-xs">
+                        {item.gst_type === "IGST" ? (
+                          <div>IGST {Number(item.gst_rate)}% {money(item.igst_amount)}</div>
+                        ) : item.gst_type ? (
+                          <>
+                            <div>CGST {Number(item.gst_rate) / 2}% {money(item.cgst_amount)}</div>
+                            <div>SGST {Number(item.gst_rate) / 2}% {money(item.sgst_amount)}</div>
+                          </>
+                        ) : "-"}
+                      </td>
+                    )}
                     <td className="py-2.5 px-3 text-right tabular-nums font-medium">{money(item.amount)}</td>
                     {isOwner && (
                       <td className="py-2.5 px-3 text-right">
@@ -534,10 +548,30 @@ export function ViewInvoicePage({ invoiceId, embedded }: { invoiceId?: string; e
                 <span className="text-muted-foreground">Subtotal</span>
                 <span className="tabular-nums">{money(invoice.subtotal)}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Total GST</span>
-                <span className="tabular-nums">{money(invoice.total_gst)}</span>
-              </div>
+              {isIntra && (
+                <>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">CGST</span>
+                    <span className="tabular-nums">{money(sumOf("cgst_amount"))}</span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span className="text-muted-foreground">SGST</span>
+                    <span className="tabular-nums">{money(sumOf("sgst_amount"))}</span>
+                  </div>
+                </>
+              )}
+              {hasIgst && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">IGST</span>
+                  <span className="tabular-nums">{money(sumOf("igst_amount"))}</span>
+                </div>
+              )}
+              {!isGst && (
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Total GST</span>
+                  <span className="tabular-nums">{money(invoice.total_gst)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-lg font-bold border-t pt-2 mt-1">
                 <span>Grand Total</span>
                 <span className="tabular-nums">{money(invoice.grand_total)}</span>
