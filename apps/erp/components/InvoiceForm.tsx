@@ -4,10 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format } from "date-fns";
-import { CalendarIcon, Plus, X, Eye } from "lucide-react";
+import { Plus, X, Eye } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
-import { Calendar } from "@/components/ui/calendar";
 import {
   Dialog,
   DialogContent,
@@ -15,21 +14,6 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -40,6 +24,8 @@ import {
 } from "@/components/ui/table";
 import { SearchableCustomerSelect } from "./SearchableCustomerSelect";
 import { SearchableItemSelect } from "./SearchableItemSelect";
+import AddCustomerDialog from "./AddCustomerDialog";
+import { ENTITY_LABELS } from "./SalesDocumentForm";
 import { calculateGST } from "@/lib/gstCalculation";
 import { invoiceSchema, InvoiceFormData, InvoiceItemFormData } from "@/lib/schemas/invoiceSchema";
 import { apiFetch } from "@/lib/api-client";
@@ -73,6 +59,8 @@ interface InvoiceFormProps {
    * by the entity defaults.
    */
   isClone?: boolean;
+  /** Leaves the form without saving -- nothing is written, no number used. */
+  onCancel?: () => void;
 }
 
 // 'exclusive' = rates are typed before GST (what invoice_items.rate stores);
@@ -101,6 +89,7 @@ export function InvoiceForm({
   onEntityKeyChange,
   lockEntity,
   isClone,
+  onCancel,
 }: InvoiceFormProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [entities, setEntities] = useState<BusinessProfileOption[]>([]);
@@ -209,6 +198,19 @@ export function InvoiceForm({
   };
   const placeOfSupply = resolvePlaceOfSupply();
   const isIntraState = !!entityStateCode && entityStateCode === placeOfSupply;
+  const invoiceDate = watch("invoice_date");
+  const customerName = watch("customer_name");
+
+  // Picking (or quick-adding) a customer snapshots their details onto the
+  // invoice; Ship To defaults to their saved shipping address and stays editable.
+  const pickCustomer = (customer: any) => {
+    setValue("customer_name", customer?.customer_name || "");
+    setValue("customer_gst", customer?.gst_number || "");
+    setValue("customer_address", customer?.address || "");
+    setValue("shipping_address", customer?.shipping_address || "");
+    setValue("customer_phone", customer?.phone || "");
+    setValue("customer_email", customer?.email || "");
+  };
 
   // One line's pre-GST rate/base, tax split and total -- computed live for display
   // and again on save, so what each line shows is exactly what gets stored.
@@ -314,9 +316,11 @@ export function InvoiceForm({
       },
       (errs) => {
         setShowErrors(true);
-        const first = errs.items
-          ? "Every line needs a description and a quantity above 0."
-          : Object.values(errs)[0]?.message;
+        const first = errs.customer_name
+          ? "Select a customer."
+          : errs.items
+            ? "Add at least one line; every line needs a description and a quantity above 0."
+            : Object.values(errs)[0]?.message;
         toast.error(String(first || "Please fix the highlighted fields."));
       },
     )();
@@ -337,130 +341,107 @@ export function InvoiceForm({
         </p>
       )}
 
+      {/* Same layout as the Quotation/PI entry form (components/SalesDocumentForm.tsx):
+          Entity with the number under it, customer picker with a read-only Bill To
+          and an editable Ship To -- plus the invoice-only Date / Place of Supply. */}
       <div className="grid grid-cols-2 gap-4">
-        <div className="col-span-2">
-          <Label htmlFor="entity_key">Issuing Entity</Label>
-          <Select
-            value={entityKey}
-            onValueChange={(key) => onEntityKeyChange?.(key)}
-            disabled={lockEntity || entities.length === 0}
-          >
-            <SelectTrigger id="entity_key">
-              <SelectValue placeholder="Loading entities…" />
-            </SelectTrigger>
-            <SelectContent>
-              {entities.map((e) => (
-                <SelectItem key={e.key} value={e.key}>
-                  {e.legal_name}
-                  {e.is_gst_registered
-                    ? ` — GST ${e.state_code ?? "?"}`
-                    : " — not GST registered"}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {isNew && zohoMode && (
-            <p className="text-xs text-destructive mt-1">
-              This entity&apos;s invoices are still generated in Zoho (transition mode, Settings → Business
-              Profiles) — the ERP can&apos;t issue one for it. Record the Zoho invoice number on the sale instead.
-            </p>
-          )}
-          {lockEntity && (
-            <p className="text-xs text-muted-foreground mt-1">
-              The issuing entity of an already-numbered invoice can&apos;t be changed.
-            </p>
-          )}
-          {!isGstRegistered && entities.length > 0 && (
-            <p className="text-xs text-muted-foreground mt-1">
-              This entity isn&apos;t GST registered — the document is a Bill of Supply and carries no tax.
-            </p>
-          )}
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Entity</label>
+            <select
+              value={entityKey}
+              onChange={(e) => onEntityKeyChange?.(e.target.value)}
+              disabled={lockEntity}
+              className="border p-2 w-full rounded bg-background disabled:opacity-70"
+            >
+              {Object.entries(ENTITY_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </select>
+            {isNew && zohoMode && (
+              <p className="text-xs text-destructive mt-1">
+                This entity&apos;s invoices are still generated in Zoho (transition mode, Settings → Business
+                Profiles) — the ERP can&apos;t issue one for it. Record the Zoho invoice number on the sale instead.
+              </p>
+            )}
+            {lockEntity && (
+              <p className="text-xs text-muted-foreground mt-1">The entity of an already-numbered invoice can&apos;t be changed.</p>
+            )}
+            {!isGstRegistered && entities.length > 0 && (
+              <p className="text-xs text-muted-foreground mt-1">Not GST registered — this is a Bill of Supply and carries no tax.</p>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Invoice #</label>
+            {/* Never client-editable, per this project's numbering rules. */}
+            <input
+              readOnly
+              value={watch("invoice_number") || "…"}
+              className="border p-2 w-full rounded bg-muted text-muted-foreground font-mono"
+            />
+            <input type="hidden" {...register("invoice_number")} />
+            {isNew && !zohoMode && <p className="text-xs text-muted-foreground mt-1">Assigned on save — nothing is reserved until then.</p>}
+          </div>
         </div>
-        <div>
-          <Label htmlFor="invoice_number">Invoice Number</Label>
-          {/* Never client-editable, per this project's numbering rules. */}
-          <Input
-            id="invoice_number"
-            readOnly
-            disabled
-            className="bg-muted text-muted-foreground font-mono"
-            value={watch("invoice_number") || "…"}
-          />
-          <input type="hidden" {...register("invoice_number")} />
-          {isNew && !zohoMode && <p className="text-xs text-muted-foreground mt-1">Assigned on save — nothing is reserved until then.</p>}
-        </div>
-        <div>
-          <Label>Invoice Date</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className="w-full justify-start">
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {watch("invoice_date") ? format(watch("invoice_date"), "dd/MM/yyyy") : "Select date"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent>
-              <Calendar mode="single" selected={watch("invoice_date")} onSelect={(date) => date && setValue("invoice_date", date)} />
-            </PopoverContent>
-          </Popover>
-        </div>
-        <div>
-          <Label htmlFor="place_of_supply">Place of Supply</Label>
-          <Input
-            id="place_of_supply"
-            placeholder={entityStateCode ? `Defaults to ${entityStateCode}` : "2-digit state code"}
-            {...register("place_of_supply")}
-          />
-          <p className="text-xs text-muted-foreground mt-1">
-            2-digit state code. Leave blank to take it from the customer&apos;s GSTIN, else the entity&apos;s own state.
-          </p>
-        </div>
-      </div>
-
-      <div className="border rounded-lg p-4 space-y-4">
-        <h3 className="font-semibold">Bill To</h3>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="col-span-2">
-            <Label>Customer</Label>
-            <SearchableCustomerSelect
-              value={watch("customer_id") || null}
-              onChange={(id) => setValue("customer_id", id)}
-              onCustomerData={(customer) => {
-                setValue("customer_name", customer?.customer_name || "");
-                setValue("customer_gst", customer?.gst_number || "");
-                setValue("customer_address", customer?.address || "");
-                setValue("shipping_address", customer?.shipping_address || "");
-                setValue("customer_phone", customer?.phone || "");
-                setValue("customer_email", customer?.email || "");
-              }}
+        <div className="space-y-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Invoice Date</label>
+            <input
+              type="date"
+              value={invoiceDate ? format(invoiceDate, "yyyy-MM-dd") : ""}
+              onChange={(e) => e.target.value && setValue("invoice_date", new Date(`${e.target.value}T00:00:00`))}
+              className="border p-2 w-full rounded bg-background"
             />
           </div>
           <div>
-            <Label htmlFor="customer_name">Customer Name</Label>
-            <Input id="customer_name" {...register("customer_name")} />
-          </div>
-          <div>
-            <Label htmlFor="customer_gst">GST Number</Label>
-            <Input id="customer_gst" {...register("customer_gst")} />
-          </div>
-          <div className="col-span-2">
-            <Label htmlFor="customer_address">Billing Address</Label>
-            <Input id="customer_address" {...register("customer_address")} />
-          </div>
-          <div>
-            <Label htmlFor="customer_phone">Phone</Label>
-            <Input id="customer_phone" {...register("customer_phone")} />
-          </div>
-          <div>
-            <Label htmlFor="customer_email">Email</Label>
-            <Input id="customer_email" type="email" {...register("customer_email")} />
+            <label className="block text-sm font-medium mb-1">Place of Supply <span className="font-normal text-muted-foreground">(optional)</span></label>
+            <input
+              placeholder={placeOfSupply ? `${placeOfSupply} — from GSTIN / entity` : "2-digit state code"}
+              {...register("place_of_supply")}
+              className="border p-2 w-full rounded bg-background"
+            />
+            <p className="text-xs text-muted-foreground mt-1">Only to override: blank = customer&apos;s GSTIN state, else the entity&apos;s own.</p>
           </div>
         </div>
       </div>
 
-      <div className="border rounded-lg p-4">
-        <Label htmlFor="shipping_address">Ship To</Label>
-        <Textarea id="shipping_address" placeholder="Shipping address (if different from billing address)" {...register("shipping_address")} />
+      <div>
+        <label className="block text-sm font-medium mb-1">Customer</label>
+        <div className="flex gap-2 items-start">
+          <div className="flex-1">
+            <SearchableCustomerSelect
+              value={watch("customer_id") || null}
+              onChange={(id) => setValue("customer_id", id)}
+              onCustomerData={pickCustomer}
+            />
+          </div>
+          <AddCustomerDialog onAdd={(created) => { if (created) { setValue("customer_id", created.id); pickCustomer(created); } }} />
+        </div>
       </div>
+
+      {(customerName || watch("customer_id")) && (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Bill To</label>
+            {/* Snapshot of the customer record, as on Quotations/PI -- edit the
+                customer itself to change it. */}
+            <div className="text-sm text-muted-foreground border rounded p-2 min-h-[4.5rem] bg-muted/40 space-y-0.5">
+              <p className="font-medium text-foreground">{customerName || "—"}</p>
+              {watch("customer_address") && <p className="whitespace-pre-wrap">{watch("customer_address")}</p>}
+              {watch("customer_gst") && <p>GSTIN: {watch("customer_gst")}</p>}
+              {watch("customer_phone") && <p>Phone: {watch("customer_phone")}</p>}
+              {watch("customer_email") && <p>Email: {watch("customer_email")}</p>}
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Ship To</label>
+            <textarea
+              {...register("shipping_address")}
+              placeholder="Leave blank to ship to the billing address"
+              rows={3}
+              className="border p-2 w-full rounded text-sm bg-background"
+            />
+          </div>
+        </div>
+      )}
 
       {/* ---------- Item table (Zoho layout) ---------- */}
       <div className="@container border rounded-lg p-4 space-y-3">
@@ -498,11 +479,11 @@ export function InvoiceForm({
                 <div className="col-span-2 @2xl:col-span-1 space-y-1.5">
                   <div className="flex items-start gap-2">
                     {/* rows=2 by default, auto-growing with content. */}
-                    <Textarea
+                    <textarea
                       {...register(`items.${index}.description`)}
                       rows={2}
                       placeholder="Item name / description"
-                      className={cn("resize-y min-h-0", descMissing && "border-destructive")}
+                      className={cn("border p-1.5 flex-1 min-w-0 rounded text-sm resize-y bg-background", descMissing && "border-destructive")}
                       onInput={(e) => { const el = e.currentTarget; el.style.height = "auto"; el.style.height = `${el.scrollHeight}px`; }}
                     />
                     <button type="button" onClick={() => remove(index)} className="@2xl:hidden text-destructive p-1 shrink-0" title="Remove line">
@@ -522,11 +503,11 @@ export function InvoiceForm({
                 </div>
                 <label className="flex flex-col gap-0.5 text-xs">
                   <span className="text-muted-foreground @2xl:hidden">Quantity</span>
-                  <Input type="number" step="0.01" className="text-right tabular-nums" {...register(`items.${index}.quantity`, { valueAsNumber: true })} />
+                  <input type="number" step="0.01" className="border p-1.5 rounded text-sm text-right tabular-nums w-full bg-background" {...register(`items.${index}.quantity`, { valueAsNumber: true })} />
                 </label>
                 <label className="flex flex-col gap-0.5 text-xs">
                   <span className="text-muted-foreground @2xl:hidden">Rate{isGstRegistered && (inclusive ? " (incl. GST)" : " (excl. GST)")}</span>
-                  <Input type="number" step="0.01" className="text-right tabular-nums" {...register(`items.${index}.rate`, { valueAsNumber: true })} />
+                  <input type="number" step="0.01" className="border p-1.5 rounded text-sm text-right tabular-nums w-full bg-background" {...register(`items.${index}.rate`, { valueAsNumber: true })} />
                 </label>
                 {isGstRegistered && (
                   <label className="flex flex-col gap-0.5 text-xs">
@@ -534,7 +515,7 @@ export function InvoiceForm({
                     <select
                       value={gstRate}
                       onChange={(e) => setValue(`items.${index}.gst_rate`, Number(e.target.value))}
-                      className="h-8 border rounded-md px-1.5 text-sm bg-background"
+                      className="border p-1.5 rounded text-sm w-full bg-background"
                     >
                       {[...new Set([...GST_RATE_OPTIONS, gstRate])].sort((a, b) => a - b).map((r) => (
                         <option key={r} value={r}>{r === 0 ? "No GST" : `GST ${r}%`}</option>
@@ -592,29 +573,31 @@ export function InvoiceForm({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <Label htmlFor="notes">Notes</Label>
-          <Textarea id="notes" {...register("notes")} />
+          <label className="block text-sm font-medium mb-1">Notes</label>
+          <textarea {...register("notes")} className="border p-2 w-full rounded text-sm bg-background" rows={3} />
         </div>
         <div>
-          <Label htmlFor="terms_conditions">Terms & Conditions</Label>
-          <Textarea id="terms_conditions" {...register("terms_conditions")} />
+          <label className="block text-sm font-medium mb-1">Terms & Conditions</label>
+          <textarea {...register("terms_conditions")} className="border p-2 w-full rounded text-sm bg-background" rows={3} />
+        </div>
+        <div>
+          <label className="block text-sm font-medium mb-1">Bank Details</label>
+          <textarea {...register("bank_details")} className="border p-2 w-full rounded text-sm bg-background" rows={3} />
         </div>
       </div>
-      <div>
-        <Label htmlFor="bank_details">Bank Details</Label>
-        <Textarea id="bank_details" {...register("bank_details")} />
-      </div>
+      <p className="text-xs text-muted-foreground -mt-4">New invoices start with the entity&apos;s default Notes and T&amp;C, set by the owner in Settings → Business Profiles.</p>
 
-      <div className="flex justify-end space-x-2 pt-4 border-t">
+      <div className="flex flex-wrap justify-end gap-2 pt-4 border-t">
+        {onCancel && <Button type="button" variant="outline" onClick={onCancel}>Cancel</Button>}
         <Button type="button" variant="outline" onClick={() => setPreviewOpen(true)}>
           <Eye className="mr-2 h-4 w-4" /> Preview
         </Button>
-        <Button type="button" loading={isSubmitting} disabled={isNew && zohoMode} onClick={() => submitWith()}>
+        <Button type="button" variant="outline" loading={isSubmitting} disabled={isNew && zohoMode} onClick={() => submitWith()}>
           Save Draft
         </Button>
-        <Button type="button" variant="default" loading={isSubmitting} disabled={isNew && zohoMode} onClick={() => submitWith("pending_approval")}>
+        <Button type="button" loading={isSubmitting} disabled={isNew && zohoMode} onClick={() => submitWith("pending_approval")}>
           Submit for Approval
         </Button>
       </div>

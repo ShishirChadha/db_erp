@@ -45,7 +45,13 @@ to it. Can combine multiple sale line items into a single invoice document.
 for a standalone invoice that isn't generated from a sale (its lines carry no
 `sale_id`, so it moves no stock and finalizes no sale).
 
-- **Number** — shown directly under Issuing Entity as a read-only preview
+- **Layout** — the same as the Quotation/PI entry form: Entity with the
+  number under it, Invoice Date and an optional Place of Supply override
+  beside them, customer picker (with quick-add) showing a read-only **Bill
+  To** snapshot and an editable **Ship To**, then the item table, and Notes /
+  T&C / Bank Details. Customer details are changed on the customer record, not
+  typed per invoice. Cancel leaves without saving.
+- **Number** — shown directly under Entity as a read-only preview
   (`GET /api/invoices/next-number`); nothing is reserved, so leaving the form
   burns no number. `mintInvoiceNumber()` mints the real one on save (it
   checks the caller's `invoices` edit grant) and says so if the preview was

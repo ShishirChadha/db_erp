@@ -147,6 +147,7 @@ function NewInvoicePage() {
           isClone={!!cloneData}
           onSubmit={handleSubmit}
           isSubmitting={isSubmitting}
+          onCancel={() => router.back()}
           entityKey={entityKey}
           onEntityKeyChange={setEntityKey}
         />
