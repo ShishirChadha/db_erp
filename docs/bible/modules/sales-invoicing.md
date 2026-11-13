@@ -70,6 +70,11 @@ their shipping address into `shipping_address`. The PDF's Ship To falls back to 
 when it's blank, and a later edit to the customer never rewrites an issued invoice. See
 **manage-customers**.
 
+Moving an invoiced sale to a different customer is the one path that re-snapshots an
+invoice's customer: Edit Sale asks whether to move the invoice too, allowed only once
+every sale on it has the new customer (owner, month not filed or locked). See
+**edit-or-correct-a-sale**.
+
 ## Related
 
 **sell-a-unit**, **raise-a-gst-invoice**, **record-a-part-payment**,
