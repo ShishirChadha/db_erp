@@ -1414,6 +1414,7 @@ DB advisor Bible chapters -- synced from docs/bible/**/*.md via scripts/bible/sy
 | updated_at | timestamp with time zone | no | `now()` |  |  |
 | is_deleted | boolean | no | `false` |  |  |
 | working_copy_of_set_id | uuid | yes |  | FK -> lead_sets.id |  |
+| field_labels | jsonb | yes |  |  |  |
 
 ## leads
 
@@ -2554,7 +2555,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~34,091 rows (estimate)
+~39,240 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

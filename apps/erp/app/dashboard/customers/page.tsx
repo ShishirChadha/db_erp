@@ -21,6 +21,7 @@ import {
 import { ArrowLeft, Star } from "lucide-react";
 import RequirePageAccess from "@/components/RequirePageAccess";
 import { StatusBadge } from "@/components/StatusBadge";
+import CustomerActivity from "@/components/CustomerActivity";
 import { Pagination } from "@/components/Pagination";
 import { withRetry } from "@/lib/db-retry";
 import { cn } from "@/lib/utils";
@@ -150,6 +151,9 @@ function CustomerDetailPane({ customer, onEdit, onDelete, onRestore, restoring, 
       </div>
 
       <div className="flex-1 overflow-y-auto p-4">
+        <div className="mb-3">
+          <CustomerActivity customerId={customer.id} />
+        </div>
         <Field label="Type">{customer.type || "—"}</Field>
         {customer.type === "Business" && (
           <Field label="Contact Person">{customer.contact_person || "—"}</Field>

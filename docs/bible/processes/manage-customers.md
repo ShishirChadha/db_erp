@@ -5,7 +5,7 @@ kind: process
 audience: [owner, manager, employee]
 module: customers-vendors
 routes: [/dashboard/customers]
-keywords: [customer, add customer, billing address, shipping address, ship to, contact persons, pan, gst treatment, place of supply, mobile mandatory, edit customer, delete customer, restore customer, bulk add, csv import, gstin, gst fetch, duplicate customer, phone number, customer type, business, individual, naya customer, customer tier, vip, wholesale]
+keywords: [customer, customer sales count, customer invoices, unused customer, junk customer, safe to delete, add customer, billing address, shipping address, ship to, contact persons, pan, gst treatment, place of supply, mobile mandatory, edit customer, delete customer, restore customer, bulk add, csv import, gstin, gst fetch, duplicate customer, phone number, customer type, business, individual, naya customer, customer tier, vip, wholesale]
 sources:
   - apps/erp/app/dashboard/customers/page.tsx
   - apps/erp/components/AddCustomerDialog.tsx
@@ -13,6 +13,8 @@ sources:
   - apps/erp/components/CustomerForm.tsx
   - apps/erp/components/CustomerDetailDialog.tsx
   - apps/erp/app/api/pincode/route.ts
+  - apps/erp/app/api/customers/[id]/activity/route.ts
+  - apps/erp/components/CustomerActivity.tsx
   - apps/erp/components/BulkAddDialog.tsx
   - apps/erp/app/api/customers/[id]/tier/route.ts
 updated: 2026-11-13
@@ -125,6 +127,26 @@ later edit to the customer never rewrites a document already issued.
   `sales_documents.shipping_address`. Their PDF prints Bill To and Ship To
   side by side.
 - Both PDFs fall back to the billing address when Ship To is blank.
+
+## Checking whether a customer is actually used
+
+The customer's detail pane on the Customers page (and the Customer Detail
+dialog opened from a customer name anywhere) starts with an activity summary
+from `GET /api/customers/[id]/activity` (needs Customers page access;
+service-role read so an employee's view can't make a customer look unused;
+selling-side columns only, no cost/vendor/margin):
+
+- **Sales**: active sales count (plus voided count). Click it to open the
+  Sales Ledger filtered to this customer (`/dashboard/sales?customer=<id>`).
+- **Invoices**: distinct invoice numbers, from ERP invoices and from invoice
+  numbers recorded on the sales. Also opens the filtered Sales Ledger.
+- **Other records**: repair, replacement, quotation/proforma and rental
+  counts.
+- The **invoice numbers** themselves (ERP invoices link to their page) and
+  the **sales** list: date, item, short Sale ID (the same ID the Sales Ledger
+  shows and can search by), invoice number or "Not invoiced", amount.
+- When nothing at all references the customer it shows **"No sales,
+  invoices or other records: likely safe to delete"**.
 
 ## Steps — edit or delete a customer
 

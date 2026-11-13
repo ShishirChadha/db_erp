@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2 } from "lucide-react";
 import EditCustomerDialog from "@/components/EditCustomerDialog";
 import { GST_TREATMENTS } from "@/components/CustomerForm";
+import CustomerActivity from "@/components/CustomerActivity";
 import { SearchableCustomerSelect } from "@/components/SearchableCustomerSelect";
 import AddCustomerDialog from "@/components/AddCustomerDialog";
 import { apiFetch } from "@/lib/api-client";
@@ -149,6 +150,7 @@ export function CustomerDetailDialog({
           <div className="py-6 text-center text-sm text-destructive">Customer not found.</div>
         ) : (
           <div className="space-y-4">
+            <CustomerActivity customerId={customer.id} />
             <div className="grid grid-cols-2 gap-3">
               <Field label="Type" value={customer.type} />
               {customer.type === "Business" && (
