@@ -355,7 +355,9 @@ export function EditRepairJobDialog({
   };
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    // Hidden (not closed) while the Zoho pop-up is up: it is a plain overlay, and
+    // under an open Radix dialog it sits behind the backdrop and gets no clicks.
+    <Dialog open={!(showZohoDialog && unfinalizedLines.length > 0)} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Edit Repair Job</DialogTitle>
