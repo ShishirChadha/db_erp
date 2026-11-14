@@ -263,9 +263,20 @@ export async function createInvoiceFromSales(opts: {
   invoiceNumber?: string
   mintNumber?: () => Promise<string>
   placeOfSupplyOverride?: string | null
+  // Invoice only part of a sale's billed total -- e.g. a sale whose payment was
+  // split across accounts (sale_payments) where the owner only wants the amount
+  // actually credited to this GST entity reflected in the GST invoice/filing. The
+  // remainder is simply never invoiced through the ERP. Scales sale_base_price/
+  // sale_gst by the same ratio so the GST rate on the line stays correct. Only
+  // applied for a single-sale invoice (ignored for sales.length > 1 -- a combined
+  // invoice has no single sale to apply it to).
+  amountOverride?: number
 }): Promise<CreateInvoiceResult> {
-  const { sales, entityKey, source, invoiceDate, userId, attachmentUrls, placeOfSupplyOverride } = opts
+  const { sales, entityKey, source, invoiceDate, userId, attachmentUrls, placeOfSupplyOverride, amountOverride } = opts
   if (!sales.length) return { ok: false, error: 'No sales provided.', status: 400 }
+
+  const billedAmount = (s: any) =>
+    sales.length === 1 && amountOverride != null ? amountOverride : Number(s.sale_total)
 
   const customerId = sales[0].customer_id
   const { data: customer } = await supabaseAdmin
@@ -291,12 +302,16 @@ export async function createInvoiceFromSales(opts: {
     }
   }
 
-  const gstBySale = new Map(sales.map((s) => [
-    s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price, s.sale_gst, s.sale_total, placeOfSupplyOverride),
-  ]))
+  const gstBySale = new Map(sales.map((s) => {
+    const billed = billedAmount(s)
+    // Scale base price and GST by the same ratio as the billed-vs-full-total amount
+    // so the per-unit GST rate is unchanged -- only the quantum invoiced shrinks.
+    const scale = Number(s.sale_total) > 0 ? billed / Number(s.sale_total) : 1
+    return [s.id, classifyGst(entity, customer?.gst_number, customer?.state_code, s.sale_base_price * scale, s.sale_gst * scale, billed, placeOfSupplyOverride)]
+  }))
   const subtotal = sales.reduce((a, s) => a + gstBySale.get(s.id)!.subtotal, 0)
   const totalGst = sales.reduce((a, s) => a + gstBySale.get(s.id)!.totalGst, 0)
-  const grandTotal = sales.reduce((a, s) => a + Number(s.sale_total), 0)
+  const grandTotal = sales.reduce((a, s) => a + billedAmount(s), 0)
   const placeOfSupply = gstBySale.get(sales[0].id)!.placeOfSupplyStateCode
 
   let invoiceNumber = opts.invoiceNumber
@@ -341,7 +356,7 @@ export async function createInvoiceFromSales(opts: {
     .single()
   if (invErr) return { ok: false, error: invErr.message, status: 500 }
 
-  const itemRows = sales.map((s) => buildInvoiceItemRow(invoice.id, s, entity, gstBySale.get(s.id)!, descriptors[s.id]))
+  const itemRows = sales.map((s) => buildInvoiceItemRow(invoice.id, s, entity, gstBySale.get(s.id)!, descriptors[s.id], billedAmount(s)))
   const { error: itemsErr } = await supabaseAdmin.from('invoice_items').insert(itemRows)
   if (itemsErr) return { ok: false, error: itemsErr.message, status: 500 }
 
@@ -463,7 +478,7 @@ export async function appendSalesToInvoice(opts: {
 
 // Builds one full invoice_items insert row from a resolved descriptor + this
 // sale's GST classification.
-export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: EntityInfo, gst: GstClassification, descriptor: Awaited<ReturnType<typeof resolveSaleItemDescriptor>>) {
+export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: EntityInfo, gst: GstClassification, descriptor: Awaited<ReturnType<typeof resolveSaleItemDescriptor>>, amountOverride?: number) {
   const gstRate = entity.is_gst_registered && sale.sale_base_price > 0
     ? snapGstRate(Math.round((sale.sale_gst / sale.sale_base_price) * 10000) / 100)
     : 0
@@ -486,6 +501,6 @@ export function buildInvoiceItemRow(invoiceId: string, sale: any, entity: Entity
     cgst_amount: gst.cgstAmount,
     sgst_amount: gst.sgstAmount,
     igst_amount: gst.igstAmount,
-    amount: sale.sale_total,
+    amount: amountOverride ?? sale.sale_total,
   }
 }

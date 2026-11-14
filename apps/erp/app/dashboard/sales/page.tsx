@@ -84,6 +84,9 @@ interface Sale {
   ssd?: string | null;
   bundled_accessories_display?: { name: string; quantity: number; unit_price: number; hsn_code?: string | null }[];
   payment_date?: string | null;
+  // Present only when the payment was actually split across ≥2 distinct accounts
+  // (e.g. part Digitalbluez, part Techtenth) -- see paymentAccountSplitsBySaleId.
+  payment_split?: { payment_account: string | null; amount: number }[] | null;
   bundle_children?: { id: string; name: string; quantity: number; sale_total: number }[];
   bundle_parent?: { id: string; label: string } | null;
 }
@@ -164,13 +167,23 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
   const [showAttachDialog, setShowAttachDialog] = useState(false);
   const [showRemoveDialog, setShowRemoveDialog] = useState(false);
   const [removeErr, setRemoveErr] = useState("");
+  // A split-payment sale (part into this entity, part elsewhere) can be invoiced
+  // for just the portion credited here, rather than the sale's full total -- see
+  // amountOverride in lib/invoice-finalize.ts. Picking an amount is a separate
+  // step from the plain one-click path below, only ever shown when there's an
+  // actual split to choose from.
+  const [pickingAmount, setPickingAmount] = useState(false);
   const isExternal = sale.invoice_mode === "external";
-  const { run: generateInvoice, pending: generating } = useAsyncAction(async () => {
-    const res = await apiFetch(`/api/sales/${sale.id}/finalize`, { method: "POST", body: "{}" });
+  const { run: generateInvoice, pending: generating } = useAsyncAction(async (invoiceAmount?: number) => {
+    const res = await apiFetch(`/api/sales/${sale.id}/finalize`, {
+      method: "POST",
+      body: JSON.stringify(invoiceAmount != null ? { invoice_amount: invoiceAmount } : {}),
+    });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
       alert(e.error || "Failed to generate invoice.");
     } else {
+      setPickingAmount(false);
       onDone();
     }
   });
@@ -247,6 +260,35 @@ function InvoiceSection({ sale, isOwner, onDone }: { sale: Sale; isOwner: boolea
         <Button variant="link" size="sm" onClick={() => setShowZohoDialog(true)} className="text-warning text-xs" title="This entity is issuing invoices in Zoho during the transition">
           Record Zoho Invoice #
         </Button>
+      ) : sale.payment_split && !pickingAmount ? (
+        <Button variant="link" size="sm" onClick={() => setPickingAmount(true)} className="text-warning text-xs inline-flex items-center gap-1">
+          Generate Invoice
+        </Button>
+      ) : sale.payment_split && pickingAmount ? (
+        <div className="flex flex-col items-start gap-1.5 text-xs">
+          <span className="text-muted-foreground">Payment was split -- invoice which amount?</span>
+          {sale.payment_split.map((p, i) => (
+            <Button
+              key={i}
+              variant="outline"
+              size="sm"
+              disabled={generating}
+              onClick={() => generateInvoice(p.amount)}
+              className="text-xs inline-flex items-center gap-1"
+            >
+              {generating && <Loader2 className="size-3 animate-spin" />}
+              ₹{p.amount.toFixed(2)} only ({p.payment_account || "Unspecified"})
+            </Button>
+          ))}
+          <div className="flex items-center gap-2">
+            <Button variant="link" size="sm" disabled={generating} onClick={() => generateInvoice()} className="text-warning text-xs p-0 h-auto">
+              Full ₹{sale.sale_total.toFixed(2)} anyway
+            </Button>
+            <Button variant="ghost" size="sm" disabled={generating} onClick={() => setPickingAmount(false)} className="text-xs p-0 h-auto">
+              Cancel
+            </Button>
+          </div>
+        </div>
       ) : (
         <Button variant="link" size="sm" onClick={() => generateInvoice()} disabled={generating} className="text-warning text-xs inline-flex items-center gap-1">
           {generating && <Loader2 className="size-3 animate-spin" />}
@@ -523,7 +565,21 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
           </Field>
         )}
         <Field label="Amount Paid"><span className="tabular-nums">₹{sale.amount_paid?.toFixed(2)}</span></Field>
-        <Field label="Received Into">{sale.payment_account || "—"}</Field>
+        <Field label="Received Into">
+          {sale.payment_split ? (
+            <div className="space-y-0.5">
+              <span className="text-warning text-xs font-medium">Split across accounts</span>
+              {sale.payment_split.map((p, i) => (
+                <div key={i} className="flex items-baseline justify-between gap-2">
+                  <span>{p.payment_account || "Unspecified"}</span>
+                  <span className="tabular-nums text-muted-foreground">₹{p.amount.toFixed(2)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            sale.payment_account || "—"
+          )}
+        </Field>
         <Field label="Sold By">{sale.sold_by || "—"}</Field>
         <Field label="Invoice"><InvoiceSection sale={sale} isOwner={isOwner} onDone={onDone} /></Field>
       </div>

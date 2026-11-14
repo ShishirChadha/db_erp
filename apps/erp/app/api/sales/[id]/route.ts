@@ -7,6 +7,7 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { insertAccessoryMovement } from '@/lib/accessory-movements'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { checkInvoiceCustomerMove, moveInvoiceToCustomer, type InvoiceMoveCheck } from '@/lib/invoice-customer'
+import { paymentAccountSplitsBySaleId } from '@/lib/sale-payment-dates'
 
 // ---------- GET: fetch one sale ----------
 // Reachable from both the Sales ledger page and the Live Stock asset detail page's
@@ -91,6 +92,13 @@ export async function GET(
     .maybeSingle()
   const invoiceMode = profile?.invoicing_mode === 'external' ? 'external' : 'erp'
 
+  // A customer's payment can be split across accounts (part into Digitalbluez, part
+  // into Techtenth) -- only worth surfacing when there's actually more than one
+  // distinct account on record; a single-account sale leaves this null so callers
+  // don't have to re-check length themselves.
+  const splits = (await paymentAccountSplitsBySaleId([id])).get(id) || []
+  const paymentSplit = splits.length > 1 ? splits : null
+
   return NextResponse.json({
     ...data,
     bundled_accessories: bundledAccessories,
@@ -98,6 +106,7 @@ export async function GET(
     unit_full_sku_code: unitFullSkuCode,
     invoice_date: invoiceDate,
     invoice_mode: invoiceMode,
+    payment_split: paymentSplit,
     history: history || [],
   })
 }

@@ -46,6 +46,19 @@ export async function POST(
   const body = await req.json().catch(() => ({}))
   const invoiceDate = body.invoice_date || new Date().toISOString().slice(0, 10)
 
+  // A sale paid partly into this GST entity and partly elsewhere (split across
+  // sale_payments rows, e.g. part Digitalbluez/part Techtenth) can be invoiced for
+  // just the amount actually credited here, so GST filing isn't inflated by money
+  // that went to a non-GST account -- see lib/invoice-finalize.ts's amountOverride.
+  let amountOverride: number | undefined
+  if (body.invoice_amount !== undefined) {
+    const amt = Number(body.invoice_amount)
+    if (!Number.isFinite(amt) || amt <= 0 || amt > Number(sale.sale_total) + 0.01) {
+      return NextResponse.json({ error: `Invoice amount must be between 0 and ₹${Number(sale.sale_total).toFixed(2)}.` }, { status: 400 })
+    }
+    amountOverride = amt
+  }
+
   const result = await createInvoiceFromSales({
     sales: [sale],
     entityKey,
@@ -53,6 +66,7 @@ export async function POST(
     invoiceDate,
     userId: sessionUser.id,
     mintNumber: () => mintSalesInvoiceNumber(entityKey),
+    amountOverride,
   })
 
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status })

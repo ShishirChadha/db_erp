@@ -68,6 +68,7 @@ interface SaleDetail {
   invoice_number: string | null;
   invoice_id: string | null;
   invoice_mode?: "erp" | "external";
+  payment_split?: { payment_account: string | null; amount: number }[] | null;
   eway_bill_number: string | null;
   eway_bill_date: string | null;
   is_deleted: boolean;
@@ -553,6 +554,11 @@ export function EditSaleDialog({
                   <div className="text-sm capitalize">
                     {sale.payment_status} · ₹{sale.amount_paid?.toFixed(2)} of ₹{sale.sale_total?.toFixed(2)}
                   </div>
+                  {sale.payment_split && (
+                    <div className="text-xs text-warning mt-0.5">
+                      Split: {sale.payment_split.map((p) => `${p.payment_account || "Unspecified"} ₹${p.amount.toFixed(2)}`).join(" · ")}
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {/* Jump straight to adding a line (e.g. a shipping charge)

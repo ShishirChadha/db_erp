@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { resolveEntityKey } from '@/lib/invoice-finalize'
 import { parsePagination } from '@/lib/pagination'
-import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { latestPaymentDatesBySaleId, paymentAccountSplitsBySaleId } from '@/lib/sale-payment-dates'
 import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 import { buildCustomerSummary } from '@/lib/customer-summary'
 import { withRetry } from '@/lib/db-retry'
@@ -350,6 +350,7 @@ export async function GET(req: NextRequest) {
     { data: saleRefunds },
     { data: saleCredits },
     paymentDateBySaleId,
+    paymentSplitBySaleId,
   ] = await Promise.all([
     chunkedIn<any>(unfinalizedCustomerIds, chunk =>
       supabaseAdmin.from('customers').select('id, customer_name').in('id', chunk)
@@ -385,6 +386,10 @@ export async function GET(req: NextRequest) {
     // Most recent sale_payments installment date per sale -- shown as "Payment Date"
     // alongside sale_date; a sale with 2+ partial payments shows its latest one.
     latestPaymentDatesBySaleId((data || []).map((s: any) => s.id)),
+    // A sale's payment can be split across accounts (e.g. part Digitalbluez, part
+    // Techtenth) -- surfaced so "Received Into" doesn't silently show just one
+    // account while invoicing/GST filing cares which account actually got how much.
+    paymentAccountSplitsBySaleId((data || []).map((s: any) => s.id)),
   ])
   const liveNameById = new Map((liveCustomers || []).map((c: any) => [c.id, c.customer_name]))
   const customerSummaryById = new Map((summaryCustomers || []).map((c: any) => [c.id, buildCustomerSummary(c)]))
@@ -442,6 +447,8 @@ export async function GET(req: NextRequest) {
     withName.rental_period = s.rental_period_start && s.rental_period_end
       ? `${s.rental_period_start} to ${s.rental_period_end}` : null
     withName.payment_date = paymentDateBySaleId.get(s.id) || null
+    const splits = paymentSplitBySaleId.get(s.id) || []
+    withName.payment_split = splits.length > 1 ? splits : null
     withName.invoice_date = s.invoice_id ? invoiceDateById.get(s.invoice_id) || null : null
     // The invoice's own grand_total can exceed this sale's own sale_total --
     // e.g. a shipping/custom charge added at the invoice level (see
