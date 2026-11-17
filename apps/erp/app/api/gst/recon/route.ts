@@ -10,7 +10,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { matchZohoInvoices, type ZohoInvoiceRow } from '@/lib/recon/gst-zoho-matcher'
-import { matchGstr2b, parseGstr2bJson } from '@/lib/recon/gst-2b-matcher'
+import { matchGstr2b, parseGstr2bJson, parseGstr2bCreditNotes } from '@/lib/recon/gst-2b-matcher'
 import { docNumberKey } from '@/lib/recon/gst-doc-key'
 import { normalizePlaceOfSupply } from '@/lib/recon/gst-pos'
 import { applyPlaceOfSupply } from '@/lib/gst-place-of-supply'
@@ -159,6 +159,7 @@ export async function POST(req: NextRequest) {
   try {
     let lines
     let unmapped: string[] = []
+    let creditNotes: any = null
 
     if (kind === 'zoho_invoices' && source_import_id) {
       // Re-use the already-normalized columns stored on each line -- NOT the
@@ -257,6 +258,7 @@ export async function POST(req: NextRequest) {
           error_code: 'no_rows_parsed',
         }, { status: 400 })
       }
+      creditNotes = parseGstr2bCreditNotes(payload)
       lines = await matchGstr2b(entity_key, period_start, period_end, rows)
     }
 
@@ -297,6 +299,7 @@ export async function POST(req: NextRequest) {
         matcher_version: kind === 'zoho_invoices' ? 2 : 1,
         uploaded_by: sessionUser!.id,
         notes: unmapped.length ? `Columns not found in the upload: ${unmapped.join(', ')}` : null,
+        credit_notes: creditNotes,
       })
       .select()
       .single()

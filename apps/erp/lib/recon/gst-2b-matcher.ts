@@ -42,10 +42,9 @@ export interface Gstr2bRow {
 /**
  * Parses the portal's GSTR-2B JSON download.
  *
- * Only the B2B section is read. Credit notes (cdnr) and amendments are
- * deliberately left out for now: they net against credit rather than granting
- * it, and getting that wrong would overstate ITC, which is the direction that
- * attracts an intimation. Better absent than wrong.
+ * Only the B2B section becomes matchable rows. Credit notes (cdnr) net against
+ * credit rather than granting it, so they are totalled separately by
+ * parseGstr2bCreditNotes and applied to the ITC figure in step 9.
  */
 export function parseGstr2bJson(payload: any): Gstr2bRow[] {
   const out: Gstr2bRow[] = []
@@ -91,6 +90,46 @@ export function parseGstr2bJson(payload: any): Gstr2bRow[] {
   return out
 }
 
+export interface Gstr2bNoteTotals {
+  count: number; taxable: number; cgst: number; sgst: number; igst: number
+  reverse_charge: { count: number; taxable: number; cgst: number; sgst: number; igst: number }
+}
+
+/**
+ * Net effect of the 2B credit/debit notes section (cdnr) on ITC: a credit note
+ * (typ 'C') reduces it, a debit note adds to it. Notes the portal marks as not
+ * available (itcavl 'N') don't count. Returned as signed totals -- a credit note
+ * makes the figures negative -- with reverse-charge notes kept apart.
+ */
+export function parseGstr2bCreditNotes(payload: any): Gstr2bNoteTotals {
+  const data = payload?.data ?? payload?.docdata ?? payload
+  const cdnr = data?.docdata?.cdnr ?? data?.cdnr ?? []
+  const blank = () => ({ count: 0, taxable: 0, cgst: 0, sgst: 0, igst: 0 })
+  const fwd = blank(), rcm = blank()
+  for (const supplier of cdnr) {
+    for (const nt of supplier?.nt ?? []) {
+      if (nt?.itcavl === 'N') continue
+      const sign = String(nt?.typ ?? nt?.ntty ?? 'C').toUpperCase() === 'D' ? 1 : -1
+      const items = nt?.items ?? nt?.itms ?? []
+      let txval = 0, cgst = 0, sgst = 0, igst = 0
+      if (items.length === 0) {
+        txval = Number(nt?.txval) || 0; cgst = Number(nt?.cgst) || 0
+        sgst = Number(nt?.sgst) || 0; igst = Number(nt?.igst) || 0
+      }
+      for (const it of items) {
+        const d = it?.itm_det ?? it
+        txval += Number(d?.txval) || 0; cgst += Number(d?.camt ?? d?.cgst) || 0
+        sgst += Number(d?.samt ?? d?.sgst) || 0; igst += Number(d?.iamt ?? d?.igst) || 0
+      }
+      const t = nt?.rev === 'Y' ? rcm : fwd
+      t.count += 1
+      t.taxable += sign * txval; t.cgst += sign * cgst; t.sgst += sign * sgst; t.igst += sign * igst
+    }
+  }
+  const r2 = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, k === 'count' ? v : Math.round((v as number) * 100) / 100])) as any
+  return { ...r2(fwd), reverse_charge: r2(rcm) }
+}
+
 /** The portal writes dates DD-MM-YYYY; Postgres wants YYYY-MM-DD. */
 function toIso(v: any): string | null {
   const s = String(v ?? '').trim()
@@ -123,6 +162,23 @@ export async function matchGstr2b(
     const resolved = ['digitalbluez', 'techtenth', 'cash'].includes(key) ? key : 'digitalbluez'
     return resolved === entityKey
   })
+
+  // The vendor's bill is recorded as a Purchase Invoice (invoices, invoice_type
+  // 'purchase', linked by po_id) -- the PO's own vendor_invoice_* columns are only
+  // filled on older rows. Use the purchase invoice wherever the PO has none.
+  const poIds = candidates.map((po: any) => po.id)
+  if (poIds.length) {
+    const { data: bills } = await supabaseAdmin
+      .from('invoices').select('po_id, invoice_number, invoice_date')
+      .eq('invoice_type', 'purchase').in('po_id', poIds)
+    const billByPo = new Map((bills ?? []).map((b: any) => [b.po_id, b]))
+    for (const po of candidates as any[]) {
+      const bill = billByPo.get(po.id)
+      if (!bill) continue
+      po.vendor_invoice_number = po.vendor_invoice_number || bill.invoice_number
+      po.vendor_invoice_date = po.vendor_invoice_date || bill.invoice_date
+    }
+  }
 
   const out: ReconLine[] = []
   const consumed = new Set<string>()

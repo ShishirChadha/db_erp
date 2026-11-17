@@ -1531,13 +1531,18 @@ function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
   const [opening, setOpening] = useState({ igst: '', cgst: '', sgst: '' })
   const n = (v: any) => Number(v) || 0
   const out = t31.a_outward_taxable ?? {}
-  const rcmTax = n(t31.d_inward_reverse_charge?.tax)
   const erpItc = itc['4A_all_other_itc'] ?? {}
   const base = itc2b ?? erpItc
+  // Reverse charge: the ERP's own RCM bookings when there are any, else what 2B shows
+  // (the portal fills 3.1(d) and 4A(3) from 2B). The tax is paid in cash, and the same
+  // amount comes back as credit in the same return.
+  const rcm2b = itc2b?.reverse_charge ?? {}
+  const rcmTax = n(t31.d_inward_reverse_charge?.tax) || (n(rcm2b.igst) + n(rcm2b.cgst) + n(rcm2b.sgst))
+  const rcmCredit = itc2b ? { igst: n(rcm2b.igst), cgst: n(rcm2b.cgst), sgst: n(rcm2b.sgst) } : { igst: 0, cgst: 0, sgst: 0 }
   const credit = {
-    igst: n(base.igst) + n(opening.igst),
-    cgst: n(base.cgst) + n(opening.cgst),
-    sgst: n(base.sgst) + n(opening.sgst),
+    igst: n(base.igst) + rcmCredit.igst + n(opening.igst),
+    cgst: n(base.cgst) + rcmCredit.cgst + n(opening.cgst),
+    sgst: n(base.sgst) + rcmCredit.sgst + n(opening.sgst),
   }
   const r = setOff({ igst: n(out.igst), cgst: n(out.cgst), sgst: n(out.sgst) }, credit)
   const heads: Array<'igst' | 'cgst' | 'sgst'> = ['igst', 'cgst', 'sgst']
@@ -1568,13 +1573,14 @@ function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
             <tbody>
               {([
                 ['Output tax (Table 3.1)', (h: any) => (r.liability as any)[h]],
-                [itc2b ? 'ITC from GSTR-2B' : 'ITC from ERP purchases (no 2B uploaded)', (h: any) => n(base[h])],
+                [itc2b ? 'ITC from GSTR-2B (net of credit notes)' : 'ITC from ERP purchases (no 2B uploaded)', (h: any) => n(base[h])],
+                ...(itc2b && rcmTax > 0 ? [['+ ITC on reverse charge (after paying it)', (h: any) => (rcmCredit as any)[h]] as [string, (h: any) => number]] : []),
                 ['+ Opening credit balance', (h: any) => n((opening as any)[h])],
                 ['ITC used', (h: any) => used(h)],
                 ['To pay from cash', (h: any) => (r.cash as any)[h]],
                 ['ITC carried forward', (h: any) => (r.carry_forward as any)[h]],
               ] as Array<[string, (h: any) => number]>).map(([lbl, f], i) => (
-                <tr key={lbl} className={`border-t ${i === 4 ? 'font-medium bg-muted/40' : ''}`}>
+                <tr key={lbl} className={`border-t ${lbl === 'To pay from cash' ? 'font-medium bg-muted/40' : ''}`}>
                   <td className="px-3 py-2">{lbl}</td>
                   {heads.map((h) => <td key={h} className="px-3 py-2 text-right tabular-nums">{formatCurrency(f(h))}</td>)}
                   <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(heads.reduce((a, h) => a + f(h), 0))}</td>
@@ -1598,12 +1604,12 @@ function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
         </div>
         <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
           <li>Set-off order: IGST credit pays IGST, then CGST, then SGST. CGST and SGST credit pay their own head, then IGST; they can never pay each other.</li>
-          {itc2b && <li>ITC is the non-reverse-charge total of the GSTR-2B you uploaded ({itc2b.invoices} invoices). It assumes you claim all of it; remove anything ineligible first.</li>}
-          {itc2b && n(itc2b.reverse_charge?.invoices) > 0 && (
-            <li>{itc2b.reverse_charge.invoices} reverse-charge invoice{itc2b.reverse_charge.invoices === 1 ? '' : 's'} in 2B (tax {formatCurrency(n(itc2b.reverse_charge.igst) + n(itc2b.reverse_charge.cgst) + n(itc2b.reverse_charge.sgst))}) are left out: that credit only arrives after you pay the tax in cash.</li>
+          {itc2b && <li>ITC is the GSTR-2B you uploaded ({itc2b.invoices} invoices{itc2b.credit_notes?.count ? `, less ${itc2b.credit_notes.count} supplier credit note${itc2b.credit_notes.count === 1 ? '' : 's'}` : ''}), as the portal fills Table 4. It assumes you claim all of it; remove anything ineligible first.</li>}
+          {itc2b && !itc2b.credit_notes_read && (
+            <li className="text-warning">This 2B was uploaded before credit notes were read, so ITC may be overstated. Upload the 2B JSON again in step 8.</li>
           )}
           {!itc2b && <li>No GSTR-2B uploaded for this month, so ITC here is only what the ERP has tagged. Upload 2B in step 8 for the real figure.</li>}
-          {rcmTax > 0 && <li>Reverse-charge tax of {formatCurrency(rcmTax)} must be paid in cash and is already included in the total above.</li>}
+          {rcmTax > 0 && <li>Reverse-charge tax of {formatCurrency(rcmTax)} must be paid in cash and is included in the total above; the same amount comes back as credit (4A(3)).</li>}
           {itc2b && n(erpItc.igst) + n(erpItc.cgst) + n(erpItc.sgst) < n(itc2b.igst) + n(itc2b.cgst) + n(itc2b.sgst) - 1 && (
             <li>The ERP has booked less purchase credit ({formatCurrency(n(erpItc.igst) + n(erpItc.cgst) + n(erpItc.sgst))}) than 2B shows ({formatCurrency(n(itc2b.igst) + n(itc2b.cgst) + n(itc2b.sgst))}). The difference is purchases not yet entered in the ERP.</li>
           )}
@@ -1653,7 +1659,9 @@ function Gstr3b({ data, recon }: { data: any; recon: any }) {
               <TaxRow label="(a) Outward taxable (other than zero-rated, nil, exempt)" v={t31.a_outward_taxable} />
               <TaxRow label="(b) Outward zero-rated" v={t31.b_zero_rated} />
               <TaxRow label="(c) Other outward — nil-rated, exempt" v={t31.c_nil_exempt} />
-              <TaxRow label="(d) Inward liable to reverse charge" v={t31.d_inward_reverse_charge} />
+              {Number(t31.d_inward_reverse_charge?.tax ?? 0) === 0 && Number(data.itc_2b?.reverse_charge?.invoices ?? 0) > 0
+                ? <TaxRow label="(d) Inward liable to reverse charge — from GSTR-2B (not booked in the ERP)" v={{ ...data.itc_2b.reverse_charge, taxable_value: data.itc_2b.reverse_charge.taxable }} />
+                : <TaxRow label="(d) Inward liable to reverse charge" v={t31.d_inward_reverse_charge} />}
               <TaxRow label="(e) Non-GST outward" v={t31.e_non_gst_outward} />
             </tbody>
           </table>
@@ -1682,7 +1690,11 @@ function Gstr3b({ data, recon }: { data: any; recon: any }) {
             </thead>
             <tbody>
               {[
-                ['4(A) ITC available — all other', itc['4A_all_other_itc']],
+                ...(data.itc_2b ? [
+                  ['4(A)(3) Reverse charge — from GSTR-2B', data.itc_2b.reverse_charge],
+                  ['4(A)(5) All other ITC — from GSTR-2B, net of credit notes', data.itc_2b],
+                ] : []),
+                [data.itc_2b ? '4(A) All other — ERP purchase tagging' : '4(A) ITC available — all other', itc['4A_all_other_itc']],
                 ['4(B) ITC reversed', itc['4B_reversed']],
                 ['4(D) Ineligible', itc['4D_ineligible']],
                 ['Not yet claimed (pending)', itc['pending_not_yet_claimed']],
@@ -1699,8 +1711,9 @@ function Gstr3b({ data, recon }: { data: any; recon: any }) {
           </table>
         </div>
         <p className="text-xs text-muted-foreground mt-2">
-          Computed from ITC tagging in this ERP. The portal fills Table 4 from GSTR-2B instead, so these will
-          not agree until the purchase register has been reconciled against 2B.
+          {data.itc_2b
+            ? 'The GSTR-2B rows are what the portal fills in Table 4 — file those. The ERP tagging row only counts purchases marked "ITC claimed" here, so it is lower until every 2B purchase is booked and tagged.'
+            : 'Computed from ITC tagging in this ERP. Upload GSTR-2B in step 8 to see what the portal will fill in Table 4.'}
         </p>
       </div>
 

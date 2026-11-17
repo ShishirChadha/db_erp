@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
       // apart -- that credit is only available after the tax is paid in cash.
       if (metric === 'r3b' && data && typeof data === 'object') {
         const { data: imp } = await supabaseAdmin
-          .from('gst_recon_imports').select('id, created_at')
+          .from('gst_recon_imports').select('id, created_at, credit_notes')
           .eq('entity_key', entity).eq('kind', 'gstr2b').eq('period_start', from)
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
         if (imp) {
@@ -128,7 +128,19 @@ export async function GET(req: NextRequest) {
           }
           const r2 = (n: number) => Math.round(n * 100) / 100
           const round = (o: any) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, k === 'invoices' ? v : r2(v as number)]))
-          ;(data as any).itc_2b = { uploaded_at: imp.created_at, ...round(sum), reverse_charge: round(rcm) }
+          // Supplier credit notes in the same 2B reduce the credit (debit notes add to it),
+          // matching the portal's Table 4A: invoices minus credit notes.
+          const cn = (imp as any).credit_notes
+          if (cn) {
+            for (const h of ['cgst', 'sgst', 'igst', 'taxable'] as const) {
+              sum[h] += Number(cn[h]) || 0
+              rcm[h] += Number(cn.reverse_charge?.[h]) || 0
+            }
+          }
+          ;(data as any).itc_2b = {
+            uploaded_at: imp.created_at, ...round(sum), reverse_charge: round(rcm),
+            credit_notes: cn ?? null, credit_notes_read: !!cn,
+          }
         }
       }
       return NextResponse.json(data)
