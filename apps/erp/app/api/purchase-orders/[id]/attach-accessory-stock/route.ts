@@ -22,7 +22,8 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { id: poId } = await params
   const body = await req.json()
-  const { sku_id, cost_price, gst_percentage, quantity, confirm_despite_invoice } = body
+  const { sku_id, cost_price, gst_percentage, quantity, confirm_despite_invoice, movement_ids } = body
+  const movementIds: string[] | undefined = Array.isArray(movement_ids) && movement_ids.length > 0 ? movement_ids : undefined
 
   if (!sku_id) return NextResponse.json({ error: 'sku_id is required.' }, { status: 400 })
   if (cost_price === undefined || cost_price === null || cost_price < 0) {
@@ -117,8 +118,13 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     .single()
   if (itemErr) return NextResponse.json({ error: itemErr.message }, { status: 500 })
 
-  const claim = await claimAccessoryBacklog(sku_id, qty, { poId, poItemId: item.id, createdBy: sessionUser.id })
-  if (claim.error) return NextResponse.json({ error: claim.error }, { status: 500 })
+  const claim = await claimAccessoryBacklog(sku_id, qty, { poId, poItemId: item.id, createdBy: sessionUser.id }, movementIds)
+  if (claim.error) {
+    // Nothing was claimed (validation fails before any row is touched), so drop the
+    // line just inserted rather than leaving a PO line with no stock behind it.
+    await supabaseAdmin.from('purchase_order_items').delete().eq('id', item.id)
+    return NextResponse.json({ error: claim.error }, { status: 400 })
+  }
 
   await supabaseAdmin.from('sku_master').update({ base_cost: cost_price }).eq('id', sku_id)
 

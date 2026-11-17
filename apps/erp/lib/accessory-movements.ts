@@ -62,7 +62,8 @@ export async function insertAccessoryMovement(input: {
 export async function claimAccessoryBacklog(
   skuId: string,
   requestedQty: number,
-  target: { poId: string; poItemId: string; createdBy: string }
+  target: { poId: string; poItemId: string; createdBy: string },
+  movementIds?: string[]
 ): Promise<{ error?: string }> {
   // 'adjustment' rows are included alongside 'receipt' here -- a downward "Correct
   // Quantity" correction (e.g. only 5 of 10 supposedly-received units actually arrived)
@@ -93,8 +94,21 @@ export async function claimAccessoryBacklog(
   // net the backlog total down; it must never itself be "consumed"/attached to a PO
   // (a negative-quantity receipt row on a real PO line would be a nonsensical
   // artifact even though the totals would still add up).
+  // `movementIds` (optional) restricts the claim to specific receipts the owner picked
+  // by entry date -- e.g. only the 13-Nov delivery on this vendor bill, not older
+  // unattached receipts of the same SKU from other bills. Without it, oldest first.
+  let candidates = (movements || []).filter((row) => row.quantity_change > 0)
+  if (movementIds && movementIds.length > 0) {
+    const byId = new Map(candidates.map((row) => [row.id, row]))
+    const picked = movementIds.map((id) => byId.get(id))
+    if (picked.some((row) => !row)) return { error: 'One or more selected receipts are no longer unattached for this SKU -- reopen the dialog and try again.' }
+    candidates = picked as typeof candidates
+    const pickedQty = candidates.reduce((sum, row) => sum + row.quantity_change, 0)
+    if (requestedQty > pickedQty) return { error: `The selected receipts only add up to ${pickedQty} unit(s).` }
+  }
+
   let remaining = requestedQty
-  for (const m of (movements || []).filter((row) => row.quantity_change > 0)) {
+  for (const m of candidates) {
     if (remaining <= 0) break
     if (m.quantity_change <= remaining) {
       const { error: updErr } = await supabaseAdmin
@@ -149,15 +163,22 @@ export async function getUnattachedBacklogBySku(skuIds: string[]): Promise<Map<s
   const result = new Map<string, number>()
   if (skuIds.length === 0) return result
 
-  const { data } = await supabaseAdmin
-    .from('stock_movements')
-    .select('sku_id, quantity_change')
-    .in('sku_id', skuIds)
-    .in('movement_type', ['receipt', 'adjustment'])
-    .is('po_id', null)
-
-  for (const m of data || []) {
-    result.set(m.sku_id, (result.get(m.sku_id) || 0) + m.quantity_change)
+  // Paged for the same reason as getLastMovementAtBySku below: an unbounded select
+  // silently stops at PostgREST's 1000-row cap, under-counting the backlog.
+  const PAGE_SIZE = 1000
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data } = await supabaseAdmin
+      .from('stock_movements')
+      .select('sku_id, quantity_change')
+      .in('sku_id', skuIds)
+      .in('movement_type', ['receipt', 'adjustment'])
+      .is('po_id', null)
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    for (const m of data || []) {
+      result.set(m.sku_id, (result.get(m.sku_id) || 0) + m.quantity_change)
+    }
+    if (!data || data.length < PAGE_SIZE) break
   }
   for (const [skuId, qty] of result) {
     if (qty <= 0) result.delete(skuId)

@@ -16,16 +16,29 @@ export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
-  const { data: movements, error } = await supabaseAdmin
-    .from('stock_movements')
-    .select('sku_id, quantity_change, sku_master(full_sku_code, sku_description, category)')
-    .in('movement_type', ['receipt', 'adjustment'])
-    .is('po_id', null)
+  // Paged: unattached movements across every SKU already exceed PostgREST's silent
+  // 1000-row default cap, and an unbounded select truncates instead of erroring --
+  // which dropped real receipts (and whole SKUs) from this backlog. Ordered by id as
+  // a stable tiebreak so pages never overlap or skip.
+  const PAGE_SIZE = 1000
+  const movements: any[] = []
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabaseAdmin
+      .from('stock_movements')
+      .select('id, sku_id, movement_type, quantity_change, purchase_date, created_at, notes, sku_master(full_sku_code, sku_description, category), vendors(company_name)')
+      .in('movement_type', ['receipt', 'adjustment'])
+      .is('po_id', null)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, from + PAGE_SIZE - 1)
+    if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+    movements.push(...(data || []))
+    if (!data || data.length < PAGE_SIZE) break
+  }
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-
-  const bySkuId = new Map<string, { sku_id: string; full_sku_code: string; sku_description: string; category: string; quantity: number }>()
-  for (const m of movements || []) {
+  type Receipt = { id: string; date: string; quantity: number; vendor_name: string | null; notes: string | null }
+  const bySkuId = new Map<string, { sku_id: string; full_sku_code: string; sku_description: string; category: string; quantity: number; receipts: Receipt[] }>()
+  for (const m of movements) {
     const sku: any = m.sku_master
     // Laptops/desktops/etc. also get a 'receipt' movement on intake (sku_master.
     // quantity_in_stock is a universal cache across every category), but they're
@@ -33,16 +46,21 @@ export async function GET(req: NextRequest) {
     // /api/stock-intake's, not this one. Without this filter a serialized SKU could
     // show up here too, colliding with its own asset-based attach flow.
     if (!sku || isSerializedCategory(sku.category)) continue
-    const existing = bySkuId.get(m.sku_id)
-    if (existing) {
-      existing.quantity += m.quantity_change
-    } else {
-      bySkuId.set(m.sku_id, {
-        sku_id: m.sku_id,
-        full_sku_code: sku.full_sku_code,
-        sku_description: sku.sku_description,
-        category: sku.category,
+    let entry = bySkuId.get(m.sku_id)
+    if (!entry) {
+      entry = { sku_id: m.sku_id, full_sku_code: sku.full_sku_code, sku_description: sku.sku_description, category: sku.category, quantity: 0, receipts: [] }
+      bySkuId.set(m.sku_id, entry)
+    }
+    entry.quantity += m.quantity_change
+    // The individual positive receipts, by entry date -- lets the owner attach just the
+    // delivery that's on this vendor bill (see claimAccessoryBacklog's movementIds).
+    if (m.movement_type === 'receipt' && m.quantity_change > 0) {
+      entry.receipts.push({
+        id: m.id,
+        date: (m.purchase_date || m.created_at || '').slice(0, 10),
         quantity: m.quantity_change,
+        vendor_name: (m.vendors as any)?.company_name || null,
+        notes: m.notes || null,
       })
     }
   }
