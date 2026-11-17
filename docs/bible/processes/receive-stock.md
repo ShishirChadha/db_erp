@@ -40,7 +40,9 @@ moment it's submitted — no owner approval gate.
    quantity_in_stock` updates via the sync trigger automatically — never edit
    it directly.
 5. The owner can later formalize this receipt against a real PO via
-   **attach-units-to-po**'s accessory path (`from-accessory-stock`).
+   **attach-units-to-po**'s accessory path (`from-accessory-stock`). Each
+   receipt keeps its own entry date there, so one delivery can be attached to
+   its own vendor bill even when the same SKU has other unattached receipts.
 
 ## Related
 

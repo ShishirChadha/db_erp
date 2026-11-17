@@ -12,7 +12,7 @@ sources:
   - apps/erp/lib/accessory-movements.ts
   - apps/erp/app/api/purchase-orders/from-accessory-stock/route.ts
   - apps/erp/app/api/stock/accessories/route.ts
-updated: 2026-09-19
+updated: 2026-11-17
 ---
 
 ## What this is
@@ -101,7 +101,9 @@ and worse, the owner could still attach the stale (too-large) quantity to a
 PO, formalizing a purchase for units that were never actually received.
 `getUnattachedBacklogBySku`/`claimAccessoryBacklog` (`lib/accessory-movements.ts`)
 and the backlog queries in `/api/purchase-orders/from-accessory-stock` and
-`/api/stock/accessories` now all net in `adjustment` rows alongside `receipt`
+`/api/stock/accessories` now all net in `adjustment` rows (and, since
+2026-11-17, page past PostgREST's 1000-row cap — unattached movements across
+all SKUs passed 1000, which had silently dropped 57 SKUs from the backlog) alongside `receipt`
 rows (both still `po_id IS NULL` only — an adjustment already tied to a real
 PO, e.g. a PO-line correction, is never counted here). This does **not**
 apply to sales — selling some of what was received still doesn't shrink the

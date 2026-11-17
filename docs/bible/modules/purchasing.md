@@ -36,7 +36,9 @@ a legacy pipeline kept read-visible for historical data, not the active flow.
   entered via employee intake or accessory receipt get their formal
   paperwork retroactively — either onto a brand-new PO or an already-created
   one, so one vendor invoice covering a laptop and an accessory can end up
-  as two lines on one PO. See **attach-units-to-po**.
+  as two lines on one PO. Accessory receipts are picked individually by entry
+  date (plus a quantity), so only the delivery on a given bill is attached.
+  See **attach-units-to-po**.
 - **Correcting a PO after creation** (wrong quantity/price/GST/vendor/HSN,
   or a unit that landed on the wrong PO entirely via `move-unit`) — see
   **po-corrections**.

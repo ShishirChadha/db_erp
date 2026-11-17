@@ -14,7 +14,7 @@ sources:
   - apps/erp/app/api/purchase-orders/[id]/move-unit/route.ts
   - apps/erp/components/AttachUnitsDialog.tsx
   - apps/erp/components/MoveUnitDialog.tsx
-updated: 2026-09-15
+updated: 2026-11-17
 ---
 
 ## What this is
@@ -56,7 +56,10 @@ operational fields (`status`, QC, sale) — only paperwork (`po_id`,
 1. From the PO detail page, "+ Add Units from Stock" opens
    `AttachUnitsDialog` — searches `employee_intake` units with no PO yet
    (`GET /api/stock?source=employee_intake`), by serial number, model, or
-   description.
+   description; each row shows serial, SKU, **entry date** and status. A
+   **Category** dropdown (Laptop / Desktop / SSD / RAM …, labels from
+   `sku_category_templates`, only categories present) narrows both the unit
+   and accessory lists.
 2. Pick one or more units, enter their purchase cost/GST per SKU group, submit.
 3. `reserve_assets()` is the **only** place asset numbers get minted for
    these units — they've had none until this moment.
@@ -73,11 +76,19 @@ eligibility/reservation logic; the only difference is whether a fresh
    PO in a single dialog. The Accessories page's own "Attach PO" control
    (`AttachPoControl`) offers the same New PO / Existing PO choice directly
    from a SKU's backlog badge.
-2. Submit. No asset numbers involved — accessories never get them; this just
-   links the SKU's unattached `stock_movements` `'receipt'` rows to the PO
-   and creates one `quantity = N` line (N = however much is still
-   unattached for that SKU).
-3. The backlog listing (and `attach-accessory-stock`'s POST) explicitly
+2. Ticking an accessory SKU expands its unattached receipts **by entry date**
+   (and vendor, when recorded at receipt), all ticked by default, plus a
+   **Quantity to attach**. Untick receipts from other vendor bills — e.g. an
+   SSD SKU with 27-Oct and 13-Nov deliveries, only the 13-Nov one on this
+   bill. The chosen receipt ids go to `attach-accessory-stock` as
+   `movement_ids`, and `claimAccessoryBacklog` attaches only those (splitting
+   the last one if the quantity is smaller); without `movement_ids` it still
+   claims oldest-first. If the claim is rejected, the just-inserted PO line
+   is removed.
+3. Submit. No asset numbers involved — accessories never get them; this just
+   links the chosen `stock_movements` `'receipt'` rows to the PO and creates
+   one `quantity = N` line.
+4. The backlog listing (and `attach-accessory-stock`'s POST) explicitly
    **excludes serialized categories** — a laptop also gets a `'receipt'`
    movement on intake (the universal quantity cache spans every category),
    but its own attach path is `attach-units`/`from-intake`, not this one.

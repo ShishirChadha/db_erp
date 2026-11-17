@@ -10,7 +10,7 @@ sources:
   - apps/erp/lib/accessory-movements.ts
   - apps/erp/app/api/purchase-orders/from-accessory-stock/route.ts
   - apps/erp/app/api/purchase-orders/[id]/attach-accessory-stock/route.ts
-updated: 2026-08-30
+updated: 2026-11-17
 ---
 
 ## What this covers
@@ -29,7 +29,9 @@ to it, via the Accessories page's "Attach PO" control (`AttachPoControl`),
 which offers either a brand-new PO (`/api/purchase-orders/from-accessory-stock`)
 or folding it into an already-created PO
 (`/api/purchase-orders/[id]/attach-accessory-stock`) — e.g. the same PO a
-laptop from the same vendor invoice already got attached to. Both only ever
+laptop from the same vendor invoice already got attached to. "+ Add Units
+from Stock" on a PO lets the owner tick *which* unattached receipts (by entry
+date) and how many to attach — see **attach-units-to-po**. Both only ever
 count *unattached* `'receipt'` movements for a SKU, excluding serialized
 categories (a laptop's own intake receipt isn't this kind of backlog — see
 **attach-units-to-po**). This is the same "employee entry is immediately
