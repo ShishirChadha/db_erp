@@ -129,6 +129,26 @@ function InvoiceDetailPage() {
     }
   }
 
+  // Vendor invoice number/date are what GSTR-2B matching and the ITC month use.
+  const [editing, setEditing] = useState(false)
+  const [editNumber, setEditNumber] = useState('')
+  const [editDate, setEditDate] = useState('')
+  const [editErr, setEditErr] = useState('')
+  const { run: saveEdit, pending: savingEdit } = useAsyncAction(async () => {
+    setEditErr('')
+    const res = await apiFetch(`/api/purchase-invoices/${invoiceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ invoice_number: editNumber, invoice_date: editDate }),
+    })
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}))
+      setEditErr(e.error || 'Could not save.')
+      return
+    }
+    setEditing(false)
+    fetchInvoice()
+  })
+
   if (loading) return <div className="p-4">Loading invoice…</div>
   if (error) return <div className="p-4 text-destructive">Error: {error}</div>
   if (!invoice) return <div className="p-4 text-destructive">Invoice not found.</div>
@@ -137,10 +157,40 @@ function InvoiceDetailPage() {
     <div className="p-4 max-w-4xl mx-auto">
       <div className="flex justify-between items-center mb-4">
         <h1 className="text-2xl font-bold">{invoice.invoice_number}</h1>
-        <span className="px-2 py-1 rounded bg-muted text-muted-foreground capitalize">
-          {invoice.payment_status}
-        </span>
+        <div className="flex items-center gap-2">
+          {!editing && (
+            <Button size="sm" variant="outline" onClick={() => {
+              setEditNumber(invoice.invoice_number); setEditDate(invoice.invoice_date); setEditErr(''); setEditing(true)
+            }}>
+              Edit number / date
+            </Button>
+          )}
+          <span className="px-2 py-1 rounded bg-muted text-muted-foreground capitalize">
+            {invoice.payment_status}
+          </span>
+        </div>
       </div>
+
+      {editing && (
+        <div className="bg-card p-4 shadow rounded mb-4 space-y-2">
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="text-sm">
+              <span className="block text-xs text-muted-foreground mb-1">Vendor invoice number</span>
+              <input value={editNumber} onChange={(e) => setEditNumber(e.target.value)}
+                className="h-8 w-56 rounded-md border border-input bg-background px-2 text-sm" />
+            </label>
+            <label className="text-sm">
+              <span className="block text-xs text-muted-foreground mb-1">Invoice date (as on the vendor&apos;s bill)</span>
+              <input type="date" value={editDate} onChange={(e) => setEditDate(e.target.value)}
+                className="h-8 rounded-md border border-input bg-background px-2 text-sm" />
+            </label>
+            <Button size="sm" onClick={() => saveEdit()} loading={savingEdit}>Save</Button>
+            <Button size="sm" variant="outline" onClick={() => setEditing(false)} disabled={savingEdit}>Cancel</Button>
+          </div>
+          <p className="text-xs text-muted-foreground">Used to match GSTR-2B and to decide the month the ITC belongs to. Not allowed once that month&apos;s GSTR-3B is filed.</p>
+          {editErr && <p className="text-xs text-destructive">{editErr}</p>}
+        </div>
+      )}
 
       <div className="bg-card p-4 shadow rounded mb-4 grid grid-cols-2 gap-4">
         <div>

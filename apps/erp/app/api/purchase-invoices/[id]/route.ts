@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
+import { logFieldCorrections } from '@/lib/field-corrections'
 
 // ---------- GET (detail) ----------
 export async function GET(
@@ -74,6 +75,64 @@ export async function GET(
     purchase_order: po,
     po_items: poItems,
   })
+}
+
+// ---------- PATCH: correct the vendor's invoice number / date ----------
+// Owner-only. These two fields are what GSTR-2B matching and the ITC month key
+// off, so a typo or an entry date saved as the bill date has to be fixable.
+// Refused when either the old or new date falls in a month whose GSTR-3B is
+// filed -- that month's ITC is already on the portal.
+export async function PATCH(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const { id } = await params
+  const body = await req.json().catch(() => ({}))
+  const number = String(body.invoice_number ?? '').trim()
+  const date = String(body.invoice_date ?? '').trim()
+  if (!number) return NextResponse.json({ error: 'Invoice number is required.' }, { status: 400 })
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return NextResponse.json({ error: 'Invoice date is required.' }, { status: 400 })
+
+  const { data: inv } = await supabaseAdmin.from('invoices')
+    .select('id, invoice_number, invoice_date, invoice_type, po_id').eq('id', id).maybeSingle()
+  if (!inv || inv.invoice_type !== 'purchase') return NextResponse.json({ error: 'Purchase invoice not found.' }, { status: 404 })
+  if (inv.invoice_number === number && inv.invoice_date === date) return NextResponse.json(inv)
+
+  let entityKey = 'digitalbluez'
+  if (inv.po_id) {
+    const { data: po } = await supabaseAdmin.from('purchase_orders').select('purchased_by_type').eq('id', inv.po_id).maybeSingle()
+    const k = (po?.purchased_by_type || '').trim().toLowerCase()
+    if (['digitalbluez', 'techtenth', 'cash'].includes(k)) entityKey = k
+  }
+  const months = [...new Set([inv.invoice_date, date].filter(Boolean).map((d: string) => d.slice(0, 7) + '-01'))]
+  const { data: filed } = await supabaseAdmin.from('gst_filings').select('period_start')
+    .eq('entity_key', entityKey).eq('return_type', 'gstr3b').eq('status', 'filed').in('period_start', months).limit(1)
+  if (filed?.length) {
+    return NextResponse.json({ error: `GSTR-3B for ${filed[0].period_start.slice(0, 7)} is already filed, so this invoice can't move in or out of it.` }, { status: 409 })
+  }
+
+  const { data: dup } = await supabaseAdmin.from('invoices').select('id')
+    .eq('invoice_type', 'purchase').eq('invoice_number', number).neq('id', id).limit(1)
+  if (dup?.length) return NextResponse.json({ error: 'Another purchase invoice already has that number.' }, { status: 409 })
+
+  const { data, error } = await supabaseAdmin.from('invoices')
+    .update({ invoice_number: number, invoice_date: date }).eq('id', id).select().single()
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  const changes = [
+    ...(inv.invoice_number !== number ? [{ field: 'invoice_number', oldValue: inv.invoice_number, newValue: number }] : []),
+    ...(inv.invoice_date !== date ? [{ field: 'invoice_date', oldValue: inv.invoice_date, newValue: date }] : []),
+  ]
+  const correctionIds = await logFieldCorrections('invoices', id, changes, sessionUser!.id, 'Purchase invoice corrected')
+  await logAuditEvent({
+    actor: { id: sessionUser!.id, email: sessionUser!.email, role: sessionUser!.role },
+    actionType: 'update', module: 'purchase_orders', tableName: 'invoices',
+    recordId: id, recordLabel: number, fieldCorrectionIds: correctionIds,
+  })
+  return NextResponse.json(data)
 }
 
 // ---------- DELETE (permanent) ----------
