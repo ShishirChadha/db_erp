@@ -188,29 +188,34 @@ export async function matchGstr2b(
     const srcSeq = docNumberSeq(r.doc_number)
     const srcGstin = (r.counterparty_gstin || '').trim().toUpperCase()
 
-    const po = candidates.find((p: any) => {
+    const gstinOf = (p: any) => {
       const v: any = Array.isArray(p.vendors) ? p.vendors[0] : p.vendors
-      const poGstin = (v?.gst_number || '').trim().toUpperCase()
-      // Supplier GSTIN must agree when both sides have one -- it is the only
-      // field neither party can restate.
-      if (srcGstin && poGstin && srcGstin !== poGstin) return false
-      if (consumed.has(p.id)) return false
-
-      const poNum = p.vendor_invoice_number
-      if (poNum) {
-        const k = docNumberKey(poNum)
-        if (k && k === srcKey) return true
-        const s = docNumberSeq(poNum)
-        if (srcSeq != null && s === srcSeq && !!srcGstin && srcGstin === poGstin) return true
-        return false
-      }
+      return (v?.gst_number || '').trim().toUpperCase()
+    }
+    // Supplier GSTIN must agree when both sides have one -- it is the only
+    // field neither party can restate.
+    const eligible = candidates.filter((p: any) => {
+      const poGstin = gstinOf(p)
+      return !consumed.has(p.id) && !(srcGstin && poGstin && srcGstin !== poGstin)
+    })
+    // Strongest key first, across every PO: an exact invoice number must win over
+    // a looser rule matching an earlier PO. The trailing-number rule alone pairs
+    // "RESPL/508/26-27" with "RESPL/551/26-27" (both end in 27), so it only
+    // applies when no PO carries the exact number.
+    const po =
+      eligible.find((p: any) => !!p.vendor_invoice_number && !!srcKey && docNumberKey(p.vendor_invoice_number) === srcKey)
+      ?? eligible.find((p: any) => !!p.vendor_invoice_number && srcSeq != null && !!srcGstin && srcGstin === gstinOf(p)
+        && docNumberSeq(p.vendor_invoice_number) === srcSeq
+        && withinTolerance(r.doc_value ?? 0, p.grand_total, AMOUNT_TOLERANCE * 5))
       // No vendor invoice number recorded: fall back to GSTIN + date window +
       // amount, which is weaker but recovers the legacy rows.
-      if (!srcGstin || !poGstin || srcGstin !== poGstin) return false
-      const gap = dayGap(r.doc_date, p.vendor_invoice_date || p.po_date)
-      if (gap == null || gap > DATE_WINDOW_DAYS) return false
-      return withinTolerance(r.doc_value ?? 0, p.grand_total, AMOUNT_TOLERANCE * 5)
-    })
+      ?? eligible.find((p: any) => {
+        if (p.vendor_invoice_number) return false
+        if (!srcGstin || srcGstin !== gstinOf(p)) return false
+        const gap = dayGap(r.doc_date, p.vendor_invoice_date || p.po_date)
+        if (gap == null || gap > DATE_WINDOW_DAYS) return false
+        return withinTolerance(r.doc_value ?? 0, p.grand_total, AMOUNT_TOLERANCE * 5)
+      })
 
     const base: ReconLine = {
       doc_number: r.doc_number ?? null,
