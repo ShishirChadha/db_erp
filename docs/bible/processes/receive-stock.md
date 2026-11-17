@@ -9,7 +9,7 @@ keywords: [receive, intake, stock in, naya maal aaya, new stock, add stock, inco
 sources:
   - apps/erp/app/api/stock-intake/route.ts
   - apps/erp/lib/accessory-movements.ts
-updated: 2026-09-15
+updated: 2026-11-17
 ---
 
 ## What this is

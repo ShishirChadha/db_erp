@@ -9,13 +9,13 @@ sources:
   - apps/erp/app/api/purchase-orders/**
   - apps/erp/app/api/purchase-invoices/**
   - apps/erp/lib/purchase-utils.ts
-updated: 2026-08-30
+updated: 2026-11-17
 ---
 
 ## What this covers
 
 Formal purchasing paperwork — Purchase Orders (line items, vendor, quantities)
-and Purchase Invoices (the vendor's bill against one or more POs). This is
+and Purchase Invoices (the vendor's bill against one PO). This is
 owner/manager territory; it's the deferred bookkeeping side of purchasing, not
 the operational "stock just arrived" side (see **live-stock-qc** and
 **accessories** for that — units and quantity can enter the system, be QC'd,
@@ -40,8 +40,16 @@ a legacy pipeline kept read-visible for historical data, not the active flow.
 - **Correcting a PO after creation** (wrong quantity/price/GST/vendor/HSN,
   or a unit that landed on the wrong PO entirely via `move-unit`) — see
   **po-corrections**.
-- **`purchase_invoices`** — the vendor's actual bill, which can span multiple
-  POs. This is where GST input credit tracking lives. Once generated, an
+- **Purchase Invoice** — the vendor's actual bill, stored as an `invoices` row
+  with `invoice_type = 'purchase'` and a single `po_id`: **one Purchase Invoice
+  per PO** (`POST /api/purchase-invoices` returns 409 for a second one), and
+  `invoices.invoice_number` is unique across *all* invoices, so one vendor bill
+  number can't be entered on several POs. When one bill covers units raised on
+  several POs (e.g. intake units attached to POs in separate selections),
+  consolidate first — **Move** each serialized unit onto one PO (`move-unit`),
+  delete the emptied POs — then raise one Purchase Invoice. Selecting all of a
+  bill's intake units together when raising the PO avoids this. This is where
+  GST input credit tracking lives. Once generated, an
   invoice is a frozen snapshot — a later PO correction never retroactively
   updates it (**po-corrections**' already-invoiced guard).
 
