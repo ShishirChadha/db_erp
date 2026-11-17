@@ -94,6 +94,7 @@ export function PODetailPage({ poId: poIdProp, embedded, onDeleted }: { poId?: s
   const [attachingUnits, setAttachingUnits] = useState(false)
   const [movingUnit, setMovingUnit] = useState<{ assetNumber: string; serialNumber: string | null; entryDate: string | null; skuLabel: string } | null>(null)
   const [removingAssetNumber, setRemovingAssetNumber] = useState<string | null>(null)
+  const [removingItemId, setRemovingItemId] = useState<string | null>(null)
   const [payments, setPayments] = useState<VendorPayment[]>([])
   const [showAddPayment, setShowAddPayment] = useState(false)
 
@@ -219,6 +220,33 @@ export function PODetailPage({ poId: poIdProp, embedded, onDeleted }: { poId?: s
       alert(err.error || 'Failed to delete PO')
     }
   })
+
+  // Accessory (quantity-only) line attached by mistake: takes it off the PO and returns
+  // its receipts to "not on a PO" -- stock is unchanged (see DELETE on the items route).
+  const handleRemoveLine = async (item: any) => {
+    if (removingItemId) return
+    const label = item.sku?.full_sku_code || 'this line'
+    if (!confirm(`Remove ${label} (qty ${item.quantity}) from this PO?\n\nThe items stay in stock and go back to "not on a PO", ready to attach to the right PO.`)) return
+    setRemovingItemId(item.id)
+    try {
+      let res = await apiFetch(`/api/purchase-orders/${poId}/items/${item.id}`, { method: 'DELETE', body: JSON.stringify({}) })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        if (err.error_code === 'already_invoiced') {
+          if (!confirm(`${err.error}\n\nProceed anyway?`)) return
+          res = await apiFetch(`/api/purchase-orders/${poId}/items/${item.id}`, { method: 'DELETE', body: JSON.stringify({ confirm_despite_invoice: true }) })
+        }
+        if (!res.ok) {
+          const err2 = await res.json().catch(() => ({}))
+          alert(err2.error || 'Failed to remove line.')
+          return
+        }
+      }
+      fetchPO()
+    } finally {
+      setRemovingItemId(null)
+    }
+  }
 
   const handleRemoveUnit = async (assetNumber: string) => {
     if (removingAssetNumber) return
@@ -387,6 +415,19 @@ export function PODetailPage({ poId: poIdProp, embedded, onDeleted }: { poId?: s
                 {po.po_status !== 'cancelled' && (
                   <td className="border p-2 text-center">
                     <Button variant="link" size="sm" onClick={() => setEditingItemId(item.id)} className="text-xs">Edit</Button>
+                    {!item.is_serialized && (
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => handleRemoveLine(item)}
+                        loading={removingItemId === item.id}
+                        disabled={!!removingItemId}
+                        className="text-xs text-destructive"
+                        title="Take this line off the PO; the items stay in stock"
+                      >
+                        Remove
+                      </Button>
+                    )}
                   </td>
                 )}
               </tr>

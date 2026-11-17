@@ -239,3 +239,91 @@ export async function PATCH(
 
   return NextResponse.json({ success: true })
 }
+
+// ---------- DELETE: owner takes a mistakenly-attached accessory line off this PO ----------
+// The undo for attaching the wrong quantity-only SKU (e.g. the wrong SSD receipts) from
+// "Add Units from Stock" / the Accessories page. The goods are still physically in
+// stock, so this is paperwork only: every stock_movements row linked to the line goes
+// back to unattached (po_id/po_item_id NULL) -- back in the "received, not on a PO"
+// backlog, ready to attach to the right PO -- and quantity_in_stock is untouched (no
+// adjustment written, unlike a PATCH quantity edit, which records a real count
+// correction). Serialized lines are rejected: their units are removed one at a time
+// via /remove-unit, which also releases asset numbers.
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string; itemId: string }> }
+) {
+  const sessionUser = await getSessionUser(req)
+  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+
+  const { id: poId, itemId } = await params
+  const body = await req.json().catch(() => ({}))
+  const { confirm_despite_invoice } = body
+
+  const { data: po } = await supabaseAdmin
+    .from('purchase_orders')
+    .select('po_status, po_number')
+    .eq('id', poId)
+    .single()
+  if (!po) return NextResponse.json({ error: 'Purchase Order not found' }, { status: 404 })
+  if (po.po_status === 'cancelled') return NextResponse.json({ error: 'A cancelled PO cannot be edited.' }, { status: 400 })
+
+  const { data: item } = await supabaseAdmin
+    .from('purchase_order_items')
+    .select('id, sku_id, quantity, line_total, sku:sku_master ( full_sku_code, category )')
+    .eq('id', itemId)
+    .eq('po_id', poId)
+    .single()
+  if (!item) return NextResponse.json({ error: 'Line item not found' }, { status: 404 })
+  const sku: any = item.sku
+  if (isSerializedCategory(sku?.category)) {
+    return NextResponse.json({ error: 'This line has serialized units -- remove them one at a time with "Remove" on each unit.' }, { status: 400 })
+  }
+
+  const { data: existingInvoices } = await supabaseAdmin
+    .from('invoices')
+    .select('id, invoice_number')
+    .eq('po_id', poId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+  const invoice = existingInvoices?.[0]
+  if (invoice && !confirm_despite_invoice) {
+    return NextResponse.json({
+      error: `This PO is already invoiced (${invoice.invoice_number}) -- removing this line will NOT update that invoice, which will then disagree with the live record. Confirm to proceed anyway.`,
+      error_code: 'already_invoiced',
+    }, { status: 409 })
+  }
+
+  // Detach first: stock_movements.po_item_id references this line, so the line can
+  // only be deleted once nothing points at it.
+  const { data: detached, error: detachErr } = await supabaseAdmin
+    .from('stock_movements')
+    .update({ po_id: null, po_item_id: null })
+    .eq('po_item_id', itemId)
+    .select('id, quantity_change')
+  if (detachErr) return NextResponse.json({ error: detachErr.message }, { status: 500 })
+
+  const { error: deleteErr } = await supabaseAdmin.from('purchase_order_items').delete().eq('id', itemId)
+  if (deleteErr) {
+    // Put the movements back on the line so the PO and its stock trail stay consistent.
+    if (detached && detached.length > 0) {
+      await supabaseAdmin.from('stock_movements').update({ po_id: poId, po_item_id: itemId }).in('id', detached.map((m) => m.id))
+    }
+    return NextResponse.json({ error: deleteErr.message }, { status: 500 })
+  }
+
+  await recalcPOTotals(poId)
+
+  const returnedQty = (detached || []).reduce((sum, m) => sum + m.quantity_change, 0)
+  await logAuditEvent({
+    actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
+    actionType: 'update',
+    module: 'purchase_orders',
+    tableName: 'purchase_order_items',
+    recordId: itemId,
+    recordLabel: po.po_number,
+    reason: `Removed line ${sku?.full_sku_code || item.sku_id} (qty ${item.quantity}) from ${po.po_number}; ${returnedQty} unit(s) of receipts returned to the not-on-a-PO backlog. Stock unchanged.`,
+  })
+
+  return NextResponse.json({ success: true, returned_quantity: returnedQty })
+}
