@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/EditPoItemDialog.tsx
   - apps/erp/components/EditPoVendorDialog.tsx
   - apps/erp/lib/po-gst-calc.ts
-updated: 2026-11-13
+updated: 2026-11-17
 ---
 
 ## What this is
@@ -66,6 +66,26 @@ Never a fourth reimplementation of this formula.
   be "un-received"); an increase adds the difference straight to stock.
   While there's still real ordered-but-unreceived headroom above the floor,
   quantity edits stay pure paperwork with no stock touch, same as before.
+
+## Removing a line added by mistake
+
+Use **Remove**, never a quantity edit, when the wrong item was attached (e.g.
+SATA SSD receipts attached instead of the NVMe ones on the vendor bill). The
+goods are still in stock; only the paperwork was wrong.
+
+- **Serialized units** — **Remove** on each unit (`POST
+  /api/purchase-orders/[id]/remove-unit`): an intake unit goes back to "no PO"
+  with its serial/status/QC untouched; or **Move** it to the right PO.
+- **Accessory (quantity-only) line** — **Remove** next to Edit (`DELETE
+  /api/purchase-orders/[id]/items/[itemId]`): every `stock_movements` row on
+  the line goes back to unattached (`po_id`/`po_item_id` NULL), the line is
+  deleted, totals are recalculated. **No stock movement is written**, so
+  `quantity_in_stock` is unchanged and the receipts reappear under "+ Add Units
+  from Stock" by entry date. Serialized lines are rejected here.
+- Contrast: lowering an accessory line's **quantity** via Edit is a *count
+  correction* — it writes a negative `adjustment` and reduces stock.
+- Attaching an accessory also wrote its cost onto `sku_master.base_cost`;
+  removing the line doesn't restore the earlier value.
 
 ## Price/GST correction — propagates to every copy
 
