@@ -17,7 +17,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, asset_number, serial_number, status, notes, purchased_by_type, created_at, entered_by, sku_id, sku_master(full_sku_code, brand, model_name, specifications)')
+    .select('id, asset_number, serial_number, status, notes, purchased_by_type, created_at, entered_by, sku_id, sku_master!purchase_order_asset_mapping_sku_id_fkey(full_sku_code, brand, model_name, specifications)')
     .eq('source', 'employee_intake')
     .is('po_id', null)
     .order('created_at', { ascending: true })

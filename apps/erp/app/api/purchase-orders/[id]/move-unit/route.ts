@@ -31,7 +31,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   const { data: asset, error: assetErr } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, po_id, po_item_id, sku_id, serial_number, asset_number, cost_price, gst_percentage, sku:sku_master ( category )')
+    .select('id, po_id, po_item_id, sku_id, serial_number, asset_number, cost_price, gst_percentage, sku:sku_master!purchase_order_asset_mapping_sku_id_fkey ( category )')
     .eq('asset_number', asset_number)
     .single()
   if (assetErr || !asset) return NextResponse.json({ error: 'Unit not found.' }, { status: 404 })
