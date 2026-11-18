@@ -1628,6 +1628,61 @@ function TaxPayable({ t31, itc, itc2b, periodFrom }: { t31: any; itc: any; itc2b
             </label>
           ))}
         </div>
+        <div className="rounded-md border border-primary/30 p-3 space-y-2">
+          <p className="text-sm font-medium">Enter on the portal — GSTR-3B → Payment of tax</p>
+          <p className="text-xs text-muted-foreground">
+            The portal pre-fills its own split, which can push IGST credit to the wrong head and leave you paying cash while credit sits unused.
+            Overwrite its &quot;Paid through ITC&quot; boxes with these, check the cash column matches, then make the payment.
+          </p>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium text-muted-foreground">Tax head</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Tax payable</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Paid via IGST credit</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Paid via CGST credit</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Paid via SGST credit</th>
+                  <th className="text-right px-3 py-2 font-medium text-muted-foreground">Pay in cash</th>
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  ['Integrated tax (IGST)', r.liability.igst, r.used.igst_on_igst, r.used.cgst_on_igst, r.used.sgst_on_igst, r.cash.igst],
+                  ['Central tax (CGST)', r.liability.cgst, r.used.igst_on_cgst, r.used.cgst_on_cgst, null, r.cash.cgst],
+                  ['State tax (SGST)', r.liability.sgst, r.used.igst_on_sgst, null, r.used.sgst_on_sgst, r.cash.sgst],
+                ] as Array<[string, number, number, number | null, number | null, number]>).map(([lbl, pay, i, c, sg, cash]) => (
+                  <tr key={lbl} className="border-t">
+                    <td className="px-3 py-2">{lbl}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(pay)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(i)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{c == null ? '—' : formatCurrency(c)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{sg == null ? '—' : formatCurrency(sg)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">{formatCurrency(cash)}</td>
+                  </tr>
+                ))}
+                {rcmTax > 0 && (
+                  <tr className="border-t">
+                    <td className="px-3 py-2">Reverse charge (any head)</td>
+                    <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(rcmTax)}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground" colSpan={3}>cash only — credit can&apos;t pay it</td>
+                    <td className="px-3 py-2 text-right tabular-nums font-medium">{formatCurrency(rcmTax)}</td>
+                  </tr>
+                )}
+                <tr className="border-t bg-muted/40 font-medium">
+                  <td className="px-3 py-2" colSpan={5}>Total cash to pay (create the challan for this)</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{formatCurrency(cashTotal)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          {!ledger && <p className="text-xs text-warning">Upload this month&apos;s Electronic Credit Ledger below first — without the opening balance, the credit figures here are too low.</p>}
+          <p className="text-xs text-muted-foreground">
+            ITC carried forward after this: IGST {formatCurrency(r.carry_forward.igst)} · CGST {formatCurrency(r.carry_forward.cgst)} · SGST {formatCurrency(r.carry_forward.sgst)}.
+            If the portal&apos;s balance differs by a rupee or two (its ledger rounds), adjust the IGST-credit column so no credit box exceeds what the portal shows available.
+          </p>
+        </div>
+
         <div className="rounded-md border p-3 space-y-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
