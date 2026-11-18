@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { RefreshCw } from 'lucide-react'
 import { setOff } from '@/lib/gst-setoff'
+import { parseCreditLedger, ledgerForPeriod, ledgerPeriodLabel, type LedgerRow } from '@/lib/gst-credit-ledger'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -1527,8 +1528,33 @@ function TaxRow({ label, v }: { label: string; v: any }) {
 // portal will show from GSTR-2B (falls back to the ERP's own ITC tagging when no 2B has
 // been uploaded), plus an optional opening balance from the portal's electronic credit
 // ledger. An estimate -- the portal's own set-off at filing is what counts.
-function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
+// The portal's Electronic Credit Ledger CSV, kept in this browser so it needn't be
+// re-picked on every visit (a convenience -- the file itself is the record).
+const LEDGER_KEY = 'gst-credit-ledger'
+function loadLedger(): { gstin: string | null; rows: LedgerRow[]; name: string } | null {
+  try { const v = localStorage.getItem(LEDGER_KEY); return v ? JSON.parse(v) : null } catch { return null }
+}
+
+function TaxPayable({ t31, itc, itc2b, periodFrom }: { t31: any; itc: any; itc2b: any; periodFrom: string }) {
   const [opening, setOpening] = useState({ igst: '', cgst: '', sgst: '' })
+  const [ledger, setLedger] = useState<{ gstin: string | null; rows: LedgerRow[]; name: string } | null>(null)
+  const [ledgerErr, setLedgerErr] = useState('')
+  useEffect(() => { setLedger(loadLedger()) }, [])
+  const lp = ledger ? ledgerForPeriod(ledger, periodFrom) : null
+  // A ledger for this month supplies the real opening balance, replacing the typed one.
+  useEffect(() => {
+    if (lp) setOpening({ igst: String(lp.opening.igst), cgst: String(lp.opening.cgst), sgst: String(lp.opening.sgst) })
+  }, [ledger, periodFrom]) // eslint-disable-line react-hooks/exhaustive-deps
+  const onLedgerFile = async (file?: File) => {
+    if (!file) return
+    setLedgerErr('')
+    try {
+      const parsed = parseCreditLedger(await file.text())
+      const v = { ...parsed, name: file.name }
+      setLedger(v)
+      try { localStorage.setItem(LEDGER_KEY, JSON.stringify(v)) } catch { /* storage blocked */ }
+    } catch (e: any) { setLedgerErr(e?.message || 'Could not read that file.') }
+  }
   const n = (v: any) => Number(v) || 0
   const out = t31.a_outward_taxable ?? {}
   const erpItc = itc['4A_all_other_itc'] ?? {}
@@ -1602,8 +1628,75 @@ function TaxPayable({ t31, itc, itc2b }: { t31: any; itc: any; itc2b: any }) {
             </label>
           ))}
         </div>
+        <div className="rounded-md border p-3 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-sm font-medium">Electronic Credit Ledger</p>
+              <p className="text-xs text-muted-foreground">
+                Portal: Services → Ledgers → Electronic Credit Ledger, from the start of this month to today → download CSV/Excel. Fills the opening balance above and checks the ITC.
+              </p>
+            </div>
+            <label className="inline-flex">
+              <input type="file" accept=".csv,.xls,.xlsx" className="hidden"
+                onChange={(e) => { onLedgerFile(e.target.files?.[0]); e.target.value = '' }} />
+              <span className="inline-flex h-8 items-center rounded-md border px-3 text-sm cursor-pointer hover:bg-muted">
+                {ledger ? 'Upload newer ledger' : 'Upload ledger'}
+              </span>
+            </label>
+          </div>
+          {ledgerErr && <p className="text-xs text-destructive">{ledgerErr}</p>}
+          {ledger && !lp && <p className="text-xs text-warning">{ledger.name} has no balance to use for {ledgerPeriodLabel(periodFrom)}.</p>}
+          {ledger && lp && (() => {
+            const erpItc = { igst: n(base.igst) + rcmCredit.igst, cgst: n(base.cgst) + rcmCredit.cgst, sgst: n(base.sgst) + rcmCredit.sgst }
+            const credited = lp.utilised || heads.some((h) => lp.itc_credited[h] !== 0)
+            const rows: Array<[string, (h: 'igst' | 'cgst' | 'sgst') => number | null]> = [
+              ['Opening balance (ledger)', (h) => lp.opening[h]],
+              ['ITC this month — step 9 (2B)', (h) => erpItc[h]],
+              ...(credited ? [['ITC credited — ledger', (h: 'igst' | 'cgst' | 'sgst') => lp.itc_credited[h]] as [string, (h: 'igst' | 'cgst' | 'sgst') => number]] : []),
+              ...(lp.utilised ? [
+                ['ITC used at filing — ledger', (h: 'igst' | 'cgst' | 'sgst') => lp.utilised![h]] as [string, (h: 'igst' | 'cgst' | 'sgst') => number],
+                ['ITC used — best set-off (above)', (h: 'igst' | 'cgst' | 'sgst') => used(h)] as [string, (h: 'igst' | 'cgst' | 'sgst') => number],
+                ['Closing balance (ledger)', (h: 'igst' | 'cgst' | 'sgst') => lp.closing[h]] as [string, (h: 'igst' | 'cgst' | 'sgst') => number],
+              ] : []),
+            ]
+            const itcGap = credited ? heads.reduce((a, h) => a + Math.abs(lp.itc_credited[h] - erpItc[h]), 0) : 0
+            const filedCash = lp.utilised ? heads.reduce((a, h) => a + (r.liability as any)[h] - lp.utilised![h], 0) + rcmTax : 0
+            return (
+              <>
+                <div className="overflow-x-auto rounded-md border">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">{ledger.name} · {ledgerPeriodLabel(periodFrom)}</th>
+                        {heads.map((h) => <th key={h} className="text-right px-3 py-2 font-medium text-muted-foreground">{label[h]}</th>)}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map(([lbl, f]) => (
+                        <tr key={lbl} className="border-t">
+                          <td className="px-3 py-2">{lbl}</td>
+                          {heads.map((h) => <td key={h} className="px-3 py-2 text-right tabular-nums">{formatCurrency(f(h) ?? 0)}</td>)}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {credited && (itcGap <= 3
+                  ? <p className="text-xs text-success">ITC credited on the portal agrees with step 9 (the ledger rounds to whole rupees).</p>
+                  : <p className="text-xs text-warning">ITC credited on the portal differs from step 9 by {formatCurrency(itcGap)} — check the 2B upload in step 8.</p>)}
+                {!credited && <p className="text-xs text-muted-foreground">This month&apos;s 3B isn&apos;t filed yet, so the ledger only gives the opening balance. Upload it again after filing to check what was used.</p>}
+                {lp.utilised && filedCash - cashTotal > 1 && (
+                  <p className="text-xs text-warning">
+                    At filing, about {formatCurrency(filedCash)} was paid in cash; the set-off above needed {formatCurrency(cashTotal)}. On the portal&apos;s
+                    set-off screen, point the IGST left after paying IGST at the head whose own credit falls short (here, the one being paid in cash) instead of the other.
+                  </p>
+                )}
+              </>
+            )
+          })()}
+        </div>
         <ul className="text-xs text-muted-foreground list-disc pl-4 space-y-0.5">
-          <li>Set-off order: IGST credit pays IGST, then CGST, then SGST. CGST and SGST credit pay their own head, then IGST; they can never pay each other.</li>
+          <li>Set-off: IGST credit pays IGST first and must be used up before CGST/SGST credit; what is left of it is pointed at whichever of CGST/SGST its own credit can&apos;t cover. CGST and SGST credit pay their own head, then IGST; they can never pay each other.</li>
           {itc2b && <li>ITC is the GSTR-2B you uploaded ({itc2b.invoices} invoices{itc2b.credit_notes?.count ? `, less ${itc2b.credit_notes.count} supplier credit note${itc2b.credit_notes.count === 1 ? '' : 's'}` : ''}), as the portal fills Table 4. It assumes you claim all of it; remove anything ineligible first.</li>}
           {itc2b && !itc2b.credit_notes_read && (
             <li className="text-warning">This 2B was uploaded before credit notes were read, so ITC may be overstated. Upload the 2B JSON again in step 8.</li>
@@ -1634,7 +1727,7 @@ function Gstr3b({ data, recon }: { data: any; recon: any }) {
 
   return (
     <div className="space-y-4">
-      <TaxPayable t31={t31} itc={itc} itc2b={data.itc_2b} />
+      <TaxPayable t31={t31} itc={itc} itc2b={data.itc_2b} periodFrom={data.period?.from} />
       <Card className="border-warning/30">
         <CardContent className="pt-6 text-sm">
           <p className="font-medium">These are figures to key in and check against the portal — not to file from.</p>

@@ -1,7 +1,12 @@
-// GST set-off of output tax against input tax credit, in the statutory order
-// (CGST Act s.49A/49B): IGST credit goes against IGST, then CGST, then SGST; CGST credit
-// against CGST, then IGST; SGST credit against SGST, then IGST. CGST credit can never
-// pay SGST (or the reverse). Whatever liability is left is paid from the cash ledger.
+// GST set-off of output tax against input tax credit (CGST Act s.49A/49B, Rule 88A):
+// IGST credit must first pay IGST, and must be used up before any CGST/SGST credit is
+// used; what is left of it can pay CGST and SGST in any proportion. CGST credit pays
+// CGST then IGST; SGST credit pays SGST then IGST; CGST credit can never pay SGST (or
+// the reverse). Whatever liability is left is paid from the cash ledger.
+//
+// The leftover IGST is aimed at the head whose own credit falls short, so cash is the
+// least it can be. The portal's default (IGST to CGST first) can strand CGST credit
+// while SGST is paid in cash.
 export interface Heads { igst: number; cgst: number; sgst: number }
 
 export interface SetOffResult {
@@ -20,8 +25,14 @@ export function setOff(liability: Heads, credit: Heads): SetOffResult {
   const take = (credit: number, liab: number) => Math.min(Math.max(credit, 0), Math.max(liab, 0))
 
   const igst_on_igst = take(Ci, Li); Ci -= igst_on_igst; Li -= igst_on_igst
-  const igst_on_cgst = take(Ci, Lc); Ci -= igst_on_cgst; Lc -= igst_on_cgst
-  const igst_on_sgst = take(Ci, Ls); Ci -= igst_on_sgst; Ls -= igst_on_sgst
+  // Shortfall each head would have after its own credit -- fill those first.
+  let igst_on_cgst = take(Ci, Lc - Cc); Ci -= igst_on_cgst
+  let igst_on_sgst = take(Ci, Ls - Cs); Ci -= igst_on_sgst
+  // IGST credit has to be exhausted before CGST/SGST credit is touched, so any left
+  // over still goes against CGST/SGST liability.
+  const moreC = take(Ci, Lc - igst_on_cgst); igst_on_cgst += moreC; Ci -= moreC
+  const moreS = take(Ci, Ls - igst_on_sgst); igst_on_sgst += moreS; Ci -= moreS
+  Lc -= igst_on_cgst; Ls -= igst_on_sgst
   const cgst_on_cgst = take(Cc, Lc); Cc -= cgst_on_cgst; Lc -= cgst_on_cgst
   const cgst_on_igst = take(Cc, Li); Cc -= cgst_on_igst; Li -= cgst_on_igst
   const sgst_on_sgst = take(Cs, Ls); Cs -= sgst_on_sgst; Ls -= sgst_on_sgst
