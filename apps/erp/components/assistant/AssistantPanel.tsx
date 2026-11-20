@@ -7,9 +7,8 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiFetch } from '@/lib/api-client'
-import { useRole } from '@/lib/auth/useRole'
 import { cn } from '@/lib/utils'
-import { useVoice } from './useVoice'
+import { useVoice, useWakeWord } from './useVoice'
 
 // DB, the owner's voice secretary. A floating button opens this panel from any
 // dashboard page; tap the mic, speak, and DB answers aloud. Every save shows a
@@ -23,7 +22,6 @@ type Card =
 type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[] }
 
 const THREAD_KEY = 'db_assistant_thread'
-const VOICE_KEY = 'db_assistant_voice'
 const STATUS_WORDS: Record<string, string> = {
   find_customer: 'Customer dekh rahi hoon…',
   find_products: 'Stock check kar rahi hoon…',
@@ -39,10 +37,48 @@ function writeStore(key: string, value: string | null) {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value) } catch { /* private mode */ }
 }
 
+interface PanelConfig {
+  provider: 'sarvam' | 'browser'
+  speakReplies: boolean
+  wakeWord: boolean
+  wakePhrases: string[]
+  sarvamReady: boolean
+}
+
+// Shown only to DB's master: /api/assistant/config answers 403 for anyone
+// else (other owners included), and then nothing renders at all.
 export function AssistantLauncher() {
-  const { isOwner, loading } = useRole()
+  const [config, setConfig] = useState<PanelConfig | null>(null)
   const [open, setOpen] = useState(false)
-  if (loading || !isOwner) return null
+  const [wakeKey, setWakeKey] = useState(0)
+  const [busyVoice, setBusyVoice] = useState(false)
+
+  const load = useCallback(() => {
+    apiFetch('/api/assistant/config').then(async (r) => {
+      if (!r.ok) { setConfig(null); return }
+      const j = await r.json()
+      setConfig({
+        provider: j.settings.voice_provider === 'sarvam' && j.sarvam_key_configured ? 'sarvam' : 'browser',
+        speakReplies: j.settings.speak_replies,
+        wakeWord: j.settings.wake_word,
+        wakePhrases: j.settings.wake_phrases,
+        sarvamReady: j.sarvam_key_configured,
+      })
+    }).catch(() => setConfig(null))
+  }, [])
+  useEffect(() => {
+    load()
+    const onChange = () => load()
+    window.addEventListener('db-assistant-settings', onChange)
+    return () => window.removeEventListener('db-assistant-settings', onChange)
+  }, [load])
+
+  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], busyVoice, () => {
+    setOpen(true)
+    setWakeKey((k) => k + 1)
+  })
+
+  if (!config) return null
   return (
     <>
       <button
@@ -52,17 +88,18 @@ export function AssistantLauncher() {
         className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-90"
       >
         <Sparkles className="h-6 w-6" />
+        {wake.active && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-background" title="Listening for “Hey DB”" />}
       </button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
-          {open && <AssistantConversation />}
+          {open && <AssistantConversation config={config} wakeKey={wakeKey} onVoiceBusy={setBusyVoice} />}
         </SheetContent>
       </Sheet>
     </>
   )
 }
 
-function AssistantConversation() {
+function AssistantConversation({ config, wakeKey, onVoiceBusy }: { config: PanelConfig; wakeKey: number; onVoiceBusy: (b: boolean) => void }) {
   const [threadId, setThreadId] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [draft, setDraft] = useState('')
@@ -70,10 +107,14 @@ function AssistantConversation() {
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [setup, setSetup] = useState<{ ready: boolean; reason?: string } | null>(null)
-  const [voiceOn, setVoiceOn] = useState(true)
+  const [voiceOn, setVoiceOn] = useState(config.speakReplies)
+  // Hands-free: after "Hey DB", keep the conversation going without taps --
+  // she listens again as soon as she finishes speaking.
+  const handsFree = useRef(false)
   const scrollRef = useRef<HTMLDivElement>(null)
+  const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null)
 
-  const send = useCallback(async (text: string) => {
+  const send = useCallback(async (text: string, spokenLanguage: string | null = null) => {
     if (!text.trim() || busy) return
     setError(null)
     setBusy(true)
@@ -83,7 +124,7 @@ function AssistantConversation() {
     try {
       const res = await apiFetch('/api/assistant/turn', {
         method: 'POST',
-        body: JSON.stringify({ text, thread_id: threadId }),
+        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage }),
         timeoutMs: 120_000,
       })
       if (!res.ok || !res.body) {
@@ -115,18 +156,30 @@ function AssistantConversation() {
       }
     } catch (err) {
       setError((err as Error).message)
+      handsFree.current = false
     } finally {
       setBusy(false)
       setStatus(null)
-      if (voiceOn && reply.trim()) voice.speak(reply)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const v = voiceRef.current
+    if (v && voiceOn && reply.trim()) await v.speak(reply)
+    if (handsFree.current && voiceRef.current) voiceRef.current.start()
   }, [busy, threadId, voiceOn])
 
-  const voice = useVoice((t) => send(t))
+  // A listen that heard nothing (he walked away, or the conversation is over) ends hands-free mode.
+  const voice = useVoice({ provider: config.provider, speakReplies: voiceOn }, (t, lang) => send(t, lang), () => { handsFree.current = false })
+  voiceRef.current = voice
+
+  useEffect(() => { onVoiceBusy(voice.listening || voice.speaking || voice.transcribing || busy) }, [voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
+  useEffect(() => () => onVoiceBusy(false), [onVoiceBusy])
+
+  // Woken by "Hey DB": start listening straight away.
+  useEffect(() => {
+    if (wakeKey > 0) { handsFree.current = true; voice.start() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wakeKey])
 
   useEffect(() => {
-    setVoiceOn(readStore(VOICE_KEY) !== 'off')
     apiFetch('/api/assistant/setup').then((r) => r.json()).then(setSetup).catch(() => setSetup(null))
     const saved = readStore(THREAD_KEY)
     if (saved) {
@@ -151,8 +204,12 @@ function AssistantConversation() {
   }
 
   const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null) }
-  const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); writeStore(VOICE_KEY, next ? 'on' : 'off'); if (!next) voice.stopSpeaking() }
-
+  const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); if (!next) voice.stopSpeaking() }
+  const micTap = () => {
+    if (voice.listening) { voice.stop(); return }
+    handsFree.current = false
+    voice.start()
+  }
   return (
     <>
       <SheetHeader className="border-b px-4 py-3">
@@ -194,7 +251,10 @@ function AssistantConversation() {
           </div>
         ))}
         {status && <p className="flex items-center gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />{status}</p>}
+        {voice.listening && <p className="text-right text-xs text-muted-foreground">Sun rahi hoon… (I stop when you pause)</p>}
+        {voice.transcribing && <p className="flex items-center justify-end gap-2 text-xs text-muted-foreground"><Loader2 className="h-3 w-3 animate-spin" />Samajh rahi hoon…</p>}
         {voice.interim && <p className="text-right text-sm italic text-muted-foreground">{voice.interim}</p>}
+        {voice.micError && <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">{voice.micError}</p>}
         {error && <p className="rounded-md bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
       </div>
 
@@ -206,8 +266,8 @@ function AssistantConversation() {
               size="lg"
               variant={voice.listening ? 'destructive' : 'default'}
               className="h-12 w-12 shrink-0 rounded-full p-0"
-              disabled={busy || !setup?.ready}
-              onClick={() => (voice.listening ? voice.stop() : voice.start())}
+              disabled={busy || voice.transcribing || !setup?.ready}
+              onClick={micTap}
               aria-label={voice.listening ? 'Stop listening' : 'Talk to DB'}
             >
               {voice.listening ? <Square className="h-5 w-5" /> : <Mic className="h-5 w-5" />}

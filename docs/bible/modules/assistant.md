@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -20,7 +20,14 @@ sources:
   - apps/erp/components/assistant/AssistantPanel.tsx
   - apps/erp/components/assistant/useVoice.ts
   - apps/erp/app/dashboard/assistant/page.tsx
-updated: 2026-11-20
+  - apps/erp/lib/assistant/settings.ts
+  - apps/erp/lib/assistant/usage.ts
+  - apps/erp/lib/assistant/sarvam.ts
+  - apps/erp/app/api/assistant/config/route.ts
+  - apps/erp/app/api/assistant/transcribe/route.ts
+  - apps/erp/app/api/assistant/speak/route.ts
+  - apps/erp/components/assistant/AssistantSettingsManager.tsx
+updated: 2026-11-21
 ---
 
 ## What it is
@@ -36,7 +43,9 @@ She can make **PIs and quotations**, record **expenses**, enter **sales**, and o
 PDF link (valid 7 days); you tap the button to send it. She never sends anything
 herself.
 
-Owner-only, because her advice uses cost and margin.
+**DB answers to one person.** Only the logins ticked in Settings → DB Assistant can see
+her button, her settings tab or use her — other owners included. It starts as Shishir's
+login (admin@digitalbluez.com).
 
 ## Her own ERP user
 
@@ -69,8 +78,25 @@ When you state a preference ("ABC ko hamesha free bag"), she offers to remember 
 It is saved only on a yes. **DB Assistant → What DB remembers** lists every note, and
 you can delete any of them. She does not learn anything silently.
 
-## Voice
+## Voice and language
 
-Speech is the browser's own (Chrome/Safari), free. If the browser can't listen, type
-instead. She reads back the important numbers before saving, which is what catches a
-misheard word.
+With a Sarvam AI key (Settings → DB Assistant → Voice) she listens with Sarvam's
+Indian speech recogniser and speaks in a natural Indian female voice (pick and
+preview it there). Without a key she falls back to the browser's free, robotic
+voice. Recording stops by itself when you pause (max ~28 s per sentence).
+
+She replies in the language you spoke: English gets English, Hindi/Hinglish gets
+Hinglish (written हिंदी + English by default, which is what sounds most natural
+aloud; Roman letters is an option).
+
+**"Hey DB" / "DB, suno":** switch on the wake word in settings. While the ERP is open
+on screen, a green dot on her button means she is waiting for it; she then opens,
+listens, and keeps listening after each reply until you go quiet. The wait for the
+wake phrase uses the browser's free recogniser.
+
+## Usage and credit
+
+Every request she makes is costed and logged (`assistant_usage`): AI model tokens and
+Sarvam seconds/characters, at list prices. Settings shows today and this month.
+Neither Anthropic nor Sarvam reports the remaining balance through an API, so enter
+the credit you loaded and the date, and the page shows the estimated balance left.

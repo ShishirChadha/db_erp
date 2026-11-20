@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser } from '@/lib/auth/session'
+import { isDbMaster } from '@/lib/assistant/settings'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getDbAgentStatus, setUpDbAgent } from '@/lib/assistant/identity'
 
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser || !(await isDbMaster(sessionUser))) return NextResponse.json({ error: 'DB is private to her owner.' }, { status: 403 })
   return NextResponse.json(await getDbAgentStatus())
 }
 
@@ -13,7 +14,7 @@ export async function GET(req: NextRequest) {
 // she was logged off. A deactivated DB stays deactivated -- undo that in Users.
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser || !(await isDbMaster(sessionUser))) return NextResponse.json({ error: 'DB is private to her owner.' }, { status: 403 })
   try {
     const status = await setUpDbAgent()
     await logAuditEvent({

@@ -26,7 +26,6 @@ import {
   Search,
   Star,
   Megaphone,
-  Sparkles,
   Home,
   HelpCircle, Activity, Phone } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -199,14 +198,6 @@ export const menuGroups = [
     icon: Megaphone,
     href: '/dashboard/marketing',
     pageKey: 'marketing',
-  },
-  {
-    // Owner-only: DB's advice uses cost and margin.
-    key: 'assistant',
-    label: 'DB Assistant',
-    icon: Sparkles,
-    href: '/dashboard/assistant',
-    ownerOnly: true,
   },
   {
     // Owner-only rather than a page-key grant: this surfaces infrastructure

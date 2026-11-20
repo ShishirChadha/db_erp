@@ -181,11 +181,6 @@
     "ownerOnly": false
   },
   {
-    "label": "DB Assistant",
-    "route": "/dashboard/assistant",
-    "ownerOnly": true
-  },
-  {
     "label": "System Health",
     "route": "/dashboard/monitoring",
     "ownerOnly": true

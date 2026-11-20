@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser } from '@/lib/auth/session'
+import { isDbMaster } from '@/lib/assistant/settings'
 import { getDbAgentStatus } from '@/lib/assistant/identity'
 import { runAssistantTurn, type TurnEvent } from '@/lib/assistant/loop'
 
@@ -7,11 +8,11 @@ export const dynamic = 'force-dynamic'
 export const maxDuration = 120
 
 // One turn with DB, streamed back as server-sent events so the panel can start
-// speaking her reply while she is still finishing it. Owner-only: her answers
-// include cost and margin.
+// speaking her reply while she is still finishing it. Only DB's master (set in
+// Settings -> DB Assistant) can talk to her; her answers include cost and margin.
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser || !(await isDbMaster(sessionUser))) return NextResponse.json({ error: 'DB is private to her owner.' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
   const text = typeof body.text === 'string' ? body.text.trim().slice(0, 2000) : ''
@@ -33,6 +34,7 @@ export async function POST(req: NextRequest) {
           owner: { id: sessionUser.id, email: sessionUser.email },
           db: { profileId: status.profileId, sessionId: status.sessionId },
           text,
+          spokenLanguage: typeof body.spoken_language === 'string' ? body.spoken_language : null,
           emit,
         })
       } catch (err) {

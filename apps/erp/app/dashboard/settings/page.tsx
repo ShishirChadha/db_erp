@@ -31,6 +31,7 @@ const NavigationManager = dynamic(() => import('@/components/NavigationManager')
 const AuditLogPage = dynamic(() => import('./audit-log/page'), { ssr: false })
 const BackupPageGuarded = dynamic(() => import('./backup/page'), { ssr: false })
 const ListPageSizeManager = dynamic(() => import('@/components/ListPageSizeManager'), { ssr: false })
+const AssistantSettingsManager = dynamic(() => import('@/components/assistant/AssistantSettingsManager'), { ssr: false })
 
 interface AssetCounter {
   prefix: string
@@ -74,6 +75,8 @@ const CATEGORIES = [
   { key: 'marketing', label: 'Marketing', ownerOnly: true },
   { key: 'backup', label: 'Backup', ownerOnly: true },
   { key: 'list_page_size', label: 'List Page Size', ownerOnly: true },
+  // Shown only to DB's master -- see dbMaster below, not just ownerOnly.
+  { key: 'db_assistant', label: 'DB Assistant', ownerOnly: true },
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']
@@ -237,8 +240,16 @@ function SettingsPage() {
   const { isOwner, loading } = useRole()
   // Sorted A-Z for the tab list -- CATEGORIES above stays in its own
   // (unsorted) order since that's a more readable grouping to read as code.
+  // DB answers to one person, so her tab is hidden from other owners too: the
+  // config route says 403 to anyone but her master.
+  const [dbMaster, setDbMaster] = useState(false)
+  useEffect(() => {
+    if (!isOwner) return
+    apiFetch('/api/assistant/config').then(r => setDbMaster(r.ok)).catch(() => setDbMaster(false))
+  }, [isOwner])
   const visibleCategories = CATEGORIES
     .filter(cat => isOwner || !cat.ownerOnly)
+    .filter(cat => cat.key !== 'db_assistant' || dbMaster)
     .slice()
     .sort((a, b) => a.label.localeCompare(b.label))
   const [activeCategory, setActiveCategory] = useState<CategoryKey>('appearance')
@@ -295,6 +306,7 @@ function SettingsPage() {
           {category === 'marketing' && <MarketingSettingsManager />}
           {category === 'backup' && <BackupPageGuarded />}
           {category === 'list_page_size' && <ListPageSizeManager />}
+          {category === 'db_assistant' && <AssistantSettingsManager />}
         {category === 'attendance' && <AttendanceSettingsManager />}
         </div>
       </div>

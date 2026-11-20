@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getSessionUser, isOwner } from '@/lib/auth/session'
+import { getSessionUser } from '@/lib/auth/session'
+import { isDbMaster } from '@/lib/assistant/settings'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { visibleTranscript } from '@/lib/assistant/loop'
 
@@ -7,7 +8,7 @@ import { visibleTranscript } from '@/lib/assistant/loop'
 // recent conversations, newest first.
 export async function GET(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
-  if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!sessionUser || !(await isDbMaster(sessionUser))) return NextResponse.json({ error: 'DB is private to her owner.' }, { status: 403 })
 
   const id = req.nextUrl.searchParams.get('id')
   if (id) {

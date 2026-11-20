@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { istToday } from '@/lib/attendance'
-import { ASSISTANT_SYSTEM_PROMPT } from './playbooks'
+import { assistantSystemPrompt } from './playbooks'
+import { getAssistantSettings } from './settings'
+import { recordClaudeUsage } from './usage'
 import { ASSISTANT_TOOLS, runTool, type AssistantCard, type PendingAction } from './tools'
 
 // One conversational turn with DB: the owner's words in, DB's reply (streamed)
@@ -10,7 +12,6 @@ import { ASSISTANT_TOOLS, runTool, type AssistantCard, type PendingAction } from
 // the full history and the one pending write -- has to be saved to
 // assistant_threads between turns (a serverless function remembers nothing),
 // and confirm_pending_action needs to know which turn a proposal came from.
-export const ASSISTANT_MODEL = 'claude-opus-5-5'
 const MAX_STEPS = 10
 
 export type TurnEvent =
@@ -33,6 +34,8 @@ export async function runAssistantTurn(params: {
   owner: { id: string; email: string | undefined }
   db: { profileId: string; sessionId: string }
   text: string
+  // BCP-47 code Sarvam detected when he spoke; null when he typed.
+  spokenLanguage?: string | null
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
@@ -45,14 +48,18 @@ export async function runAssistantTurn(params: {
   const turn = messages.filter((m) => m.role === 'user' && typeof m.content === 'string').length + 1
   const today = istToday()
   const weekday = new Date(`${today}T12:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'Asia/Kolkata' })
-  messages.push({ role: 'user', content: `[${weekday}, ${today}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
+  const settings = await getAssistantSettings()
+  const how = params.spokenLanguage
+    ? `spoken, detected ${params.spokenLanguage}${params.spokenLanguage === 'en-IN' ? ' (English)' : ' (Hindi/Hinglish)'}`
+    : 'typed'
+  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
 
   const client = new Anthropic()
   let spoke = false
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       const stream = client.beta.messages.stream({
-        model: ASSISTANT_MODEL,
+        model: settings.model,
         max_tokens: 8000,
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
@@ -60,7 +67,7 @@ export async function runAssistantTurn(params: {
         // Tools + system are identical every turn, so they are cached; the
         // top-level breakpoint also caches the growing history between steps.
         cache_control: { type: 'ephemeral' },
-        system: [{ type: 'text', text: ASSISTANT_SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: assistantSystemPrompt(settings.hinglish_script), cache_control: { type: 'ephemeral' } }],
         tools: ASSISTANT_TOOLS,
         messages,
       })
@@ -73,6 +80,7 @@ export async function runAssistantTurn(params: {
         spoke = true
       })
       const message = await stream.finalMessage()
+      await recordClaudeUsage({ profileId: owner.id, threadId: thread.id, model: message.model || settings.model, usdInr: settings.usd_inr, usage: message.usage })
       messages.push({ role: 'assistant', content: message.content as Anthropic.Beta.BetaContentBlockParam[] })
 
       if (message.stop_reason === 'refusal') {
