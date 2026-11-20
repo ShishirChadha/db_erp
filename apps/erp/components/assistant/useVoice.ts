@@ -154,7 +154,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       else nothingRef.current?.()
     }
     stopRef.current = () => rec.stop()
-    rec.start()
+    try { rec.start() } catch { stopRef.current = null; setMicError('The microphone is busy. Try the mic button again.'); return }
     setListening(true)
   }, [])
 
@@ -215,16 +215,31 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 // understood by Sarvam. Pauses whenever DB herself is listening or talking.
 const NAME_VARIANTS = ['db', 'd b', 'dee bee', 'debi', 'idbi', 'deebee', 'डीबी']
 
+//
+// Safety rules (a runaway listener once looped until Chrome closed):
+//   - exactly ONE recogniser at a time: a new one only starts after the old one
+//     has fully ended, and returning to the tab never starts a second one;
+//   - stops while the tab is hidden, and while the DB panel is open (the panel
+//     uses the mic itself; two recognisers on one page cancel each other);
+//   - a session that ends quickly or with an error backs off 1s, 2s, 4s ... 30s,
+//     and after 6 failures in a row it gives up until the page is reloaded.
+const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported'])
+const MAX_FAILURES = 6
+
 export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean, onWake: () => void) {
   const wakeRef = useRef(onWake)
   wakeRef.current = onWake
   const [active, setActive] = useState(false)
+  const [failed, setFailed] = useState<string | null>(null)
+  const failedRef = useRef(false)
 
   useEffect(() => {
     const Ctor = typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!enabled || paused || !Ctor) { setActive(false); return }
-    let stopped = false
-    let rec: any = null
+    if (!enabled || paused || !Ctor || failedRef.current) { setActive(false); return }
+    let disposed = false
+    let rec: any = null // the one live recogniser, null once it has ended
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let failures = 0
     const normal = phrases.map((p) => p.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim())
     const matches = (heard: string) => {
       const h = ` ${heard.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim()} `
@@ -232,27 +247,67 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       // "hey/hi/hello/suno" next to any way the recogniser spells DB
       return NAME_VARIANTS.some((n) => new RegExp(`(hey|hi|hello|ok|suno)\\s+${n}\\b|\\b${n}\\s+suno`).test(h))
     }
+    const giveUp = (why: string) => {
+      disposed = true
+      failedRef.current = true
+      setFailed(why)
+      setActive(false)
+    }
+    const schedule = (ms: number) => {
+      if (disposed || timer) return
+      timer = setTimeout(() => { timer = null; begin() }, ms)
+    }
     const begin = () => {
-      if (stopped || document.visibilityState !== 'visible') return
-      rec = new Ctor()
-      rec.lang = 'en-IN'
-      rec.continuous = true
-      rec.interimResults = true
-      rec.onresult = (e: any) => {
+      if (disposed || rec || document.visibilityState !== 'visible') return
+      const r = new Ctor()
+      r.lang = 'en-IN'
+      r.continuous = true
+      r.interimResults = true
+      const startedAt = Date.now()
+      let errored = false
+      let woke = false
+      r.onresult = (e: any) => {
+        failures = 0
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (matches(e.results[i][0].transcript)) { stopped = true; rec.abort(); setActive(false); wakeRef.current(); return }
+          if (matches(e.results[i][0].transcript)) { woke = true; try { r.abort() } catch {} return }
         }
       }
-      rec.onend = () => { if (!stopped) setTimeout(begin, 300) }
-      rec.onerror = (e: any) => { if (e.error === 'not-allowed') { stopped = true; setActive(false) } }
-      try { rec.start(); setActive(true) } catch { /* already started */ }
+      r.onerror = (e: any) => {
+        if (e.error === 'aborted' || e.error === 'no-speech') return
+        errored = true
+        if (FATAL_ERRORS.has(e.error)) giveUp(e.error === 'not-allowed' ? 'Microphone permission is blocked.' : `Speech recognition unavailable (${e.error}).`)
+      }
+      r.onend = () => {
+        if (rec === r) rec = null
+        setActive(false)
+        if (woke) { wakeRef.current(); return } // the panel opens and pauses this hook
+        if (disposed) return
+        if (errored || Date.now() - startedAt < 3000) {
+          failures++
+          if (failures >= MAX_FAILURES) { giveUp('“Hey DB” stopped after repeated errors. Reload the page to try again.'); return }
+          schedule(Math.min(30_000, 1000 * 2 ** (failures - 1)))
+        } else {
+          schedule(500) // Chrome ends long sessions on its own; just carry on
+        }
+      }
+      rec = r
+      try { r.start(); setActive(true) } catch { rec = null; failures++; schedule(2000) }
     }
-    const onVis = () => { if (document.visibilityState === 'visible' && !stopped) begin() }
+    const onVis = () => {
+      if (document.visibilityState === 'visible') schedule(300)
+      else { if (timer) { clearTimeout(timer); timer = null } try { rec?.abort() } catch {} }
+    }
     document.addEventListener('visibilitychange', onVis)
     begin()
-    return () => { stopped = true; document.removeEventListener('visibilitychange', onVis); try { rec?.abort() } catch {} setActive(false) }
+    return () => {
+      disposed = true
+      document.removeEventListener('visibilitychange', onVis)
+      if (timer) clearTimeout(timer)
+      try { rec?.abort() } catch {}
+      setActive(false)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled, paused, phrases.join('|')])
 
-  return { active }
+  return { active, failed }
 }

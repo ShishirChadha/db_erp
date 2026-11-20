@@ -98,7 +98,11 @@ aloud; Roman letters is an option).
 **"Hey DB" / "DB, suno":** switch on the wake word in settings. While the ERP is open
 on screen, a green dot on her button means she is waiting for it; she then opens,
 listens, and keeps listening after each reply until you go quiet. The wait for the
-wake phrase uses the browser's free recogniser.
+wake phrase uses the browser's free recogniser. Only one recogniser ever runs: it
+stops while the tab is hidden or the panel is open, backs off after errors, and gives
+up after six failures in a row (the dot turns amber; reload the page to retry). An
+earlier version could start a second listener on returning to the tab, and the two
+cancelled each other in a loop until Chrome closed.
 
 ## Usage and credit
 

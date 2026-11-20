@@ -75,7 +75,9 @@ export function AssistantLauncher() {
     return () => window.removeEventListener('db-assistant-settings', onChange)
   }, [load])
 
-  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], busyVoice, () => {
+  // Paused while the panel is open: the panel uses the mic itself, and two
+  // speech recognisers on one page cancel each other in a loop.
+  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], open || busyVoice, () => {
     setOpen(true)
     setWakeKey((k) => k + 1)
   })
@@ -91,6 +93,7 @@ export function AssistantLauncher() {
       >
         <Sparkles className="h-6 w-6" />
         {wake.active && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-background" title="Listening for “Hey DB”" />}
+        {wake.failed && <span className="absolute right-1 top-1 h-2.5 w-2.5 rounded-full bg-warning ring-2 ring-background" title={wake.failed} />}
       </button>
       <Sheet open={open} onOpenChange={setOpen}>
         <SheetContent side="right" className="flex w-full flex-col gap-0 p-0 sm:max-w-md">
@@ -175,9 +178,13 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy }: { config: Panel
   useEffect(() => { onVoiceBusy(voice.listening || voice.speaking || voice.transcribing || busy) }, [voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
   useEffect(() => () => onVoiceBusy(false), [onVoiceBusy])
 
-  // Woken by "Hey DB": start listening straight away.
+  // Woken by "Hey DB": start listening once the wake listener has released the
+  // mic (it is stopping as the panel opens).
   useEffect(() => {
-    if (wakeKey > 0) { handsFree.current = true; voice.start() }
+    if (wakeKey === 0) return
+    handsFree.current = true
+    const t = setTimeout(() => voice.start(), 500)
+    return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wakeKey])
 
