@@ -1,0 +1,234 @@
+import { supabaseAdmin } from '@/lib/supabase/service'
+import { SELLABLE_STATUSES } from '@/lib/sales-entry'
+import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
+import { PAYMENT_ACCOUNTS } from '@/lib/rentals'
+import { loadRules, loadCostMap } from '@/lib/pricing-board'
+import { priceWarnings } from '@/lib/pricing'
+
+// Read-only lookups behind DB's tools. Owner-only feature, so cost and margin
+// are included where they help her give advice -- never sent anywhere but the
+// owner's own assistant panel.
+
+const ilikeSafe = (s: string) => s.replace(/[%_,()]/g, ' ').trim()
+
+export async function findCustomers(query: string) {
+  const q = ilikeSafe(query)
+  const digits = query.replace(/\D/g, '')
+  let req = supabaseAdmin
+    .from('customers')
+    .select('id, customer_name, type, phone, email, gst_number, city, state_code')
+    .not('is_deleted', 'is', true)
+    .limit(8)
+  req = digits.length >= 5 ? req.ilike('phone', `%${digits.slice(-10)}%`) : req.ilike('customer_name', `%${q}%`)
+  const { data } = await req
+  const rows = data || []
+  if (rows.length === 0) return []
+  const { data: notes } = await supabaseAdmin
+    .from('assistant_notes').select('subject_id, note')
+    .eq('subject_type', 'customer').eq('is_active', true)
+    .in('subject_id', rows.map((r) => r.id))
+  return rows.map((r) => ({ ...r, remembered: (notes || []).filter((n) => n.subject_id === r.id).map((n) => n.note) }))
+}
+
+// A product search that tolerates how people say models out loud: every word
+// must appear somewhere in the code or description ("840 g6 8 256").
+export async function findProducts(query: string) {
+  const words = ilikeSafe(query).split(/\s+/).filter((w) => w.length > 0).slice(0, 6)
+  let req = supabaseAdmin
+    .from('sku_master')
+    .select('id, full_sku_code, sku_description, category, hsn_code, selling_price_default, quantity_in_stock, status')
+    .neq('status', 'archived')
+    .limit(10)
+  for (const w of words) req = req.or(`sku_description.ilike.%${w}%,full_sku_code.ilike.%${w}%,model_name.ilike.%${w}%`)
+  const { data } = await req
+  const skus = data || []
+  const serialized = skus.filter((s) => !NON_SERIALIZED_CATEGORIES.includes(s.category))
+  const counts = new Map<string, number>()
+  if (serialized.length) {
+    const ids = serialized.map((s) => s.id)
+    const { data: units } = await supabaseAdmin
+      .from('asset_ledger').select('sku_id, current_sku_id')
+      .in('status', SELLABLE_STATUSES).not('is_deleted', 'is', true)
+      .or(`current_sku_id.in.(${ids.join(',')}),sku_id.in.(${ids.join(',')})`)
+    for (const u of units || []) {
+      const id = u.current_sku_id || u.sku_id
+      counts.set(id, (counts.get(id) || 0) + 1)
+    }
+  }
+  return skus.map((s) => ({
+    id: s.id,
+    code: s.full_sku_code,
+    description: s.sku_description,
+    category: s.category,
+    hsn_code: s.hsn_code,
+    list_price: s.selling_price_default,
+    in_stock: NON_SERIALIZED_CATEGORIES.includes(s.category) ? Number(s.quantity_in_stock) || 0 : counts.get(s.id) || 0,
+    tracked_per_unit: !NON_SERIALIZED_CATEGORIES.includes(s.category),
+  }))
+}
+
+export async function findSellableUnits(skuId: string) {
+  const { data } = await supabaseAdmin
+    .from('asset_ledger')
+    .select('id, serial_number, asset_number, status, qc_grade, cost_price, sku_id, current_sku_id, received_at')
+    .in('status', SELLABLE_STATUSES).not('is_deleted', 'is', true)
+    .or(`current_sku_id.eq.${skuId},and(current_sku_id.is.null,sku_id.eq.${skuId})`)
+    .order('received_at', { ascending: true })
+    .limit(20)
+  return (data || []).map((u) => ({
+    id: u.id, serial_number: u.serial_number, asset_number: u.asset_number, status: u.status,
+    qc_grade: u.qc_grade, cost_price: u.cost_price,
+  }))
+}
+
+export async function findUnitBySerial(serial: string) {
+  const { data } = await supabaseAdmin
+    .from('asset_ledger')
+    .select('id, serial_number, asset_number, status, cost_price, sku_id, current_sku_id, sku_master!purchase_order_asset_mapping_sku_id_fkey(sku_description)')
+    .ilike('serial_number', ilikeSafe(serial))
+    .not('is_deleted', 'is', true)
+    .limit(3)
+  return (data || []).map((u: any) => ({
+    id: u.id, serial_number: u.serial_number, asset_number: u.asset_number, status: u.status,
+    sellable: SELLABLE_STATUSES.includes(u.status), sku_id: u.current_sku_id || u.sku_id,
+    description: u.sku_master?.sku_description ?? null, cost_price: u.cost_price,
+  }))
+}
+
+// Everything DB needs to have an opinion on a price: what this customer was
+// quoted or charged before, what the model has sold for recently, the list
+// price, and the cost.
+export async function priceContext(skuId: string, customerId?: string | null) {
+  const [{ data: sku }, costs, rules] = await Promise.all([
+    supabaseAdmin.from('sku_master').select('id, sku_description, category, selling_price_default').eq('id', skuId).maybeSingle(),
+    loadCostMap([skuId]),
+    loadRules(),
+  ])
+  if (!sku) return null
+
+  const isUnit = !NON_SERIALIZED_CATEGORIES.includes(sku.category)
+  let saleFilter: string
+  if (isUnit) {
+    const { data: units } = await supabaseAdmin
+      .from('asset_ledger').select('id')
+      .or(`current_sku_id.eq.${skuId},and(current_sku_id.is.null,sku_id.eq.${skuId})`).limit(500)
+    const ids = (units || []).map((u) => u.id)
+    saleFilter = ids.length ? `asset_ledger_id.in.(${ids.join(',')})` : 'asset_ledger_id.eq.00000000-0000-0000-0000-000000000000'
+  } else {
+    saleFilter = `accessory_id.eq.${skuId}`
+  }
+
+  const { data: recentSales } = await supabaseAdmin
+    .from('sales')
+    .select('sale_date, sale_base_price, sale_total, customer_id, customer_name')
+    .not('is_deleted', 'is', true).or(saleFilter)
+    .order('sale_date', { ascending: false }).limit(30)
+
+  let quotedToCustomer: { date: string; doc: string; rate: number }[] = []
+  if (customerId) {
+    const { data: lines } = await supabaseAdmin
+      .from('sales_document_items')
+      .select('rate, sales_documents!inner(document_number, document_date, customer_id, is_deleted)')
+      .eq('sku_id', skuId)
+      .eq('sales_documents.customer_id', customerId)
+      .eq('sales_documents.is_deleted', false)
+      .limit(5)
+    quotedToCustomer = (lines || []).map((l: any) => ({ date: l.sales_documents.document_date, doc: l.sales_documents.document_number, rate: Number(l.rate) }))
+  }
+
+  const sales = recentSales || []
+  return {
+    description: sku.sku_description,
+    list_price: sku.selling_price_default,
+    cost_price: costs.get(skuId) ?? null,
+    min_margin_pct: rules.min_margin_pct,
+    sold_to_this_customer: customerId
+      ? sales.filter((s) => s.customer_id === customerId).slice(0, 5).map((s) => ({ date: s.sale_date, price_before_gst: Number(s.sale_base_price) }))
+      : [],
+    quoted_to_this_customer: quotedToCustomer,
+    recent_sales: sales.slice(0, 8).map((s) => ({ date: s.sale_date, price_before_gst: Number(s.sale_base_price), customer: s.customer_name })),
+  }
+}
+
+// Plain-code checks DB must raise before proposing a price. She words them;
+// the facts come from here so they are never invented.
+export async function priceChecks(skuId: string, customerId: string | null, priceBeforeGst: number): Promise<string[]> {
+  const ctx = await priceContext(skuId, customerId)
+  if (!ctx) return []
+  const out: string[] = []
+  for (const w of priceWarnings(ctx.list_price ? Number(ctx.list_price) : null, priceBeforeGst, ctx.cost_price, ctx.min_margin_pct)) {
+    if (w === 'below_cost') out.push(`Price ₹${priceBeforeGst} is BELOW cost (₹${ctx.cost_price}).`)
+    if (w === 'below_margin') out.push(`Price ₹${priceBeforeGst} is under the ${ctx.min_margin_pct}% minimum margin on cost ₹${ctx.cost_price}.`)
+    if (w === 'big_drop') out.push(`Price is far below the list price ₹${ctx.list_price}.`)
+    if (w === 'big_rise') out.push(`Price is far above the list price ₹${ctx.list_price}.`)
+  }
+  const sold = ctx.sold_to_this_customer[0]
+  const quoted = ctx.quoted_to_this_customer[0]
+  const past = sold ? { price: sold.price_before_gst, date: sold.date, verb: 'charged' } : quoted ? { price: quoted.rate, date: quoted.date, verb: 'quoted' } : null
+  if (past && Math.abs(past.price - priceBeforeGst) / Math.max(past.price, 1) > 0.05) {
+    out.push(`This customer was ${past.verb} ₹${past.price} (before GST) for this on ${past.date}.`)
+  }
+  const others = ctx.recent_sales.map((s) => s.price_before_gst).filter((p) => p > 0)
+  if (others.length >= 2) {
+    const lo = Math.min(...others), hi = Math.max(...others)
+    if (priceBeforeGst < lo * 0.95 || priceBeforeGst > hi * 1.05) {
+      out.push(`Recent sales of this model were ₹${lo}–₹${hi} before GST.`)
+    }
+  }
+  return out
+}
+
+export async function getOptions() {
+  const [{ data: opts }, { data: entities }] = await Promise.all([
+    supabaseAdmin.from('custom_options').select('category, value').eq('is_active', true).in('category', ['staff_names', 'expense_types']),
+    supabaseAdmin.from('business_profiles').select('key, legal_name, is_gst_registered').eq('active', true),
+  ])
+  return {
+    staff_names: (opts || []).filter((o) => o.category === 'staff_names').map((o) => o.value),
+    expense_types: (opts || []).filter((o) => o.category === 'expense_types').map((o) => o.value),
+    payment_accounts: [...PAYMENT_ACCOUNTS],
+    // entity_key for a PI/quotation. Digitalbluez is GST-registered; the others issue bills of supply.
+    entities: (entities || []).map((e) => ({ key: e.key, name: e.legal_name, gst_registered: e.is_gst_registered })),
+  }
+}
+
+export async function recallNotes(customerId?: string | null) {
+  let req = supabaseAdmin.from('assistant_notes').select('id, subject_type, subject_id, note, created_at').eq('is_active', true)
+  req = customerId ? req.eq('subject_id', customerId) : req.eq('subject_type', 'general')
+  const { data } = await req.order('created_at', { ascending: false }).limit(30)
+  return data || []
+}
+
+// Duplicate guard for PIs: the same customer already has a document for the
+// same SKU in the last week.
+export async function recentDocumentsFor(customerId: string, skuIds: string[]) {
+  if (!skuIds.length) return []
+  const since = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10)
+  const { data } = await supabaseAdmin
+    .from('sales_document_items')
+    .select('sku_id, rate, sales_documents!inner(document_number, document_date, customer_id, is_deleted)')
+    .in('sku_id', skuIds)
+    .eq('sales_documents.customer_id', customerId)
+    .eq('sales_documents.is_deleted', false)
+    .gte('sales_documents.document_date', since)
+  return (data || []).map((l: any) => ({ number: l.sales_documents.document_number, date: l.sales_documents.document_date, rate: Number(l.rate) }))
+}
+
+export async function expenseChecks(type: string | null, amount: number, date: string): Promise<string[]> {
+  const out: string[] = []
+  const { data: same } = await supabaseAdmin
+    .from('expenses').select('id').not('is_deleted', 'is', true).eq('expense_date', date).eq('amount', amount)
+    .limit(1)
+  if (same?.length) out.push(`An expense of ₹${amount} is already recorded on ${date} -- possible duplicate.`)
+  if (type) {
+    const since = new Date(Date.now() - 180 * 86400_000).toISOString().slice(0, 10)
+    const { data: hist } = await supabaseAdmin
+      .from('expenses').select('amount').not('is_deleted', 'is', true).eq('type', type).gte('expense_date', since).limit(200)
+    const amounts = (hist || []).map((h) => Number(h.amount)).filter((a) => a > 0).sort((a, b) => a - b)
+    if (amounts.length >= 5) {
+      const median = amounts[Math.floor(amounts.length / 2)]
+      if (amount > median * 3) out.push(`₹${amount} is much higher than the usual ${type} expense (around ₹${median}).`)
+    }
+  }
+  return out
+}

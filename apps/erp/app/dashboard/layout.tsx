@@ -6,6 +6,7 @@ import { cookies } from 'next/headers';
 import { getLayoutSessionUser, SessionCheckUnavailable } from '@/lib/auth/session';
 import { ResumeSession } from '@/components/ResumeSession';
 import { WebVitalsReporter } from '@/components/WebVitalsReporter';
+import { AssistantLauncher } from '@/components/assistant/AssistantPanel';
 
 export default async function DashboardLayout({
   children,
@@ -45,6 +46,7 @@ export default async function DashboardLayout({
     <NavSearchProvider>
       <RoleSeed snapshot={sessionUser} />
       <WebVitalsReporter />
+      <AssistantLauncher />
       <div className="flex h-dvh bg-muted overflow-hidden">
         <Sidebar />
         {/* pt-14 clears the fixed mobile top bar (Sidebar renders it at md:hidden) --

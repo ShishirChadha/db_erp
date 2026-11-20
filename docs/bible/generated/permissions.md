@@ -39,6 +39,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Attendance | if granted `attendance` | if granted `attendance` |
 | Leads | if granted `leads` | if granted `leads` |
 | Marketing | if granted `marketing` | if granted `marketing` |
+| DB Assistant | owner-only | owner-only |
 | System Health | owner-only | owner-only |
 | Settings | visible to all signed-in staff | visible to all signed-in staff |
 | DB Guide | visible to all signed-in staff | visible to all signed-in staff |
@@ -48,13 +49,14 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Page key | Roles with edit access |
 |---|---|
 | accessories | employee |
-| expenses | employee |
+| customers | manager |
+| expenses | employee, manager |
 | live_stock | employee |
 | new_entry | employee |
-| quotations | employee |
+| quotations | employee, manager |
 | rentals | employee |
-| repair_jobs | employee |
-| replacement_jobs | employee |
+| repair_jobs | employee, manager |
+| replacement_jobs | employee, manager |
 | rma | employee |
 | sku_master | employee |
 | website | employee |

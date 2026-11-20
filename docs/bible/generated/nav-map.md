@@ -37,6 +37,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Attendance | `/dashboard/attendance` | attendance |  |
 | Leads | `/dashboard/leads` | leads |  |
 | Marketing | `/dashboard/marketing` | marketing |  |
+| DB Assistant | `/dashboard/assistant` |  | yes |
 | System Health | `/dashboard/monitoring` |  | yes |
 | Settings | `/dashboard/settings` |  |  |
 | DB Guide | `/dashboard/help` |  |  |
