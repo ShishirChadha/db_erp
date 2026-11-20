@@ -21,11 +21,20 @@ export const SARVAM_VOICES = [
   { id: 'zarina_en_conversation', label: 'Zarina — English, conversational' },
 ] as const
 
+export const VOICE_PROVIDERS = ['sarvam', 'azure', 'google', 'browser'] as const
+export type VoiceProvider = typeof VOICE_PROVIDERS[number]
+
 export interface AssistantSettings {
   master_profile_ids: string[]
   model: AssistantModel
-  voice_provider: 'sarvam' | 'browser'
-  tts_speaker: string
+  // Who speaks her replies, and who listens to Shishir -- chosen separately so
+  // a voice can be trialled without changing how she hears.
+  voice_provider: VoiceProvider
+  listen_provider: 'sarvam' | 'browser'
+  tts_speaker: string // Sarvam voice
+  azure_region: string
+  azure_voice: string // persona, e.g. 'Aarti' -> hi-IN-AartiNeural / en-IN-AartiNeural
+  google_voice: string // Chirp 3 HD name, e.g. 'Aoede' -> hi-IN-Chirp3-HD-Aoede
   tts_pace: number
   speak_replies: boolean
   wake_word: boolean
@@ -41,7 +50,11 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   master_profile_ids: [],
   model: 'claude-opus-5-5',
   voice_provider: 'sarvam',
+  listen_provider: 'sarvam',
   tts_speaker: 'simran_enhi_customer',
+  azure_region: 'centralindia',
+  azure_voice: 'Aarti',
+  google_voice: 'Aoede',
   tts_pace: 1.05,
   speak_replies: true,
   wake_word: false,
@@ -78,19 +91,40 @@ export async function isDbMaster(user: SessionUser | null): Promise<boolean> {
   return s.master_profile_ids.includes(user.id)
 }
 
-export async function getSarvamKey(): Promise<string | null> {
-  const fromEnv = process.env.SARVAM_API_KEY?.trim()
+// Provider keys: an env var wins if set, otherwise the encrypted copy the owner
+// pasted into Settings. The Anthropic ADMIN key (sk-ant-admin...) is only used to
+// read billing -- it is a different key from the one DB thinks with.
+export const SECRETS = {
+  sarvam: { setting: 'assistant_sarvam_key', env: 'SARVAM_API_KEY' },
+  azure: { setting: 'assistant_azure_speech_key', env: 'AZURE_SPEECH_KEY' },
+  google: { setting: 'assistant_google_tts_key', env: 'GOOGLE_TTS_API_KEY' },
+  anthropic_admin: { setting: 'assistant_anthropic_admin_key', env: 'ANTHROPIC_ADMIN_KEY' },
+} as const
+export type SecretName = keyof typeof SECRETS
+
+export async function getSecret(name: SecretName): Promise<string | null> {
+  const fromEnv = process.env[SECRETS[name].env]?.trim()
   if (fromEnv) return fromEnv
-  const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', SARVAM_KEY).maybeSingle()
+  const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', SECRETS[name].setting).maybeSingle()
   if (!data?.value) return null
   try { return decryptPassword(data.value) } catch { return null }
 }
 
-export async function setSarvamKey(key: string | null, by: string) {
-  if (!key) {
-    await supabaseAdmin.from('app_settings').delete().eq('key', SARVAM_KEY)
+export async function setSecret(name: SecretName, value: string | null, by: string) {
+  if (!value) {
+    await supabaseAdmin.from('app_settings').delete().eq('key', SECRETS[name].setting)
     return
   }
   await supabaseAdmin.from('app_settings')
-    .upsert({ key: SARVAM_KEY, value: encryptPassword(key.trim()), updated_at: new Date().toISOString(), updated_by: by }, { onConflict: 'key' })
+    .upsert({ key: SECRETS[name].setting, value: encryptPassword(value.trim()), updated_at: new Date().toISOString(), updated_by: by }, { onConflict: 'key' })
 }
+
+export async function secretStatus() {
+  const out: Record<string, { configured: boolean; from_env: boolean }> = {}
+  for (const name of Object.keys(SECRETS) as SecretName[]) {
+    out[name] = { configured: !!(await getSecret(name)), from_env: !!process.env[SECRETS[name].env]?.trim() }
+  }
+  return out
+}
+
+export const getSarvamKey = () => getSecret('sarvam')

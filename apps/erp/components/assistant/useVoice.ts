@@ -5,16 +5,20 @@ import { apiFetch } from '@/lib/api-client'
 
 // DB's ears and voice in the browser.
 //
-// provider 'sarvam' (default): the mic is recorded with MediaRecorder, stopped
-// automatically when Shishir pauses, and sent to /api/assistant/transcribe
-// (Sarvam, Indian English/Hindi/Hinglish). Replies are spoken by
-// /api/assistant/speak (a natural Indian female voice). provider 'browser' is the
-// free built-in speech, kept as a fallback.
+// Hearing and speaking are configured separately (Settings -> DB Assistant):
+//   listen 'sarvam': the mic is recorded with MediaRecorder, stopped
+//     automatically when Shishir pauses, and sent to /api/assistant/transcribe;
+//   speak 'sarvam' | 'azure' | 'google': /api/assistant/speak returns her voice
+//     as mp3 from that provider;
+//   'browser' for either is the free built-in speech, kept as a fallback.
 
+export type SpeakProvider = 'sarvam' | 'azure' | 'google' | 'browser'
 export interface VoiceConfig {
-  provider: 'sarvam' | 'browser'
+  listen: 'sarvam' | 'browser'
+  speak: SpeakProvider
   speakReplies: boolean
 }
+export interface VoicePreview { provider: SpeakProvider; voice: string; pace: number }
 
 type Final = (text: string, language: string | null) => void
 
@@ -39,7 +43,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const browserRecognitionCtor = () =>
     typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   const supported = typeof window !== 'undefined' && (
-    config.provider === 'sarvam' ? !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined' : !!browserRecognitionCtor()
+    config.listen === 'sarvam' ? !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined' : !!browserRecognitionCtor()
   )
 
   const stopSpeaking = useCallback(() => {
@@ -156,9 +160,9 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
   const start = useCallback(() => {
     stopSpeaking()
-    if (config.provider === 'sarvam') listenSarvam()
+    if (config.listen === 'sarvam') listenSarvam()
     else listenBrowser()
-  }, [config.provider, listenSarvam, listenBrowser, stopSpeaking])
+  }, [config.listen, listenSarvam, listenBrowser, stopSpeaking])
 
   const stop = useCallback(() => stopRef.current?.(), [])
 
@@ -178,14 +182,15 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
   // Resolves when she has finished speaking (or was interrupted), so a
   // hands-free conversation can start listening again right after.
-  const speak = useCallback((text: string, preview?: { speaker: string; pace: number }) => new Promise<void>((resolve) => {
+  const speak = useCallback((text: string, preview?: VoicePreview) => new Promise<void>((resolve) => {
     if (!text.trim() || (!config.speakReplies && !preview)) { resolve(); return }
     stopSpeaking()
     setSpeaking(true)
     const end = () => { setSpeaking(false); speakDone.current = null; resolve() }
     speakDone.current = end
-    if (config.provider !== 'sarvam') { speakBrowser(text, end); return }
-    apiFetch('/api/assistant/speak', { method: 'POST', body: JSON.stringify({ text, ...preview }), timeoutMs: 40_000 })
+    const provider = preview?.provider || config.speak
+    if (provider === 'browser') { speakBrowser(text, end); return }
+    apiFetch('/api/assistant/speak', { method: 'POST', body: JSON.stringify({ text, ...(preview || {}) }), timeoutMs: 40_000 })
       .then(async (res) => {
         const j = await res.json()
         if (!res.ok || !j.audio) throw new Error(j.error || 'no audio')
@@ -197,7 +202,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         await audio.play()
       })
       .catch(() => speakBrowser(text, end))
-  }), [config.provider, config.speakReplies, speakBrowser, stopSpeaking])
+  }), [config.speak, config.speakReplies, speakBrowser, stopSpeaking])
 
   useEffect(() => () => { stopRef.current?.(); stopSpeaking() }, [stopSpeaking])
 

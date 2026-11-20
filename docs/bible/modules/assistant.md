@@ -27,6 +27,8 @@ sources:
   - apps/erp/app/api/assistant/transcribe/route.ts
   - apps/erp/app/api/assistant/speak/route.ts
   - apps/erp/components/assistant/AssistantSettingsManager.tsx
+  - apps/erp/lib/assistant/cloud-voices.ts
+  - apps/erp/lib/assistant/anthropic-billing.ts
 updated: 2026-11-21
 ---
 
@@ -80,10 +82,14 @@ you can delete any of them. She does not learn anything silently.
 
 ## Voice and language
 
-With a Sarvam AI key (Settings → DB Assistant → Voice) she listens with Sarvam's
-Indian speech recogniser and speaks in a natural Indian female voice (pick and
-preview it there). Without a key she falls back to the browser's free, robotic
-voice. Recording stops by itself when you pause (max ~28 s per sentence).
+Speaking and listening are chosen separately in Settings → DB Assistant:
+- **Her voice:** Microsoft Azure, Google Cloud (Chirp 3 HD), Sarvam AI, or the
+  browser. Azure and Google are free within their monthly allowance (about 500,000
+  and 1,000,000 characters), and the tab shows how much is used. Pick a voice and
+  press Preview (Hinglish and English samples).
+- **Hearing you:** Sarvam AI (understands Hinglish) or the browser (free, weaker).
+A provider without a saved key falls back to the browser. Recording stops by itself
+when you pause (max ~28 s per sentence).
 
 She replies in the language you spoke: English gets English, Hindi/Hinglish gets
 Hinglish (written हिंदी + English by default, which is what sounds most natural
@@ -96,7 +102,11 @@ wake phrase uses the browser's free recogniser.
 
 ## Usage and credit
 
-Every request she makes is costed and logged (`assistant_usage`): AI model tokens and
-Sarvam seconds/characters, at list prices. Settings shows today and this month.
-Neither Anthropic nor Sarvam reports the remaining balance through an API, so enter
-the credit you loaded and the date, and the page shows the estimated balance left.
+- **Anthropic (real):** paste an Admin API key (`sk-ant-admin…`, Claude Console →
+  Settings → Admin keys). The tab then shows Anthropic's own figures for the whole
+  account (DB, Marketing, bank statements): this month as billed (typically complete
+  within ~4 hours) and today from the token report (~30 minutes behind). Anthropic
+  has no API for the prepaid balance, so enter the credit you loaded and the date;
+  the tab shows credit minus billed spend.
+- **DB's own usage (live):** every request she makes is costed the moment it
+  happens (`assistant_usage`), including Sarvam and the free Azure/Google characters.

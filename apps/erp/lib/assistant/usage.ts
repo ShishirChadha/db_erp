@@ -3,7 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 // List prices, per the Claude API model table (USD per million tokens) and
 // sarvam.ai/api-pricing (INR, pay-as-you-go), as of 2026-11. Cache writes
 // (5-minute) are 1.25x the input price. Update here if a provider changes price.
-const CLAUDE_PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
+export const CLAUDE_PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1 },
   'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2 },
@@ -43,12 +43,22 @@ export async function recordSarvamUsage(p: {
   })
 }
 
+// Azure and Google voices are free inside their monthly allowance; record the
+// characters so Settings can show how much of it is used.
+export const FREE_TTS_CHARS = { azure_tts: 500_000, google_tts: 1_000_000 } as const
+
+export async function recordFreeTtsUsage(p: { profileId: string; provider: 'azure_tts' | 'google_tts'; model: string; characters: number }) {
+  await supabaseAdmin.from('assistant_usage').insert({
+    profile_id: p.profileId, provider: p.provider, model: p.model, characters: p.characters, cost_inr: 0, cost_usd: 0,
+  })
+}
+
 export async function usageSummary(since: string | null) {
   const monthStart = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 8) + '01'
   const todayStart = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const from = [since, monthStart].filter(Boolean).sort()[0] as string
   const { data } = await supabaseAdmin.from('assistant_usage')
-    .select('created_at, provider, cost_usd, cost_inr, thread_id')
+    .select('created_at, provider, cost_usd, cost_inr, thread_id, characters')
     .gte('created_at', `${from}T00:00:00+05:30`)
     .limit(20000)
   const rows = data || []
@@ -56,12 +66,14 @@ export async function usageSummary(since: string | null) {
     (a, r) => ({ usd: a.usd + Number(r.cost_usd), inr: a.inr + Number(r.cost_inr) }), { usd: 0, inr: 0 })
   const ist = (r: any) => new Date(r.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const claude = (r: any) => r.provider === 'anthropic'
-  const sarvam = (r: any) => r.provider !== 'anthropic'
+  const sarvam = (r: any) => r.provider === 'sarvam_stt' || r.provider === 'sarvam_tts'
+  const chars = (provider: string) => rows.filter((r) => r.provider === provider && ist(r) >= monthStart).reduce((a, r) => a + (Number(r.characters) || 0), 0)
   const conversationsThisMonth = new Set(rows.filter((r) => ist(r) >= monthStart && r.thread_id).map((r) => r.thread_id)).size
   return {
     today: { claude: sum((r) => claude(r) && ist(r) === todayStart), sarvam: sum((r) => sarvam(r) && ist(r) === todayStart) },
     month: { claude: sum((r) => claude(r) && ist(r) >= monthStart), sarvam: sum((r) => sarvam(r) && ist(r) >= monthStart) },
     since_credit: since ? { claude: sum((r) => claude(r) && ist(r) >= since), sarvam: sum((r) => sarvam(r) && ist(r) >= since) } : null,
     conversations_this_month: conversationsThisMonth,
+    free_voice_chars_month: { azure: chars('azure_tts'), google: chars('google_tts') },
   }
 }

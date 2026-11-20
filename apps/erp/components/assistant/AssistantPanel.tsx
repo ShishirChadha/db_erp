@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord } from './useVoice'
+import { useVoice, useWakeWord, type SpeakProvider } from './useVoice'
 
 // DB, the owner's voice secretary. A floating button opens this panel from any
 // dashboard page; tap the mic, speak, and DB answers aloud. Every save shows a
@@ -38,11 +38,11 @@ function writeStore(key: string, value: string | null) {
 }
 
 interface PanelConfig {
-  provider: 'sarvam' | 'browser'
+  listen: 'sarvam' | 'browser'
+  speak: SpeakProvider
   speakReplies: boolean
   wakeWord: boolean
   wakePhrases: string[]
-  sarvamReady: boolean
 }
 
 // Shown only to DB's master: /api/assistant/config answers 403 for anyone
@@ -54,15 +54,17 @@ export function AssistantLauncher() {
   const [busyVoice, setBusyVoice] = useState(false)
 
   const load = useCallback(() => {
-    apiFetch('/api/assistant/config').then(async (r) => {
+    apiFetch('/api/assistant/config?lite=1').then(async (r) => {
       if (!r.ok) { setConfig(null); return }
       const j = await r.json()
+      const vp = j.settings.voice_provider as SpeakProvider
       setConfig({
-        provider: j.settings.voice_provider === 'sarvam' && j.sarvam_key_configured ? 'sarvam' : 'browser',
+        // A provider whose key isn't saved yet falls back to the browser.
+        listen: j.settings.listen_provider === 'sarvam' && j.secrets.sarvam?.configured ? 'sarvam' : 'browser',
+        speak: vp !== 'browser' && j.secrets[vp]?.configured ? vp : 'browser',
         speakReplies: j.settings.speak_replies,
         wakeWord: j.settings.wake_word,
         wakePhrases: j.settings.wake_phrases,
-        sarvamReady: j.sarvam_key_configured,
       })
     }).catch(() => setConfig(null))
   }, [])
@@ -167,7 +169,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy }: { config: Panel
   }, [busy, threadId, voiceOn])
 
   // A listen that heard nothing (he walked away, or the conversation is over) ends hands-free mode.
-  const voice = useVoice({ provider: config.provider, speakReplies: voiceOn }, (t, lang) => send(t, lang), () => { handsFree.current = false })
+  const voice = useVoice({ listen: config.listen, speak: config.speak, speakReplies: voiceOn }, (t, lang) => send(t, lang), () => { handsFree.current = false })
   voiceRef.current = voice
 
   useEffect(() => { onVoiceBusy(voice.listening || voice.speaking || voice.transcribing || busy) }, [voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
