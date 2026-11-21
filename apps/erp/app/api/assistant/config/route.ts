@@ -7,6 +7,7 @@ import {
   ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, TONES, VOICE_GATES, REPLY_LENGTHS, WRITE_SKILLS, ALL_WRITE_SKILLS, type AssistantSettings, type SecretName, type WriteSkill,
 } from '@/lib/assistant/settings'
 import { READ_MODULES, ALL_READ_MODULES, type ReadModule } from '@/lib/assistant/reports'
+import { cleanAppearance } from '@/components/assistant/appearance'
 import { getDbAgentStatus } from '@/lib/assistant/identity'
 import { usageSummary, FREE_TTS_CHARS } from '@/lib/assistant/usage'
 import { azureFemaleVoices, googleFemaleVoices } from '@/lib/assistant/cloud-voices'
@@ -91,6 +92,7 @@ export async function PUT(req: NextRequest) {
   }
   if (TONES.includes(body.tone)) patch.tone = body.tone
   if (REPLY_LENGTHS.includes(body.reply_length)) patch.reply_length = body.reply_length
+  if (body.appearance && typeof body.appearance === 'object') patch.appearance = cleanAppearance(body.appearance)
   if (typeof body.call_me === 'string') patch.call_me = body.call_me.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 30) || 'Boss'
   if (typeof body.wake_reply === 'string') patch.wake_reply = body.wake_reply.replace(/\s+/g, ' ').trim().slice(0, 60)
   if (Array.isArray(body.write_skills)) patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]

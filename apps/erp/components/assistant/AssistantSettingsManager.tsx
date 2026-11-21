@@ -11,6 +11,7 @@ import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import AssistantLearnings from './AssistantLearnings'
+import AssistantLookSettings from './AssistantLookSettings'
 import { useVoice, useNameTrainer, createMeter, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
@@ -181,6 +182,7 @@ export default function AssistantSettingsManager() {
       wake_reply: s.wake_reply,
       reply_length: s.reply_length,
       write_skills: s.write_skills,
+      appearance: s.appearance,
       continuous_conversation: s.continuous_conversation,
       conversation_idle_seconds: Number(s.conversation_idle_seconds),
       voice_gate: s.voice_gate,
@@ -260,6 +262,10 @@ export default function AssistantSettingsManager() {
           To stop her completely, log off “DB assistant (server)” in Active Devices, or deactivate the user “DB”.{' '}
           <Link href="/dashboard/assistant" className="underline">Her conversations →</Link>
         </p>
+      </Section>
+
+      <Section title="Look and feel" hint="How DB looks and behaves on screen. Changes show in the preview straight away and on her panel after Save changes.">
+        <AssistantLookSettings value={s.appearance} onChange={(v) => set('appearance', v)} />
       </Section>
 
       <Section title="Brain" hint="The AI model DB thinks with. You can change it any time; her learnings, checks and confirmation cards stay the same whichever you pick.">

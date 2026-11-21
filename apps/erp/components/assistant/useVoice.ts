@@ -98,6 +98,43 @@ function releaseMic() { mic.busy = Math.max(0, mic.busy - 1) }
 // Short fixed lines ("Yes Boss?") are fetched once and replayed instantly.
 const audioCache = new Map<string, string>()
 
+// One shared audio engine for chimes and for measuring her voice level.
+let sharedCtx: AudioContext | null = null
+function audioCtx(): AudioContext | null {
+  try {
+    if (!sharedCtx) sharedCtx = new AudioContext()
+    if (sharedCtx.state === 'suspended') sharedCtx.resume().catch(() => {})
+    return sharedCtx
+  } catch { return null }
+}
+
+// Soft earcons (generated, no sound files): rising two notes when she starts
+// listening, one falling note when she has heard you.
+export function chime(kind: 'listen' | 'heard' | 'wake') {
+  const ctx = audioCtx()
+  if (!ctx || ctx.state !== 'running') return
+  const notes = kind === 'listen' ? [660, 880] : kind === 'wake' ? [523, 784, 1047] : [740, 494]
+  const t0 = ctx.currentTime
+  notes.forEach((f, i) => {
+    const osc = ctx.createOscillator()
+    const gain = ctx.createGain()
+    osc.type = 'sine'
+    osc.frequency.value = f
+    const start = t0 + i * 0.09
+    gain.gain.setValueAtTime(0, start)
+    gain.gain.linearRampToValueAtTime(0.06, start + 0.015)
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16)
+    osc.connect(gain).connect(ctx.destination)
+    osc.start(start)
+    osc.stop(start + 0.18)
+  })
+}
+
+// A short vibration on Android (Samsung supports it; iPhone ignores it).
+export function buzz(pattern: number | number[]) {
+  try { navigator.vibrate?.(pattern) } catch { /* not supported */ }
+}
+
 export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (why: NothingReason, dropped?: Dropped) => void) {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -114,6 +151,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakDone = useRef<(() => void) | null>(null)
   const levelRef = useRef(0)
+  const fakeLevelStop = useRef<(() => void) | null>(null)
   // Set by cancel(): the listen in progress ends without sending anything.
   const cancelledRef = useRef(false)
 
@@ -126,6 +164,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const stopSpeaking = useCallback(() => {
     audioRef.current?.pause()
     audioRef.current = null
+    if (fakeLevelStop.current) fakeLevelStop.current()
     window.speechSynthesis?.cancel()
     setSpeaking(false)
     speakDone.current?.()
@@ -273,9 +312,19 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const cancel = useCallback(() => { cancelledRef.current = true; stopRef.current?.() }, [])
 
   // ---------------------------------------------------------------- speak
+  // Browser speech can't be measured, so give the avatar a gentle fake level.
+  const fakeLevel = useRef<ReturnType<typeof setInterval> | null>(null)
+  const startFakeLevel = () => {
+    if (fakeLevel.current) clearInterval(fakeLevel.current)
+    fakeLevel.current = setInterval(() => { levelRef.current = 0.02 + Math.random() * 0.06 }, 110)
+  }
+  const stopLevel = () => { if (fakeLevel.current) { clearInterval(fakeLevel.current); fakeLevel.current = null } levelRef.current = 0 }
+  fakeLevelStop.current = stopLevel
+
   const speakBrowser = useCallback((text: string, onEnd: () => void) => {
     const synth = window.speechSynthesis
     if (!synth) { onEnd(); return }
+    startFakeLevel()
     synth.cancel()
     const u = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ''))
     const voices = synth.getVoices()
@@ -292,7 +341,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     if (!text.trim() || (!cfgRef.current.speakReplies && !preview)) { resolve(); return }
     stopSpeaking()
     setSpeaking(true)
-    const end = () => { setSpeaking(false); speakDone.current = null; resolve() }
+    const end = () => { stopLevel(); setSpeaking(false); speakDone.current = null; resolve() }
     speakDone.current = end
     const provider = preview?.provider || cfgRef.current.speak
     if (provider === 'browser') { speakBrowser(text, end); return }
@@ -308,6 +357,28 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         audioRef.current = audio
         audio.onended = end
         audio.onerror = end
+        // Measure her voice for the avatar -- only when the audio engine is
+        // already running; routing audio through a suspended engine would
+        // silence her, so then the level is faked instead.
+        const ctx = audioCtx()
+        if (ctx && ctx.state === 'running') {
+          try {
+            const an = ctx.createAnalyser()
+            an.fftSize = 512
+            ctx.createMediaElementSource(audio).connect(an)
+            an.connect(ctx.destination)
+            const buf = new Uint8Array(an.fftSize)
+            const tick = () => {
+              if (audioRef.current !== audio) return
+              an.getByteTimeDomainData(buf)
+              let sum = 0
+              for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v }
+              levelRef.current = Math.sqrt(sum / buf.length) * 0.6
+              requestAnimationFrame(tick)
+            }
+            requestAnimationFrame(tick)
+          } catch { startFakeLevel() }
+        } else startFakeLevel()
         await audio.play()
       })
       .catch(() => { if (speakDone.current === end) speakBrowser(text, end) })

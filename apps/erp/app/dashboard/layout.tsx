@@ -50,7 +50,9 @@ export default async function DashboardLayout({
         <Sidebar />
         {/* pt-14 clears the fixed mobile top bar (Sidebar renders it at md:hidden) --
             without this, page content renders underneath it on phones. */}
-        <main className="flex-1 overflow-y-auto pt-14 md:pt-0">
+        {/* order-1: DB's panel (AssistantLauncher) can then dock on either side of
+            the page -- order 0 puts it between the sidebar and the page, order 2 after. */}
+        <main className="order-1 min-w-0 flex-1 overflow-y-auto pt-14 md:pt-0">
           {/* h-full gives master-detail pages a real, browser-computed height to fill
               (main's content-box height already excludes pt-14/padding above) instead of
               a hardcoded calc(100vh - Xrem) that can't know how tall a given page's own

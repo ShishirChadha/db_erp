@@ -2,6 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { encryptPassword, decryptPassword } from '@/lib/auth/password-vault'
 import type { SessionUser } from '@/lib/auth/session'
 import { ALL_READ_MODULES, type ReadModule } from './reports'
+import { DEFAULT_APPEARANCE, cleanAppearance, type Appearance } from '@/components/assistant/appearance'
 
 // Everything the owner can change about DB, in one app_settings row
 // (assistant_settings, JSON). app_settings has RLS on with no policies, so only
@@ -73,6 +74,7 @@ export interface AssistantSettings {
   conversation_idle_seconds: number
   voice_gate: VoiceGate
   read_modules: ReadModule[]
+  appearance: Appearance // look and feel (components/assistant/appearance.ts)
   anthropic_credit_usd: number | null
   sarvam_credit_inr: number | null
   credit_since: string | null // spend is counted from this date
@@ -101,6 +103,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   conversation_idle_seconds: 15,
   voice_gate: 'medium',
   read_modules: [...ALL_READ_MODULES],
+  appearance: DEFAULT_APPEARANCE,
   anthropic_credit_usd: null,
   sarvam_credit_inr: null,
   credit_since: null,
@@ -113,7 +116,7 @@ export async function getAssistantSettings(): Promise<AssistantSettings> {
   const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', KEY).maybeSingle()
   let stored: Partial<AssistantSettings> = {}
   try { stored = data?.value ? JSON.parse(data.value) : {} } catch { stored = {} }
-  return { ...DEFAULT_SETTINGS, ...stored }
+  return { ...DEFAULT_SETTINGS, ...stored, appearance: cleanAppearance(stored.appearance) }
 }
 
 export async function saveAssistantSettings(patch: Partial<AssistantSettings>, by: string): Promise<AssistantSettings> {

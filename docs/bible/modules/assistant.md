@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -33,6 +33,8 @@ sources:
   - apps/erp/lib/assistant/fx.ts
   - apps/erp/components/assistant/DbAvatar.tsx
   - apps/erp/components/assistant/AssistantLearnings.tsx
+  - apps/erp/components/assistant/AssistantLookSettings.tsx
+  - apps/erp/components/assistant/appearance.ts
 updated: 2026-11-21
 ---
 
@@ -64,6 +66,29 @@ line) is left out of profit and named, so one bad entry can't turn a month negat
 **DB answers to one person.** Only the logins ticked in Settings → DB Assistant can see
 her button, her settings tab or use her — other owners included. It starts as Shishir's
 login (admin@digitalbluez.com).
+
+## Look, layout and screens
+
+**Where she sits** (by screen width): under 600 px — phones and the Galaxy Z Fold's
+cover screen — full screen, sized to the visible area so the keyboard never hides the
+input; 600–1279 px — the Fold opened, tablets, split windows — **beside the ERP**
+(split; the page narrows) or **floating over it**, owner's choice; 1280 px and up —
+docked beside the ERP. Folding or unfolding re-lays her out without interrupting the
+conversation. Panel side, width, and her button's side and size are settings. **Minimise**
+(—) keeps a conversation running in her floating button (with a LIVE tag) while you use
+the ERP; **Close** (✕) ends it.
+
+**While you talk** (patterns from ChatGPT Voice and Gemini Live): *chat* shows the live
+transcript; the *voice stage* shows a big avatar, captions of what she says and what she
+heard, and large buttons (keyboard → chat, mic, end). *Automatic* uses the stage on
+phones/the Fold and chat on a laptop.
+
+**Look and feel** (Settings → DB Assistant): colour theme (6), her look — illustrated
+face (outfit, skin tone, bindi, earrings), glowing orb, or initials — a live preview of
+each state, captions, glowing screen edge while she listens/speaks, vibration on Android,
+soft chimes, reduced animations, text size, bubble style, message times. All SVG/CSS —
+no images, video or 3D, so no cost and light on the battery. Copy and replay buttons sit
+under each of her messages (replay uses the voice service again).
 
 ## Her own ERP user
 

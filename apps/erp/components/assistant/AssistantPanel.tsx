@@ -1,29 +1,41 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle } from 'lucide-react'
+import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, chime, buzz, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
+import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
-// DB, the owner's voice secretary. Her button (her face) floats on every
-// dashboard page. On a laptop the panel docks beside the ERP so both stay
-// usable; on a phone it opens full screen.
+// DB, the owner's voice secretary. Her face floats on every dashboard page.
+//
+// Where the panel sits (by screen width, see appearance.ts):
+//   < 600 px  (phones, Galaxy Z Fold cover screen): full screen, sized to the
+//             visible area so the keyboard never covers the input;
+//   600-1279  (Fold opened, tablets, split windows): beside the ERP (split) or
+//             floating over it -- owner's choice;
+//   >= 1280   (laptop): docked beside the ERP.
+// Folding/unfolding just re-lays it out; the conversation is never interrupted.
+//
+// Two ways a voice conversation looks (industry patterns): "chat" -- the live
+// transcript, like ChatGPT Voice inside a chat; "stage" -- a big avatar with
+// captions and large controls, like Gemini Live. Auto = stage on phones and the
+// Fold, chat on a laptop. Minimise keeps the conversation running in a floating
+// bubble while you use the ERP.
 //
 // Conversation mode: tap the mic once (or say "Hey DB") and talk normally --
-// after each reply she listens again by herself. It ends when you go quiet for
-// the configured seconds, say "bas"/"bye"/"thanks", tap End, or close the
-// panel. Quiet / far-away speech and fillers are ignored (see useVoice).
+// after each reply she listens again by herself, until you go quiet, say
+// "bas"/"bye"/"thanks", tap End, or close the panel.
 
 type Card =
   | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[] }
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
 
-type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[] }
+type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number }
 
 const THREAD_KEY = 'db_assistant_thread'
 const STATUS_WORDS: Record<string, string> = {
@@ -59,6 +71,19 @@ function readStore(key: string) { try { return localStorage.getItem(key) } catch
 function writeStore(key: string, value: string | null) {
   try { value === null ? localStorage.removeItem(key) : localStorage.setItem(key, value) } catch { /* private mode */ }
 }
+const timeOf = (ms?: number) => (ms ? new Date(ms).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : '')
+
+function useMedia(query: string) {
+  const [match, setMatch] = useState(false)
+  useEffect(() => {
+    const m = window.matchMedia(query)
+    const on = () => setMatch(m.matches)
+    on()
+    m.addEventListener('change', on)
+    return () => m.removeEventListener('change', on)
+  }, [query])
+  return match
+}
 
 interface PanelConfig {
   listen: 'sarvam' | 'browser'
@@ -70,16 +95,21 @@ interface PanelConfig {
   idleSeconds: number
   gate: VoiceGate
   wakeReply: string
+  look: Appearance
 }
+
+type VoiceState = { busy: boolean; avatar: AvatarState; convo: boolean }
 
 // Shown only to DB's master: /api/assistant/config answers 403 for anyone
 // else (other owners included), and then nothing renders at all.
 export function AssistantLauncher() {
   const [config, setConfig] = useState<PanelConfig | null>(null)
   const [open, setOpen] = useState(false)
+  const [minimized, setMinimized] = useState(false)
   const [wakeKey, setWakeKey] = useState(0)
-  const [busyVoice, setBusyVoice] = useState(false)
+  const [vs, setVs] = useState<VoiceState>({ busy: false, avatar: 'idle', convo: false })
   const [externalPause, setExternalPause] = useState(false)
+  const [vv, setVv] = useState<{ h: number; top: number } | null>(null)
 
   const load = useCallback(() => {
     apiFetch('/api/assistant/config?lite=1').then(async (r) => {
@@ -98,6 +128,7 @@ export function AssistantLauncher() {
         idleSeconds: Number(s.conversation_idle_seconds) || 15,
         gate: s.voice_gate || 'medium',
         wakeReply: typeof s.wake_reply === 'string' ? s.wake_reply : 'Yes Boss?',
+        look: cleanAppearance(s.appearance),
       })
     }).catch(() => setConfig(null))
   }, [])
@@ -111,43 +142,102 @@ export function AssistantLauncher() {
     return () => { window.removeEventListener('db-assistant-settings', onChange); window.removeEventListener('db-wake-pause', onPause) }
   }, [load])
 
-  // Listens whenever DB is idle -- panel open or closed (the panel is meant to
-  // stay docked beside the ERP). Paused while she listens, thinks, speaks or a
-  // conversation is running; useVoice also hands the mic over explicitly so two
-  // recognisers never run at once.
-  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], busyVoice || externalPause, () => {
+  // Full-screen mode on phones follows the *visible* area, so the on-screen
+  // keyboard (Android Chrome overlays it by default) never hides the input.
+  useEffect(() => {
+    const view = window.visualViewport
+    if (!view) return
+    const on = () => setVv(window.innerWidth < 600 ? { h: view.height, top: view.offsetTop } : null)
+    on()
+    view.addEventListener('resize', on)
+    view.addEventListener('scroll', on)
+    return () => { view.removeEventListener('resize', on); view.removeEventListener('scroll', on) }
+  }, [])
+
+  // Listens whenever DB is idle -- panel open, minimised or closed. Paused while
+  // she listens, thinks, speaks or a conversation is running; useVoice also
+  // hands the mic over explicitly so two recognisers never run at once.
+  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], vs.busy || externalPause, () => {
+    if (config?.look.haptics) buzz([20, 40, 20])
+    if (config?.look.sounds) chime('wake')
     setOpen(true)
+    setMinimized(false)
     setWakeKey((k) => k + 1)
   })
 
   if (!config) return null
+  const a = config.look
+  const theme = THEMES[a.theme]
+  const showLauncher = !open || minimized
+  const launcherSize = LAUNCHER_SIZE[a.launcher_size]
+  const glowing = a.edge_glow && (vs.avatar === 'listening' || vs.avatar === 'speaking')
+  const glowColor = vs.avatar === 'speaking' ? theme.glowSpeak : theme.glowListen
+
+  const asideStyle = {
+    '--db-w': `${PANEL_WIDTH[a.panel_width]}px`,
+    ...(vv ? { height: vv.h, top: vv.top } : {}),
+  } as CSSProperties
+  const right = a.panel_side === 'right'
+  const asideClass = cn(
+    'z-50 flex-col overflow-hidden bg-background',
+    minimized ? 'hidden' : 'flex',
+    // phones / Fold cover screen: full screen
+    'fixed inset-x-0 top-0 h-dvh',
+    a.wide_layout === 'split'
+      // Fold opened / tablets / laptops: beside the ERP; the page narrows.
+      ? cn('min-[600px]:static min-[600px]:z-auto min-[600px]:h-dvh min-[600px]:w-[min(var(--db-w),46vw)] min-[600px]:shrink-0 min-[600px]:pt-14 md:pt-0',
+          right ? 'min-[600px]:order-2 min-[600px]:border-l' : 'min-[600px]:border-r')
+      // floating over the ERP up to 1279 px, docked from 1280 px
+      : cn('min-[600px]:bottom-3 min-[600px]:top-16 min-[600px]:h-auto min-[600px]:w-[min(var(--db-w),calc(100vw-24px))] min-[600px]:rounded-2xl min-[600px]:border min-[600px]:shadow-2xl md:top-3',
+          right ? 'min-[600px]:left-auto min-[600px]:right-3' : 'min-[600px]:left-3 min-[600px]:right-auto',
+          'xl:static xl:z-auto xl:h-dvh xl:w-[var(--db-w)] xl:shrink-0 xl:rounded-none xl:border-y-0 xl:shadow-none',
+          right ? 'xl:order-2 xl:border-l xl:border-r-0' : 'xl:border-l-0 xl:border-r'),
+  )
+
   return (
     <>
-      {!open && (
+      <style>{`@keyframes db-edge { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }`}</style>
+      {glowing && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 z-[60] rounded-[inherit]"
+          style={{ boxShadow: `inset 0 0 28px 4px ${glowColor}aa, inset 0 0 80px 6px ${glowColor}44`, animation: a.motion === 'full' ? 'db-edge 1.6s ease-in-out infinite' : undefined }} />
+      )}
+      {showLauncher && (
         <button
           type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Talk to DB"
+          onClick={() => { setOpen(true); setMinimized(false) }}
+          aria-label={minimized ? 'Open DB (conversation running)' : 'Talk to DB'}
           title={wake.failed || (wake.active ? 'Say “Hey DB”, or tap' : 'Talk to DB')}
-          className="fixed bottom-5 right-5 z-40 rounded-full shadow-lg ring-2 ring-background transition-transform hover:scale-105"
+          className={cn('fixed z-40 rounded-full shadow-lg ring-2 ring-background transition-transform hover:scale-105', a.launcher_side === 'right' ? 'right-4' : 'left-4')}
+          style={{ bottom: 'max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem))' }}
         >
-          <DbAvatar size={56} />
-          {wake.active && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-success ring-2 ring-background" />}
+          <DbAvatar size={launcherSize} state={minimized ? vs.avatar : 'idle'} look={a} />
+          {minimized && vs.convo && <span className="absolute -top-1 left-1/2 -translate-x-1/2 rounded-full bg-emerald-500 px-1.5 text-[10px] font-semibold text-white">LIVE</span>}
+          {!minimized && wake.active && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-success ring-2 ring-background" />}
           {wake.failed && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-warning ring-2 ring-background" />}
         </button>
       )}
       {open && (
-        <aside className="fixed inset-0 z-50 flex flex-col bg-background md:relative md:inset-auto md:z-auto md:h-dvh md:w-[380px] md:shrink-0 md:border-l xl:w-[420px]">
-          <AssistantConversation config={config} wakeKey={wakeKey} wakeActive={wake.active} onVoiceBusy={setBusyVoice} onClose={() => { setOpen(false); setWakeKey(0) }} />
+        <aside className={asideClass} style={asideStyle} aria-label="DB assistant">
+          <AssistantConversation
+            config={config}
+            wakeKey={wakeKey}
+            wakeActive={wake.active}
+            onState={setVs}
+            onMinimize={() => setMinimized(true)}
+            onClose={() => { setOpen(false); setMinimized(false); setWakeKey(0); setVs({ busy: false, avatar: 'idle', convo: false }) }}
+          />
         </aside>
       )}
     </>
   )
 }
 
-function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClose }: {
-  config: PanelConfig; wakeKey: number; wakeActive: boolean; onVoiceBusy: (b: boolean) => void; onClose: () => void
+function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimize, onClose }: {
+  config: PanelConfig; wakeKey: number; wakeActive: boolean
+  onState: (s: VoiceState) => void; onMinimize: () => void; onClose: () => void
 }) {
+  const a = config.look
+  const theme = THEMES[a.theme]
   const [threadId, setThreadId] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
   const [draft, setDraft] = useState('')
@@ -160,6 +250,8 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
   const [rested, setRested] = useState(false)
   const [dropped, setDropped] = useState<Dropped | null>(null)
   const [saying, setSaying] = useState('') // the reply she is reading aloud now
+  const [captions, setCaptions] = useState(a.captions)
+  const [chatOverride, setChatOverride] = useState(false) // "keyboard" pressed on the stage
   const interrupted = useRef(false)
   const convoRef = useRef(false)
   const lastHeard = useRef(0)
@@ -168,11 +260,13 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null)
+  const compact = useMedia('(max-width: 1023px)') // phones, Fold opened, tablets
 
   const endConvo = useCallback((rest = false) => {
     convoRef.current = false
     setConvo(false)
     setRested(rest)
+    setChatOverride(false)
     if (retryTimer.current) { clearTimeout(retryTimer.current); retryTimer.current = null }
     voiceRef.current?.cancel()
   }, [])
@@ -187,13 +281,15 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
     setError(null)
     setBusy(true)
     setDraft('')
-    setEntries((prev) => [...prev, { role: 'owner', text }, { role: 'db', text: '', cards: [] }])
+    const now = Date.now()
+    setEntries((prev) => [...prev, { role: 'owner', text, at: now }, { role: 'db', text: '', cards: [], at: now }])
     let reply = ''
+    const wasInterrupted = interrupted.current
     interrupted.current = false
     try {
       const res = await apiFetch('/api/assistant/turn', {
         method: 'POST',
-        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage, interrupted: interrupted.current }),
+        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage, interrupted: wasInterrupted }),
         timeoutMs: 120_000,
       })
       if (!res.ok || !res.body) {
@@ -240,9 +336,10 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
     setDropped(null)
     lastHeard.current = Date.now()
     errors.current = 0
+    if (a.sounds) chime('heard')
     if (convoRef.current && END_RE.test(text.trim())) endAfterReply.current = true
     send(text, lang)
-  }, [send])
+  }, [send, a.sounds])
 
   // Nothing usable heard. In a conversation, keep listening until the quiet
   // window runs out; repeated mic errors end it (never a tight retry loop).
@@ -262,8 +359,21 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
   const voice = useVoice({ listen: config.listen, speak: config.speak, speakReplies: voiceOn, gate: config.gate }, onHeard, onNothing)
   voiceRef.current = voice
 
-  useEffect(() => { onVoiceBusy(convo || voice.listening || voice.speaking || voice.transcribing || busy) }, [convo, voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
-  useEffect(() => () => { onVoiceBusy(false); if (retryTimer.current) clearTimeout(retryTimer.current) }, [onVoiceBusy])
+  const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
+  useEffect(() => {
+    onState({ busy: convo || voice.listening || voice.speaking || voice.transcribing || busy, avatar: avatarState, convo })
+  }, [convo, voice.listening, voice.speaking, voice.transcribing, busy, avatarState, onState])
+  useEffect(() => () => { if (retryTimer.current) clearTimeout(retryTimer.current) }, [])
+
+  // A tiny buzz and chime the moment she starts listening, so you know without looking.
+  const wasListening = useRef(false)
+  useEffect(() => {
+    if (voice.listening && !wasListening.current) {
+      if (a.haptics) buzz(25)
+      if (a.sounds) chime('listen')
+    }
+    wasListening.current = voice.listening
+  }, [voice.listening, a.haptics, a.sounds])
 
   // "Stop" / "bas" / "pata hai" while she talks: she stops at once. In a
   // conversation, listening resumes by itself (send() continues after speak()).
@@ -323,7 +433,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
     }
   }, [])
 
-  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' }) }, [entries, status, voice.interim])
+  useEffect(() => { scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: a.motion === 'full' ? 'smooth' : 'auto' }) }, [entries, status, voice.interim, a.motion])
 
   const wakeDb = async () => {
     const r = await apiFetch('/api/assistant/setup', { method: 'POST' })
@@ -340,119 +450,264 @@ function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClo
     if (config.continuous) startConvo()
     else voice.start()
   }
+  const close = () => { endConvo(); voice.stopSpeaking(); onClose() }
 
   const ready = !!setup?.ready
-  const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
-  const statusLine = voice.speaking ? 'Speaking… say “stop” or press Esc to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : 'Online'
+  const talking = convo || voice.listening || voice.speaking || voice.transcribing || (busy && convo)
+  const stageView = a.voice_view === 'stage' || (a.voice_view === 'auto' && compact)
+  const onStage = stageView && talking && !chatOverride
+  const statusLine = voice.speaking ? 'Speaking… say “stop” to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : 'Online'
+  const lastDb = [...entries].reverse().find((e) => e.role === 'db')
+  const pendingCard = lastDb?.cards?.find((c) => c.type === 'confirm' || c.type === 'share')
+
+  const sendDropped = () => { if (!dropped) return; const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t) }
 
   return (
-    <div className="flex h-full flex-col bg-gradient-to-b from-primary/5 via-background to-background">
-      <header className="flex items-center gap-3 border-b bg-background/80 px-4 py-3 backdrop-blur">
-        <DbAvatar state={avatarState} size={44} levelRef={voice.levelRef} />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold leading-tight">DB</p>
-          <p className={cn('truncate text-xs', voice.listening ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground')}>{statusLine}</p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={toggleVoice} aria-label={voiceOn ? 'Mute DB' : 'Unmute DB'}>
-          {voiceOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}
-        </Button>
-        <Button variant="ghost" size="sm" onClick={newConversation} aria-label="New conversation"><Plus className="h-4 w-4" /></Button>
-        <Button variant="ghost" size="sm" onClick={() => { endConvo(); onClose() }} aria-label="Close DB"><X className="h-4 w-4" /></Button>
-      </header>
+    <div className="relative flex h-full flex-col" style={{ background: `linear-gradient(to bottom, ${theme.from}12, transparent 30%)` }}>
+      <p className="sr-only" aria-live="polite">{statusLine}</p>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-4 py-4">
-        {setup && !setup.ready && (
-          <div className="rounded-xl border bg-muted p-3 text-sm">
-            {setup.reason === 'deactivated'
-              ? <>DB is deactivated. Turn her back on in <Link href="/dashboard/settings" className="underline">Settings → Users</Link>.</>
-              : <>
-                  {setup.reason === 'logged_off' ? 'DB is logged off.' : 'DB is not set up yet. This creates her own ERP user, "DB", so you can see what she did.'}
-                  <Button size="sm" className="mt-2 w-full" onClick={wakeDb}>{setup.reason === 'logged_off' ? 'Wake DB up' : 'Set up DB'}</Button>
-                </>}
-          </div>
-        )}
-
-        {entries.length === 0 && ready && (
-          <div className="flex flex-col items-center pt-6 text-center">
-            <DbAvatar state={avatarState} size={112} levelRef={voice.levelRef} />
-            <p className="mt-4 text-lg font-semibold">Hi Shishir!</p>
-            <p className="mt-1 max-w-[18rem] text-sm text-muted-foreground">Tap the mic and just talk, I’ll keep listening till you’re done. Or type below.</p>
-            <div className="mt-5 flex flex-wrap justify-center gap-2">
-              {SUGGESTIONS.map((s) => (
-                <button key={s} type="button" onClick={() => send(s)} disabled={busy}
-                  className="rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted">{s}</button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {entries.map((e, i) => (
-          e.role === 'owner' ? (
-            <div key={i} className="flex justify-end">
-              <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-primary px-3 py-2 text-sm text-primary-foreground shadow-sm">{e.text}</div>
-            </div>
-          ) : (
-            <div key={i} className="flex items-start gap-2">
-              <DbAvatar size={28} className="mt-0.5" />
-              <div className="flex min-w-0 max-w-[85%] flex-col gap-2">
-                {e.text
-                  ? <div className="whitespace-pre-wrap rounded-2xl rounded-tl-sm border bg-background px-3 py-2 text-sm shadow-sm">{e.text}</div>
-                  : busy && i === entries.length - 1 && <TypingDots label={status} />}
-                {e.cards?.map((c, j) => <AssistantCardView key={j} card={c} disabled={busy} onAnswer={send} />)}
-              </div>
-            </div>
-          )
-        ))}
-
-        {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-sm italic text-muted-foreground">{voice.interim}</p></div>}
-        {dropped && !voice.interim && (
-          <div className="flex justify-end">
-            <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-sm text-muted-foreground">
-              <p className="italic">“{dropped.text}”</p>
-              <p className="mt-1 text-xs">
-                {dropped.reason === 'too_quiet' ? 'Ignored: sounded far away (Settings → Ignore far-away voices).' : 'Ignored: I wasn’t sure I heard that right.'}{' '}
-                <button type="button" className="font-medium text-foreground underline" onClick={() => { const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t) }}>That was me, send it</button>
+      {onStage ? (
+        <VoiceStage
+          look={a}
+          state={avatarState}
+          levelRef={voice.levelRef}
+          status={statusLine}
+          saying={saying || (busy ? '' : lastDb?.text || '')}
+          interim={voice.interim}
+          captions={captions}
+          onToggleCaptions={() => setCaptions((c) => !c)}
+          dropped={dropped}
+          onSendDropped={sendDropped}
+          error={error || voice.micError}
+          card={pendingCard ? <AssistantCardView card={pendingCard} disabled={busy} onAnswer={send} theme={theme} /> : null}
+          listening={voice.listening}
+          speaking={voice.speaking}
+          busy={busy || voice.transcribing}
+          onMic={micTap}
+          onKeyboard={() => setChatOverride(true)}
+          onEnd={() => { endConvo(); voice.stopSpeaking() }}
+          onMinimize={onMinimize}
+          compact={compact}
+        />
+      ) : (
+        <>
+          <header className="flex items-center gap-3 border-b bg-background/80 px-3 py-2.5 backdrop-blur sm:px-4">
+            <DbAvatar state={avatarState} size={44} levelRef={voice.levelRef} look={a} />
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold leading-tight">DB</p>
+              <p className="truncate text-xs" style={{ color: voice.listening ? theme.glowListen : undefined }}>
+                <span className={voice.listening ? '' : 'text-muted-foreground'}>{statusLine}</span>
               </p>
             </div>
+            <IconBtn onClick={toggleVoice} label={voiceOn ? 'Mute DB' : 'Unmute DB'}>{voiceOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}</IconBtn>
+            <IconBtn onClick={newConversation} label="New conversation"><Plus className="h-4 w-4" /></IconBtn>
+            <IconBtn onClick={onMinimize} label="Minimise (keeps the conversation going)"><Minus className="h-4 w-4" /></IconBtn>
+            <IconBtn onClick={close} label="Close DB"><X className="h-4 w-4" /></IconBtn>
+          </header>
+
+          <div ref={scrollRef} className={cn('flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4', TEXT_SIZE[a.text_size])}>
+            {setup && !setup.ready && (
+              <div className="rounded-xl border bg-muted p-3">
+                {setup.reason === 'deactivated'
+                  ? <>DB is deactivated. Turn her back on in <Link href="/dashboard/settings" className="underline">Settings → Users</Link>.</>
+                  : <>
+                      {setup.reason === 'logged_off' ? 'DB is logged off.' : 'DB is not set up yet. This creates her own ERP user, "DB", so you can see what she did.'}
+                      <Button size="sm" className="mt-2 w-full" onClick={wakeDb}>{setup.reason === 'logged_off' ? 'Wake DB up' : 'Set up DB'}</Button>
+                    </>}
+              </div>
+            )}
+
+            {entries.length === 0 && ready && (
+              <div className="flex flex-col items-center pt-6 text-center">
+                <DbAvatar state={avatarState} size={compact ? 128 : 112} levelRef={voice.levelRef} look={a} />
+                <p className="mt-4 text-lg font-semibold">Hi Boss!</p>
+                <p className="mt-1 max-w-[18rem] text-sm text-muted-foreground">Tap the mic and just talk, I’ll keep listening till you’re done. Or type below.</p>
+                <div className="mt-5 flex flex-wrap justify-center gap-2">
+                  {SUGGESTIONS.map((s) => (
+                    <button key={s} type="button" onClick={() => send(s)} disabled={busy}
+                      className="min-h-9 rounded-full border bg-background px-3 py-1.5 text-xs hover:bg-muted">{s}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {entries.map((e, i) => (
+              <MessageRow key={i} entry={e} look={a} last={i === entries.length - 1} busy={busy} status={status}
+                onAnswer={send} onReplay={(t) => voice.speak(t, undefined, false)} canReplay={voiceOn} />
+            ))}
+
+            {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 italic text-muted-foreground">{voice.interim}</p></div>}
+            {dropped && !voice.interim && <DroppedNote dropped={dropped} onSend={sendDropped} />}
+            {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-destructive">{voice.micError}</p>}
+            {error && <p className="rounded-xl bg-destructive/10 p-2 text-destructive">{error}</p>}
           </div>
-        )}
-        {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-sm text-destructive">{voice.micError}</p>}
-        {error && <p className="rounded-xl bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
+
+          <div className="border-t bg-background/90 p-3 backdrop-blur" style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}>
+            {convo && (
+              <div className="mb-2 flex items-center justify-between gap-2 rounded-full px-3 py-1 text-xs" style={{ background: `${theme.glowListen}22` }}>
+                <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full" style={{ background: theme.glowListen }} />Conversation on: I stop after {config.idleSeconds}s of quiet</span>
+                <span className="flex items-center gap-3">
+                  {stageView && <button type="button" onClick={() => setChatOverride(false)} className="font-medium underline">Voice view</button>}
+                  <button type="button" onClick={() => endConvo()} className="font-medium underline">End</button>
+                </span>
+              </div>
+            )}
+            {rested && !convo && <p className="mb-2 text-center text-xs text-muted-foreground">Paused. Tap the mic or say “Hey DB” when you need me.</p>}
+            <div className="flex items-center gap-2">
+              <input
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && send(draft)}
+                placeholder={voice.supported ? 'Type, or tap the mic…' : 'Type to DB…'}
+                disabled={busy || !ready}
+                enterKeyHint="send"
+                className="h-12 min-w-0 flex-1 rounded-full border bg-background px-4 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-11 sm:text-sm"
+              />
+              {draft.trim() ? (
+                <button type="button" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md disabled:opacity-50"
+                  style={{ background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }} onClick={() => send(draft)} disabled={busy || !ready} aria-label="Send">
+                  <Send className="h-4 w-4" />
+                </button>
+              ) : voice.supported && (
+                <MicButton size={52} theme={theme} listening={voice.listening} speaking={voice.speaking} disabled={busy || voice.transcribing || !ready} onClick={micTap} />
+              )}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------------ voice stage
+
+export function VoiceStage(p: {
+  look: Appearance; state: AvatarState; levelRef: { current: number }; status: string; saying: string; interim: string
+  captions: boolean; onToggleCaptions: () => void; dropped: Dropped | null; onSendDropped: () => void; error: string | null
+  card: React.ReactNode; listening: boolean; speaking: boolean; busy: boolean
+  onMic: () => void; onKeyboard: () => void; onEnd: () => void; onMinimize: () => void; compact: boolean
+}) {
+  const theme = THEMES[p.look.theme]
+  const glow = p.state === 'speaking' ? theme.glowSpeak : p.state === 'listening' ? theme.glowListen : theme.from
+  return (
+    <div className="relative flex h-full flex-col overflow-hidden text-white"
+      style={{ background: `radial-gradient(110% 70% at 50% 32%, ${glow}40, transparent 62%), radial-gradient(120% 60% at 50% 105%, ${theme.to}55, transparent 70%), #0b1020`, transition: 'background 0.6s ease' }}>
+      <div className="flex items-center justify-between px-3 pt-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
+        <StageBtn onClick={p.onMinimize} label="Minimise (keeps talking)"><ChevronDown className="h-5 w-5" /></StageBtn>
+        <span className="text-sm font-medium text-white/80">DB</span>
+        <StageBtn onClick={p.onToggleCaptions} label={p.captions ? 'Hide captions' : 'Show captions'}>
+          {p.captions ? <Captions className="h-5 w-5" /> : <CaptionsOff className="h-5 w-5" />}
+        </StageBtn>
       </div>
 
-      <div className="border-t bg-background/90 p-3 backdrop-blur">
-        {convo && (
-          <div className="mb-2 flex items-center justify-between gap-2 rounded-full bg-emerald-500/10 px-3 py-1 text-xs text-emerald-700 dark:text-emerald-300">
-            <span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />Conversation on: I stop after {config.idleSeconds}s of quiet</span>
-            <button type="button" onClick={() => endConvo()} className="font-medium underline">End</button>
+      <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-6">
+        <DbAvatar state={p.state} size={p.compact ? 220 : 184} levelRef={p.levelRef} look={p.look} />
+        <p className="text-center text-base font-medium text-white/90">{p.status}</p>
+        {p.captions && (p.saying || p.interim) && (
+          <div className="max-h-[30vh] w-full max-w-md overflow-y-auto rounded-2xl bg-white/10 px-4 py-3 text-center leading-relaxed backdrop-blur-md">
+            {p.interim ? <p className="italic text-white/70">“{p.interim}”</p> : <p className="text-[15px] text-white">{p.saying}</p>}
           </div>
         )}
-        {rested && !convo && <p className="mb-2 text-center text-xs text-muted-foreground">Paused. Tap the mic or say “Hey DB” when you need me.</p>}
-        <div className="flex items-center gap-2">
-          <input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && send(draft)}
-            placeholder={voice.supported ? 'Type, or tap the mic…' : 'Type to DB…'}
-            disabled={busy || !ready}
-            className="h-11 min-w-0 flex-1 rounded-full border bg-background px-4 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
-          />
-          {draft.trim() ? (
-            <Button className="h-11 w-11 shrink-0 rounded-full p-0" onClick={() => send(draft)} disabled={busy || !ready} aria-label="Send"><Send className="h-4 w-4" /></Button>
-          ) : voice.supported && (
-            <button
-              type="button"
-              disabled={busy || voice.transcribing || !ready}
-              onClick={micTap}
-              aria-label={voice.listening ? 'Done talking' : voice.speaking ? 'Interrupt DB' : 'Talk to DB'}
-              className={cn('relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md transition disabled:opacity-50',
-                voice.listening ? 'bg-emerald-500' : 'bg-gradient-to-br from-indigo-500 to-pink-500 hover:scale-105')}
-            >
-              {voice.listening && <span className="absolute inset-0 animate-ping rounded-full bg-emerald-400/40" />}
-              {voice.listening ? <Square className="relative h-4 w-4" /> : <Mic className="relative h-5 w-5" />}
-            </button>
-          )}
-        </div>
+        {p.dropped && !p.interim && (
+          <button type="button" onClick={p.onSendDropped} className="rounded-full bg-white/10 px-4 py-2 text-xs text-white/80">
+            Didn’t send “{p.dropped.text.slice(0, 40)}” · <b className="text-white">That was me, send it</b>
+          </button>
+        )}
+        {p.card && <div className="w-full max-w-md text-foreground">{p.card}</div>}
+        {p.error && <p className="max-w-md rounded-xl bg-red-500/20 px-3 py-2 text-center text-sm">{p.error}</p>}
+      </div>
+
+      <div className="flex items-center justify-center gap-8 px-6 pt-4" style={{ paddingBottom: 'max(1.5rem, calc(env(safe-area-inset-bottom) + 1rem))' }}>
+        <StageBtn onClick={p.onKeyboard} label="Show chat" big><Keyboard className="h-6 w-6" /></StageBtn>
+        <MicButton size={76} theme={theme} listening={p.listening} speaking={p.speaking} disabled={p.busy} onClick={p.onMic} />
+        <StageBtn onClick={p.onEnd} label="End conversation" big danger><X className="h-6 w-6" /></StageBtn>
+      </div>
+    </div>
+  )
+}
+
+function StageBtn({ children, onClick, label, big, danger }: { children: React.ReactNode; onClick: () => void; label: string; big?: boolean; danger?: boolean }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      className={cn('flex items-center justify-center rounded-full backdrop-blur-md transition active:scale-95', big ? 'h-14 w-14' : 'h-11 w-11',
+        danger ? 'bg-red-500/90 text-white hover:bg-red-500' : 'bg-white/12 text-white hover:bg-white/20')}
+      style={danger ? undefined : { background: 'rgba(255,255,255,0.12)' }}>
+      {children}
+    </button>
+  )
+}
+
+function MicButton({ size, theme, listening, speaking, disabled, onClick }: {
+  size: number; theme: typeof THEMES[keyof typeof THEMES]; listening: boolean; speaking: boolean; disabled: boolean; onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      aria-label={listening ? 'Done talking' : speaking ? 'Interrupt DB' : 'Talk to DB'}
+      className="relative flex shrink-0 items-center justify-center rounded-full text-white shadow-lg transition active:scale-95 disabled:opacity-50"
+      style={{ width: size, height: size, background: listening ? theme.glowListen : `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}
+    >
+      {listening && <span className="absolute inset-0 animate-ping rounded-full opacity-40" style={{ background: theme.glowListen }} />}
+      {listening || speaking ? <Square className="relative" style={{ width: size * 0.3, height: size * 0.3 }} /> : <Mic className="relative" style={{ width: size * 0.38, height: size * 0.38 }} />}
+    </button>
+  )
+}
+
+function IconBtn({ children, onClick, label }: { children: React.ReactNode; onClick: () => void; label: string }) {
+  // 40px targets: comfortable on a phone, still compact on a laptop.
+  return <Button variant="ghost" size="sm" className="h-10 w-10 p-0" onClick={onClick} aria-label={label} title={label}>{children}</Button>
+}
+
+// ------------------------------------------------------------------ chat rows
+
+export function MessageRow({ entry: e, look, last, busy, status, onAnswer, onReplay, canReplay }: {
+  entry: Entry; look: Appearance; last: boolean; busy: boolean; status: string | null
+  onAnswer: (t: string) => void; onReplay: (t: string) => void; canReplay: boolean
+}) {
+  const theme = THEMES[look.theme]
+  const [copied, setCopied] = useState(false)
+  const minimal = look.bubbles === 'minimal'
+  if (e.role === 'owner') {
+    return (
+      <div className="flex flex-col items-end gap-0.5">
+        <div className={cn('max-w-[85%] whitespace-pre-wrap', minimal ? 'text-right text-muted-foreground' : 'rounded-2xl rounded-tr-sm px-3 py-2 text-white shadow-sm')}
+          style={minimal ? undefined : { background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>{e.text}</div>
+        {look.timestamps && e.at && <span className="text-[10px] text-muted-foreground">{timeOf(e.at)}</span>}
+      </div>
+    )
+  }
+  const copy = async () => { try { await navigator.clipboard.writeText(e.text); setCopied(true); setTimeout(() => setCopied(false), 1200) } catch { /* blocked */ } }
+  return (
+    <div className="group flex items-start gap-2">
+      <DbAvatar size={28} className="mt-0.5" look={look} />
+      <div className="flex min-w-0 max-w-[85%] flex-col gap-1.5">
+        {e.text
+          ? <div className={cn('whitespace-pre-wrap', minimal ? '' : 'rounded-2xl rounded-tl-sm border bg-background px-3 py-2 shadow-sm')}>{e.text}</div>
+          : busy && last && <TypingDots label={status} />}
+        {e.text && (
+          <div className="flex items-center gap-1 text-muted-foreground opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
+            {look.timestamps && e.at && <span className="mr-1 text-[10px]">{timeOf(e.at)}</span>}
+            <button type="button" onClick={copy} className="rounded p-1 hover:bg-muted" aria-label="Copy">{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>
+            {canReplay && <button type="button" onClick={() => onReplay(e.text)} className="rounded p-1 hover:bg-muted" aria-label="Say it again"><RotateCcw className="h-3.5 w-3.5" /></button>}
+          </div>
+        )}
+        {e.cards?.map((c, j) => <AssistantCardView key={j} card={c} disabled={busy} onAnswer={onAnswer} theme={theme} />)}
+      </div>
+    </div>
+  )
+}
+
+function DroppedNote({ dropped, onSend }: { dropped: Dropped; onSend: () => void }) {
+  return (
+    <div className="flex justify-end">
+      <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-muted-foreground">
+        <p className="italic">“{dropped.text}”</p>
+        <p className="mt-1 text-xs">
+          {dropped.reason === 'too_quiet' ? 'Ignored: sounded far away (Settings → Ignore far-away voices).' : 'Ignored: I wasn’t sure I heard that right.'}{' '}
+          <button type="button" className="font-medium text-foreground underline" onClick={onSend}>That was me, send it</button>
+        </p>
       </div>
     </div>
   )
@@ -475,7 +730,8 @@ function updateLastDb(prev: Entry[], fn: (e: Entry) => Entry): Entry[] {
   return copy
 }
 
-function AssistantCardView({ card, disabled, onAnswer }: { card: Card; disabled: boolean; onAnswer: (t: string) => void }) {
+function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; disabled: boolean; onAnswer: (t: string) => void; theme: typeof THEMES[keyof typeof THEMES] }) {
+  const accent = { background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }
   if (card.type === 'confirm') {
     return (
       <div className="w-full rounded-xl border bg-background p-3 text-sm shadow-sm">
@@ -487,8 +743,9 @@ function AssistantCardView({ card, disabled, onAnswer }: { card: Card; disabled:
           </ul>
         )}
         <div className="mt-3 flex gap-2">
-          <Button size="sm" disabled={disabled} onClick={() => onAnswer('Haan, confirm kar do.')}>Confirm</Button>
-          <Button size="sm" variant="outline" disabled={disabled} onClick={() => onAnswer('Nahi, abhi cancel karo.')}>Cancel</Button>
+          <button type="button" disabled={disabled} onClick={() => onAnswer('Haan, confirm kar do.')}
+            className="h-10 flex-1 rounded-lg px-3 text-sm font-medium text-white disabled:opacity-50" style={accent}>Confirm</button>
+          <Button variant="outline" className="h-10 flex-1" disabled={disabled} onClick={() => onAnswer('Nahi, abhi cancel karo.')}>Cancel</Button>
         </div>
       </div>
     )
@@ -507,12 +764,12 @@ function AssistantCardView({ card, disabled, onAnswer }: { card: Card; disabled:
       <div className="mt-2 flex flex-col gap-2">
         {card.whatsapp_to_customer && (
           <a href={card.whatsapp_to_customer} target="_blank" rel="noreferrer"
-            className="inline-flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-primary-foreground">
+            className="inline-flex h-10 items-center justify-center gap-2 rounded-lg px-3 text-white" style={accent}>
             <MessageCircle className="h-4 w-4" />Send to customer on WhatsApp
           </a>
         )}
         <a href={card.whatsapp_pick_chat} target="_blank" rel="noreferrer"
-          className="inline-flex items-center justify-center gap-2 rounded-md border px-3 py-1.5">
+          className="inline-flex h-10 items-center justify-center gap-2 rounded-lg border px-3">
           <MessageCircle className="h-4 w-4" />Send to me / pick a chat
         </a>
         <a href={card.pdf_url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs underline">
@@ -522,3 +779,4 @@ function AssistantCardView({ card, disabled, onAnswer }: { card: Card; disabled:
     </div>
   )
 }
+
