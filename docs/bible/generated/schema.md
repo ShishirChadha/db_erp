@@ -221,7 +221,7 @@ Live schema snapshot -- 144 tables. Regenerate with `npm run bible:generate`.
 
 ## activities
 
-~221 rows (estimate)
+~225 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -449,10 +449,11 @@ Live schema snapshot -- 144 tables. Regenerate with `npm run bible:generate`.
 | created_by | uuid | yes |  | FK -> profiles.id |  |
 | is_active | boolean | no | `true` |  |  |
 | created_at | timestamp with time zone | no | `now()` |  |  |
+| source | text | no | `'conversation'::text` |  |  |
 
 ## assistant_threads
 
-~0 rows (estimate)
+~1 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -466,7 +467,7 @@ Live schema snapshot -- 144 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_usage
 
-~0 rows (estimate)
+~49 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2608,7 +2609,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~39,251 rows (estimate)
+~39,248 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2745,7 +2746,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## sku_master
 
-~444 rows (estimate)
+~445 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3033,7 +3034,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summarised by ops_web_vitals_summary() for the daily health report. 30-day retention.
 
-~5,769 rows (estimate)
+~6,065 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3049,7 +3050,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~4,246 rows (estimate)
+~4,268 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

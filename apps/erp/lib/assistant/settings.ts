@@ -7,7 +7,7 @@ import { ALL_READ_MODULES, type ReadModule } from './reports'
 // (assistant_settings, JSON). app_settings has RLS on with no policies, so only
 // the service role reads it; the Sarvam key is additionally encrypted with the
 // same vault that keeps staff passwords.
-export const ASSISTANT_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5'] as const
+export const ASSISTANT_MODELS = ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'] as const
 export type AssistantModel = typeof ASSISTANT_MODELS[number]
 
 // Female Bulbul v4-flash voices from Sarvam's own recommendations (best-practices
@@ -24,6 +24,22 @@ export const SARVAM_VOICES = [
 
 export const VOICE_PROVIDERS = ['sarvam', 'azure', 'google', 'browser'] as const
 export const TONES = ['professional', 'friendly', 'casual'] as const
+export const REPLY_LENGTHS = ['short', 'normal'] as const
+export type ReplyLength = typeof REPLY_LENGTHS[number]
+
+// What DB may DO (her write skills), each switchable in Settings. Lookups that
+// a skill needs stay available regardless.
+export const WRITE_SKILLS = [
+  { key: 'pi', label: 'PIs & quotations', hint: 'Prepare proforma invoices and quotations, and the WhatsApp link to send them.' },
+  { key: 'expense', label: 'Expenses', hint: 'Record expenses.' },
+  { key: 'sale', label: 'Sales', hint: 'Enter sales (moves stock).' },
+  { key: 'repair', label: 'Repair jobs', hint: 'Open repair jobs.' },
+  { key: 'replacement', label: 'Replacement jobs', hint: 'Open replacement jobs (a unit goes out).' },
+  { key: 'customer', label: 'New customers', hint: 'Create a customer when one doesn’t exist yet.' },
+  { key: 'learn', label: 'Learn by herself', hint: 'Offer to remember your preferences from conversations (always asks first).' },
+] as const
+export type WriteSkill = typeof WRITE_SKILLS[number]['key']
+export const ALL_WRITE_SKILLS = WRITE_SKILLS.map((s) => s.key) as WriteSkill[]
 export type Tone = typeof TONES[number]
 // How hard DB ignores quiet / far-away speech (other people in the room, TV).
 export const VOICE_GATES = ['off', 'low', 'medium', 'high'] as const
@@ -47,6 +63,8 @@ export interface AssistantSettings {
   wake_phrases: string[]
   hinglish_script: 'devanagari' | 'roman'
   tone: Tone
+  reply_length: ReplyLength
+  write_skills: WriteSkill[]
   // Conversation mode: after she answers, she listens again by herself until
   // you go quiet for conversation_idle_seconds.
   continuous_conversation: boolean
@@ -73,6 +91,8 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   wake_phrases: ['hey db', 'hi db', 'db suno', 'suno db', 'hello db', 'hi tp', 'hey tp', 'hi idbi'],
   hinglish_script: 'devanagari',
   tone: 'casual',
+  reply_length: 'short',
+  write_skills: [...ALL_WRITE_SKILLS],
   continuous_conversation: true,
   conversation_idle_seconds: 15,
   voice_gate: 'medium',

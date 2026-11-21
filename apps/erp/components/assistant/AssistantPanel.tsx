@@ -6,7 +6,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 
 // DB, the owner's voice secretary. Her button (her face) floats on every
@@ -155,6 +155,8 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
   const [convo, setConvo] = useState(false)
   const [rested, setRested] = useState(false)
   const [dropped, setDropped] = useState<Dropped | null>(null)
+  const [saying, setSaying] = useState('') // the reply she is reading aloud now
+  const interrupted = useRef(false)
   const convoRef = useRef(false)
   const lastHeard = useRef(0)
   const errors = useRef(0)
@@ -183,10 +185,11 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
     setDraft('')
     setEntries((prev) => [...prev, { role: 'owner', text }, { role: 'db', text: '', cards: [] }])
     let reply = ''
+    interrupted.current = false
     try {
       const res = await apiFetch('/api/assistant/turn', {
         method: 'POST',
-        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage }),
+        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage, interrupted: interrupted.current }),
         timeoutMs: 120_000,
       })
       if (!res.ok || !res.body) {
@@ -224,7 +227,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
       setStatus(null)
     }
     const v = voiceRef.current
-    if (v && voiceOn && reply.trim()) await v.speak(reply)
+    if (v && voiceOn && reply.trim()) { setSaying(reply); await v.speak(reply); setSaying('') }
     if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
     if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
   }, [busy, threadId, voiceOn, endConvo, listenAgain])
@@ -257,6 +260,24 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
 
   useEffect(() => { onVoiceBusy(voice.listening || voice.speaking || voice.transcribing || busy) }, [voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
   useEffect(() => () => { onVoiceBusy(false); if (retryTimer.current) clearTimeout(retryTimer.current) }, [onVoiceBusy])
+
+  // "Stop" / "bas" / "pata hai" while she talks: she stops at once. In a
+  // conversation, listening resumes by itself (send() continues after speak()).
+  const interrupt = useCallback(() => {
+    if (!voiceRef.current?.speaking) return
+    interrupted.current = true
+    voiceRef.current.stopSpeaking()
+  }, [])
+  useStopWords(voice.speaking, saying, interrupt)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      if (voiceRef.current?.speaking) interrupt()
+      else if (voiceRef.current?.listening) endConvo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [interrupt, endConvo])
 
   const startConvo = useCallback(() => {
     convoRef.current = true
@@ -304,14 +325,14 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
   const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); if (!next) voice.stopSpeaking() }
   const micTap = () => {
     if (voice.listening) { voice.stop(); return } // done talking: send now
-    if (voice.speaking) { voice.stopSpeaking(); if (convoRef.current) listenAgain(150); return } // interrupt her
+    if (voice.speaking) { interrupt(); return } // interrupt her; a conversation resumes listening by itself
     if (config.continuous) startConvo()
     else voice.start()
   }
 
   const ready = !!setup?.ready
   const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
-  const statusLine = voice.speaking ? 'Speaking…' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : 'Online'
+  const statusLine = voice.speaking ? 'Speaking… say “stop” or press Esc to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : 'Online'
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-primary/5 via-background to-background">

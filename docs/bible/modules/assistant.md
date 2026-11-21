@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -32,6 +32,7 @@ sources:
   - apps/erp/lib/assistant/reports.ts
   - apps/erp/lib/assistant/fx.ts
   - apps/erp/components/assistant/DbAvatar.tsx
+  - apps/erp/components/assistant/AssistantLearnings.tsx
 updated: 2026-11-21
 ---
 
@@ -89,11 +90,35 @@ Before proposing, she checks and tells you if:
 - a sale is only partly paid;
 - a device has been in for repair before.
 
+## Brain (model) and skills
+
+Settings → DB Assistant → **Brain**: Opus 5.5 (high, ≈₹3–8 a conversation), Sonnet 5.5
+(medium, ≈₹1.5–4) or Haiku 5.5 (low, ≈₹0.10–0.25; measured ₹0.013 for a greeting and
+₹0.11 for a stock question). Haiku has no server-side fallback model, so the loop only
+sends `fallbacks` for the other two. Switching takes effect from her next reply; her
+learnings, checks and confirmation cards are the same on every model.
+
+**What DB can do** switches her write skills (PIs/quotations, expenses, sales, repairs,
+replacements, new customers, learning by herself) on or off; a switched-off skill's
+tools are removed from her tool list and refused server-side, and she says it's off.
+**How much she says**: short (default) or normal.
+
+**Stopping her:** say "stop", "ruko", "bas", "pata hai", "chup"… while she talks, press
+Esc, or tap the mic, and she stops at once. A small browser recogniser runs only while
+she speaks; her own voice from the speakers is filtered (a stop word counts on its own,
+or inside a phrase only if she isn't saying it). The next turn tells her you cut her
+off, so she doesn't repeat herself.
+
 ## What she remembers
 
 When you state a preference ("ABC ko hamesha free bag"), she offers to remember it.
-It is saved only on a yes. **DB Assistant → What DB remembers** lists every note, and
-you can delete any of them. She does not learn anything silently.
+It is saved only on a yes. Settings → DB Assistant → **DB's learnings** lists every
+learning (general or per customer, "learned in a conversation" or "added by you"), and
+you can add, edit, pause or delete any of them there. General learnings are sent with
+every request (after the cached instructions, so editing one never re-writes that
+cache); customer learnings come back with `find_customer`. She does not learn anything
+silently, and the model itself never changes: "learning" is these notes plus the ERP
+history she reads.
 
 ## Voice and language
 

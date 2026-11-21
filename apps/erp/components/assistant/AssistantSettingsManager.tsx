@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Play, Trash2, ExternalLink, Mic, Plus } from 'lucide-react'
+import { Loader2, Play, ExternalLink, Mic, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import AssistantLearnings from './AssistantLearnings'
 import { useVoice, useNameTrainer, createMeter, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
@@ -32,6 +33,8 @@ type Config = {
   voices: { sarvam: VoiceOpt[]; azure: Attempt<VoiceOpt[]>; google: Attempt<VoiceOpt[]> }
   models: string[]
   read_modules: { key: string; label: string; hint: string }[]
+  write_skills: { key: string; label: string; hint: string }[]
+  other_ai: { feature: string; model: string }[]
   fx: { rate: number; date: string | null; source: string }
   usage: {
     today: { claude: Money; sarvam: Money }
@@ -43,14 +46,16 @@ type Config = {
   free_tts_chars: { azure_tts: number; google_tts: number }
   anthropic_billing: Attempt<Billing>
 }
-type Note = { id: string; note: string; created_at: string; customers: { customer_name: string } | null }
 
 const inr = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: n < 100 ? 2 : 0 })}`
 const usd = (n: number) => `$${n.toFixed(n < 10 ? 3 : 2)}`
 const when = (iso: string | null) => iso ? new Date(iso).toLocaleString('en-IN', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : 'not yet'
-const MODEL_LABELS: Record<string, string> = {
-  'claude-opus-5-5': 'Opus 5.5 — smartest (recommended)',
-  'claude-sonnet-5-5': 'Sonnet 5.5 — about half the cost, a little less sharp',
+// Per-conversation costs are rough: a typical 3-4 reply conversation with a
+// lookup or two, list prices, instructions already cached.
+const MODELS: Record<string, { name: string; level: string; cost: string; note: string }> = {
+  'claude-opus-5-5': { name: 'Opus 5.5', level: 'High', cost: '≈ ₹3–8 a conversation', note: 'Sharpest judgement on prices, tricky Hinglish and multi-step jobs. Use when mistakes are costly.' },
+  'claude-sonnet-5-5': { name: 'Sonnet 5.5', level: 'Medium', cost: '≈ ₹1.5–4 a conversation', note: 'Half of Opus. Very good at everyday PIs, sales, expenses and reports. A good start while she learns your ways.' },
+  'claude-haiku-5-5': { name: 'Haiku 5.5', level: 'Low', cost: '≈ ₹0.10–0.25 a conversation', note: 'About 20× cheaper than Sonnet and faster. Fine for repeated, routine work and questions; more likely to miss a detail or misread Hinglish, so read her confirmation cards carefully. No automatic backup model if a request is refused.' },
 }
 const PROVIDER_LABELS: Record<SpeakProvider, string> = {
   azure: 'Microsoft Azure', google: 'Google Cloud', sarvam: 'Sarvam AI', browser: 'Browser (free, robotic)',
@@ -139,7 +144,6 @@ export default function AssistantSettingsManager() {
   const [cfg, setCfg] = useState<Config | null>(null)
   const [s, setS] = useState<any>(null)
   const [keys, setKeys] = useState<Record<string, string>>({})
-  const [notes, setNotes] = useState<Note[]>([])
   const [msg, setMsg] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
 
@@ -149,7 +153,6 @@ export default function AssistantSettingsManager() {
     const j: Config = await r.json()
     setCfg(j)
     setS({ ...j.settings, wake_phrases_text: (j.settings.wake_phrases || []).join(', ') })
-    apiFetch('/api/assistant/notes').then((x) => x.json()).then((n) => setNotes(Array.isArray(n) ? n : []))
   }
   useEffect(() => { load() }, [])
 
@@ -174,6 +177,8 @@ export default function AssistantSettingsManager() {
       wake_phrases: String(s.wake_phrases_text || '').split(',').map((x: string) => x.trim()).filter(Boolean),
       hinglish_script: s.hinglish_script,
       tone: s.tone,
+      reply_length: s.reply_length,
+      write_skills: s.write_skills,
       continuous_conversation: s.continuous_conversation,
       conversation_idle_seconds: Number(s.conversation_idle_seconds),
       voice_gate: s.voice_gate,
@@ -200,10 +205,6 @@ export default function AssistantSettingsManager() {
     await load()
   })
 
-  const forget = async (id: string) => {
-    await apiFetch(`/api/assistant/notes?id=${id}`, { method: 'DELETE' })
-    setNotes((n) => n.filter((x) => x.id !== id))
-  }
 
   if (err && !cfg) return <p className="text-sm text-muted-foreground">{err}</p>
   if (!cfg || !s) return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -259,10 +260,25 @@ export default function AssistantSettingsManager() {
         </p>
       </Section>
 
-      <Section title="Brain" hint="The AI model DB thinks with.">
-        <select value={s.model} onChange={(e) => set('model', e.target.value)} className="h-8 w-full rounded-md border bg-background px-2 text-sm">
-          {cfg.models.map((m) => <option key={m} value={m}>{MODEL_LABELS[m] || m}</option>)}
-        </select>
+      <Section title="Brain" hint="The AI model DB thinks with. You can change it any time; her learnings, checks and confirmation cards stay the same whichever you pick.">
+        <div className="space-y-2">
+          {cfg.models.map((m) => {
+            const info = MODELS[m]
+            return (
+              <label key={m} className={cn('flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm', s.model === m && 'border-primary bg-primary/5')}>
+                <input type="radio" name="model" className="mt-1" checked={s.model === m} onChange={() => set('model', m)} />
+                <span className="min-w-0">
+                  <span className="font-medium">{info?.name || m}</span>{info && <span className="text-muted-foreground"> · {info.level} · {info.cost}</span>}
+                  {info && <span className="block text-xs text-muted-foreground">{info.note}</span>}
+                </span>
+              </label>
+            )
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Plan that works: start on Medium for a week or two, add learnings whenever she gets something wrong, then try Low. If Low starts slipping on something, switch back. It takes effect from her next reply.
+          She doesn’t get smarter on her own: what improves is her learnings and the ERP’s history she reads, and those carry over to any model.
+        </p>
       </Section>
 
       <Section title="Her voice (speaking)" hint="Who reads DB's replies out loud. Azure and Google are free within their monthly allowance; try each with Preview.">
@@ -369,6 +385,18 @@ export default function AssistantSettingsManager() {
           ))}
         </div>
         <p className="text-xs text-muted-foreground">She is always serious while reading back money, when something fails, and in anything that goes to a customer.</p>
+        <Label className="text-xs">How much she says</Label>
+        <div className="space-y-1 text-sm">
+          <label className="flex items-center gap-2">
+            <input type="radio" name="reply_length" checked={s.reply_length === 'short'} onChange={() => set('reply_length', 'short')} />
+            Short: just the answer, no explanations (cheaper and quicker)
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="radio" name="reply_length" checked={s.reply_length === 'normal'} onChange={() => set('reply_length', 'normal')} />
+            Normal: a little more context
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">Either way, say “stop”, “bas”, “ruko” or “pata hai” while she talks (or press Esc, or tap the mic) and she stops at once.</p>
       </Section>
 
       <Section title="Conversation" hint="Talk to DB like a person: tap the mic once (or say “Hey DB”), and after each answer she listens again by herself.">
@@ -397,6 +425,19 @@ export default function AssistantSettingsManager() {
           If she misses you when you speak softly, lower this. Anything she ignores shows up in her panel with a “That was me, send it” button.
         </p>
         <MicCheck gate={s.voice_gate} />
+      </Section>
+
+      <Section title="What DB can do" hint="Her skills. Switch one off and she won't do it — she'll tell you it's off and point you to the ERP page instead.">
+        <div className="space-y-2">
+          {cfg.write_skills.map((k) => (
+            <label key={k.key} className="flex items-start gap-2 text-sm">
+              <Checkbox className="mt-0.5" checked={s.write_skills.includes(k.key)}
+                onCheckedChange={(c) => set('write_skills', c ? [...s.write_skills, k.key] : s.write_skills.filter((x: string) => x !== k.key))} />
+              <span><span className="font-medium">{k.label}</span><span className="block text-xs text-muted-foreground">{k.hint}</span></span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">Whatever is on, nothing is saved without your yes on a confirmation card.</p>
       </Section>
 
       <Section title="What DB can read" hint="Switch on the parts of the ERP DB may look at to answer your questions (“aaj ki sale?”, “kitne 840 G6 ready hain?”, “kiske payments due hain?”). She only reads; saving still needs your yes.">
@@ -494,7 +535,13 @@ export default function AssistantSettingsManager() {
         </div>
       </Section>
 
-      <Section title="DB's own usage (live)" hint="Counted by the ERP on every request DB makes, the moment it happens.">
+      <Section title="DB's own usage (live)" hint="Only DB. The ERP counts every request she makes the moment it happens, at Anthropic's list prices (and the voice services).">
+        <div className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+          <p><b className="text-foreground">Two meters, two scopes.</b> <b>DB’s own usage</b> (here) is only DB, counted by the ERP itself, so it works without any special key and is up to the second.
+            <b> Anthropic usage</b> (section above) is your whole Anthropic account as Anthropic bills it: DB plus the ERP’s other AI features below. It needs an Admin key, which Anthropic only gives team organizations.</p>
+          <p className="mt-2"><b className="text-foreground">Models in use:</b> DB → {MODELS[s.model]?.name || s.model} (your choice above).{' '}
+            {cfg.other_ai.map((o) => `${o.feature} → ${o.model === 'claude-sonnet-5' ? 'Sonnet 5' : o.model}`).join(' · ')}.</p>
+        </div>
         <div className="grid gap-2 text-sm sm:grid-cols-2">
           <div className="rounded-md bg-muted p-3">
             <p className="text-xs text-muted-foreground">Today</p>
@@ -516,17 +563,8 @@ export default function AssistantSettingsManager() {
         </div>
       </Section>
 
-      <Section title="What DB remembers" hint="Preferences you told her to remember. Delete any you no longer want.">
-        {notes.length === 0 && <p className="text-sm text-muted-foreground">Nothing yet.</p>}
-        {notes.map((n) => (
-          <div key={n.id} className="flex items-start justify-between gap-3 rounded-md border p-2 text-sm">
-            <div>
-              <p className="text-xs text-muted-foreground">{n.customers?.customer_name || 'General'}</p>
-              <p>{n.note}</p>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => forget(n.id)} aria-label="Forget"><Trash2 className="h-4 w-4" /></Button>
-          </div>
-        ))}
+      <Section title="DB's learnings" hint="Everything DB has been taught, from your conversations or added here. Edit, pause or delete any of them; changes apply from her next reply.">
+        <AssistantLearnings />
       </Section>
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t bg-background py-3">

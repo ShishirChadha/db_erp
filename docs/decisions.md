@@ -1142,3 +1142,9 @@ Decisions:
 
 **DB follow-up: 1-hour cache for her instructions only; voice filter made fail-visible.** (2026-11-21)
 The tools + system prompt carry a 1h cache breakpoint; the top-level (history) breakpoint stays 5m — measured: 1h on the history wrote a stock report at 2× (₹2.27) where 5m/no-write cost ₹0.43. `recordClaudeUsage` prices 1h writes at 2× and 5m at 1.25× from `usage.cache_creation`. The first loudness thresholds (0.03–0.08 RMS) silently dropped normal speech on the owner's MacBook (panel opened, no turn ever sent); thresholds are now 0.008/0.015/0.03, the filter is skipped when the meter reads pure silence, and every dropped utterance is shown with a "send it" button.
+
+**DB: stop by voice, learnings manager, skill switches, Haiku option.** (2026-11-21)
+- Voice stop: a browser recogniser runs only while DB speaks (never alongside another recogniser), cuts her off on stop words; echo of her own voice is filtered by text (a stop word alone always counts; inside a phrase only if she isn't saying it). The next turn carries "he stopped your last reply midway".
+- Learnings: `assistant_notes.source` ('conversation' | 'manual', migration 20261121c) and full CRUD in `/api/assistant/notes` (pause = `is_active=false`, delete is hard). General learnings are injected as a second, uncached system block after the 1h-cached instructions, so edits never trigger the ₹4 cache rewrite.
+- Skills: `write_skills` filters the propose_* tools (and their helpers) exactly like `read_modules`, with a server-side refusal too.
+- Models: Haiku 5.5 added ($0.10/$0.50 per MTok, measured ₹0.013 per greeting, ₹0.11 per stock question). It has no server-side fallback, so `fallbacks` is only sent for Opus/Sonnet. Reply length setting (short default) cuts output cost and listening time.

@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
           db: { profileId: status.profileId, sessionId: status.sessionId },
           text,
           spokenLanguage: typeof body.spoken_language === 'string' ? body.spoken_language : null,
+          interrupted: body.interrupted === true,
           emit,
         })
       } catch (err) {

@@ -447,3 +447,70 @@ export function useNameTrainer() {
   }, [])
   return { listening, heard, error, listen, clear: () => setHeard([]) }
 }
+
+// ------------------------------------------------------------------ "stop!"
+//
+// While DB is speaking, a short-lived browser recogniser listens only for
+// "stop / ruko / bas / pata hai…" and cuts her off at once (interim results,
+// so it reacts mid-word). It runs only while she speaks -- the panel's own
+// listening and the wake word are both idle then, so it never competes with
+// another recogniser. Her own voice coming back through the speakers is
+// filtered two ways: a "strong" word counts only if it isn't in what she is
+// saying, and a "weak" word ("bas", "ok ok") only when it is said on its own.
+const STRONG_STOP = ['stop', 'stop it', 'ruko', 'ruk jao', 'ruk ja', 'chup', 'chup karo', 'enough', 'rehne do', 'skip', 'band karo', 'leave it', 'hold on',
+  'स्टॉप', 'रुको', 'रुक जाओ', 'चुप', 'बस करो', 'रहने दो', 'बंद करो']
+const WEAK_STOP = ['bas', 'bas bas', 'bas karo', 'ok ok', 'okay okay', 'theek hai theek hai', 'pata hai', 'mujhe pata hai', 'samajh gaya', 'samajh gayi', 'got it', 'haan haan', 'next',
+  'बस', 'बस बस', 'पता है', 'समझ गया', 'हाँ हाँ']
+const hasPhrase = (hay: string, p: string) => ` ${hay} `.includes(` ${p} `)
+
+export function stopHeard(heard: string, saying: string) {
+  const h = norm(heard)
+  if (!h) return false
+  const said = norm(saying)
+  const short = h.split(' ').length <= 3
+  // A stop word on its own is always him; inside a longer phrase it counts
+  // only if she isn't saying that word herself (her echo).
+  if (STRONG_STOP.some((p) => hasPhrase(h, p) && (short || !hasPhrase(said, p)))) return true
+  return short && WEAK_STOP.some((p) => hasPhrase(h, p) && (h === p || !hasPhrase(said, p)))
+}
+
+export function useStopWords(active: boolean, saying: string, onStop: () => void) {
+  const stopRef = useRef(onStop)
+  stopRef.current = onStop
+  const sayingRef = useRef(saying)
+  sayingRef.current = saying
+  useEffect(() => {
+    const Ctor = typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!active || !Ctor) return
+    let rec: any = null
+    let done = false
+    let restarts = 0
+    const begin = () => {
+      if (done || restarts > 3) return
+      const r = new Ctor()
+      r.lang = 'en-IN'
+      r.continuous = true
+      r.interimResults = true
+      r.maxAlternatives = 3
+      r.onresult = (e: any) => {
+        for (let i = e.resultIndex; i < e.results.length; i++) {
+          for (let a = 0; a < e.results[i].length; a++) {
+            if (stopHeard(e.results[i][a].transcript, sayingRef.current)) {
+              done = true
+              try { r.abort() } catch {}
+              stopRef.current()
+              return
+            }
+          }
+        }
+      }
+      // Chrome ends a session on its own after a while; carry on while she is
+      // still speaking, but never more than a few times (no loops).
+      r.onend = () => { if (rec === r) rec = null; if (!done) { restarts++; setTimeout(begin, 200) } }
+      rec = r
+      try { r.start() } catch { rec = null }
+    }
+    const t = setTimeout(begin, 250)
+    return () => { done = true; clearTimeout(t); try { rec?.abort() } catch {} }
+  }, [active])
+}

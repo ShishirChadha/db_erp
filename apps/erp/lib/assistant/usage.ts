@@ -6,6 +6,9 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 export const CLAUDE_PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1 },
+  // Haiku 5.5: prompts up to 100K tokens (DB's are ~11-20K). Above that it is
+  // $0.50 / $2.50, which DB never reaches.
+  'claude-haiku-5-5': { input: 0.1, output: 0.5, cacheRead: 0.01 },
   'claude-sonnet-5': { input: 2, output: 10, cacheRead: 0.2 },
   'claude-opus-5': { input: 5, output: 25, cacheRead: 0.5 },
   'claude-opus-4-8': { input: 5, output: 25, cacheRead: 0.5 },

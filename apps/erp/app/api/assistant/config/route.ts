@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { logAuditEvent } from '@/lib/audit-log'
 import {
   isDbMaster, getAssistantSettings, saveAssistantSettings, getSecret, setSecret, secretStatus,
-  ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, TONES, VOICE_GATES, type AssistantSettings, type SecretName,
+  ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, TONES, VOICE_GATES, REPLY_LENGTHS, WRITE_SKILLS, ALL_WRITE_SKILLS, type AssistantSettings, type SecretName, type WriteSkill,
 } from '@/lib/assistant/settings'
 import { READ_MODULES, ALL_READ_MODULES, type ReadModule } from '@/lib/assistant/reports'
 import { getDbAgentStatus } from '@/lib/assistant/identity'
@@ -46,6 +46,14 @@ export async function GET(req: NextRequest) {
     voices: { sarvam: SARVAM_VOICES, azure: azureVoices, google: googleVoices },
     models: ASSISTANT_MODELS,
     read_modules: READ_MODULES,
+    write_skills: WRITE_SKILLS,
+    // What else in the ERP uses Anthropic (not DB): shown so the two usage
+    // meters make sense. Keep in sync with those files.
+    other_ai: [
+      { feature: 'Bank statement reading (Recon)', model: 'claude-sonnet-5', file: 'lib/recon/ai-extract.ts' },
+      { feature: 'Marketing content', model: 'claude-sonnet-5', file: 'lib/marketing/generate.ts' },
+      { feature: 'Document / GST news extraction', model: 'claude-sonnet-5', file: 'lib/ai/structured.ts' },
+    ],
     usage, free_tts_chars: FREE_TTS_CHARS, fx,
     anthropic_billing: billing,
   })
@@ -82,6 +90,8 @@ export async function PUT(req: NextRequest) {
     patch.wake_phrases = [...new Set(body.wake_phrases.map((x: unknown) => String(x).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x: string) => x.length >= 2))].slice(0, 30) as string[]
   }
   if (TONES.includes(body.tone)) patch.tone = body.tone
+  if (REPLY_LENGTHS.includes(body.reply_length)) patch.reply_length = body.reply_length
+  if (Array.isArray(body.write_skills)) patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]
   if (VOICE_GATES.includes(body.voice_gate)) patch.voice_gate = body.voice_gate
   if (typeof body.continuous_conversation === 'boolean') patch.continuous_conversation = body.continuous_conversation
   if (NUM(body.conversation_idle_seconds, 6, 60) !== undefined) patch.conversation_idle_seconds = Math.round(body.conversation_idle_seconds)

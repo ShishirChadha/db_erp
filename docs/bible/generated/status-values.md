@@ -26,6 +26,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | asset_rma_events | status | asset_rma_events_status_check | `CHECK ((status = ANY (ARRAY['initiated'::text, 'shipped'::text, 'vendor_accepted'::text, 'vendor_rejected'::text, 'replacement_received'::text, 'refund_received'::text, 'closed'::text])))` |
 | assistant_notes | subject_type | assistant_notes_check | `CHECK (((subject_type = 'customer'::text) = (subject_id IS NOT NULL)))` |
 | assistant_notes | note | assistant_notes_note_check | `CHECK ((length(TRIM(BOTH FROM note)) > 0))` |
+| assistant_notes | source | assistant_notes_source_check | `CHECK ((source = ANY (ARRAY['conversation'::text, 'manual'::text])))` |
 | assistant_notes | subject_type | assistant_notes_subject_type_check | `CHECK ((subject_type = ANY (ARRAY['customer'::text, 'general'::text])))` |
 | assistant_usage | provider | assistant_usage_provider_check | `CHECK ((provider = ANY (ARRAY['anthropic'::text, 'sarvam_stt'::text, 'sarvam_tts'::text, 'azure_tts'::text, 'google_tts'::text])))` |
 | attendance_days | day_part | attendance_days_day_part_check | `CHECK ((day_part = ANY (ARRAY['full'::text, 'first_half'::text, 'second_half'::text])))` |

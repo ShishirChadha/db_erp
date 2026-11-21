@@ -30,7 +30,7 @@
 | `/api/asset-ledger/[id]` | DELETE | session | owner-only, service-role |
 | `/api/asset-ledger/[id]/send-back-to-qc` | POST | session | page-access, service-role |
 | `/api/assistant/config` | GET, PUT | session | service-role |
-| `/api/assistant/notes` | GET, DELETE | session | service-role |
+| `/api/assistant/notes` | GET, POST, PATCH, DELETE | session | service-role |
 | `/api/assistant/setup` | GET, POST | session | — |
 | `/api/assistant/speak` | POST | session | — |
 | `/api/assistant/threads` | GET | session | service-role |

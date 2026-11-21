@@ -37,6 +37,8 @@ export async function runAssistantTurn(params: {
   text: string
   // BCP-47 code Sarvam detected when he spoke; null when he typed.
   spokenLanguage?: string | null
+  // He stopped her reply aloud before it finished; he didn't hear the rest.
+  interrupted?: boolean
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
@@ -53,20 +55,22 @@ export async function runAssistantTurn(params: {
   const how = params.spokenLanguage
     ? `spoken, detected ${params.spokenLanguage}${params.spokenLanguage === 'en-IN' ? ' (English)' : ' (Hindi/Hinglish)'}`
     : 'typed'
-  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
+  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
 
   const client = new Anthropic()
-  const tools = assistantTools(settings.read_modules)
-  const usdInr = (await liveUsdInr()).rate
-  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone)
+  const tools = assistantTools(settings.read_modules, settings.write_skills)
+  const [fx, learnings] = await Promise.all([liveUsdInr(), generalLearnings()])
+  const usdInr = fx.rate
+  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills)
+  // Haiku 5.5 has no server-side fallback model; only ask for one elsewhere.
+  const fallback = settings.model === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
   let spoke = false
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       const stream = client.beta.messages.stream({
         model: settings.model,
         max_tokens: 8000,
-        betas: ['server-side-fallback-2026-07-01'],
-        fallbacks: 'default',
+        ...fallback,
         output_config: { effort: 'low' },
         // Tools + system are identical every turn: cached for 1 HOUR (owner's
         // choice) -- he talks to DB on and off through the day, and with a
@@ -78,7 +82,12 @@ export async function runAssistantTurn(params: {
         // writing big report results at the 2x rate cost more than it saved.
         // (Order is valid: the longer-TTL breakpoint comes first.)
         cache_control: { type: 'ephemeral' },
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
+        // General learnings come after the cached block: editing one never
+        // invalidates the 1-hour cache of her instructions.
+        system: [
+          { type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } },
+          ...(learnings ? [{ type: 'text' as const, text: learnings }] : []),
+        ],
         tools,
         messages,
       })
@@ -104,7 +113,7 @@ export async function runAssistantTurn(params: {
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = []
       for (const use of toolUses) {
         emit({ type: 'status', tool: use.name })
-        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules })
+        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules, skills: settings.write_skills })
         if (outcome.pending !== undefined) pending = outcome.pending
         if (outcome.card) emit({ type: 'card', card: outcome.card })
         results.push({
@@ -124,6 +133,15 @@ export async function runAssistantTurn(params: {
       .eq('id', thread.id)
     emit({ type: 'done' })
   }
+}
+
+// The owner's general learnings (Settings -> DB's learnings), applied on every
+// turn. Customer-specific ones arrive with find_customer instead.
+async function generalLearnings(): Promise<string | null> {
+  const { data } = await supabaseAdmin.from('assistant_notes').select('note')
+    .eq('is_active', true).eq('subject_type', 'general').order('created_at', { ascending: true }).limit(60)
+  if (!data?.length) return null
+  return `## What Shishir has taught you (always follow these; they override your defaults)\n${data.map((n) => `- ${n.note}`).join('\n')}`
 }
 
 async function loadOrCreateThread(threadId: string | null, ownerId: string, firstText: string): Promise<ThreadRow> {

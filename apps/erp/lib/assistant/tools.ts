@@ -18,6 +18,7 @@ import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
 } from './reports'
+import { ALL_WRITE_SKILLS, type WriteSkill } from './settings'
 
 // DB's tools. Reads run straight away. Writes never do: a propose_* tool
 // checks the input, works out the warnings DB must raise, and parks the write
@@ -42,6 +43,7 @@ export interface ToolContext {
   pending: PendingAction | null
   db: { profileId: string; sessionId: string }
   modules?: readonly ReadModule[] // read modules switched on; omitted = all
+  skills?: readonly WriteSkill[] // write skills switched on; omitted = all
 }
 
 export interface ToolOutcome {
@@ -236,16 +238,26 @@ const TOOL_MODULE: Partial<Record<ToolName, ReadModule>> = {
   purchases_report: 'purchases', expenses_report: 'expenses', tasks: 'tasks',
 }
 
+// Which "What DB can do" switch each write tool belongs to.
+const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
+  propose_sales_document: 'pi', share_document_on_whatsapp: 'pi', find_recent_documents: 'pi',
+  propose_expense: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
+  propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
+}
+
 const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
   name,
   description: DESCRIPTIONS[name],
   input_schema: z.toJSONSchema(S[name], { target: 'draft-7' }) as Anthropic.Beta.BetaTool.InputSchema,
 })
 
-// The tool list for a turn. It only changes when the owner changes the module
+// The tool list for a turn. It only changes when the owner changes the
 // switches, so it stays in the prompt cache between turns.
-export function assistantTools(modules: readonly ReadModule[]): Anthropic.Beta.BetaTool[] {
-  return (Object.keys(S) as ToolName[]).filter((n) => !TOOL_MODULE[n] || modules.includes(TOOL_MODULE[n]!)).map(toolDef)
+export function assistantTools(modules: readonly ReadModule[], skills: readonly WriteSkill[] = ALL_WRITE_SKILLS): Anthropic.Beta.BetaTool[] {
+  return (Object.keys(S) as ToolName[])
+    .filter((n) => !TOOL_MODULE[n] || modules.includes(TOOL_MODULE[n]!))
+    .filter((n) => !TOOL_SKILL[n] || skills.includes(TOOL_SKILL[n]!))
+    .map(toolDef)
 }
 export const ASSISTANT_TOOLS = assistantTools(ALL_READ_MODULES)
 
@@ -259,6 +271,10 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   const mod = TOOL_MODULE[name as ToolName]
   if (mod && ctx.modules && !ctx.modules.includes(mod)) {
     return { result: `Reading ${mod} is switched off in Settings -> DB Assistant -> What DB can read. Tell Shishir he can switch it on there.`, isError: true }
+  }
+  const skill = TOOL_SKILL[name as ToolName]
+  if (skill && ctx.skills && !ctx.skills.includes(skill)) {
+    return { result: `The "${skill}" skill is switched off in Settings -> DB Assistant -> What DB can do. Tell Shishir he can switch it on there, or do it from the ERP page.`, isError: true }
   }
   try {
     switch (name as ToolName) {
