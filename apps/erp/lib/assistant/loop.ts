@@ -62,15 +62,26 @@ export async function runAssistantTurn(params: {
   const [fx, learnings] = await Promise.all([liveUsdInr(), generalLearnings()])
   const usdInr = fx.rate
   const system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills, settings.call_me)
+  // Thinking blocks are sealed to the exact prompt they were made with. Any
+  // change to her instructions, settings, learnings or model would otherwise
+  // make Anthropic reject the whole saved conversation with a 400 ("Invalid
+  // signature in thinking block ... bound to a different conversation"), as
+  // happened on 2026-11-21 -- so stale blocks are dropped instead.
   // Haiku 5.5 has no server-side fallback model; only ask for one elsewhere.
-  const fallback = settings.model === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
+  const isHaiku = settings.model === 'claude-haiku-5-5'
+  const requestExtras = {
+    betas: ['thinking-binding-controls-2026-08-01', ...(isHaiku ? [] : ['server-side-fallback-2026-07-01'])],
+    ...(isHaiku ? {} : { fallbacks: 'default' as const }),
+    thinking: { type: 'adaptive', block_binding: { prefix_mismatch_behavior: 'drop_block' } },
+  }
+  let answered = false // at least one model response this turn
   let spoke = false
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
       const stream = client.beta.messages.stream({
         model: settings.model,
         max_tokens: 8000,
-        ...fallback,
+        ...(requestExtras as any),
         output_config: { effort: 'low' },
         // Tools + system are identical every turn: cached for 1 HOUR (owner's
         // choice) -- he talks to DB on and off through the day, and with a
@@ -100,6 +111,7 @@ export async function runAssistantTurn(params: {
         spoke = true
       })
       const message = await stream.finalMessage()
+      answered = true
       await recordClaudeUsage({ profileId: owner.id, threadId: thread.id, model: message.model || settings.model, usdInr, usage: message.usage })
       messages.push({ role: 'assistant', content: message.content as Anthropic.Beta.BetaContentBlockParam[] })
 
@@ -126,7 +138,17 @@ export async function runAssistantTurn(params: {
       messages.push({ role: 'user', content: results })
     }
   } catch (err) {
-    emit({ type: 'error', message: err instanceof Anthropic.APIError ? `AI service error (${err.status}). Try again in a moment.` : (err as Error).message })
+    console.error('[assistant] turn failed:', err)
+    // Nothing was answered: don't keep his message in the saved conversation,
+    // or a request Anthropic rejects would be re-sent (and rejected) forever.
+    if (!answered) messages.pop()
+    const detail = err instanceof Anthropic.APIError ? String((err as any).error?.error?.message || err.message).slice(0, 180) : ''
+    emit({
+      type: 'error',
+      message: err instanceof Anthropic.APIError
+        ? `AI service error (${err.status}). ${err.status && err.status >= 500 || err.status === 429 ? 'Try again in a moment.' : 'If it repeats, start a new conversation with the + button.'}${detail ? ` (${detail})` : ''}`
+        : (err as Error).message,
+    })
   } finally {
     await supabaseAdmin.from('assistant_threads')
       .update({ messages, pending_action: pending, updated_at: new Date().toISOString() })

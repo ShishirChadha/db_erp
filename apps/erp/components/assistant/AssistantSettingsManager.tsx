@@ -492,7 +492,7 @@ export default function AssistantSettingsManager() {
           </div>
           {trainer.heard.length > 0 && <p className="mt-2 text-xs">Heard: {trainer.heard.map((h) => `“${h}”`).join(', ')}</p>}
           {trainer.error && <p className="mt-2 text-xs text-destructive">{trainer.error}</p>}
-          <p className="mt-1 text-xs text-muted-foreground">Then press Save changes. Skip anything that is a normal word you say often, or she’ll wake up by mistake.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Then press Save changes. Only phrases of two words or more are kept: a single word (like “idbi”) would wake her whenever someone says it.</p>
         </div>
       </Section>
 

@@ -90,6 +90,16 @@ Before proposing, she checks and tells you if:
 - a sale is only partly paid;
 - a device has been in for repair before.
 
+## When something fails
+
+Anthropic seals each of DB's thinking steps to the exact instructions it was made with,
+so any change to her settings, learnings, prompt or model used to make every saved
+conversation fail with **"AI service error (400)"**. Each request now asks Anthropic to
+drop stale thinking instead (`thinking.block_binding.prefix_mismatch_behavior:
+"drop_block"`, beta `thinking-binding-controls-2026-08-01`). A turn that fails before
+any answer is not saved, so one error can't leave a conversation stuck, and the error
+shown includes Anthropic's reason. If an error repeats, start a new conversation with **+**.
+
 ## Brain (model) and skills
 
 Settings → DB Assistant → **Brain**: Opus 5.5 (high, ≈₹3–8 a conversation), Sonnet 5.5
@@ -166,7 +176,8 @@ you* (default "Boss"). "DB" is hard for speech
 recognition, so the listener checks the recogniser's top 5 guesses against a list of
 known mishearings (IDBI, TP, TB, DP, TV, the bee…) and the phrases in settings.
 *Teach DB her name* listens to you say "Hi DB" and adds whatever the browser heard
-as wake phrases. While the ERP is open
+as wake phrases. Only phrases of two or more words are kept (a single word like "idbi"
+would wake her whenever someone says "IDBI bank"). While the ERP is open
 on screen, a green dot on her button means she is waiting for it; she then opens,
 listens, and keeps listening after each reply until you go quiet. The wait for the
 wake phrase uses the browser's free recogniser. Only one recogniser ever runs: it

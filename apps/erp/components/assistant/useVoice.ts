@@ -352,7 +352,8 @@ const JOINED = ['hdb', 'heydb', 'hidb', 'hedb', 'haydb', 'hellodb', 'okdb', 'hit
 export function wakeMatches(heard: string, phrases: string[]) {
   const h = ` ${norm(heard)} `
   if (JOINED.some((j) => h.includes(` ${j} `))) return true
-  if (phrases.map(norm).filter(Boolean).some((p) => h.includes(` ${p} `))) return true
+  // Two-word phrases only: a single word like "idbi" would wake her on "IDBI bank".
+  if (phrases.map(norm).filter((p) => p.includes(' ')).some((p) => h.includes(` ${p} `))) return true
   return NAME_RE.test(h.trim())
 }
 
@@ -481,7 +482,7 @@ export function useNameTrainer() {
         releaseMic()
         setListening(false)
         window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false }))
-        const fresh = got.filter((g) => g && g.split(' ').length <= 4)
+        const fresh = got.filter((g) => g && g.includes(' ') && g.split(' ').length <= 4)
         if (!fresh.length) setError((x) => x || 'Didn’t hear anything. Tap and say “Hi DB” clearly.')
         setHeard((prev) => [...new Set([...prev, ...fresh])])
       }

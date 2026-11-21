@@ -87,7 +87,7 @@ export async function PUT(req: NextRequest) {
   if (typeof body.speak_replies === 'boolean') patch.speak_replies = body.speak_replies
   if (typeof body.wake_word === 'boolean') patch.wake_word = body.wake_word
   if (Array.isArray(body.wake_phrases)) {
-    patch.wake_phrases = [...new Set(body.wake_phrases.map((x: unknown) => String(x).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x: string) => x.length >= 2))].slice(0, 30) as string[]
+    patch.wake_phrases = [...new Set(body.wake_phrases.map((x: unknown) => String(x).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x: string) => x.length >= 2 && x.includes(' ')))].slice(0, 30) as string[] // two words or more: a single word ("idbi") wakes her on everyday talk
   }
   if (TONES.includes(body.tone)) patch.tone = body.tone
   if (REPLY_LENGTHS.includes(body.reply_length)) patch.reply_length = body.reply_length
