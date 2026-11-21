@@ -154,7 +154,15 @@ is skipped rather than dropping everything.
 **Personality:** very casual (default), friendly, or professional. She is always serious
 while reading back money, on errors, and in anything sent to a customer.
 
-**"Hey DB" / "DB, suno":** switch on the wake word in settings. "DB" is hard for speech
+**"Hey DB" / "DB, suno":** switch on the wake word in settings. She listens for it
+whenever she is idle — with her panel closed **or open** (an earlier version paused it
+while the docked panel was open, so it almost never listened). When woken she answers
+with the *wake answer* ("Yes Boss?" by default, cached after the first play so it is
+instant and free) and starts a conversation. Only one recogniser runs at a time: her
+own listening, the stop listener and the name trainer take the mic from the wake
+listener and it waits until they are done. The browser console logs what the wake
+listener hears (`[DB wake] heard …` / `woke on …`). She addresses you by *She calls
+you* (default "Boss"). "DB" is hard for speech
 recognition, so the listener checks the recogniser's top 5 guesses against a list of
 known mishearings (IDBI, TP, TB, DP, TV, the bee…) and the phrases in settings.
 *Teach DB her name* listens to you say "Hi DB" and adds whatever the browser heard

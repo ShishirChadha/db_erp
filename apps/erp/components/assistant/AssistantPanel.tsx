@@ -69,6 +69,7 @@ interface PanelConfig {
   continuous: boolean
   idleSeconds: number
   gate: VoiceGate
+  wakeReply: string
 }
 
 // Shown only to DB's master: /api/assistant/config answers 403 for anyone
@@ -96,6 +97,7 @@ export function AssistantLauncher() {
         continuous: s.continuous_conversation !== false,
         idleSeconds: Number(s.conversation_idle_seconds) || 15,
         gate: s.voice_gate || 'medium',
+        wakeReply: typeof s.wake_reply === 'string' ? s.wake_reply : 'Yes Boss?',
       })
     }).catch(() => setConfig(null))
   }, [])
@@ -109,9 +111,11 @@ export function AssistantLauncher() {
     return () => { window.removeEventListener('db-assistant-settings', onChange); window.removeEventListener('db-wake-pause', onPause) }
   }, [load])
 
-  // Paused while the panel is open: the panel uses the mic itself, and two
-  // speech recognisers on one page cancel each other in a loop.
-  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], open || busyVoice || externalPause, () => {
+  // Listens whenever DB is idle -- panel open or closed (the panel is meant to
+  // stay docked beside the ERP). Paused while she listens, thinks, speaks or a
+  // conversation is running; useVoice also hands the mic over explicitly so two
+  // recognisers never run at once.
+  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], busyVoice || externalPause, () => {
     setOpen(true)
     setWakeKey((k) => k + 1)
   })
@@ -134,15 +138,15 @@ export function AssistantLauncher() {
       )}
       {open && (
         <aside className="fixed inset-0 z-50 flex flex-col bg-background md:relative md:inset-auto md:z-auto md:h-dvh md:w-[380px] md:shrink-0 md:border-l xl:w-[420px]">
-          <AssistantConversation config={config} wakeKey={wakeKey} onVoiceBusy={setBusyVoice} onClose={() => setOpen(false)} />
+          <AssistantConversation config={config} wakeKey={wakeKey} wakeActive={wake.active} onVoiceBusy={setBusyVoice} onClose={() => { setOpen(false); setWakeKey(0) }} />
         </aside>
       )}
     </>
   )
 }
 
-function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
-  config: PanelConfig; wakeKey: number; onVoiceBusy: (b: boolean) => void; onClose: () => void
+function AssistantConversation({ config, wakeKey, wakeActive, onVoiceBusy, onClose }: {
+  config: PanelConfig; wakeKey: number; wakeActive: boolean; onVoiceBusy: (b: boolean) => void; onClose: () => void
 }) {
   const [threadId, setThreadId] = useState<string | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
@@ -258,7 +262,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
   const voice = useVoice({ listen: config.listen, speak: config.speak, speakReplies: voiceOn, gate: config.gate }, onHeard, onNothing)
   voiceRef.current = voice
 
-  useEffect(() => { onVoiceBusy(voice.listening || voice.speaking || voice.transcribing || busy) }, [voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
+  useEffect(() => { onVoiceBusy(convo || voice.listening || voice.speaking || voice.transcribing || busy) }, [convo, voice.listening, voice.speaking, voice.transcribing, busy, onVoiceBusy])
   useEffect(() => () => { onVoiceBusy(false); if (retryTimer.current) clearTimeout(retryTimer.current) }, [onVoiceBusy])
 
   // "Stop" / "bas" / "pata hai" while she talks: she stops at once. In a
@@ -288,12 +292,19 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
     voiceRef.current?.start()
   }, [])
 
-  // Woken by "Hey DB": start a conversation once the wake listener has
-  // released the mic (it is stopping as the panel opens).
+  // Woken by "Hey DB": answer "Yes Boss?" (cached audio after the first time,
+  // so it is instant and free) and start a conversation.
   useEffect(() => {
     if (wakeKey === 0) return
-    const t = setTimeout(startConvo, 500)
-    return () => clearTimeout(t)
+    let cancelled = false
+    convoRef.current = true
+    setConvo(true)
+    setRested(false)
+    const t = setTimeout(async () => {
+      if (voiceOn && config.wakeReply.trim()) await voiceRef.current?.speak(config.wakeReply, undefined, true)
+      if (!cancelled && convoRef.current) startConvo()
+    }, 300)
+    return () => { cancelled = true; clearTimeout(t) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wakeKey])
 
@@ -332,7 +343,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
 
   const ready = !!setup?.ready
   const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
-  const statusLine = voice.speaking ? 'Speaking… say “stop” or press Esc to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : 'Online'
+  const statusLine = voice.speaking ? 'Speaking… say “stop” or press Esc to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : 'Online'
 
   return (
     <div className="flex h-full flex-col bg-gradient-to-b from-primary/5 via-background to-background">

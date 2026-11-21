@@ -63,6 +63,8 @@ export interface AssistantSettings {
   wake_phrases: string[]
   hinglish_script: 'devanagari' | 'roman'
   tone: Tone
+  call_me: string // how she addresses him ("Boss")
+  wake_reply: string // what she says when woken by the wake word
   reply_length: ReplyLength
   write_skills: WriteSkill[]
   // Conversation mode: after she answers, she listens again by herself until
@@ -91,6 +93,8 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   wake_phrases: ['hey db', 'hi db', 'db suno', 'suno db', 'hello db', 'hi tp', 'hey tp', 'hi idbi'],
   hinglish_script: 'devanagari',
   tone: 'casual',
+  call_me: 'Boss',
+  wake_reply: 'Yes Boss?',
   reply_length: 'short',
   write_skills: [...ALL_WRITE_SKILLS],
   continuous_conversation: true,

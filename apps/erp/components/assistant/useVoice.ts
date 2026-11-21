@@ -82,6 +82,22 @@ export function createMeter(stream: MediaStream, levelRef: { current: number }) 
 
 const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
 
+// One speech recogniser per page at a time. The "Hey DB" listener runs whenever
+// DB is idle (panel open or closed); anything else that needs the mic -- her
+// listening, the "stop" listener, the name trainer -- first takes it from the
+// wake listener and marks it busy, and the wake listener waits until it is free.
+const mic = { wake: null as any, busy: 0, since: 0 }
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+async function takeMic() {
+  mic.busy++
+  mic.since = Date.now()
+  if (mic.wake) { try { mic.wake.abort() } catch {} mic.wake = null; await sleep(250) }
+}
+function releaseMic() { mic.busy = Math.max(0, mic.busy - 1) }
+
+// Short fixed lines ("Yes Boss?") are fetched once and replayed instantly.
+const audioCache = new Map<string, string>()
+
 export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (why: NothingReason, dropped?: Dropped) => void) {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
@@ -119,10 +135,12 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   // ---------------------------------------------------------------- listen
   const listenSarvam = useCallback(async () => {
     setMicError(null)
+    await takeMic()
     let stream: MediaStream
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: MIC })
     } catch {
+      releaseMic()
       setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
       nothingRef.current?.('error')
       return
@@ -154,6 +172,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
     recorder.onstop = async () => {
       meter.stop()
+      releaseMic()
       setListening(false)
       stopRef.current = null
       if (cancelledRef.current) return
@@ -188,6 +207,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     const Ctor = browserRecognitionCtor()
     if (!Ctor) return
     setMicError(null)
+    await takeMic()
     // A second, raw-level stream only to measure loudness; recognition still
     // works if it can't be opened.
     let meter: ReturnType<typeof createMeter> | null = null
@@ -213,6 +233,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
     }
     rec.onend = () => {
+      releaseMic()
       const measured = !!meter && meter.working()
       const peak = measured ? meter!.peak() : 1
       meter?.stop()
@@ -232,6 +253,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     }
     stopRef.current = () => { try { rec.stop() } catch {} }
     try { rec.start() } catch {
+      releaseMic()
       meter?.stop(); stopRef.current = null
       setMicError('The microphone is busy. Try the mic button again.')
       nothingRef.current?.('error')
@@ -266,7 +288,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
   // Resolves when she has finished speaking (or was interrupted), so a
   // conversation can start listening again right after.
-  const speak = useCallback((text: string, preview?: VoicePreview) => new Promise<void>((resolve) => {
+  const speak = useCallback((text: string, preview?: VoicePreview, cache = false) => new Promise<void>((resolve) => {
     if (!text.trim() || (!cfgRef.current.speakReplies && !preview)) { resolve(); return }
     stopSpeaking()
     setSpeaking(true)
@@ -274,10 +296,13 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     speakDone.current = end
     const provider = preview?.provider || cfgRef.current.speak
     if (provider === 'browser') { speakBrowser(text, end); return }
-    apiFetch('/api/assistant/speak', { method: 'POST', body: JSON.stringify({ text, ...(preview || {}) }), timeoutMs: 40_000 })
+    const key = `${provider}|${text}`
+    const cached = cache ? audioCache.get(key) : undefined
+    ;(cached ? Promise.resolve({ ok: true, json: async () => ({ audio: cached }) } as unknown as Response) : apiFetch('/api/assistant/speak', { method: 'POST', body: JSON.stringify({ text, ...(preview || {}) }), timeoutMs: 40_000 }))
       .then(async (res) => {
         const j = await res.json()
         if (!res.ok || !j.audio) throw new Error(j.error || 'no audio')
+        if (cache) audioCache.set(key, j.audio)
         if (speakDone.current !== end) return // interrupted meanwhile
         const audio = new Audio(`data:audio/mpeg;base64,${j.audio}`)
         audioRef.current = audio
@@ -319,10 +344,14 @@ const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'language-no
 const MAX_FAILURES = 6
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{M}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim()
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-const NAME_RE = new RegExp(`(?:^| )(?:hey|hi|hii|hai|hello|helo|ok|okay|o|suno|are|arre|हाय|हे|हेलो|हैलो|ओके|सुनो|अरे) (?:${NAME_VARIANTS.map(escapeRe).join('|')})(?: |$)|(?:^| )(?:${NAME_VARIANTS.map(escapeRe).join('|')}) (?:suno|सुनो)(?: |$)`)
+const NAME_RE = new RegExp(`(?:^| )(?:hey|hay|he|hei|a|ay|ae|hi|hii|hai|hello|helo|ok|okay|o|suno|are|arre|हाय|हे|हेलो|हैलो|ओके|सुनो|अरे) (?:${NAME_VARIANTS.map(escapeRe).join('|')})(?: |$)|(?:^| )(?:${NAME_VARIANTS.map(escapeRe).join('|')}) (?:suno|सुनो)(?: |$)`)
+
+// "Hey DB" run together into one word by the recogniser.
+const JOINED = ['hdb', 'heydb', 'hidb', 'hedb', 'haydb', 'hellodb', 'okdb', 'hitp', 'heytp', 'hiidb']
 
 export function wakeMatches(heard: string, phrases: string[]) {
   const h = ` ${norm(heard)} `
+  if (JOINED.some((j) => h.includes(` ${j} `))) return true
   if (phrases.map(norm).filter(Boolean).some((p) => h.includes(` ${p} `))) return true
   return NAME_RE.test(h.trim())
 }
@@ -353,6 +382,8 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
     }
     const begin = () => {
       if (disposed || rec || document.visibilityState !== 'visible') return
+      if (mic.busy > 0 && Date.now() - mic.since > 90_000) mic.busy = 0 // a holder that never let go; no listen lasts 90s
+      if (mic.busy > 0) { schedule(800); return } // DB is using the mic; try again shortly (not a failure)
       const r = new Ctor()
       r.lang = 'en-IN'
       r.continuous = true
@@ -365,7 +396,15 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
         failures = 0
         for (let i = e.resultIndex; i < e.results.length; i++) {
           for (let a = 0; a < e.results[i].length; a++) {
-            if (wakeMatches(e.results[i][a].transcript, phrases)) { woke = true; try { r.abort() } catch {} return }
+            if (wakeMatches(e.results[i][a].transcript, phrases)) {
+              // eslint-disable-next-line no-console
+              console.info(`[DB wake] woke on "${e.results[i][a].transcript}"`)
+              woke = true; try { r.abort() } catch {} return
+            }
+          }
+          if (e.results[i].isFinal) {
+            // eslint-disable-next-line no-console
+            console.info(`[DB wake] heard "${e.results[i][0].transcript}" (not a wake phrase)`)
           }
         }
       }
@@ -376,9 +415,11 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       }
       r.onend = () => {
         if (rec === r) rec = null
+        if (mic.wake === r) mic.wake = null
         setActive(false)
         if (woke) { wakeRef.current(); return } // the panel opens and pauses this hook
         if (disposed) return
+        if (mic.busy > 0) { schedule(800); return } // taken by DB's own listening, not an error
         if (errored || Date.now() - startedAt < 3000) {
           failures++
           if (failures >= MAX_FAILURES) { giveUp('“Hey DB” stopped after repeated errors. Reload the page to try again.'); return }
@@ -388,7 +429,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
         }
       }
       rec = r
-      try { r.start(); setActive(true) } catch { rec = null; failures++; schedule(2000) }
+      try { r.start(); mic.wake = r; setActive(true) } catch { rec = null; failures++; schedule(2000) }
     }
     const onVis = () => {
       if (document.visibilityState === 'visible') schedule(300)
@@ -401,6 +442,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       document.removeEventListener('visibilitychange', onVis)
       if (timer) clearTimeout(timer)
       try { rec?.abort() } catch {}
+      if (mic.wake === rec) mic.wake = null
       setActive(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -423,8 +465,8 @@ export function useNameTrainer() {
     if (!Ctor) { setError('This browser has no speech recognition. Use Chrome.'); return }
     setError(null)
     window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: true }))
-    // Give the wake listener a moment to release the mic.
-    setTimeout(() => {
+    // Take the mic from the wake listener first.
+    takeMic().then(() => {
       const r = new Ctor()
       r.lang = 'en-IN'
       r.continuous = false
@@ -436,14 +478,15 @@ export function useNameTrainer() {
       }
       r.onerror = (e: any) => { if (e.error !== 'no-speech' && e.error !== 'aborted') setError(`Could not listen (${e.error}).`) }
       r.onend = () => {
+        releaseMic()
         setListening(false)
         window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false }))
         const fresh = got.filter((g) => g && g.split(' ').length <= 4)
         if (!fresh.length) setError((x) => x || 'Didn’t hear anything. Tap and say “Hi DB” clearly.')
         setHeard((prev) => [...new Set([...prev, ...fresh])])
       }
-      try { r.start(); setListening(true) } catch { setError('Microphone busy, try again.'); window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false })) }
-    }, 400)
+      try { r.start(); setListening(true) } catch { releaseMic(); setError('Microphone busy, try again.'); window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false })) }
+    })
   }, [])
   return { listening, heard, error, listen, clear: () => setHeard([]) }
 }
@@ -485,8 +528,10 @@ export function useStopWords(active: boolean, saying: string, onStop: () => void
     let rec: any = null
     let done = false
     let restarts = 0
-    const begin = () => {
+    let holding = false
+    const begin = async () => {
       if (done || restarts > 3) return
+      if (!holding) { holding = true; await takeMic(); if (done) { holding = false; releaseMic(); return } }
       const r = new Ctor()
       r.lang = 'en-IN'
       r.continuous = true
@@ -511,6 +556,6 @@ export function useStopWords(active: boolean, saying: string, onStop: () => void
       try { r.start() } catch { rec = null }
     }
     const t = setTimeout(begin, 250)
-    return () => { done = true; clearTimeout(t); try { rec?.abort() } catch {} }
+    return () => { done = true; clearTimeout(t); try { rec?.abort() } catch {} if (holding) { holding = false; releaseMic() } }
   }, [active])
 }

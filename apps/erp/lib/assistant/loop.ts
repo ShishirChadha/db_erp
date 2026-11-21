@@ -61,7 +61,7 @@ export async function runAssistantTurn(params: {
   const tools = assistantTools(settings.read_modules, settings.write_skills)
   const [fx, learnings] = await Promise.all([liveUsdInr(), generalLearnings()])
   const usdInr = fx.rate
-  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills)
+  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills, settings.call_me)
   // Haiku 5.5 has no server-side fallback model; only ask for one elsewhere.
   const fallback = settings.model === 'claude-haiku-5-5' ? {} : { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
   let spoke = false

@@ -177,6 +177,8 @@ export default function AssistantSettingsManager() {
       wake_phrases: String(s.wake_phrases_text || '').split(',').map((x: string) => x.trim()).filter(Boolean),
       hinglish_script: s.hinglish_script,
       tone: s.tone,
+      call_me: s.call_me,
+      wake_reply: s.wake_reply,
       reply_length: s.reply_length,
       write_skills: s.write_skills,
       continuous_conversation: s.continuous_conversation,
@@ -385,6 +387,17 @@ export default function AssistantSettingsManager() {
           ))}
         </div>
         <p className="text-xs text-muted-foreground">She is always serious while reading back money, when something fails, and in anything that goes to a customer.</p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="space-y-1">
+            <Label className="text-xs">She calls you</Label>
+            <Input value={s.call_me ?? ''} onChange={(e) => set('call_me', e.target.value)} placeholder="Boss" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">When you say “Hey DB”, she answers</Label>
+            <Input value={s.wake_reply ?? ''} onChange={(e) => set('wake_reply', e.target.value)} placeholder="Yes Boss?" />
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">The wake answer is played from memory after the first time, so it is instant and costs nothing. Leave it empty to have her just start listening.</p>
         <Label className="text-xs">How much she says</Label>
         <div className="space-y-1 text-sm">
           <label className="flex items-center gap-2">

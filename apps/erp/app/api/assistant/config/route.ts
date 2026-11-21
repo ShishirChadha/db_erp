@@ -91,6 +91,8 @@ export async function PUT(req: NextRequest) {
   }
   if (TONES.includes(body.tone)) patch.tone = body.tone
   if (REPLY_LENGTHS.includes(body.reply_length)) patch.reply_length = body.reply_length
+  if (typeof body.call_me === 'string') patch.call_me = body.call_me.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 30) || 'Boss'
+  if (typeof body.wake_reply === 'string') patch.wake_reply = body.wake_reply.replace(/\s+/g, ' ').trim().slice(0, 60)
   if (Array.isArray(body.write_skills)) patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]
   if (VOICE_GATES.includes(body.voice_gate)) patch.voice_gate = body.voice_gate
   if (typeof body.continuous_conversation === 'boolean') patch.continuous_conversation = body.continuous_conversation
