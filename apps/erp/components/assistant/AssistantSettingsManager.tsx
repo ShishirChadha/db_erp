@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { Loader2, Play, Trash2, ExternalLink, Mic, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -8,8 +8,9 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { apiFetch } from '@/lib/api-client'
+import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
-import { useVoice, useNameTrainer, type SpeakProvider } from './useVoice'
+import { useVoice, useNameTrainer, createMeter, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
 // answers 403 to everyone else). Stacked sections, no tab strip.
@@ -84,6 +85,52 @@ function KeyField({ label, configured, fromEnv, value, onChange, placeholder, on
           {configured && <Button variant="outline" size="sm" onClick={onRemove}>Remove</Button>}
         </div>
       )}
+    </div>
+  )
+}
+
+// Live mic level for 10 seconds against the filter levels, so the owner can
+// see where his normal voice lands (and where the room noise is).
+function MicCheck({ gate }: { gate: VoiceGate }) {
+  const [on, setOn] = useState(false)
+  const [peak, setPeak] = useState(0)
+  const [err, setErr] = useState<string | null>(null)
+  const bar = useRef<HTMLDivElement>(null)
+  const max = 0.08 // full width of the bar
+  const start = async () => {
+    setErr(null); setPeak(0)
+    let meter: ReturnType<typeof createMeter>
+    try {
+      meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }), { current: 0 })
+    } catch { setErr('Microphone permission is blocked.'); return }
+    setOn(true)
+    let top = 0
+    const t0 = Date.now()
+    const tick = () => {
+      const l = meter.read()
+      top = Math.max(top, l)
+      if (bar.current) bar.current.style.width = `${Math.min(100, (l / max) * 100)}%`
+      if (Date.now() - t0 < 10_000) requestAnimationFrame(tick)
+      else { meter.stop(); setOn(false); setPeak(top); if (!meter.working()) setErr('The mic read pure silence: check the input device in your Mac’s sound settings.') }
+    }
+    requestAnimationFrame(tick)
+  }
+  const mark = (v: number) => `${Math.min(100, (v / max) * 100)}%`
+  return (
+    <div className="rounded-md bg-muted p-3 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-medium text-sm">Mic check</span>
+        <Button variant="outline" size="sm" onClick={start} disabled={on}><Mic className="mr-1 h-3.5 w-3.5" />{on ? 'Talk normally…' : 'Test for 10 s'}</Button>
+      </div>
+      <div className="relative mt-2 h-3 overflow-hidden rounded-full bg-background">
+        <div ref={bar} className="h-full w-0 rounded-full bg-emerald-500 transition-[width] duration-75" />
+        {(['low', 'medium', 'high'] as const).map((g) => (
+          <div key={g} className={cn('absolute top-0 h-full w-0.5', g === gate ? 'bg-foreground' : 'bg-muted-foreground/40')} style={{ left: mark(GATE_LEVEL[g]) }} title={g} />
+        ))}
+      </div>
+      <p className="mt-1 text-muted-foreground">Lines: low · medium · high (the dark one is your setting). Your normal voice should go well past it; room noise and people across the room should stay below.</p>
+      {peak > 0 && <p className="mt-1">Your loudest: {peak.toFixed(3)} — {peak < GATE_LEVEL[gate] ? <b className="text-destructive">below your setting, she would ignore you: pick a lower level</b> : 'fine for your setting'}.</p>}
+      {err && <p className="mt-1 text-destructive">{err}</p>}
     </div>
   )
 }
@@ -347,8 +394,9 @@ export default function AssistantSettingsManager() {
         <p className="text-xs text-muted-foreground">
           Works on loudness: speech quieter than this, lone “hmm/uh”, and words the recogniser is unsure of are dropped, and she keeps listening.
           It can’t tell your voice from someone standing right next to you. That needs voice-print matching, which adds roughly half a second to every sentence and a paid service, so it is not switched on.
-          If she misses you when you speak softly, lower this.
+          If she misses you when you speak softly, lower this. Anything she ignores shows up in her panel with a “That was me, send it” button.
         </p>
+        <MicCheck gate={s.voice_gate} />
       </Section>
 
       <Section title="What DB can read" hint="Switch on the parts of the ERP DB may look at to answer your questions (“aaj ki sale?”, “kitne 840 G6 ready hain?”, “kiske payments due hain?”). She only reads; saving still needs your yes.">

@@ -1139,3 +1139,6 @@ Decisions:
 - The panel is a flex sibling of `<main>` in `app/dashboard/layout.tsx` on md+ (page shrinks beside it) and fixed full screen on phones; her avatar is SVG + CSS (no image/video/3D cost).
 - Wake word: top-5 recogniser alternatives + a list of known mishearings of "DB", plus "Teach DB her name" which saves whatever the browser heard as wake phrases.
 - Dollar rate is fetched (`lib/assistant/fx.ts`, ECB via Frankfurter, ExchangeRate-API fallback, 6 h cache); the `usd_inr` setting is gone. Anthropic exposes no balance API even to Admin keys, so the balance is linked, not shown; an optional top-up-based estimate remains.
+
+**DB follow-up: 1-hour cache for her instructions only; voice filter made fail-visible.** (2026-11-21)
+The tools + system prompt carry a 1h cache breakpoint; the top-level (history) breakpoint stays 5m — measured: 1h on the history wrote a stock report at 2× (₹2.27) where 5m/no-write cost ₹0.43. `recordClaudeUsage` prices 1h writes at 2× and 5m at 1.25× from `usage.cache_creation`. The first loudness thresholds (0.03–0.08 RMS) silently dropped normal speech on the owner's MacBook (panel opened, no turn ever sent); thresholds are now 0.008/0.015/0.03, the filter is skipped when the meter reads pure silence, and every dropped utterance is shown with a "send it" button.

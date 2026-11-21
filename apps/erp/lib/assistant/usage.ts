@@ -1,8 +1,8 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 
 // List prices, per the Claude API model table (USD per million tokens) and
-// sarvam.ai/api-pricing (INR, pay-as-you-go), as of 2026-11. Cache writes
-// (5-minute) are 1.25x the input price. Update here if a provider changes price.
+// sarvam.ai/api-pricing (INR, pay-as-you-go), as of 2026-11. Cache writes are
+// 1.25x the input price for the 5-minute cache and 2x for the 1-hour cache. Update here if a provider changes price.
 export const CLAUDE_PRICES: Record<string, { input: number; output: number; cacheRead: number }> = {
   'claude-opus-5-5': { input: 4, output: 20, cacheRead: 0.2 },
   'claude-sonnet-5-5': { input: 2, output: 10, cacheRead: 0.1 },
@@ -15,14 +15,19 @@ const SARVAM_TTS_INR_PER_1K = { 'bulbul:v4-flash': 2, 'bulbul:v3': 3 } as const
 
 export async function recordClaudeUsage(p: {
   profileId: string; threadId: string; model: string; usdInr: number
-  usage: { input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }
+  usage: {
+    input_tokens?: number | null; output_tokens?: number | null; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null
+    cache_creation?: { ephemeral_5m_input_tokens?: number | null; ephemeral_1h_input_tokens?: number | null } | null
+  }
 }) {
   const price = CLAUDE_PRICES[p.model] || CLAUDE_PRICES['claude-opus-5-5']
   const input = p.usage.input_tokens || 0
   const output = p.usage.output_tokens || 0
   const read = p.usage.cache_read_input_tokens || 0
   const write = p.usage.cache_creation_input_tokens || 0
-  const usd = (input * price.input + output * price.output + read * price.cacheRead + write * price.input * 1.25) / 1_000_000
+  const write1h = Math.min(write, p.usage.cache_creation?.ephemeral_1h_input_tokens || 0)
+  const write5m = write - write1h
+  const usd = (input * price.input + output * price.output + read * price.cacheRead + write5m * price.input * 1.25 + write1h * price.input * 2) / 1_000_000
   await supabaseAdmin.from('assistant_usage').insert({
     profile_id: p.profileId, thread_id: p.threadId, provider: 'anthropic', model: p.model,
     input_tokens: input, output_tokens: output, cache_read_tokens: read, cache_write_tokens: write,

@@ -119,7 +119,12 @@ speaks interrupts her; tapping while you speak sends straight away.
 level). Speech quieter than the *Ignore far-away voices* level (off/low/medium/high),
 lone fillers ("hmm", "uh") and low-confidence browser results are dropped and she keeps
 listening. It cannot tell your voice from someone right next to you — that needs
-voice-print matching (paid, adds latency), which is deliberately not used.
+voice-print matching (paid, adds latency), which is deliberately not used. Nothing is
+dropped silently: ignored speech appears in her panel with **That was me, send it**, and
+Settings has a 10-second **Mic check** showing where your voice lands against the levels.
+The browser console logs each listen (`[DB] heard … peak … -> sent/too_quiet`). If the
+mic level can't be measured (suspended audio, muted second stream) the loudness filter
+is skipped rather than dropping everything.
 
 **Personality:** very casual (default), friendly, or professional. She is always serious
 while reading back money, on errors, and in anything sent to a customer.
@@ -147,6 +152,10 @@ cancelled each other in a loop until Chrome closed.
   itself is only on Anthropic's billing page; an optional estimate (credit loaded
   minus billed spend) is tucked under the section. Admin keys exist only for team
   organizations (Console → Settings → Organization → *Convert to team*).
+- **Prompt cache:** her instructions and tool list are cached for 1 hour (owner's
+  choice), so the first message after a break costs ~₹0.20 instead of ~₹2.50; the
+  conversation history keeps the normal 5-minute cache (writing large report results
+  at the 1-hour rate cost more than it saved).
 - **Dollar rate** is fetched automatically (European Central Bank via Frankfurter,
   ExchangeRate-API as backup, refreshed every 6 hours) — nothing to enter.
 - **DB's own usage (live):** every request she makes is costed the moment it

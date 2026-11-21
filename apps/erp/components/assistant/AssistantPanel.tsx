@@ -6,7 +6,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, type SpeakProvider, type VoiceGate, type NothingReason } from './useVoice'
+import { useVoice, useWakeWord, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 
 // DB, the owner's voice secretary. Her button (her face) floats on every
@@ -154,6 +154,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
   const [voiceOn, setVoiceOn] = useState(config.speakReplies)
   const [convo, setConvo] = useState(false)
   const [rested, setRested] = useState(false)
+  const [dropped, setDropped] = useState<Dropped | null>(null)
   const convoRef = useRef(false)
   const lastHeard = useRef(0)
   const errors = useRef(0)
@@ -229,6 +230,7 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
   }, [busy, threadId, voiceOn, endConvo, listenAgain])
 
   const onHeard = useCallback((text: string, lang: string | null) => {
+    setDropped(null)
     lastHeard.current = Date.now()
     errors.current = 0
     if (convoRef.current && END_RE.test(text.trim())) endAfterReply.current = true
@@ -237,7 +239,8 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
 
   // Nothing usable heard. In a conversation, keep listening until the quiet
   // window runs out; repeated mic errors end it (never a tight retry loop).
-  const onNothing = useCallback((why: NothingReason) => {
+  const onNothing = useCallback((why: NothingReason, d?: Dropped) => {
+    if (d && d.reason !== 'filler') setDropped(d)
     if (!convoRef.current) return
     if (why === 'error') {
       errors.current++
@@ -370,6 +373,17 @@ function AssistantConversation({ config, wakeKey, onVoiceBusy, onClose }: {
         ))}
 
         {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-sm italic text-muted-foreground">{voice.interim}</p></div>}
+        {dropped && !voice.interim && (
+          <div className="flex justify-end">
+            <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-sm text-muted-foreground">
+              <p className="italic">“{dropped.text}”</p>
+              <p className="mt-1 text-xs">
+                {dropped.reason === 'too_quiet' ? 'Ignored: sounded far away (Settings → Ignore far-away voices).' : 'Ignored: I wasn’t sure I heard that right.'}{' '}
+                <button type="button" className="font-medium text-foreground underline" onClick={() => { const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t) }}>That was me, send it</button>
+              </p>
+            </div>
+          </div>
+        )}
         {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-sm text-destructive">{voice.micError}</p>}
         {error && <p className="rounded-xl bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
       </div>

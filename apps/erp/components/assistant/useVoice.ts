@@ -28,15 +28,20 @@ export interface VoiceConfig {
 }
 export interface VoicePreview { provider: SpeakProvider; voice: string; pace: number }
 export type NothingReason = 'silence' | 'ignored' | 'error'
+// What was dropped and why, so the panel can show it and offer "send it".
+export interface Dropped { text: string; reason: 'too_quiet' | 'unsure' | 'filler'; peak: number; confidence: number }
 
 type Final = (text: string, language: string | null) => void
 
 const SILENCE_MS = 1300 // pause that ends a sentence
 const NO_SPEECH_MS = 7000 // gave up waiting for him to start
 const MAX_MS = 28000 // Sarvam's sync limit is 30s per clip
-// Peak RMS (0..1) the speech must reach. Someone talking to the laptop from
-// arm's length is typically 0.08-0.25; across the room 0.02-0.05.
-export const GATE_LEVEL: Record<VoiceGate, number> = { off: 0, low: 0.03, medium: 0.05, high: 0.08 }
+// Peak RMS (0..1, raw mic, auto-gain off) the speech must reach. Measured
+// levels vary a lot by laptop and mic, so these are deliberately lenient;
+// Settings has a live mic check to pick one. (The first version used 0.03-0.08
+// and dropped normal speech on a MacBook.)
+export const GATE_LEVEL: Record<VoiceGate, number> = { off: 0, low: 0.008, medium: 0.015, high: 0.03 }
+const MIN_CONFIDENCE = 0.2
 const FILLERS = new Set(['hmm', 'hm', 'hmmm', 'mm', 'mmm', 'uh', 'uhh', 'um', 'umm', 'ah', 'huh', 'er'])
 
 export function isFiller(text: string) {
@@ -45,8 +50,10 @@ export function isFiller(text: string) {
 }
 
 // Live mic level for the waveform ring, plus the loudest moment of a listen.
-function createMeter(stream: MediaStream, levelRef: { current: number }) {
+export function createMeter(stream: MediaStream, levelRef: { current: number }) {
   const ctx = new AudioContext()
+  ctx.resume().catch(() => {})
+  let signal = false // any non-silent sample at all: false = meter not working
   const analyser = ctx.createAnalyser()
   analyser.fftSize = 1024
   ctx.createMediaStreamSource(stream).connect(analyser)
@@ -57,20 +64,25 @@ function createMeter(stream: MediaStream, levelRef: { current: number }) {
     analyser.getByteTimeDomainData(buf)
     let sum = 0
     for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v }
-    return Math.sqrt(sum / buf.length)
+    const rms = Math.sqrt(sum / buf.length)
+    if (rms > 0.0005) signal = true
+    return rms
   }
   const loop = () => { const r = read(); peak = Math.max(peak, r); levelRef.current = r; raf = requestAnimationFrame(loop) }
   raf = requestAnimationFrame(loop)
   return {
     read,
     peak: () => peak,
+    // A suspended AudioContext or a muted second stream reads pure silence;
+    // then the loudness filter must not be applied at all.
+    working: () => ctx.state === 'running' && signal,
     stop: () => { cancelAnimationFrame(raf); levelRef.current = 0; stream.getTracks().forEach((t) => t.stop()); ctx.close().catch(() => {}) },
   }
 }
 
 const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
 
-export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (why: NothingReason) => void) {
+export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (why: NothingReason, dropped?: Dropped) => void) {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [interim, setInterim] = useState('')
@@ -115,7 +127,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       nothingRef.current?.('error')
       return
     }
-    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.02)
+    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.006)
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const chunks: Blob[] = []
@@ -136,7 +148,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     stopRef.current = finish
     timer = window.setInterval(() => {
       const now = Date.now()
-      if (meter.read() > gate) { heard = true; lastVoice = now }
+      if (meter.read() > gate || (!meter.working() && now - started > 300)) { heard = true; lastVoice = now }
       if ((heard && now - lastVoice > SILENCE_MS) || (!heard && now - started > NO_SPEECH_MS) || now - started > MAX_MS) finish()
     }, 50)
 
@@ -157,7 +169,8 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error || 'Could not understand that.')
         if (cancelledRef.current) return
-        if (!j.text || isFiller(j.text)) nothingRef.current?.('ignored')
+        if (!j.text) nothingRef.current?.('silence')
+        else if (isFiller(j.text)) nothingRef.current?.('ignored', { text: j.text, reason: 'filler', peak: meter.peak(), confidence: 1 })
         else finalRef.current(j.text, j.language ?? null)
       } catch (err) {
         setMicError((err as Error).message)
@@ -200,7 +213,8 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
     }
     rec.onend = () => {
-      const peak = meter ? meter.peak() : 1
+      const measured = !!meter && meter.working()
+      const peak = measured ? meter!.peak() : 1
       meter?.stop()
       setListening(false)
       setInterim('')
@@ -210,7 +224,10 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       if (!text) { nothingRef.current?.(error && error !== 'no-speech' && error !== 'aborted' ? 'error' : 'silence'); return }
       const scored = confidences.filter((c) => c > 0)
       const confidence = scored.length ? scored.reduce((a, c) => a + c, 0) / scored.length : 1
-      if (isFiller(text) || (gate > 0 && peak < gate) || confidence < 0.4) { nothingRef.current?.('ignored'); return }
+      const reason = isFiller(text) ? 'filler' : (gate > 0 && peak < gate) ? 'too_quiet' : confidence < MIN_CONFIDENCE ? 'unsure' : null
+      // eslint-disable-next-line no-console
+      console.info(`[DB] heard "${text}" peak=${measured ? peak.toFixed(3) : 'n/a'} gate=${gate} confidence=${confidence.toFixed(2)} -> ${reason || 'sent'}`)
+      if (reason) { nothingRef.current?.('ignored', { text, reason, peak, confidence }); return }
       finalRef.current(text, null)
     }
     stopRef.current = () => { try { rec.stop() } catch {} }

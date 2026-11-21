@@ -68,10 +68,17 @@ export async function runAssistantTurn(params: {
         betas: ['server-side-fallback-2026-07-01'],
         fallbacks: 'default',
         output_config: { effort: 'low' },
-        // Tools + system are identical every turn, so they are cached; the
-        // top-level breakpoint also caches the growing history between steps.
+        // Tools + system are identical every turn: cached for 1 HOUR (owner's
+        // choice) -- he talks to DB on and off through the day, and with a
+        // 5-minute cache most first messages re-wrote ~11k tokens (~Rs 2.5).
+        // A 1h write costs 2x input instead of 1.25x, so it pays off whenever
+        // there is more than one conversation an hour.
+        // The growing history (tool results, replies) keeps the default
+        // 5-minute cache: it is only re-read within the same conversation, and
+        // writing big report results at the 2x rate cost more than it saved.
+        // (Order is valid: the longer-TTL breakpoint comes first.)
         cache_control: { type: 'ephemeral' },
-        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral', ttl: '1h' } }],
         tools,
         messages,
       })
