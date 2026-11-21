@@ -11,22 +11,66 @@ import { apiFetch } from '@/lib/api-client'
 //   speak 'sarvam' | 'azure' | 'google': /api/assistant/speak returns her voice
 //     as mp3 from that provider;
 //   'browser' for either is the free built-in speech, kept as a fallback.
+//
+// Not catching other people: every listen measures how loud the speech was
+// (raw mic level, auto-gain off). Speech quieter than the "ignore far-away
+// voices" level -- someone across the room, the TV -- is dropped, and so are
+// lone fillers ("hmm", "uh") and low-confidence browser results. Dropped speech
+// is reported as 'ignored', so a conversation just keeps listening.
 
 export type SpeakProvider = 'sarvam' | 'azure' | 'google' | 'browser'
+export type VoiceGate = 'off' | 'low' | 'medium' | 'high'
 export interface VoiceConfig {
   listen: 'sarvam' | 'browser'
   speak: SpeakProvider
   speakReplies: boolean
+  gate?: VoiceGate
 }
 export interface VoicePreview { provider: SpeakProvider; voice: string; pace: number }
+export type NothingReason = 'silence' | 'ignored' | 'error'
 
 type Final = (text: string, language: string | null) => void
 
 const SILENCE_MS = 1300 // pause that ends a sentence
 const NO_SPEECH_MS = 7000 // gave up waiting for him to start
 const MAX_MS = 28000 // Sarvam's sync limit is 30s per clip
+// Peak RMS (0..1) the speech must reach. Someone talking to the laptop from
+// arm's length is typically 0.08-0.25; across the room 0.02-0.05.
+export const GATE_LEVEL: Record<VoiceGate, number> = { off: 0, low: 0.03, medium: 0.05, high: 0.08 }
+const FILLERS = new Set(['hmm', 'hm', 'hmmm', 'mm', 'mmm', 'uh', 'uhh', 'um', 'umm', 'ah', 'huh', 'er'])
 
-export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: () => void) {
+export function isFiller(text: string) {
+  const t = text.toLowerCase().replace(/[^\p{L}\p{M}\p{N} ]/gu, '').trim()
+  return t.length < 2 || FILLERS.has(t)
+}
+
+// Live mic level for the waveform ring, plus the loudest moment of a listen.
+function createMeter(stream: MediaStream, levelRef: { current: number }) {
+  const ctx = new AudioContext()
+  const analyser = ctx.createAnalyser()
+  analyser.fftSize = 1024
+  ctx.createMediaStreamSource(stream).connect(analyser)
+  const buf = new Uint8Array(analyser.fftSize)
+  let peak = 0
+  let raf = 0
+  const read = () => {
+    analyser.getByteTimeDomainData(buf)
+    let sum = 0
+    for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v }
+    return Math.sqrt(sum / buf.length)
+  }
+  const loop = () => { const r = read(); peak = Math.max(peak, r); levelRef.current = r; raf = requestAnimationFrame(loop) }
+  raf = requestAnimationFrame(loop)
+  return {
+    read,
+    peak: () => peak,
+    stop: () => { cancelAnimationFrame(raf); levelRef.current = 0; stream.getTracks().forEach((t) => t.stop()); ctx.close().catch(() => {}) },
+  }
+}
+
+const MIC = { echoCancellation: true, noiseSuppression: true, autoGainControl: false }
+
+export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (why: NothingReason) => void) {
   const [listening, setListening] = useState(false)
   const [transcribing, setTranscribing] = useState(false)
   const [interim, setInterim] = useState('')
@@ -36,9 +80,14 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   finalRef.current = onFinal
   const nothingRef = useRef(onNothingHeard)
   nothingRef.current = onNothingHeard
+  const cfgRef = useRef(config)
+  cfgRef.current = config
   const stopRef = useRef<(() => void) | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
   const speakDone = useRef<(() => void) | null>(null)
+  const levelRef = useRef(0)
+  // Set by cancel(): the listen in progress ends without sending anything.
+  const cancelledRef = useRef(false)
 
   const browserRecognitionCtor = () =>
     typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -60,52 +109,43 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     setMicError(null)
     let stream: MediaStream
     try {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } })
+      stream = await navigator.mediaDevices.getUserMedia({ audio: MIC })
     } catch {
       setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
+      nothingRef.current?.('error')
       return
     }
+    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.02)
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const chunks: Blob[] = []
     recorder.ondataavailable = (e) => e.data.size && chunks.push(e.data)
-
-    const ctx = new AudioContext()
-    const analyser = ctx.createAnalyser()
-    analyser.fftSize = 1024
-    ctx.createMediaStreamSource(stream).connect(analyser)
-    const buf = new Uint8Array(analyser.fftSize)
+    const meter = createMeter(stream, levelRef)
     const started = Date.now()
     let heard = false
     let lastVoice = Date.now()
-    let raf = 0
+    let timer = 0
     let done = false
 
     const finish = () => {
       if (done) return
       done = true
-      cancelAnimationFrame(raf)
+      clearInterval(timer)
       if (recorder.state !== 'inactive') recorder.stop()
     }
     stopRef.current = finish
-
-    const tick = () => {
-      analyser.getByteTimeDomainData(buf)
-      let sum = 0
-      for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v }
-      const rms = Math.sqrt(sum / buf.length)
+    timer = window.setInterval(() => {
       const now = Date.now()
-      if (rms > 0.035) { heard = true; lastVoice = now }
-      if ((heard && now - lastVoice > SILENCE_MS) || (!heard && now - started > NO_SPEECH_MS) || now - started > MAX_MS) { finish(); return }
-      raf = requestAnimationFrame(tick)
-    }
+      if (meter.read() > gate) { heard = true; lastVoice = now }
+      if ((heard && now - lastVoice > SILENCE_MS) || (!heard && now - started > NO_SPEECH_MS) || now - started > MAX_MS) finish()
+    }, 50)
 
     recorder.onstop = async () => {
-      stream.getTracks().forEach((t) => t.stop())
-      ctx.close().catch(() => {})
+      meter.stop()
       setListening(false)
       stopRef.current = null
-      if (!heard || chunks.length === 0) { nothingRef.current?.(); return }
+      if (cancelledRef.current) return
+      if (!heard || chunks.length === 0) { nothingRef.current?.('silence'); return }
       const seconds = Math.round((Date.now() - started) / 1000)
       const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' })
       setTranscribing(true)
@@ -116,9 +156,12 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         const res = await apiFetch('/api/assistant/transcribe', { method: 'POST', body: form, timeoutMs: 40_000 })
         const j = await res.json().catch(() => ({}))
         if (!res.ok) throw new Error(j.error || 'Could not understand that.')
-        if (j.text) finalRef.current(j.text, j.language ?? null)
+        if (cancelledRef.current) return
+        if (!j.text || isFiller(j.text)) nothingRef.current?.('ignored')
+        else finalRef.current(j.text, j.language ?? null)
       } catch (err) {
         setMicError((err as Error).message)
+        nothingRef.current?.('error')
       } finally {
         setTranscribing(false)
       }
@@ -126,45 +169,69 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
     recorder.start(250)
     setListening(true)
-    raf = requestAnimationFrame(tick)
   }, [])
 
-  const listenBrowser = useCallback(() => {
+  const listenBrowser = useCallback(async () => {
     const Ctor = browserRecognitionCtor()
     if (!Ctor) return
+    setMicError(null)
+    // A second, raw-level stream only to measure loudness; recognition still
+    // works if it can't be opened.
+    let meter: ReturnType<typeof createMeter> | null = null
+    try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ }
+    const gate = GATE_LEVEL[cfgRef.current.gate || 'medium']
     const rec = new Ctor()
     rec.lang = 'en-IN'
     rec.interimResults = true
     rec.continuous = false
     let final = ''
+    const confidences: number[] = []
+    let error: string | null = null
     rec.onresult = (e: any) => {
       let live = ''
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (e.results[i].isFinal) final += e.results[i][0].transcript + ' '
+        if (e.results[i].isFinal) { final += e.results[i][0].transcript + ' '; confidences.push(Number(e.results[i][0].confidence) || 0) }
         else live += e.results[i][0].transcript
       }
       setInterim((final + live).trim())
     }
-    rec.onerror = () => setListening(false)
+    rec.onerror = (e: any) => {
+      error = e.error
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
+    }
     rec.onend = () => {
+      const peak = meter ? meter.peak() : 1
+      meter?.stop()
       setListening(false)
       setInterim('')
       stopRef.current = null
-      if (final.trim()) finalRef.current(final.trim(), null)
-      else nothingRef.current?.()
+      if (cancelledRef.current) return
+      const text = final.trim()
+      if (!text) { nothingRef.current?.(error && error !== 'no-speech' && error !== 'aborted' ? 'error' : 'silence'); return }
+      const scored = confidences.filter((c) => c > 0)
+      const confidence = scored.length ? scored.reduce((a, c) => a + c, 0) / scored.length : 1
+      if (isFiller(text) || (gate > 0 && peak < gate) || confidence < 0.4) { nothingRef.current?.('ignored'); return }
+      finalRef.current(text, null)
     }
-    stopRef.current = () => rec.stop()
-    try { rec.start() } catch { stopRef.current = null; setMicError('The microphone is busy. Try the mic button again.'); return }
+    stopRef.current = () => { try { rec.stop() } catch {} }
+    try { rec.start() } catch {
+      meter?.stop(); stopRef.current = null
+      setMicError('The microphone is busy. Try the mic button again.')
+      nothingRef.current?.('error')
+      return
+    }
     setListening(true)
   }, [])
 
   const start = useCallback(() => {
+    cancelledRef.current = false
     stopSpeaking()
-    if (config.listen === 'sarvam') listenSarvam()
+    if (cfgRef.current.listen === 'sarvam') listenSarvam()
     else listenBrowser()
-  }, [config.listen, listenSarvam, listenBrowser, stopSpeaking])
+  }, [listenSarvam, listenBrowser, stopSpeaking])
 
   const stop = useCallback(() => stopRef.current?.(), [])
+  const cancel = useCallback(() => { cancelledRef.current = true; stopRef.current?.() }, [])
 
   // ---------------------------------------------------------------- speak
   const speakBrowser = useCallback((text: string, onEnd: () => void) => {
@@ -181,14 +248,14 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   }, [])
 
   // Resolves when she has finished speaking (or was interrupted), so a
-  // hands-free conversation can start listening again right after.
+  // conversation can start listening again right after.
   const speak = useCallback((text: string, preview?: VoicePreview) => new Promise<void>((resolve) => {
-    if (!text.trim() || (!config.speakReplies && !preview)) { resolve(); return }
+    if (!text.trim() || (!cfgRef.current.speakReplies && !preview)) { resolve(); return }
     stopSpeaking()
     setSpeaking(true)
     const end = () => { setSpeaking(false); speakDone.current = null; resolve() }
     speakDone.current = end
-    const provider = preview?.provider || config.speak
+    const provider = preview?.provider || cfgRef.current.speak
     if (provider === 'browser') { speakBrowser(text, end); return }
     apiFetch('/api/assistant/speak', { method: 'POST', body: JSON.stringify({ text, ...(preview || {}) }), timeoutMs: 40_000 })
       .then(async (res) => {
@@ -201,20 +268,19 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         audio.onerror = end
         await audio.play()
       })
-      .catch(() => speakBrowser(text, end))
-  }), [config.speak, config.speakReplies, speakBrowser, stopSpeaking])
+      .catch(() => { if (speakDone.current === end) speakBrowser(text, end) })
+  }), [speakBrowser, stopSpeaking])
 
-  useEffect(() => () => { stopRef.current?.(); stopSpeaking() }, [stopSpeaking])
+  useEffect(() => () => { cancelledRef.current = true; stopRef.current?.(); stopSpeaking() }, [stopSpeaking])
 
-  return { supported, listening, transcribing, interim, speaking, micError, start, stop, speak, stopSpeaking }
+  return { supported, listening, transcribing, interim, speaking, micError, levelRef, start, stop, cancel, speak, stopSpeaking }
 }
 
+// ------------------------------------------------------------------ wake word
+//
 // "Hey DB" / "DB, suno": a light always-on listener using the browser's free
 // recogniser, only while the ERP tab is visible and the feature is switched on in
-// Settings. It only looks for the wake phrase; what follows is recorded and
-// understood by Sarvam. Pauses whenever DB herself is listening or talking.
-const NAME_VARIANTS = ['db', 'd b', 'dee bee', 'debi', 'idbi', 'deebee', 'डीबी']
-
+// Settings. Pauses whenever the DB panel is open or she is busy.
 //
 // Safety rules (a runaway listener once looped until Chrome closed):
 //   - exactly ONE recogniser at a time: a new one only starts after the old one
@@ -223,8 +289,26 @@ const NAME_VARIANTS = ['db', 'd b', 'dee bee', 'debi', 'idbi', 'deebee', 'डी
 //     uses the mic itself; two recognisers on one page cancel each other);
 //   - a session that ends quickly or with an error backs off 1s, 2s, 4s ... 30s,
 //     and after 6 failures in a row it gives up until the page is reloaded.
+//
+// "DB" is a hard word for recognisers (heard as IDBI, TP, TV, the bee...), so it
+// checks the recogniser's top 5 guesses, a long list of known mishearings, and
+// the phrases the owner taught it in Settings ("Teach DB her name").
+export const NAME_VARIANTS = [
+  'db', 'd b', 'dee bee', 'deebee', 'dbi', 'idbi', 'i d b i', 'debi', 'debbie', 'debby', 'deby', 'dibi', 'divi', 'deepi', 'deepu', 'dipi',
+  'tp', 't p', 'tb', 't b', 'dp', 'd p', 'tv', 'pb', 'bb', 'vb', 'the bee', 'the b', 'thee bee', 'deeby',
+  'डीबी', 'डी बी', 'टीपी', 'दीबी', 'डेबी',
+]
 const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported'])
 const MAX_FAILURES = 6
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{M}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim()
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+const NAME_RE = new RegExp(`(?:^| )(?:hey|hi|hii|hai|hello|helo|ok|okay|o|suno|are|arre|हाय|हे|हेलो|हैलो|ओके|सुनो|अरे) (?:${NAME_VARIANTS.map(escapeRe).join('|')})(?: |$)|(?:^| )(?:${NAME_VARIANTS.map(escapeRe).join('|')}) (?:suno|सुनो)(?: |$)`)
+
+export function wakeMatches(heard: string, phrases: string[]) {
+  const h = ` ${norm(heard)} `
+  if (phrases.map(norm).filter(Boolean).some((p) => h.includes(` ${p} `))) return true
+  return NAME_RE.test(h.trim())
+}
 
 export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean, onWake: () => void) {
   const wakeRef = useRef(onWake)
@@ -240,13 +324,6 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
     let rec: any = null // the one live recogniser, null once it has ended
     let timer: ReturnType<typeof setTimeout> | null = null
     let failures = 0
-    const normal = phrases.map((p) => p.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim())
-    const matches = (heard: string) => {
-      const h = ` ${heard.toLowerCase().replace(/[^\p{L}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim()} `
-      if (normal.some((p) => h.includes(` ${p} `))) return true
-      // "hey/hi/hello/suno" next to any way the recogniser spells DB
-      return NAME_VARIANTS.some((n) => new RegExp(`(hey|hi|hello|ok|suno)\\s+${n}\\b|\\b${n}\\s+suno`).test(h))
-    }
     const giveUp = (why: string) => {
       disposed = true
       failedRef.current = true
@@ -263,13 +340,16 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       r.lang = 'en-IN'
       r.continuous = true
       r.interimResults = true
+      r.maxAlternatives = 5
       const startedAt = Date.now()
       let errored = false
       let woke = false
       r.onresult = (e: any) => {
         failures = 0
         for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (matches(e.results[i][0].transcript)) { woke = true; try { r.abort() } catch {} return }
+          for (let a = 0; a < e.results[i].length; a++) {
+            if (wakeMatches(e.results[i][a].transcript, phrases)) { woke = true; try { r.abort() } catch {} return }
+          }
         }
       }
       r.onerror = (e: any) => {
@@ -310,4 +390,43 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
   }, [enabled, paused, phrases.join('|')])
 
   return { active, failed }
+}
+
+// ------------------------------------------------------------------ name trainer
+//
+// Settings -> "Teach DB her name": listens to one "Hi DB" and returns every way
+// the recogniser spelled it (top 5 guesses), so those spellings can be saved as
+// wake phrases. Free (browser recogniser), one short listen per tap.
+export function useNameTrainer() {
+  const [listening, setListening] = useState(false)
+  const [heard, setHeard] = useState<string[]>([])
+  const [error, setError] = useState<string | null>(null)
+  const listen = useCallback(() => {
+    const Ctor = typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!Ctor) { setError('This browser has no speech recognition. Use Chrome.'); return }
+    setError(null)
+    window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: true }))
+    // Give the wake listener a moment to release the mic.
+    setTimeout(() => {
+      const r = new Ctor()
+      r.lang = 'en-IN'
+      r.continuous = false
+      r.interimResults = false
+      r.maxAlternatives = 5
+      const got: string[] = []
+      r.onresult = (e: any) => {
+        for (let i = 0; i < e.results.length; i++) for (let a = 0; a < e.results[i].length; a++) got.push(norm(e.results[i][a].transcript))
+      }
+      r.onerror = (e: any) => { if (e.error !== 'no-speech' && e.error !== 'aborted') setError(`Could not listen (${e.error}).`) }
+      r.onend = () => {
+        setListening(false)
+        window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false }))
+        const fresh = got.filter((g) => g && g.split(' ').length <= 4)
+        if (!fresh.length) setError((x) => x || 'Didn’t hear anything. Tap and say “Hi DB” clearly.')
+        setHeard((prev) => [...new Set([...prev, ...fresh])])
+      }
+      try { r.start(); setListening(true) } catch { setError('Microphone busy, try again.'); window.dispatchEvent(new CustomEvent('db-wake-pause', { detail: false })) }
+    }, 400)
+  }, [])
+  return { listening, heard, error, listen, clear: () => setHeard([]) }
 }

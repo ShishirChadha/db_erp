@@ -4,12 +4,14 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { logAuditEvent } from '@/lib/audit-log'
 import {
   isDbMaster, getAssistantSettings, saveAssistantSettings, getSecret, setSecret, secretStatus,
-  ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, type AssistantSettings, type SecretName,
+  ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, TONES, VOICE_GATES, type AssistantSettings, type SecretName,
 } from '@/lib/assistant/settings'
+import { READ_MODULES, ALL_READ_MODULES, type ReadModule } from '@/lib/assistant/reports'
 import { getDbAgentStatus } from '@/lib/assistant/identity'
 import { usageSummary, FREE_TTS_CHARS } from '@/lib/assistant/usage'
 import { azureFemaleVoices, googleFemaleVoices } from '@/lib/assistant/cloud-voices'
 import { anthropicBilling } from '@/lib/assistant/anthropic-billing'
+import { liveUsdInr } from '@/lib/assistant/fx'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -24,11 +26,11 @@ export async function GET(req: NextRequest) {
   const [settings, secrets] = await Promise.all([getAssistantSettings(), secretStatus()])
   if (req.nextUrl.searchParams.get('lite')) return NextResponse.json({ settings, secrets })
 
-  const [status, { data: owners }, usage, azureKey, googleKey, adminKey] = await Promise.all([
+  const [status, { data: owners }, usage, azureKey, googleKey, adminKey, fx] = await Promise.all([
     getDbAgentStatus(),
     supabaseAdmin.from('profiles').select('id, full_name, username').eq('role', 'owner').eq('is_active', true),
     usageSummary(settings.credit_since),
-    getSecret('azure'), getSecret('google'), getSecret('anthropic_admin'),
+    getSecret('azure'), getSecret('google'), getSecret('anthropic_admin'), liveUsdInr(),
   ])
   const attempt = async <T,>(fn: () => Promise<T>) => {
     try { return { ok: true as const, data: await fn() } } catch (err) { return { ok: false as const, error: (err as Error).message } }
@@ -43,7 +45,8 @@ export async function GET(req: NextRequest) {
     settings, secrets, status, owners: owners || [], me: sessionUser.id,
     voices: { sarvam: SARVAM_VOICES, azure: azureVoices, google: googleVoices },
     models: ASSISTANT_MODELS,
-    usage, free_tts_chars: FREE_TTS_CHARS,
+    read_modules: READ_MODULES,
+    usage, free_tts_chars: FREE_TTS_CHARS, fx,
     anthropic_billing: billing,
   })
 }
@@ -76,13 +79,17 @@ export async function PUT(req: NextRequest) {
   if (typeof body.speak_replies === 'boolean') patch.speak_replies = body.speak_replies
   if (typeof body.wake_word === 'boolean') patch.wake_word = body.wake_word
   if (Array.isArray(body.wake_phrases)) {
-    patch.wake_phrases = body.wake_phrases.map((x: unknown) => String(x).toLowerCase().trim()).filter((x: string) => x.length >= 2).slice(0, 10)
+    patch.wake_phrases = [...new Set(body.wake_phrases.map((x: unknown) => String(x).toLowerCase().replace(/\s+/g, ' ').trim().slice(0, 40)).filter((x: string) => x.length >= 2))].slice(0, 30) as string[]
   }
+  if (TONES.includes(body.tone)) patch.tone = body.tone
+  if (VOICE_GATES.includes(body.voice_gate)) patch.voice_gate = body.voice_gate
+  if (typeof body.continuous_conversation === 'boolean') patch.continuous_conversation = body.continuous_conversation
+  if (NUM(body.conversation_idle_seconds, 6, 60) !== undefined) patch.conversation_idle_seconds = Math.round(body.conversation_idle_seconds)
+  if (Array.isArray(body.read_modules)) patch.read_modules = ALL_READ_MODULES.filter((m) => body.read_modules.includes(m)) as ReadModule[]
   if (body.hinglish_script === 'devanagari' || body.hinglish_script === 'roman') patch.hinglish_script = body.hinglish_script
   if (body.anthropic_credit_usd === null || NUM(body.anthropic_credit_usd, 0, 100000) !== undefined) patch.anthropic_credit_usd = body.anthropic_credit_usd
   if (body.sarvam_credit_inr === null || NUM(body.sarvam_credit_inr, 0, 10000000) !== undefined) patch.sarvam_credit_inr = body.sarvam_credit_inr
   if (body.credit_since === null || (typeof body.credit_since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.credit_since))) patch.credit_since = body.credit_since
-  if (NUM(body.usd_inr, 50, 200) !== undefined) patch.usd_inr = body.usd_inr
 
   const keysChanged: string[] = []
   for (const [field, name] of Object.entries(KEY_FIELDS)) {

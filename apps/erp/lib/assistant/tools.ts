@@ -14,6 +14,10 @@ import {
   getOptions, recallNotes, recentDocumentsFor, expenseChecks,
 } from './data'
 import { shareSalesDocument } from './share'
+import {
+  ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
+  repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
+} from './reports'
 
 // DB's tools. Reads run straight away. Writes never do: a propose_* tool
 // checks the input, works out the warnings DB must raise, and parks the write
@@ -37,6 +41,7 @@ export interface ToolContext {
   turn: number
   pending: PendingAction | null
   db: { profileId: string; sessionId: string }
+  modules?: readonly ReadModule[] // read modules switched on; omitted = all
 }
 
 export interface ToolOutcome {
@@ -155,6 +160,39 @@ const S = {
   confirm_pending_action: z.object({ action_id: z.string() }),
   cancel_pending_action: z.object({ action_id: z.string() }),
   share_document_on_whatsapp: z.object({ document_id: z.string() }),
+  // ---- module-wise reads (each switchable in Settings -> DB Assistant)
+  stock_overview: z.object({
+    which: z.enum(['live', 'main', 'all']).nullish().describe('live = Live Stock (staff intake), main = main ERP stock (purchase orders / legacy), all = both. Default all.'),
+    query: z.string().nullish().describe('Model words, serial or asset number to narrow down, e.g. "840 g6".'),
+    status: z.string().nullish().describe('One status only, e.g. ready_for_sale, qc_pending, faulty, on_rent.'),
+  }),
+  sold_stock: z.object({
+    from: z.string().nullish().describe('YYYY-MM-DD, default first of this month.'),
+    to: z.string().nullish().describe('YYYY-MM-DD, default today.'),
+    query: z.string().nullish().describe('Model words, brand, serial or customer name.'),
+    customer_id: z.string().nullish(),
+    sold_by: z.string().nullish().describe('Staff name.'),
+    limit: z.number().int().nullish().describe('Lines to list, default 25, max 50.'),
+  }),
+  sales_report: z.object({
+    from: z.string().nullish(),
+    to: z.string().nullish(),
+    group_by: z.enum(['day', 'month', 'entity', 'model', 'brand', 'category', 'salesperson', 'customer', 'kind']).nullish().describe('Default day.'),
+  }),
+  payments_due: z.object({ min_amount: z.number().nullish() }),
+  customer_history: z.object({ customer_id: z.string() }),
+  repair_jobs: z.object({
+    status: z.enum(['open', 'done', 'all']).nullish().describe('Default open.'),
+    from: z.string().nullish(), to: z.string().nullish(),
+    query: z.string().nullish().describe('Job number, customer, device or serial.'),
+  }),
+  rentals_status: z.object({}),
+  purchases_report: z.object({ from: z.string().nullish(), to: z.string().nullish() }),
+  expenses_report: z.object({
+    from: z.string().nullish(), to: z.string().nullish(),
+    group_by: z.enum(['type', 'account', 'month', 'staff']).nullish().describe('Default type.'),
+  }),
+  tasks: z.object({ status: z.enum(['open', 'overdue', 'done_recent']).nullish().describe('Default open.') }),
 } as const
 
 type ToolName = keyof typeof S
@@ -178,13 +216,38 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   confirm_pending_action: 'Save the pending action. ONLY after the owner clearly said yes to it in their latest message.',
   cancel_pending_action: 'Drop the pending action when the owner says no or wants to start over.',
   share_document_on_whatsapp: 'For a saved PI/quotation: make a PDF link and a ready-to-send WhatsApp message to the customer.',
+  stock_overview: 'Units in stock right now: totals by status, by model (units, sellable, average cost, oldest age in days), and the units themselves when narrowed down. Use for "kitne laptop hain", "840 G6 stock", "sabse purana stock", "faulty units".',
+  sold_stock: 'Sold items in a date range: each line with date, item, serial, customer, price before/incl GST, profit (where cost is known), payment status, salesperson; plus totals.',
+  sales_report: 'Sales summary for a date range grouped by day, month, entity, model, brand, category, salesperson, customer or kind: revenue before GST, GST, units, gross profit, margin %, outstanding.',
+  payments_due: 'Money customers still owe on sales, grouped by customer, largest first, with how old the oldest unpaid sale is.',
+  customer_history: 'One customer\'s full picture: all-time and this-financial-year purchases and profit, outstanding, last purchase, recent lines, repair jobs, rentals, recent PIs.',
+  repair_jobs: 'Repair and replacement jobs (open by default) with customer, device, problem, charge, payment and age.',
+  rentals_status: 'Active rentals: units on rent, overdue returns, next billing dates, deposits held.',
+  purchases_report: 'Purchase orders in a date range (count, total, by vendor) and what is still payable to vendors.',
+  expenses_report: 'Expenses in a date range grouped by type, account, month or staff, the largest ones, and reimbursements pending to staff.',
+  tasks: 'Activities (tasks): open, overdue, or done in the last week, with who they are assigned to.',
 }
 
-export const ASSISTANT_TOOLS: Anthropic.Beta.BetaTool[] = (Object.keys(S) as ToolName[]).map((name) => ({
+// Which Settings switch each module-read tool belongs to. Tools not listed here
+// (lookups and the propose_* writes) are always available.
+const TOOL_MODULE: Partial<Record<ToolName, ReadModule>> = {
+  stock_overview: 'stock', sold_stock: 'sold', sales_report: 'reports', payments_due: 'payments',
+  customer_history: 'customers', repair_jobs: 'repairs', rentals_status: 'rentals',
+  purchases_report: 'purchases', expenses_report: 'expenses', tasks: 'tasks',
+}
+
+const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
   name,
   description: DESCRIPTIONS[name],
   input_schema: z.toJSONSchema(S[name], { target: 'draft-7' }) as Anthropic.Beta.BetaTool.InputSchema,
-}))
+})
+
+// The tool list for a turn. It only changes when the owner changes the module
+// switches, so it stays in the prompt cache between turns.
+export function assistantTools(modules: readonly ReadModule[]): Anthropic.Beta.BetaTool[] {
+  return (Object.keys(S) as ToolName[]).filter((n) => !TOOL_MODULE[n] || modules.includes(TOOL_MODULE[n]!)).map(toolDef)
+}
+export const ASSISTANT_TOOLS = assistantTools(ALL_READ_MODULES)
 
 // ---------------------------------------------------------------- executor
 
@@ -193,8 +256,22 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   const parsed = S[name as ToolName].safeParse(rawInput)
   if (!parsed.success) return { result: `Invalid input: ${parsed.error.message}`, isError: true }
   const input: any = parsed.data
+  const mod = TOOL_MODULE[name as ToolName]
+  if (mod && ctx.modules && !ctx.modules.includes(mod)) {
+    return { result: `Reading ${mod} is switched off in Settings -> DB Assistant -> What DB can read. Tell Shishir he can switch it on there.`, isError: true }
+  }
   try {
     switch (name as ToolName) {
+      case 'stock_overview': return { result: await stockOverview(input) }
+      case 'sold_stock': return { result: await soldStock(input) }
+      case 'sales_report': return { result: await salesReport(input) }
+      case 'payments_due': return { result: await paymentsDue(input) }
+      case 'customer_history': return { result: await customerHistory(input) }
+      case 'repair_jobs': return { result: await repairJobs(input) }
+      case 'rentals_status': return { result: await rentalsStatus() }
+      case 'purchases_report': return { result: await purchasesReport(input) }
+      case 'expenses_report': return { result: await expensesReport(input) }
+      case 'tasks': return { result: await tasksList(input) }
       case 'find_customer': return { result: await findCustomers(input.query) }
       case 'find_products': return { result: await findProducts(input.query) }
       case 'find_sellable_units': return { result: await findSellableUnits(input.sku_id) }

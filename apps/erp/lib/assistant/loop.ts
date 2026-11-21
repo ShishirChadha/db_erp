@@ -4,7 +4,8 @@ import { istToday } from '@/lib/attendance'
 import { assistantSystemPrompt } from './playbooks'
 import { getAssistantSettings } from './settings'
 import { recordClaudeUsage } from './usage'
-import { ASSISTANT_TOOLS, runTool, type AssistantCard, type PendingAction } from './tools'
+import { liveUsdInr } from './fx'
+import { assistantTools, runTool, type AssistantCard, type PendingAction } from './tools'
 
 // One conversational turn with DB: the owner's words in, DB's reply (streamed)
 // plus any confirmation / done / share cards out. A manual tool loop on the
@@ -55,6 +56,9 @@ export async function runAssistantTurn(params: {
   messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
 
   const client = new Anthropic()
+  const tools = assistantTools(settings.read_modules)
+  const usdInr = (await liveUsdInr()).rate
+  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone)
   let spoke = false
   try {
     for (let step = 0; step < MAX_STEPS; step++) {
@@ -67,8 +71,8 @@ export async function runAssistantTurn(params: {
         // Tools + system are identical every turn, so they are cached; the
         // top-level breakpoint also caches the growing history between steps.
         cache_control: { type: 'ephemeral' },
-        system: [{ type: 'text', text: assistantSystemPrompt(settings.hinglish_script), cache_control: { type: 'ephemeral' } }],
-        tools: ASSISTANT_TOOLS,
+        system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
+        tools,
         messages,
       })
       // Text from separate steps (before and after a tool call) arrives as
@@ -80,7 +84,7 @@ export async function runAssistantTurn(params: {
         spoke = true
       })
       const message = await stream.finalMessage()
-      await recordClaudeUsage({ profileId: owner.id, threadId: thread.id, model: message.model || settings.model, usdInr: settings.usd_inr, usage: message.usage })
+      await recordClaudeUsage({ profileId: owner.id, threadId: thread.id, model: message.model || settings.model, usdInr, usage: message.usage })
       messages.push({ role: 'assistant', content: message.content as Anthropic.Beta.BetaContentBlockParam[] })
 
       if (message.stop_reason === 'refusal') {
@@ -93,7 +97,7 @@ export async function runAssistantTurn(params: {
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = []
       for (const use of toolUses) {
         emit({ type: 'status', tool: use.name })
-        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db })
+        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules })
         if (outcome.pending !== undefined) pending = outcome.pending
         if (outcome.card) emit({ type: 'card', card: outcome.card })
         results.push({

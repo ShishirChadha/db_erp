@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { encryptPassword, decryptPassword } from '@/lib/auth/password-vault'
 import type { SessionUser } from '@/lib/auth/session'
+import { ALL_READ_MODULES, type ReadModule } from './reports'
 
 // Everything the owner can change about DB, in one app_settings row
 // (assistant_settings, JSON). app_settings has RLS on with no policies, so only
@@ -22,6 +23,11 @@ export const SARVAM_VOICES = [
 ] as const
 
 export const VOICE_PROVIDERS = ['sarvam', 'azure', 'google', 'browser'] as const
+export const TONES = ['professional', 'friendly', 'casual'] as const
+export type Tone = typeof TONES[number]
+// How hard DB ignores quiet / far-away speech (other people in the room, TV).
+export const VOICE_GATES = ['off', 'low', 'medium', 'high'] as const
+export type VoiceGate = typeof VOICE_GATES[number]
 export type VoiceProvider = typeof VOICE_PROVIDERS[number]
 
 export interface AssistantSettings {
@@ -40,10 +46,16 @@ export interface AssistantSettings {
   wake_word: boolean
   wake_phrases: string[]
   hinglish_script: 'devanagari' | 'roman'
+  tone: Tone
+  // Conversation mode: after she answers, she listens again by herself until
+  // you go quiet for conversation_idle_seconds.
+  continuous_conversation: boolean
+  conversation_idle_seconds: number
+  voice_gate: VoiceGate
+  read_modules: ReadModule[]
   anthropic_credit_usd: number | null
   sarvam_credit_inr: number | null
   credit_since: string | null // spend is counted from this date
-  usd_inr: number
 }
 
 export const DEFAULT_SETTINGS: AssistantSettings = {
@@ -58,12 +70,16 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   tts_pace: 1.05,
   speak_replies: true,
   wake_word: false,
-  wake_phrases: ['hey db', 'hi db', 'db suno', 'suno db', 'hello db'],
+  wake_phrases: ['hey db', 'hi db', 'db suno', 'suno db', 'hello db', 'hi tp', 'hey tp', 'hi idbi'],
   hinglish_script: 'devanagari',
+  tone: 'casual',
+  continuous_conversation: true,
+  conversation_idle_seconds: 15,
+  voice_gate: 'medium',
+  read_modules: [...ALL_READ_MODULES],
   anthropic_credit_usd: null,
   sarvam_credit_inr: null,
   credit_since: null,
-  usd_inr: 88,
 }
 
 const KEY = 'assistant_settings'

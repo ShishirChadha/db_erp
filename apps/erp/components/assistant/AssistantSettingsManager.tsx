@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Loader2, Play, Trash2, ExternalLink } from 'lucide-react'
+import { Loader2, Play, Trash2, ExternalLink, Mic, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { apiFetch } from '@/lib/api-client'
 import { useAsyncAction } from '@/lib/useAsyncAction'
-import { useVoice, type SpeakProvider } from './useVoice'
+import { useVoice, useNameTrainer, type SpeakProvider } from './useVoice'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
 // answers 403 to everyone else). Stacked sections, no tab strip.
@@ -30,6 +30,8 @@ type Config = {
   me: string
   voices: { sarvam: VoiceOpt[]; azure: Attempt<VoiceOpt[]>; google: Attempt<VoiceOpt[]> }
   models: string[]
+  read_modules: { key: string; label: string; hint: string }[]
+  fx: { rate: number; date: string | null; source: string }
   usage: {
     today: { claude: Money; sarvam: Money }
     month: { claude: Money; sarvam: Money }
@@ -105,6 +107,7 @@ export default function AssistantSettingsManager() {
   useEffect(() => { load() }, [])
 
   const preview = useVoice({ listen: 'browser', speak: 'browser', speakReplies: true }, () => {})
+  const trainer = useNameTrainer()
 
   const put = async (body: any) => {
     const r = await apiFetch('/api/assistant/config', { method: 'PUT', body: JSON.stringify(body) })
@@ -123,10 +126,14 @@ export default function AssistantSettingsManager() {
       wake_word: s.wake_word,
       wake_phrases: String(s.wake_phrases_text || '').split(',').map((x: string) => x.trim()).filter(Boolean),
       hinglish_script: s.hinglish_script,
+      tone: s.tone,
+      continuous_conversation: s.continuous_conversation,
+      conversation_idle_seconds: Number(s.conversation_idle_seconds),
+      voice_gate: s.voice_gate,
+      read_modules: s.read_modules,
       anthropic_credit_usd: s.anthropic_credit_usd === '' || s.anthropic_credit_usd == null ? null : Number(s.anthropic_credit_usd),
       sarvam_credit_inr: s.sarvam_credit_inr === '' || s.sarvam_credit_inr == null ? null : Number(s.sarvam_credit_inr),
       credit_since: s.credit_since || null,
-      usd_inr: Number(s.usd_inr),
     }
     for (const [k, v] of Object.entries(keys)) if (v.trim()) body[k] = v.trim()
     try { await put(body) } catch (e) { setErr((e as Error).message); return }
@@ -302,6 +309,62 @@ export default function AssistantSettingsManager() {
             Hinglish in Roman letters (easier to read, voice less natural)
           </label>
         </div>
+        <Label className="text-xs">Personality</Label>
+        <div className="space-y-1 text-sm">
+          {([
+            ['casual', 'Very casual: like a friend who runs your office (teases you a little, chatty)'],
+            ['friendly', 'Friendly: warm colleague, light humour now and then'],
+            ['professional', 'Professional: polished executive assistant'],
+          ] as const).map(([v, label]) => (
+            <label key={v} className="flex items-center gap-2">
+              <input type="radio" name="tone" checked={s.tone === v} onChange={() => set('tone', v)} />{label}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">She is always serious while reading back money, when something fails, and in anything that goes to a customer.</p>
+      </Section>
+
+      <Section title="Conversation" hint="Talk to DB like a person: tap the mic once (or say “Hey DB”), and after each answer she listens again by herself.">
+        <label className="flex items-center gap-2 text-sm">
+          <Checkbox checked={s.continuous_conversation} onCheckedChange={(c) => set('continuous_conversation', !!c)} />Keep listening after each reply (no tapping between sentences)
+        </label>
+        <Label className="text-xs">End the conversation after {s.conversation_idle_seconds} seconds of quiet</Label>
+        <input type="range" min={6} max={60} step={1} value={s.conversation_idle_seconds} onChange={(e) => set('conversation_idle_seconds', Number(e.target.value))} className="w-full" />
+        <p className="text-xs text-muted-foreground">You can also end it by saying “bas”, “bye” or “thank you”, by tapping End, or by closing her panel.</p>
+        <Label className="text-xs">Ignore other people and far-away voices</Label>
+        <div className="grid gap-1 text-sm sm:grid-cols-2">
+          {([
+            ['off', 'Off: hear everything'],
+            ['low', 'Low: ignore very faint sound'],
+            ['medium', 'Medium: ignore people across the room (recommended)'],
+            ['high', 'High: only someone close to the mic'],
+          ] as const).map(([v, label]) => (
+            <label key={v} className="flex items-center gap-2">
+              <input type="radio" name="voice_gate" checked={s.voice_gate === v} onChange={() => set('voice_gate', v)} />{label}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Works on loudness: speech quieter than this, lone “hmm/uh”, and words the recogniser is unsure of are dropped, and she keeps listening.
+          It can’t tell your voice from someone standing right next to you. That needs voice-print matching, which adds roughly half a second to every sentence and a paid service, so it is not switched on.
+          If she misses you when you speak softly, lower this.
+        </p>
+      </Section>
+
+      <Section title="What DB can read" hint="Switch on the parts of the ERP DB may look at to answer your questions (“aaj ki sale?”, “kitne 840 G6 ready hain?”, “kiske payments due hain?”). She only reads; saving still needs your yes.">
+        <div className="space-y-2">
+          {cfg.read_modules.map((m) => (
+            <label key={m.key} className="flex items-start gap-2 text-sm">
+              <Checkbox className="mt-0.5" checked={s.read_modules.includes(m.key)}
+                onCheckedChange={(c) => set('read_modules', c ? [...s.read_modules, m.key] : s.read_modules.filter((x: string) => x !== m.key))} />
+              <span><span className="font-medium">{m.label}</span><span className="block text-xs text-muted-foreground">{m.hint}</span></span>
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Cost: switching these on costs nothing until she uses one. Each question that reads a report adds about ₹0.30–₹1.50 (the figures she reads are billed as input) and about 1–2 seconds.
+          Results are capped to the top rows, so a big report never gets expensive. Switching a module off makes her prompt slightly smaller, but the saving is tiny.
+        </p>
       </Section>
 
       <Section title="“Hey DB” wake word" hint="Say a wake phrase and DB opens and starts listening — no tapping. Works while the ERP is open on screen (laptop, or a phone with the screen on).">
@@ -309,7 +372,26 @@ export default function AssistantSettingsManager() {
           <Checkbox checked={s.wake_word} onCheckedChange={(c) => set('wake_word', !!c)} />Listen for my wake phrase on this ERP
         </label>
         <Input value={s.wake_phrases_text} onChange={(e) => set('wake_phrases_text', e.target.value)} placeholder="hey db, db suno" />
-        <p className="text-xs text-muted-foreground">Comma-separated. A green dot on DB’s button means she is listening for it.</p>
+        <p className="text-xs text-muted-foreground">Comma-separated. A green dot on DB’s button means she is listening for it. “DB” is hard for speech recognition (it hears IDBI, TP, TV…); common mishearings already work, and you can teach her more below.</p>
+        <div className="rounded-md bg-muted p-3">
+          <p className="text-sm font-medium">Teach DB her name</p>
+          <p className="text-xs text-muted-foreground">Tap, say “Hi DB” the way you normally do, and repeat 2–3 times. Then add what she heard. Free, uses the browser.</p>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={trainer.listen} disabled={trainer.listening}>
+              <Mic className="mr-1 h-3.5 w-3.5" />{trainer.listening ? 'Listening…' : 'Say “Hi DB”'}
+            </Button>
+            {trainer.heard.length > 0 && (
+              <Button size="sm" onClick={() => {
+                const current = String(s.wake_phrases_text || '').split(',').map((x: string) => x.trim()).filter(Boolean)
+                set('wake_phrases_text', [...new Set([...current, ...trainer.heard])].join(', '))
+                trainer.clear()
+              }}><Plus className="mr-1 h-3.5 w-3.5" />Add {trainer.heard.length} to wake phrases</Button>
+            )}
+          </div>
+          {trainer.heard.length > 0 && <p className="mt-2 text-xs">Heard: {trainer.heard.map((h) => `“${h}”`).join(', ')}</p>}
+          {trainer.error && <p className="mt-2 text-xs text-destructive">{trainer.error}</p>}
+          <p className="mt-1 text-xs text-muted-foreground">Then press Save changes. Skip anything that is a normal word you say often, or she’ll wake up by mistake.</p>
+        </div>
       </Section>
 
       <Section title="Anthropic usage and credit (real)" hint="Read from Anthropic's own billing with an Admin API key. Covers every use of your Anthropic account — DB, Marketing, bank statements — not just DB.">
@@ -320,12 +402,12 @@ export default function AssistantSettingsManager() {
           <div className="grid gap-2 text-sm sm:grid-cols-2">
             <div className="rounded-md bg-muted p-3">
               <p className="text-xs text-muted-foreground">Today (about 30 min behind)</p>
-              <p className="text-lg font-semibold">{usd(billed.today.usd)} <span className="text-sm font-normal text-muted-foreground">{inr(billed.today.usd * Number(s.usd_inr))}</span></p>
+              <p className="text-lg font-semibold">{usd(billed.today.usd)} <span className="text-sm font-normal text-muted-foreground">{inr(billed.today.usd * cfg.fx.rate)}</span></p>
               <p className="text-xs text-muted-foreground">{billed.today.tokens.toLocaleString('en-IN')} tokens, priced at list rates</p>
             </div>
             <div className="rounded-md bg-muted p-3">
               <p className="text-xs text-muted-foreground">This month, billed by Anthropic</p>
-              <p className="text-lg font-semibold">{usd(billed.month.usd)} <span className="text-sm font-normal text-muted-foreground">{inr(billed.month.usd * Number(s.usd_inr))}</span></p>
+              <p className="text-lg font-semibold">{usd(billed.month.usd)} <span className="text-sm font-normal text-muted-foreground">{inr(billed.month.usd * cfg.fx.rate)}</span></p>
               <p className="text-xs text-muted-foreground">Complete up to {when(billed.month.data_refreshed_at)}</p>
             </div>
           </div>
@@ -333,29 +415,34 @@ export default function AssistantSettingsManager() {
         {billed && Object.keys(billed.month.by_model).length > 0 && (
           <p className="text-xs text-muted-foreground">By model: {Object.entries(billed.month.by_model).sort((a, b) => b[1] - a[1]).map(([m, v]) => `${m} ${usd(v)}`).join(' · ')}</p>
         )}
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-1">
-            <Label className="text-xs">Credit you loaded (USD)</Label>
-            <Input type="number" value={s.anthropic_credit_usd ?? ''} onChange={(e) => set('anthropic_credit_usd', e.target.value)} placeholder="e.g. 20" />
+        <p className="text-xs text-muted-foreground">Dollar rate: <b>₹{cfg.fx.rate.toFixed(2)}</b> per $, fetched automatically ({cfg.fx.source}{cfg.fx.date ? `, ${cfg.fx.date}` : ''}).</p>
+        <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+          <b className="text-foreground">Balance:</b> Anthropic does not give out the remaining credit balance through any API (not even with the Admin key), so the ERP cannot read it.
+          The exact balance is on the <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noreferrer" className="underline">Anthropic billing page</a> (top-right corner of the Console).
+          Spending above is automatic.
+        </p>
+        <details className="text-sm">
+          <summary className="cursor-pointer text-xs text-muted-foreground">Optional: estimate the balance here (enter your top-ups once)</summary>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <Label className="text-xs">Credit you loaded (USD)</Label>
+              <Input type="number" value={s.anthropic_credit_usd ?? ''} onChange={(e) => set('anthropic_credit_usd', e.target.value)} placeholder="e.g. 20" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Loaded on</Label>
+              <Input type="date" value={s.credit_since ?? ''} onChange={(e) => set('credit_since', e.target.value)} />
+            </div>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Loaded on</Label>
-            <Input type="date" value={s.credit_since ?? ''} onChange={(e) => set('credit_since', e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Dollar rate (₹ per $)</Label>
-            <Input type="number" value={s.usd_inr} onChange={(e) => set('usd_inr', e.target.value)} />
-          </div>
-        </div>
+        </details>
         {anthropicLeft != null && billed?.since && (
           <p className="rounded-md border p-3 text-sm">
-            Spent since {s.credit_since}: {usd(billed.since.usd)}. <b>Credit left (est.): {usd(anthropicLeft)}</b> ({inr(anthropicLeft * Number(s.usd_inr))}).
+            Spent since {s.credit_since}: {usd(billed.since.usd)}. <b>Credit left (est.): {usd(anthropicLeft)}</b> ({inr(anthropicLeft * cfg.fx.rate)}).
             <span className="block text-xs text-muted-foreground">Anthropic does not share the balance itself through its API, so this is the credit you entered minus Anthropic’s billed spend (complete up to {when(billed.since.data_refreshed_at)}). Check the exact figure on the billing page.</span>
           </p>
         )}
         <div className="flex flex-wrap gap-3 text-xs">
           <a href="https://console.anthropic.com/settings/billing" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">Anthropic billing <ExternalLink className="h-3 w-3" /></a>
-          <a href="https://console.anthropic.com/settings/admin-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">Create an Admin key <ExternalLink className="h-3 w-3" /></a>
+          <a href="https://console.anthropic.com/settings/admin-keys" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 underline">Admin keys (team organizations only) <ExternalLink className="h-3 w-3" /></a>
         </div>
       </Section>
 

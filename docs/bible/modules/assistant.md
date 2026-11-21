@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -29,13 +29,17 @@ sources:
   - apps/erp/components/assistant/AssistantSettingsManager.tsx
   - apps/erp/lib/assistant/cloud-voices.ts
   - apps/erp/lib/assistant/anthropic-billing.ts
+  - apps/erp/lib/assistant/reports.ts
+  - apps/erp/lib/assistant/fx.ts
+  - apps/erp/components/assistant/DbAvatar.tsx
 updated: 2026-11-21
 ---
 
 ## What it is
 
-DB is the owner's assistant. Tap the round button at the bottom right of any
-dashboard page, then the mic, and speak (Hinglish is fine). She asks the questions a
+DB is the owner's assistant. Tap her face at the bottom right of any dashboard page,
+then the mic, and speak (Hinglish is fine). On a laptop her panel docks beside the page,
+so the ERP stays usable next to her; on a phone it opens full screen. She asks the questions a
 staff member would — price, GST included or not, free bag and mouse, which entity —
 then shows a card with what she is about to save. Nothing is saved until you say yes
 or tap **Confirm**.
@@ -44,6 +48,17 @@ She can make **PIs and quotations**, record **expenses**, enter **sales**, and o
 **repair** and **replacement** jobs. After a PI she prepares a WhatsApp message with a
 PDF link (valid 7 days); you tap the button to send it. She never sends anything
 herself.
+
+She also **answers questions about the business** from the modules switched on in
+Settings → DB Assistant → *What DB can read*: stock (Live Stock and main ERP stock),
+sold stock, sales reports (revenue, GST, profit, margin by day/month/entity/model/
+brand/salesperson/customer), payments due, customer history, repairs and
+replacements, rentals, purchases and vendor payables, expenses, and tasks. She only
+reads; each question that reads a report costs roughly ₹0.30–₹1.50 more and takes a
+second or two, and results are capped to the top rows. Sales figures come from
+`v_report_sale_lines` (the Reports page's view). A unit whose recorded cost is more
+than 3× its sale price (a ₹1 migration placeholder, or a lot price typed on one PO
+line) is left out of profit and named, so one bad entry can't turn a month negative.
 
 **DB answers to one person.** Only the logins ticked in Settings → DB Assistant can see
 her button, her settings tab or use her — other owners included. It starts as Shishir's
@@ -95,7 +110,25 @@ She replies in the language you spoke: English gets English, Hindi/Hinglish gets
 Hinglish (written हिंदी + English by default, which is what sounds most natural
 aloud; Roman letters is an option).
 
-**"Hey DB" / "DB, suno":** switch on the wake word in settings. While the ERP is open
+**Conversation mode:** tap the mic once and talk normally — after each reply she listens
+again by herself, until you are quiet for the set number of seconds (default 15), say
+"bas"/"bye"/"thank you", tap **End**, or close the panel. Tapping the mic while she
+speaks interrupts her; tapping while you speak sends straight away.
+
+**Ignoring other people:** each listen measures how loud the speech was (raw mic
+level). Speech quieter than the *Ignore far-away voices* level (off/low/medium/high),
+lone fillers ("hmm", "uh") and low-confidence browser results are dropped and she keeps
+listening. It cannot tell your voice from someone right next to you — that needs
+voice-print matching (paid, adds latency), which is deliberately not used.
+
+**Personality:** very casual (default), friendly, or professional. She is always serious
+while reading back money, on errors, and in anything sent to a customer.
+
+**"Hey DB" / "DB, suno":** switch on the wake word in settings. "DB" is hard for speech
+recognition, so the listener checks the recogniser's top 5 guesses against a list of
+known mishearings (IDBI, TP, TB, DP, TV, the bee…) and the phrases in settings.
+*Teach DB her name* listens to you say "Hi DB" and adds whatever the browser heard
+as wake phrases. While the ERP is open
 on screen, a green dot on her button means she is waiting for it; she then opens,
 listens, and keeps listening after each reply until you go quiet. The wait for the
 wake phrase uses the browser's free recogniser. Only one recogniser ever runs: it
@@ -110,7 +143,11 @@ cancelled each other in a loop until Chrome closed.
   Settings → Admin keys). The tab then shows Anthropic's own figures for the whole
   account (DB, Marketing, bank statements): this month as billed (typically complete
   within ~4 hours) and today from the token report (~30 minutes behind). Anthropic
-  has no API for the prepaid balance, so enter the credit you loaded and the date;
-  the tab shows credit minus billed spend.
+  has no API for the prepaid balance (not even with the Admin key), so the balance
+  itself is only on Anthropic's billing page; an optional estimate (credit loaded
+  minus billed spend) is tucked under the section. Admin keys exist only for team
+  organizations (Console → Settings → Organization → *Convert to team*).
+- **Dollar rate** is fetched automatically (European Central Bank via Frankfurter,
+  ExchangeRate-API as backup, refreshed every 6 hours) — nothing to enter.
 - **DB's own usage (live):** every request she makes is costed the moment it
   happens (`assistant_usage`), including Sarvam and the free Azure/Google characters.

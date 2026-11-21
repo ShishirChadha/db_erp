@@ -46,7 +46,6 @@ export default async function DashboardLayout({
     <NavSearchProvider>
       <RoleSeed snapshot={sessionUser} />
       <WebVitalsReporter />
-      <AssistantLauncher />
       <div className="flex h-dvh bg-muted overflow-hidden">
         <Sidebar />
         {/* pt-14 clears the fixed mobile top bar (Sidebar renders it at md:hidden) --
@@ -60,6 +59,9 @@ export default async function DashboardLayout({
               scrolls to reach it, exactly as before. */}
           <div className="p-4 md:p-6 max-w-screen-2xl mx-auto h-full">{children}</div>
         </main>
+        {/* DB's panel docks here on md+ (beside the page, both usable); on phones it
+            opens full screen. Renders nothing for anyone but DB's master. */}
+        <AssistantLauncher />
       </div>
     </NavSearchProvider>
   );

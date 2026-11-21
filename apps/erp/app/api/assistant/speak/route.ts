@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth/session'
 import { isDbMaster, getAssistantSettings, getSecret, VOICE_PROVIDERS, type VoiceProvider } from '@/lib/assistant/settings'
 import { synthesize, TTS_MODEL } from '@/lib/assistant/sarvam'
 import { azureSynthesize, googleSynthesize } from '@/lib/assistant/cloud-voices'
+import { liveUsdInr } from '@/lib/assistant/fx'
 import { recordSarvamUsage, recordFreeTtsUsage } from '@/lib/assistant/usage'
 
 export const dynamic = 'force-dynamic'
@@ -30,7 +31,7 @@ export async function POST(req: NextRequest) {
   try {
     if (provider === 'sarvam') {
       const out = await synthesize(key, text, voiceArg || settings.tts_speaker, pace)
-      await recordSarvamUsage({ profileId: sessionUser.id, kind: 'tts', usdInr: settings.usd_inr, characters: out.characters, model: TTS_MODEL })
+      await recordSarvamUsage({ profileId: sessionUser.id, kind: 'tts', usdInr: (await liveUsdInr()).rate, characters: out.characters, model: TTS_MODEL })
       return NextResponse.json({ audio: out.audio, format: 'mp3' })
     }
     if (provider === 'azure') {

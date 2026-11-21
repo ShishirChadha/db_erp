@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth/session'
 import { isDbMaster, getAssistantSettings, getSarvamKey } from '@/lib/assistant/settings'
 import { transcribe, STT_MODEL } from '@/lib/assistant/sarvam'
+import { liveUsdInr } from '@/lib/assistant/fx'
 import { recordSarvamUsage } from '@/lib/assistant/usage'
 
 export const dynamic = 'force-dynamic'
@@ -21,7 +22,7 @@ export async function POST(req: NextRequest) {
   try {
     const result = await transcribe(key, audio, (audio as File).name || 'speech.webm')
     const settings = await getAssistantSettings()
-    await recordSarvamUsage({ profileId: sessionUser.id, kind: 'stt', usdInr: settings.usd_inr, seconds, model: STT_MODEL })
+    await recordSarvamUsage({ profileId: sessionUser.id, kind: 'stt', usdInr: (await liveUsdInr()).rate, seconds, model: STT_MODEL })
     return NextResponse.json(result)
   } catch (err) {
     return NextResponse.json({ error: (err as Error).message }, { status: 502 })
