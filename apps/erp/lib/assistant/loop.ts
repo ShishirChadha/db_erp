@@ -35,10 +35,17 @@ export async function runAssistantTurn(params: {
   owner: { id: string; email: string | undefined }
   db: { profileId: string; sessionId: string }
   text: string
-  // BCP-47 code Sarvam detected when he spoke; null when he typed.
+  // He used her microphone (false = typed).
+  spoken?: boolean
+  // BCP-47 code Sarvam/Azure detected when he spoke; null when typed or when
+  // the browser recogniser (which detects no language) heard him.
   spokenLanguage?: string | null
   // He stopped her reply aloud before it finished; he didn't hear the rest.
   interrupted?: boolean
+  // He muted her voice on this device (he reads her replies).
+  voiceOn?: boolean
+  // Her previous reply's voice never reached him on this device.
+  voiceIssue?: 'blocked' | 'failed' | null
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
@@ -60,8 +67,15 @@ export async function runAssistantTurn(params: {
   const settings = await getAssistantSettings()
   const how = params.spokenLanguage
     ? `spoken, detected ${params.spokenLanguage}${params.spokenLanguage === 'en-IN' ? ' (English)' : ' (Hindi/Hinglish)'}`
-    : 'typed'
-  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
+    : params.spoken ? 'spoken' : 'typed'
+  const voiceNote = params.voiceOn === false
+    ? ' | your voice is muted on his device; he reads your replies'
+    : params.voiceIssue === 'blocked'
+      ? ' | your last reply was silent on his device: the browser blocked the sound until a tap on the page'
+      : params.voiceIssue === 'failed'
+        ? ' | your last reply was silent on his device: it could not play the sound'
+        : ''
+  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${voiceNote}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
 
   const client = new Anthropic({ apiKey })
   const tools = assistantTools(settings.read_modules, settings.write_skills)

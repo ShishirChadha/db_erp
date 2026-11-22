@@ -390,7 +390,9 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     retryTimer.current = setTimeout(() => { retryTimer.current = null; if (convoRef.current) voiceRef.current?.start() }, delay)
   }, [])
 
-  const send = useCallback(async (text: string, spokenLanguage: string | null = null) => {
+  // `spoken` = it came from her microphone (the browser recogniser detects no
+  // language, so a null language must not read as "typed" to her).
+  const send = useCallback(async (text: string, spoken: { language: string | null } | null = null) => {
     if (!text.trim() || busy) return
     setError(null)
     setBusy(true)
@@ -400,10 +402,14 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     let reply = ''
     const wasInterrupted = interrupted.current
     interrupted.current = false
+    const voiceIssue = voiceOn ? voiceRef.current?.takeSpeakIssue() ?? null : null
     try {
       const res = await apiFetch('/api/assistant/turn', {
         method: 'POST',
-        body: JSON.stringify({ text, thread_id: threadId, spoken_language: spokenLanguage, interrupted: wasInterrupted }),
+        body: JSON.stringify({
+          text, thread_id: threadId, spoken: !!spoken, spoken_language: spoken?.language ?? null,
+          interrupted: wasInterrupted, voice_on: voiceOn, voice_issue: voiceIssue,
+        }),
         timeoutMs: 120_000,
       })
       if (!res.ok || !res.body) {
@@ -452,7 +458,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     errors.current = 0
     if (a.sounds) chime('heard')
     if (convoRef.current && END_RE.test(text.trim())) endAfterReply.current = true
-    send(text, lang)
+    send(text, { language: lang })
   }, [send, a.sounds])
 
   // Nothing usable heard. In a conversation, keep listening until the quiet
@@ -567,7 +573,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     setSetup(j)
   }
 
-  const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null) }
+  const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null); interrupted.current = false }
   const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); if (!next) voice.stopSpeaking() }
   const micTap = () => {
     if (paused) return
@@ -643,7 +649,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   const lastDb = [...entries].reverse().find((e) => e.role === 'db')
   const pendingCard = lastDb?.cards?.find((c) => c.type === 'confirm' || c.type === 'share')
 
-  const sendDropped = () => { if (!dropped) return; const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t) }
+  const sendDropped = () => { if (!dropped) return; const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t, { language: null }) }
 
   return (
     <div className="relative flex h-full flex-col" style={{ background: `linear-gradient(to bottom, ${theme.from}12, transparent 30%)` }}>

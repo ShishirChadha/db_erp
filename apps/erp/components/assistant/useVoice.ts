@@ -33,6 +33,9 @@ export type NothingReason = 'silence' | 'ignored' | 'error'
 export interface Dropped { text: string; reason: 'too_quiet' | 'unsure' | 'filler'; peak: number; confidence: number }
 
 type Final = (text: string, language: string | null) => void
+// 'blocked': the browser held her voice until a tap that never came;
+// 'failed': this device couldn't play it at all.
+export type SpeakIssue = 'blocked' | 'failed' | null
 
 const SILENCE_MS = 1300 // pause that ends a sentence
 const NO_SPEECH_MS = 7000 // gave up waiting for him to start
@@ -252,6 +255,11 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const fakeLevelStop = useRef<(() => void) | null>(null)
   // Set by cancel(): the listen in progress ends without sending anything.
   const cancelledRef = useRef(false)
+  // Why her last line wasn't heard on this device (null = it played). The
+  // panel sends it with the next message, so DB can say so instead of
+  // guessing ("I'm only replying in text").
+  const speakIssue = useRef<SpeakIssue>(null)
+  const takeSpeakIssue = useCallback(() => { const i = speakIssue.current; speakIssue.current = null; return i }, [])
 
   const browserRecognitionCtor = () =>
     typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
@@ -525,6 +533,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     const synth = window.speechSynthesis
     // Android WebView browsers have no built-in voices: say so instead of silence.
     if (!synth || (typeof synth.getVoices === 'function' && synth.getVoices().length === 0 && isAndroid())) {
+      speakIssue.current = 'failed'
       window.dispatchEvent(new Event(VOICE_UNAVAILABLE_EVENT))
       onEnd()
       return
@@ -536,7 +545,10 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     u.voice = voices.find((v) => v.lang === 'en-IN') || voices.find((v) => v.lang === 'hi-IN') || null
     u.lang = u.voice?.lang || 'en-IN'
     u.onend = onEnd
-    u.onerror = onEnd
+    u.onerror = (e: SpeechSynthesisErrorEvent) => {
+      if (e.error !== 'interrupted' && e.error !== 'canceled') speakIssue.current = 'failed'
+      onEnd()
+    }
     synth.speak(u)
   }, [])
 
@@ -546,6 +558,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     if (!text.trim() || (!cfgRef.current.speakReplies && !preview)) { resolve(); return }
     stopSpeaking()
     setSpeaking(true)
+    speakIssue.current = null
     const end = () => { stopLevel(); setSpeaking(false); speakDone.current = null; resolve() }
     speakDone.current = end
     const provider = preview?.provider || cfgRef.current.speak
@@ -562,7 +575,8 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         audio.src = `data:audio/mpeg;base64,${j.audio}`
         audioRef.current = audio
         audio.onended = end
-        audio.onerror = end
+        audio.onerror = () => { speakIssue.current = 'failed'; end() }
+        audio.onplaying = () => { speakIssue.current = null } // incl. after "Tap to hear DB"
         // Measure her voice for the avatar -- only when the audio engine is
         // already running; routing audio through a suspended engine would
         // silence her, so then the level is faked instead.
@@ -596,6 +610,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         } catch (err) {
           if ((err as Error)?.name === 'NotAllowedError') {
             // Blocked until a tap: keep the audio ready and ask for one tap.
+            speakIssue.current = 'blocked'
             window.dispatchEvent(new CustomEvent(AUDIO_BLOCKED_EVENT, { detail: () => audio.play().catch(() => end()) }))
             return
           }
@@ -607,7 +622,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
   useEffect(() => () => { cancelledRef.current = true; stopRef.current?.(); stopSpeaking() }, [stopSpeaking])
 
-  return { supported, listening, transcribing, interim, speaking, micError, levelRef, start, stop, cancel, speak, stopSpeaking }
+  return { supported, listening, transcribing, interim, speaking, micError, levelRef, start, stop, cancel, speak, stopSpeaking, takeSpeakIssue }
 }
 
 // ------------------------------------------------------------------ wake word

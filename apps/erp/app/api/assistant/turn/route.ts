@@ -34,8 +34,11 @@ export async function POST(req: NextRequest) {
           owner: { id: sessionUser.id, email: sessionUser.email },
           db: { profileId: status.profileId, sessionId: status.sessionId },
           text,
+          spoken: body.spoken === true || typeof body.spoken_language === 'string',
           spokenLanguage: typeof body.spoken_language === 'string' ? body.spoken_language : null,
           interrupted: body.interrupted === true,
+          voiceOn: body.voice_on !== false,
+          voiceIssue: body.voice_issue === 'blocked' || body.voice_issue === 'failed' ? body.voice_issue : null,
           emit,
         })
       } catch (err) {

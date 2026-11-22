@@ -36,7 +36,7 @@ sources:
   - apps/erp/components/assistant/AssistantLookSettings.tsx
   - apps/erp/components/assistant/appearance.ts
   - apps/erp/app/api/assistant/lease/route.ts
-updated: 2026-11-21
+updated: 2026-11-22
 ---
 
 ## What it is
@@ -108,6 +108,14 @@ press (Chrome).
 inside a tap, and her replies come seconds later — so one audio player is unlocked on your
 first tap and reused for every reply. If a browser can't play her voice at all, the panel
 says so instead of staying silent.
+
+**She knows when you didn't hear her.** Each message tells her whether you spoke or typed
+(speech heard by the browser's own recogniser used to arrive marked "typed", so she
+assumed you were reading and said "I'm only replying in text"), whether her voice is
+muted on that device, and whether her previous reply stayed silent there (the browser
+blocked the sound until a tap, or couldn't play it). If you say you can't hear her she
+suggests the fix on your side (volume, iPhone silent switch, tap the page or *Tap to hear
+DB*, the replay button) and doesn't pretend she is text-only.
 
 ## Look, layout and screens
 
