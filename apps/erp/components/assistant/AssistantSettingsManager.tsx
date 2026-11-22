@@ -27,7 +27,7 @@ type Billing = {
 }
 type Config = {
   settings: any
-  secrets: Record<'sarvam' | 'azure' | 'google' | 'anthropic_admin', { configured: boolean; from_env: boolean }>
+  secrets: Record<'sarvam' | 'azure' | 'google' | 'anthropic_admin' | 'anthropic', { configured: boolean; from_env: boolean }>
   status: { ready: boolean; reason?: string }
   owners: { id: string; full_name: string | null; username: string | null }[]
   me: string
@@ -284,6 +284,15 @@ export default function AssistantSettingsManager() {
             )
           })}
         </div>
+        {cfg.secrets.anthropic.from_env
+          ? <p className="text-xs text-success">Anthropic API key: set on this server.</p>
+          : (
+            <div className="space-y-1">
+              {!cfg.secrets.anthropic.configured && <p className="text-xs text-destructive">This server has no Anthropic API key, so DB can’t think here. Best: add ANTHROPIC_API_KEY in Vercel (it also powers Marketing and bank statements). Or paste it below for DB only.</p>}
+              <KeyField label="Anthropic API key (for DB only)" configured={cfg.secrets.anthropic.configured} fromEnv={false}
+                value={keys.anthropic_key || ''} onChange={(v) => setKey('anthropic_key', v)} placeholder="sk-ant-api…" onRemove={() => removeKey('anthropic_key')} />
+            </div>
+          )}
         <p className="text-xs text-muted-foreground">
           Plan that works: start on Medium for a week or two, add learnings whenever she gets something wrong, then try Low. If Low starts slipping on something, switch back. It takes effect from her next reply.
           She doesn’t get smarter on her own: what improves is her learnings and the ERP’s history she reads, and those carry over to any model.

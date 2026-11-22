@@ -62,7 +62,7 @@ export async function GET(req: NextRequest) {
 
 const NUM = (v: unknown, lo: number, hi: number) => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : undefined)
 const VOICE_ID = /^[A-Za-z0-9_]{2,40}$/
-const KEY_FIELDS: Record<string, SecretName> = { sarvam_key: 'sarvam', azure_key: 'azure', google_key: 'google', anthropic_admin_key: 'anthropic_admin' }
+const KEY_FIELDS: Record<string, SecretName> = { sarvam_key: 'sarvam', azure_key: 'azure', google_key: 'google', anthropic_admin_key: 'anthropic_admin', anthropic_key: 'anthropic' }
 
 export async function PUT(req: NextRequest) {
   const sessionUser = await getSessionUser(req)
@@ -111,6 +111,9 @@ export async function PUT(req: NextRequest) {
   for (const [field, name] of Object.entries(KEY_FIELDS)) {
     if (body[field] === undefined) continue
     const value = typeof body[field] === 'string' && body[field].trim() ? body[field].trim() : null
+    if (name === 'anthropic' && value && !value.startsWith('sk-ant-api')) {
+      return NextResponse.json({ error: 'That doesn’t look like an Anthropic API key (it starts with "sk-ant-api").' }, { status: 400 })
+    }
     if (name === 'anthropic_admin' && value && !value.startsWith('sk-ant-admin')) {
       return NextResponse.json({ error: 'That is not an Admin API key. It starts with "sk-ant-admin" — create one in the Claude Console under Settings → Admin keys.' }, { status: 400 })
     }

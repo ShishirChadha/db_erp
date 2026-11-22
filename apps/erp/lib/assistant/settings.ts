@@ -148,6 +148,10 @@ export const SECRETS = {
   azure: { setting: 'assistant_azure_speech_key', env: 'AZURE_SPEECH_KEY' },
   google: { setting: 'assistant_google_tts_key', env: 'GOOGLE_TTS_API_KEY' },
   anthropic_admin: { setting: 'assistant_anthropic_admin_key', env: 'ANTHROPIC_ADMIN_KEY' },
+  // The key DB thinks with. Normally the server's ANTHROPIC_API_KEY (shared with
+  // Marketing, bank statements and document extraction); a copy pasted in
+  // Settings lets DB work on a server that doesn't have it yet.
+  anthropic: { setting: 'assistant_anthropic_api_key', env: 'ANTHROPIC_API_KEY' },
 } as const
 export type SecretName = keyof typeof SECRETS
 

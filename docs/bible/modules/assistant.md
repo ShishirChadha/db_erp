@@ -136,6 +136,12 @@ shown includes Anthropic's reason. If an error repeats, start a new conversation
 
 ## Brain (model) and skills
 
+DB thinks with the server's `ANTHROPIC_API_KEY` (the same key Marketing, bank-statement
+reading and document extraction use). **The live Vercel project must have it set** —
+without it every AI feature fails there, and DB now says so in plain words instead of
+the SDK's "Could not resolve authentication method". A copy can also be pasted in
+Settings → DB Assistant → Brain, which makes DB (only) work on a server without it.
+
 Settings → DB Assistant → **Brain**: Opus 5.5 (high, ≈₹3–8 a conversation), Sonnet 5.5
 (medium, ≈₹1.5–4) or Haiku 5.5 (low, ≈₹0.10–0.25; measured ₹0.013 for a greeting and
 ₹0.11 for a stock question). Haiku has no server-side fallback model, so the loop only

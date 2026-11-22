@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { istToday } from '@/lib/attendance'
 import { assistantSystemPrompt } from './playbooks'
-import { getAssistantSettings } from './settings'
+import { getAssistantSettings, getSecret } from './settings'
 import { recordClaudeUsage } from './usage'
 import { liveUsdInr } from './fx'
 import { assistantTools, runTool, type AssistantCard, type PendingAction } from './tools'
@@ -42,6 +42,12 @@ export async function runAssistantTurn(params: {
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
+  const apiKey = await getSecret('anthropic')
+  if (!apiKey) {
+    emit({ type: 'error', message: 'DB’s brain has no Anthropic API key on this server. Add ANTHROPIC_API_KEY in Vercel (erp project → Settings → Environment Variables, then redeploy), or paste the key in Settings → DB Assistant → Brain.' })
+    emit({ type: 'done' })
+    return
+  }
   const thread = await loadOrCreateThread(params.threadId, owner.id, params.text)
   emit({ type: 'thread', id: thread.id })
 
@@ -57,7 +63,7 @@ export async function runAssistantTurn(params: {
     : 'typed'
   messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
 
-  const client = new Anthropic()
+  const client = new Anthropic({ apiKey })
   const tools = assistantTools(settings.read_modules, settings.write_skills)
   const [fx, learnings] = await Promise.all([liveUsdInr(), generalLearnings()])
   const usdInr = fx.rate
