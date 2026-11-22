@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
-import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown } from 'lucide-react'
+import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown, Moon, Power } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, AUDIO_BLOCKED_EVENT, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
@@ -86,7 +86,10 @@ function useMedia(query: string) {
 }
 
 interface PanelConfig {
-  listen: 'sarvam' | 'browser'
+  listen: ListenProvider
+  azureOk: boolean
+  sarvamOk: boolean
+  pausedUntil: string | null
   speak: SpeakProvider
   speakReplies: boolean
   wakeWord: boolean
@@ -117,9 +120,19 @@ export function AssistantLauncher() {
       const j = await r.json()
       const s = j.settings
       const vp = s.voice_provider as SpeakProvider
+      const azureOk = !!j.secrets.azure?.configured
+      const sarvamOk = !!j.secrets.sarvam?.configured
       setConfig({
-        // A provider whose key isn't saved yet falls back to the browser.
-        listen: s.listen_provider === 'sarvam' && j.secrets.sarvam?.configured ? 'sarvam' : 'browser',
+        // The chosen way of hearing you if its key is saved; otherwise the
+        // browser where its speech recognition really works (Chrome), else
+        // Azure / Sarvam recording (DuckDuckGo and other WebView browsers).
+        listen: s.listen_provider === 'azure' && azureOk ? 'azure'
+          : s.listen_provider === 'sarvam' && sarvamOk ? 'sarvam'
+          : browserSpeechReliable() ? 'browser'
+          : azureOk ? 'azure' : sarvamOk ? 'sarvam' : 'browser',
+        azureOk,
+        sarvamOk,
+        pausedUntil: s.paused_until ?? null,
         speak: vp !== 'browser' && j.secrets[vp]?.configured ? vp : 'browser',
         speakReplies: s.speak_replies,
         wakeWord: s.wake_word,
@@ -137,10 +150,28 @@ export function AssistantLauncher() {
     const onChange = () => load()
     // Settings -> "Teach DB her name" needs the mic to itself for a moment.
     const onPause = (e: Event) => setExternalPause(!!(e as CustomEvent).detail)
+    // The browser's recogniser proved broken mid-use: switch to recording.
+    const onBroken = () => setConfig((c) => c && c.listen === 'browser' ? { ...c, listen: c.azureOk ? 'azure' : c.sarvamOk ? 'sarvam' : 'browser' } : c)
+    // Pause on one device reaches the others within ~30 s (and at once when
+    // you come back to a tab).
+    const poll = setInterval(() => { if (document.visibilityState === 'visible') load() }, 30_000)
+    const onVisible = () => { if (document.visibilityState === 'visible') load() }
     window.addEventListener('db-assistant-settings', onChange)
     window.addEventListener('db-wake-pause', onPause)
-    return () => { window.removeEventListener('db-assistant-settings', onChange); window.removeEventListener('db-wake-pause', onPause) }
+    window.addEventListener(BROWSER_SPEECH_BROKEN_EVENT, onBroken)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      clearInterval(poll)
+      window.removeEventListener('db-assistant-settings', onChange)
+      window.removeEventListener('db-wake-pause', onPause)
+      window.removeEventListener(BROWSER_SPEECH_BROKEN_EVENT, onBroken)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
   }, [load])
+  // Re-check every 30 s whether a timed pause has run out.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t) }, [])
+  const paused = !!config?.pausedUntil && Date.parse(config.pausedUntil) > now
 
   // Full-screen mode on phones follows the *visible* area, so the on-screen
   // keyboard (Android Chrome overlays it by default) never hides the input.
@@ -157,7 +188,7 @@ export function AssistantLauncher() {
   // Listens whenever DB is idle -- panel open, minimised or closed. Paused while
   // she listens, thinks, speaks or a conversation is running; useVoice also
   // hands the mic over explicitly so two recognisers never run at once.
-  const wake = useWakeWord(!!config?.wakeWord, config?.wakePhrases || [], vs.busy || externalPause, () => {
+  const wake = useWakeWord(!!config?.wakeWord && !paused, config?.wakePhrases || [], vs.busy || externalPause, () => {
     if (config?.look.haptics) buzz([20, 40, 20])
     if (config?.look.sounds) chime('wake')
     setOpen(true)
@@ -210,9 +241,10 @@ export function AssistantLauncher() {
           className={cn('fixed z-40 rounded-full shadow-lg ring-2 ring-background transition-transform hover:scale-105', a.launcher_side === 'right' ? 'right-4' : 'left-4')}
           style={{ bottom: 'max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem))' }}
         >
-          <DbAvatar size={launcherSize} state={minimized ? vs.avatar : 'idle'} look={a} />
+          <DbAvatar size={launcherSize} state={minimized ? vs.avatar : 'idle'} look={a} className={paused ? 'opacity-50 grayscale' : undefined} />
+          {paused && <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-white ring-2 ring-background" title="DB is paused"><Moon className="h-3 w-3" /></span>}
           {minimized && vs.convo && <span className="absolute -top-1 left-1/2 -translate-x-1/2 rounded-full bg-emerald-500 px-1.5 text-[10px] font-semibold text-white">LIVE</span>}
-          {!minimized && wake.active && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-success ring-2 ring-background" />}
+          {!paused && !minimized && wake.active && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-success ring-2 ring-background" />}
           {wake.failed && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-warning ring-2 ring-background" />}
         </button>
       )}
@@ -223,6 +255,7 @@ export function AssistantLauncher() {
             wakeKey={wakeKey}
             wakeActive={wake.active}
             wakeNote={config.wakeWord ? wake.failed : null}
+            paused={paused}
             onState={setVs}
             onMinimize={() => setMinimized(true)}
             onClose={() => { setOpen(false); setMinimized(false); setWakeKey(0); setVs({ busy: false, avatar: 'idle', convo: false }) }}
@@ -233,8 +266,8 @@ export function AssistantLauncher() {
   )
 }
 
-function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState, onMinimize, onClose }: {
-  config: PanelConfig; wakeKey: number; wakeActive: boolean; wakeNote: string | null
+function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, onState, onMinimize, onClose }: {
+  config: PanelConfig; wakeKey: number; wakeActive: boolean; wakeNote: string | null; paused: boolean
   onState: (s: VoiceState) => void; onMinimize: () => void; onClose: () => void
 }) {
   const a = config.look
@@ -253,6 +286,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
   const [saying, setSaying] = useState('') // the reply she is reading aloud now
   const [captions, setCaptions] = useState(a.captions)
   const [chatOverride, setChatOverride] = useState(false) // "keyboard" pressed on the stage
+  const [pauseMenu, setPauseMenu] = useState(false)
   // Chrome blocked her voice until the page is tapped once: hold the play.
   const [blockedPlay, setBlockedPlay] = useState<(() => void) | null>(null)
   useEffect(() => {
@@ -367,6 +401,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
   const voice = useVoice({ listen: config.listen, speak: config.speak, speakReplies: voiceOn, gate: config.gate }, onHeard, onNothing)
   voiceRef.current = voice
   useEffect(() => { if (!voice.speaking) setBlockedPlay(null) }, [voice.speaking])
+  useEffect(() => { if (paused) { endConvo(); voiceRef.current?.stopSpeaking() } }, [paused, endConvo])
 
   const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
   useEffect(() => {
@@ -454,6 +489,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
   const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null) }
   const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); if (!next) voice.stopSpeaking() }
   const micTap = () => {
+    if (paused) return
     if (voice.listening) { voice.stop(); return } // done talking: send now
     if (voice.speaking) { interrupt(); return } // interrupt her; a conversation resumes listening by itself
     if (config.continuous) startConvo()
@@ -461,11 +497,40 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
   }
   const close = () => { endConvo(); voice.stopSpeaking(); onClose() }
 
+  // Pause DB on every device (a phone call, a meeting). Saved on the server, so
+  // the laptop and the phone both stop listening; turning her on works the same.
+  const setPause = async (minutes: number | 'forever' | null) => {
+    setPauseMenu(false)
+    const until = minutes === null ? null : minutes === 'forever' ? '9999-12-31T00:00:00.000Z' : new Date(Date.now() + minutes * 60_000).toISOString()
+    if (until) { endConvo(); voice.stopSpeaking() }
+    const r = await apiFetch('/api/assistant/config', { method: 'PUT', body: JSON.stringify({ paused_until: until }) })
+    if (!r.ok) setError('Could not change the pause. Try again.')
+    window.dispatchEvent(new Event('db-assistant-settings'))
+  }
+  const pausedLabel = config.pausedUntil && config.pausedUntil.startsWith('9999')
+    ? 'until you turn her on'
+    : `until ${config.pausedUntil ? new Date(config.pausedUntil).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}`
+  const pauseControl = (dark: boolean) => (
+    <div className="relative">
+      {dark
+        ? <StageBtn onClick={() => (paused ? setPause(null) : setPauseMenu((m) => !m))} label={paused ? 'Turn DB on' : 'Pause DB on all devices'}>{paused ? <Power className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</StageBtn>
+        : <IconBtn onClick={() => (paused ? setPause(null) : setPauseMenu((m) => !m))} label={paused ? 'Turn DB on' : 'Pause DB on all devices'}>{paused ? <Power className="h-4 w-4 text-emerald-600" /> : <Moon className="h-4 w-4" />}</IconBtn>}
+      {pauseMenu && (
+        <div className="absolute right-0 top-12 z-20 w-60 rounded-xl border bg-background p-1 text-sm text-foreground shadow-xl">
+          <p className="px-3 py-2 text-xs text-muted-foreground">Stop listening on all your devices (laptop and phone):</p>
+          {([[30, 'For 30 minutes'], [60, 'For 1 hour'], [180, 'For 3 hours'], ['forever', 'Until I turn her on']] as const).map(([m, label]) => (
+            <button key={String(m)} type="button" onClick={() => setPause(m)} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted">{label}</button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+
   const ready = !!setup?.ready
   const talking = convo || voice.listening || voice.speaking || voice.transcribing || (busy && convo)
   const stageView = a.voice_view === 'stage' || (a.voice_view === 'auto' && compact)
   const onStage = stageView && talking && !chatOverride
-  const statusLine = voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
+  const statusLine = paused ? `Paused on all devices ${pausedLabel}` : voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
   const tapToHear = blockedPlay && (
     <button type="button" onClick={() => { const play = blockedPlay; setBlockedPlay(null); play() }}
       className="mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg"
@@ -504,6 +569,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
           onEnd={() => { endConvo(); voice.stopSpeaking() }}
           onMinimize={onMinimize}
           compact={compact}
+          pauseControl={pauseControl(true)}
         />
       ) : (
         <>
@@ -517,11 +583,18 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
             </div>
             <IconBtn onClick={toggleVoice} label={voiceOn ? 'Mute DB' : 'Unmute DB'}>{voiceOn ? <Volume2 className="h-4 w-4" /> : <VolumeX className="h-4 w-4" />}</IconBtn>
             <IconBtn onClick={newConversation} label="New conversation"><Plus className="h-4 w-4" /></IconBtn>
+            {pauseControl(false)}
             <IconBtn onClick={onMinimize} label="Minimise (keeps the conversation going)"><Minus className="h-4 w-4" /></IconBtn>
             <IconBtn onClick={close} label="Close DB"><X className="h-4 w-4" /></IconBtn>
           </header>
 
           <div ref={scrollRef} className={cn('flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4', TEXT_SIZE[a.text_size])}>
+            {paused && (
+              <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted p-3 text-sm">
+                <span className="flex items-center gap-2"><Moon className="h-4 w-4 shrink-0" />DB is paused on all your devices {pausedLabel}. She isn’t listening anywhere; you can still type.</span>
+                <Button size="sm" onClick={() => setPause(null)}>Turn on</Button>
+              </div>
+            )}
             {setup && !setup.ready && (
               <div className="rounded-xl border bg-muted p-3">
                 {setup.reason === 'deactivated'
@@ -586,7 +659,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState,
                   <Send className="h-4 w-4" />
                 </button>
               ) : voice.supported && (
-                <MicButton size={52} theme={theme} listening={voice.listening} speaking={voice.speaking} disabled={busy || voice.transcribing || !ready} onClick={micTap} />
+                <MicButton size={52} theme={theme} listening={voice.listening} speaking={voice.speaking} disabled={busy || voice.transcribing || !ready || paused} onClick={micTap} />
               )}
             </div>
           </div>
@@ -603,6 +676,7 @@ export function VoiceStage(p: {
   captions: boolean; onToggleCaptions: () => void; dropped: Dropped | null; onSendDropped: () => void; error: string | null
   card: React.ReactNode; listening: boolean; speaking: boolean; busy: boolean
   onMic: () => void; onKeyboard: () => void; onEnd: () => void; onMinimize: () => void; compact: boolean
+  pauseControl: React.ReactNode
 }) {
   const theme = THEMES[p.look.theme]
   const glow = p.state === 'speaking' ? theme.glowSpeak : p.state === 'listening' ? theme.glowListen : theme.from
@@ -612,9 +686,12 @@ export function VoiceStage(p: {
       <div className="flex items-center justify-between px-3 pt-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
         <StageBtn onClick={p.onMinimize} label="Minimise (keeps talking)"><ChevronDown className="h-5 w-5" /></StageBtn>
         <span className="text-sm font-medium text-white/80">DB</span>
+        <div className="flex items-center gap-2">
+        {p.pauseControl}
         <StageBtn onClick={p.onToggleCaptions} label={p.captions ? 'Hide captions' : 'Show captions'}>
           {p.captions ? <Captions className="h-5 w-5" /> : <CaptionsOff className="h-5 w-5" />}
         </StageBtn>
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-5 px-6">

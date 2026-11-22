@@ -453,7 +453,7 @@ Live schema snapshot -- 144 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_threads
 
-~1 rows (estimate)
+~3 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -467,7 +467,7 @@ Live schema snapshot -- 144 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_usage
 
-~49 rows (estimate)
+~153 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1402,7 +1402,7 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~599 rows (estimate)
+~609 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2609,7 +2609,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~39,248 rows (estimate)
+~39,241 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2917,7 +2917,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~169 rows (estimate)
+~170 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3050,7 +3050,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~4,268 rows (estimate)
+~4,291 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

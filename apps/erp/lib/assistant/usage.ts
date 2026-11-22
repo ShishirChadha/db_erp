@@ -61,12 +61,20 @@ export async function recordFreeTtsUsage(p: { profileId: string; provider: 'azur
   })
 }
 
+// Azure listening: free within the F0 tier's 5 audio hours a month.
+export const FREE_STT_SECONDS = { azure_stt: 5 * 3600 } as const
+export async function recordFreeSttUsage(p: { profileId: string; provider: 'azure_stt'; model: string; seconds: number }) {
+  await supabaseAdmin.from('assistant_usage').insert({
+    profile_id: p.profileId, provider: p.provider, model: p.model, audio_seconds: p.seconds, cost_inr: 0, cost_usd: 0,
+  })
+}
+
 export async function usageSummary(since: string | null) {
   const monthStart = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }).slice(0, 8) + '01'
   const todayStart = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' })
   const from = [since, monthStart].filter(Boolean).sort()[0] as string
   const { data } = await supabaseAdmin.from('assistant_usage')
-    .select('created_at, provider, cost_usd, cost_inr, thread_id, characters')
+    .select('created_at, provider, cost_usd, cost_inr, thread_id, characters, audio_seconds')
     .gte('created_at', `${from}T00:00:00+05:30`)
     .limit(20000)
   const rows = data || []
@@ -83,5 +91,8 @@ export async function usageSummary(since: string | null) {
     since_credit: since ? { claude: sum((r) => claude(r) && ist(r) >= since), sarvam: sum((r) => sarvam(r) && ist(r) >= since) } : null,
     conversations_this_month: conversationsThisMonth,
     free_voice_chars_month: { azure: chars('azure_tts'), google: chars('google_tts') },
+    free_listen_seconds_month: {
+      azure: rows.filter((r) => r.provider === 'azure_stt' && ist(r) >= monthStart).reduce((a, r) => a + (Number(r.audio_seconds) || 0), 0),
+    },
   }
 }

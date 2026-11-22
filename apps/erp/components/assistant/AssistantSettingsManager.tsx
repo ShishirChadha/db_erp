@@ -43,6 +43,7 @@ type Config = {
     since_credit: { claude: Money; sarvam: Money } | null
     conversations_this_month: number
     free_voice_chars_month: { azure: number; google: number }
+    free_listen_seconds_month?: { azure: number }
   }
   free_tts_chars: { azure_tts: number; google_tts: number }
   anthropic_billing: Attempt<Billing>
@@ -171,7 +172,7 @@ export default function AssistantSettingsManager() {
     setErr(null); setMsg(null)
     const body: any = {
       master_profile_ids: s.master_profile_ids, model: s.model,
-      voice_provider: s.voice_provider, listen_provider: s.listen_provider,
+      voice_provider: s.voice_provider, listen_provider: s.listen_provider, azure_stt_language: s.azure_stt_language,
       tts_speaker: s.tts_speaker, azure_voice: s.azure_voice, google_voice: s.google_voice, azure_region: s.azure_region,
       tts_pace: Number(s.tts_pace), speak_replies: s.speak_replies,
       wake_word: s.wake_word,
@@ -353,15 +354,37 @@ export default function AssistantSettingsManager() {
         </label>
       </Section>
 
-      <Section title="Hearing you (listening)" hint="Who turns your speech into text. Sarvam understands Hinglish much better than the browser (which heard “Hi DB” as “IDBI”).">
-        <div className="flex gap-4 text-sm">
-          {(['sarvam', 'browser'] as const).map((p) => (
-            <label key={p} className="flex items-center gap-2">
-              <input type="radio" name="listen_provider" checked={s.listen_provider === p} onChange={() => set('listen_provider', p)} />
-              {p === 'sarvam' ? 'Sarvam AI' : 'Browser (free)'}
+      <Section title="Hearing you (listening)" hint="Who turns your speech into text. The browser is free but works properly only in Chrome; Azure works in every browser (DuckDuckGo too) and understands Indian English and Hindi well.">
+        <div className="grid gap-1.5 text-sm sm:grid-cols-3">
+          {([
+            ['browser', 'Browser (free)', 'Chrome only; also powers “Hey DB”'],
+            ['azure', 'Microsoft Azure', 'Any browser; 5 free hours a month'],
+            ['sarvam', 'Sarvam AI', 'Paid; best at mixed Hinglish'],
+          ] as const).map(([p, label, hint]) => (
+            <label key={p} className={cn('flex cursor-pointer items-start gap-2 rounded-md border p-2', s.listen_provider === p && 'border-primary bg-primary/5')}>
+              <input type="radio" name="listen_provider" className="mt-0.5" checked={s.listen_provider === p} onChange={() => set('listen_provider', p)} />
+              <span>{label}<span className="block text-xs text-muted-foreground">{hint}</span></span>
             </label>
           ))}
         </div>
+        <p className="text-xs text-muted-foreground">
+          In a browser whose own speech recognition doesn’t work (DuckDuckGo, in-app browsers), DB switches to Azure by herself when the Azure key is saved — you don’t need to change anything here.
+          “Hey DB” always needs Chrome.
+        </p>
+        {s.listen_provider === 'azure' && (
+          <div className="space-y-2">
+            {!cfg.secrets.azure.configured && (
+              <KeyField label="Azure Speech key (same key as her voice)" configured={false} fromEnv={false}
+                value={keys.azure_key || ''} onChange={(v) => setKey('azure_key', v)} placeholder="Key 1 from your Azure Speech resource" onRemove={() => removeKey('azure_key')} />
+            )}
+            <Label className="text-xs">Azure listens for</Label>
+            <div className="space-y-1 text-sm">
+              <label className="flex items-center gap-2"><input type="radio" name="stt_lang" checked={s.azure_stt_language !== 'hi-IN'} onChange={() => set('azure_stt_language', 'en-IN')} />English (India) — writes Hindi words in English letters</label>
+              <label className="flex items-center gap-2"><input type="radio" name="stt_lang" checked={s.azure_stt_language === 'hi-IN'} onChange={() => set('azure_stt_language', 'hi-IN')} />Hindi — writes everything in हिंदी, English words included</label>
+            </div>
+            <p className="text-xs text-muted-foreground">Free: {Math.round((u.free_listen_seconds_month?.azure || 0) / 60)} of 300 minutes used this month (Azure F0). When the free hours run out, Azure simply stops until next month — no charge.</p>
+          </div>
+        )}
         {s.listen_provider === 'sarvam' && vp !== 'sarvam' && (
           <KeyField label="Sarvam API key" configured={cfg.secrets.sarvam.configured} fromEnv={cfg.secrets.sarvam.from_env}
             value={keys.sarvam_key || ''} onChange={(v) => setKey('sarvam_key', v)} placeholder="From dashboard.sarvam.ai" onRemove={() => removeKey('sarvam_key')} />

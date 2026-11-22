@@ -79,7 +79,9 @@ export async function PUT(req: NextRequest) {
   }
   if (ASSISTANT_MODELS.includes(body.model)) patch.model = body.model
   if (VOICE_PROVIDERS.includes(body.voice_provider)) patch.voice_provider = body.voice_provider
-  if (body.listen_provider === 'sarvam' || body.listen_provider === 'browser') patch.listen_provider = body.listen_provider
+  if (body.listen_provider === 'sarvam' || body.listen_provider === 'azure' || body.listen_provider === 'browser') patch.listen_provider = body.listen_provider
+  if (body.azure_stt_language === 'en-IN' || body.azure_stt_language === 'hi-IN') patch.azure_stt_language = body.azure_stt_language
+  if (body.paused_until === null || (typeof body.paused_until === 'string' && !Number.isNaN(Date.parse(body.paused_until)))) patch.paused_until = body.paused_until
   if (typeof body.tts_speaker === 'string' && VOICE_ID.test(body.tts_speaker)) patch.tts_speaker = body.tts_speaker
   if (typeof body.azure_voice === 'string' && VOICE_ID.test(body.azure_voice)) patch.azure_voice = body.azure_voice
   if (typeof body.google_voice === 'string' && VOICE_ID.test(body.google_voice)) patch.google_voice = body.google_voice

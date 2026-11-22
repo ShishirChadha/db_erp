@@ -19,9 +19,10 @@ import { apiFetch } from '@/lib/api-client'
 // is reported as 'ignored', so a conversation just keeps listening.
 
 export type SpeakProvider = 'sarvam' | 'azure' | 'google' | 'browser'
+export type ListenProvider = 'sarvam' | 'azure' | 'browser'
 export type VoiceGate = 'off' | 'low' | 'medium' | 'high'
 export interface VoiceConfig {
-  listen: 'sarvam' | 'browser'
+  listen: ListenProvider
   speak: SpeakProvider
   speakReplies: boolean
   gate?: VoiceGate
@@ -106,6 +107,49 @@ export const isAndroid = () => typeof navigator !== 'undefined' && /Android/i.te
 // shows "Tap to hear DB".
 export const AUDIO_BLOCKED_EVENT = 'db-audio-blocked'
 
+// The browser's own speech recognition, where it really works. Android WebView
+// browsers (DuckDuckGo, in-app browsers) either hide it or expose one that never
+// returns anything -- DB then "listened" forever. There, and once a listen has
+// proved broken, DB records the audio itself and sends it to Azure instead.
+export const BROWSER_SPEECH_BROKEN_EVENT = 'db-browser-speech-broken'
+let browserSpeechBroken = false
+export function browserSpeechReliable() {
+  if (typeof window === 'undefined' || browserSpeechBroken) return false
+  if (!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition)) return false
+  return !/DuckDuckGo|; wv\)|FBAN|FBAV|Instagram|Line\//i.test(navigator.userAgent)
+}
+function markBrowserSpeechBroken() {
+  browserSpeechBroken = true
+  window.dispatchEvent(new Event(BROWSER_SPEECH_BROKEN_EVENT))
+}
+
+// 16 kHz mono 16-bit WAV from recorded float samples (what Azure expects).
+export function encodeWav(chunks: Float32Array[], rate: number) {
+  const total = chunks.reduce((a, c) => a + c.length, 0)
+  const all = new Float32Array(total)
+  let o = 0
+  for (const c of chunks) { all.set(c, o); o += c.length }
+  const ratio = rate / 16000
+  const n = Math.floor(total / ratio)
+  const pcm = new Int16Array(n)
+  for (let i = 0; i < n; i++) {
+    // average the source samples that fall into this output sample
+    const start = Math.floor(i * ratio), end = Math.min(total, Math.floor((i + 1) * ratio))
+    let sum = 0
+    for (let j = start; j < end; j++) sum += all[j]
+    const v = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)))
+    pcm[i] = v < 0 ? v * 0x8000 : v * 0x7fff
+  }
+  const buf = new ArrayBuffer(44 + pcm.length * 2)
+  const dv = new DataView(buf)
+  const str = (off: number, t: string) => { for (let i = 0; i < t.length; i++) dv.setUint8(off + i, t.charCodeAt(i)) }
+  str(0, 'RIFF'); dv.setUint32(4, 36 + pcm.length * 2, true); str(8, 'WAVE'); str(12, 'fmt ')
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, 16000, true)
+  dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); str(36, 'data'); dv.setUint32(40, pcm.length * 2, true)
+  new Int16Array(buf, 44).set(pcm)
+  return new Blob([buf], { type: 'audio/wav' })
+}
+
 // Short fixed lines ("Yes Boss?") are fetched once and replayed instantly.
 const audioCache = new Map<string, string>()
 
@@ -169,7 +213,9 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const browserRecognitionCtor = () =>
     typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
   const supported = typeof window !== 'undefined' && (
-    config.listen === 'sarvam' ? !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined' : !!browserRecognitionCtor()
+    config.listen === 'sarvam' ? !!navigator.mediaDevices?.getUserMedia && typeof MediaRecorder !== 'undefined'
+      : config.listen === 'azure' ? !!navigator.mediaDevices?.getUserMedia && typeof AudioContext !== 'undefined'
+      : !!browserRecognitionCtor()
   )
 
   const stopSpeaking = useCallback(() => {
@@ -253,6 +299,82 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     setListening(true)
   }, [])
 
+  // Records your voice itself (16 kHz WAV), stops when you pause, and sends it
+  // to Azure speech-to-text. Works in any browser with a microphone.
+  const listenAzure = useCallback(async () => {
+    setMicError(null)
+    await takeMic()
+    let stream: MediaStream
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: MIC })
+    } catch {
+      releaseMic()
+      setMicError('Microphone permission is blocked. Allow it for this site in the browser’s settings.')
+      nothingRef.current?.('error')
+      return
+    }
+    const ctx = audioCtx()
+    if (!ctx) { stream.getTracks().forEach((t) => t.stop()); releaseMic(); setMicError('This browser can’t record audio.'); nothingRef.current?.('error'); return }
+    if (ctx.state !== 'running') await ctx.resume().catch(() => {})
+    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.006)
+    const source = ctx.createMediaStreamSource(stream)
+    const proc = ctx.createScriptProcessor(4096, 1, 1)
+    const chunks: Float32Array[] = []
+    const started = Date.now()
+    let heard = false
+    let lastVoice = Date.now()
+    let done = false
+
+    const finish = async () => {
+      if (done) return
+      done = true
+      proc.onaudioprocess = null
+      try { proc.disconnect(); source.disconnect() } catch {}
+      stream.getTracks().forEach((t) => t.stop())
+      levelRef.current = 0
+      releaseMic()
+      setListening(false)
+      stopRef.current = null
+      if (cancelledRef.current) return
+      if (!heard || !chunks.length) { nothingRef.current?.('silence'); return }
+      const seconds = Math.max(1, Math.round((Date.now() - started) / 1000))
+      setTranscribing(true)
+      try {
+        const form = new FormData()
+        form.append('audio', encodeWav(chunks, ctx.sampleRate), 'speech.wav')
+        form.append('seconds', String(seconds))
+        form.append('provider', 'azure')
+        const res = await apiFetch('/api/assistant/transcribe', { method: 'POST', body: form, timeoutMs: 40_000 })
+        const j = await res.json().catch(() => ({}))
+        if (!res.ok) throw new Error(j.error || 'Could not understand that.')
+        if (cancelledRef.current) return
+        if (!j.text) nothingRef.current?.('silence')
+        else if (isFiller(j.text)) nothingRef.current?.('ignored', { text: j.text, reason: 'filler', peak: 1, confidence: 1 })
+        else finalRef.current(j.text, j.language ?? null)
+      } catch (err) {
+        setMicError((err as Error).message)
+        nothingRef.current?.('error')
+      } finally {
+        setTranscribing(false)
+      }
+    }
+    proc.onaudioprocess = (e) => {
+      const data = e.inputBuffer.getChannelData(0)
+      chunks.push(new Float32Array(data))
+      let sum = 0
+      for (let i = 0; i < data.length; i++) sum += data[i] * data[i]
+      const rms = Math.sqrt(sum / data.length)
+      levelRef.current = rms
+      const now = Date.now()
+      if (rms > gate) { heard = true; lastVoice = now }
+      if ((heard && now - lastVoice > SILENCE_MS) || (!heard && now - started > NO_SPEECH_MS) || now - started > 55_000) finish()
+    }
+    source.connect(proc)
+    proc.connect(ctx.destination) // a ScriptProcessor only runs when connected; it outputs silence
+    stopRef.current = finish
+    setListening(true)
+  }, [])
+
   const listenBrowser = useCallback(async () => {
     const Ctor = browserRecognitionCtor()
     if (!Ctor) return
@@ -284,7 +406,27 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       error = e.error
       if (e.error === 'not-allowed' || e.error === 'service-not-allowed') setMicError('Microphone permission is blocked. Allow it in the browser’s site settings.')
     }
+    // Watchdog: some browsers start "listening" and never deliver anything or
+    // end. No audio within 5 s = broken (switch to Azure); and no listen may
+    // run longer than 25 s, whatever the browser does.
+    let gotAudio = false
+    let ended = false
+    rec.onaudiostart = () => { gotAudio = true }
+    rec.onsoundstart = () => { gotAudio = true }
+    const forceEnd = (broken: boolean) => {
+      if (ended) return
+      if (broken) markBrowserSpeechBroken()
+      try { rec.abort() } catch {}
+      // If the browser doesn't even fire onend after abort, end it ourselves.
+      setTimeout(() => { if (!ended) rec.onend?.() }, 1200)
+    }
+    const noAudioTimer = setTimeout(() => { if (!gotAudio) forceEnd(true) }, 5000)
+    const maxTimer = setTimeout(() => forceEnd(false), 25_000)
     rec.onend = () => {
+      if (ended) return
+      ended = true
+      clearTimeout(noAudioTimer)
+      clearTimeout(maxTimer)
       releaseMic()
       const measured = !!meter && meter.working()
       const peak = measured ? meter!.peak() : 1
@@ -317,9 +459,11 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
   const start = useCallback(() => {
     cancelledRef.current = false
     stopSpeaking()
-    if (cfgRef.current.listen === 'sarvam') listenSarvam()
+    const how = cfgRef.current.listen
+    if (how === 'azure') { audioCtx(); listenAzure() } // create the audio engine inside the tap
+    else if (how === 'sarvam') listenSarvam()
     else listenBrowser()
-  }, [listenSarvam, listenBrowser, stopSpeaking])
+  }, [listenSarvam, listenAzure, listenBrowser, stopSpeaking])
 
   const stop = useCallback(() => stopRef.current?.(), [])
   const cancel = useCallback(() => { cancelledRef.current = true; stopRef.current?.() }, [])
@@ -462,7 +606,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
 
   useEffect(() => {
     const Ctor = typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!Ctor) { setFailed('This browser can’t listen for “Hey DB” — use Chrome.'); return }
+    if (!Ctor || !browserSpeechReliable()) { setFailed('“Hey DB” needs Chrome. In this browser, tap the mic.'); setActive(false); return }
     if (!enabled || paused || blockedRef.current) { setActive(false); return }
     let disposed = false
     let rec: any = null // the one live recogniser, null once it has ended

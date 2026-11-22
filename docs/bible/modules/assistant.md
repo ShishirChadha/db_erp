@@ -67,6 +67,15 @@ line) is left out of profit and named, so one bad entry can't turn a month negat
 her button, her settings tab or use her — other owners included. It starts as Shishir's
 login (admin@digitalbluez.com).
 
+## Pausing her on every device
+
+The moon button in her header (and on the voice screen) pauses DB on **all your devices**
+— laptop and phone — for 30 minutes, 1 hour, 3 hours or until you turn her on
+(`assistant_settings.paused_until`). While paused she doesn't listen anywhere (no "Hey DB",
+mic disabled; typing still works), her button turns grey with a moon, and a banner offers
+**Turn on**. Other devices pick the change up within 30 seconds, or at once when you
+return to the tab.
+
 ## Look, layout and screens
 
 **Where she sits** (by screen width): under 600 px — phones and the Galaxy Z Fold's
@@ -166,7 +175,14 @@ Speaking and listening are chosen separately in Settings → DB Assistant:
   browser. Azure and Google are free within their monthly allowance (about 500,000
   and 1,000,000 characters), and the tab shows how much is used. Pick a voice and
   press Preview (Hinglish and English samples).
-- **Hearing you:** Sarvam AI (understands Hinglish) or the browser (free, weaker).
+- **Hearing you:** the browser (free, Chrome only — it also powers "Hey DB"), Microsoft
+  Azure speech-to-text (any browser; same key as her Azure voice; 5 free hours a month on
+  F0; English-India or Hindi output) or Sarvam AI (paid). In browsers whose own speech
+  recognition doesn't work — **DuckDuckGo on Android** and other WebView/in-app browsers
+  hide it or expose one that never answers, so DB used to "listen" forever — she records
+  the audio herself (16 kHz WAV) and sends it to Azure automatically. Every browser listen
+  also has a watchdog: no audio in 5 s marks the browser broken and switches to Azure;
+  nothing may listen longer than 25 s.
 A provider without a saved key falls back to the browser. Recording stops by itself
 when you pause (max ~28 s per sentence).
 

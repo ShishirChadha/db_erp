@@ -53,7 +53,11 @@ export interface AssistantSettings {
   // Who speaks her replies, and who listens to Shishir -- chosen separately so
   // a voice can be trialled without changing how she hears.
   voice_provider: VoiceProvider
-  listen_provider: 'sarvam' | 'browser'
+  listen_provider: 'sarvam' | 'azure' | 'browser'
+  azure_stt_language: 'en-IN' | 'hi-IN' // what Azure listens for (en-IN suits Hinglish spoken mostly in English)
+  // Pause DB on every device (wake word and listening off) until this time;
+  // '9999-12-31T00:00:00Z' = until turned back on. null = not paused.
+  paused_until: string | null
   tts_speaker: string // Sarvam voice
   azure_region: string
   azure_voice: string // persona, e.g. 'Aarti' -> hi-IN-AartiNeural / en-IN-AartiNeural
@@ -85,6 +89,8 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   model: 'claude-opus-5-5',
   voice_provider: 'sarvam',
   listen_provider: 'sarvam',
+  azure_stt_language: 'en-IN',
+  paused_until: null,
   tts_speaker: 'simran_enhi_customer',
   azure_region: 'centralindia',
   azure_voice: 'Aarti',

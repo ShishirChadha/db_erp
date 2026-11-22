@@ -108,3 +108,29 @@ export async function googleSynthesize(key: string, voice: string, text: string,
   if (!res.ok) throw new Error(data?.error?.message || `Google text-to-speech failed (${res.status})`)
   return { audio: String(data.audioContent || ''), characters: body.length }
 }
+
+// ------------------------------------------------------------------ Azure listening
+//
+// Speech-to-text REST API for short audio (max 60 s, final result only), with
+// the same key and region as her Azure voice. Used when the browser can't
+// recognise speech itself (e.g. DuckDuckGo on Android, an Android WebView).
+// The panel records 16 kHz mono WAV. Free tier F0: 5 audio hours a month.
+export async function azureTranscribe(key: string, region: string, wav: ArrayBuffer, language: string) {
+  const res = await fetch(
+    `https://${region}.stt.speech.microsoft.com/speech/recognition/conversation/cognitiveservices/v1?language=${encodeURIComponent(language)}&format=simple&profanity=raw`,
+    {
+      method: 'POST',
+      headers: {
+        'Ocp-Apim-Subscription-Key': key,
+        'Content-Type': 'audio/wav; codecs=audio/pcm; samplerate=16000',
+        Accept: 'application/json',
+      },
+      body: wav,
+      signal: AbortSignal.timeout(30_000),
+    },
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(`Azure speech-to-text failed (${res.status})${data?.error?.message ? `: ${data.error.message}` : ''}`)
+  // NoMatch / InitialSilenceTimeout = nothing intelligible was said.
+  return { text: data.RecognitionStatus === 'Success' ? String(data.DisplayText || '').trim() : '', status: String(data.RecognitionStatus || '') }
+}
