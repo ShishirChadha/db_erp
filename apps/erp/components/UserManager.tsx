@@ -15,6 +15,8 @@ interface AppUser {
   username: string | null
   contact_email: string | null
   employee_id: string | null
+  // DB's master / DB's own account, for this viewer (lib/assistant/permissions.ts).
+  protection?: 'locked' | 'db' | null
 }
 
 const ROLE_LABELS: Record<AppUser['role'], string> = { owner: 'Owner', manager: 'Manager', employee: 'Employee' }
@@ -212,7 +214,8 @@ export default function UserManager() {
     busyRef.current = true
     setBusy(true)
     try {
-      await apiFetch(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !u.is_active }) })
+      const res = await apiFetch(`/api/users/${u.id}`, { method: 'PATCH', body: JSON.stringify({ is_active: !u.is_active }) })
+      if (!res.ok) setError((await res.json().catch(() => ({}))).error || 'Could not change this account.')
       await fetchUsers()
     } finally {
       busyRef.current = false
@@ -295,7 +298,8 @@ export default function UserManager() {
     busyRef.current = true
     setBusy(true)
     try {
-      await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) })
+      const res = await apiFetch(`/api/users/${id}`, { method: 'PATCH', body: JSON.stringify({ password: pw }) })
+      if (!res.ok) { setError((await res.json().catch(() => ({}))).error || 'Could not set the password.'); return }
       setNewPasswordById(prev => ({ ...prev, [id]: '' }))
       // Stale reveal would show the password we just replaced -- drop it so the
       // next "View password" click re-fetches the new one instead.
@@ -406,6 +410,9 @@ export default function UserManager() {
               {!u.is_active && <span className="text-destructive"> · Inactive</span>}
             </div>
           </div>
+          {u.protection === 'locked' ? (
+            <span className="text-xs text-muted-foreground">Protected: only DB’s master can change this account</span>
+          ) : (
           <div className="flex gap-2 items-center">
             <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
               Edit name / ID
@@ -423,6 +430,7 @@ export default function UserManager() {
               {u.is_active ? 'Deactivate' : 'Activate'}
             </button>
           </div>
+          )}
         </div>
 
         {editingProfileId === u.id && (
@@ -476,6 +484,10 @@ export default function UserManager() {
           </div>
         )}
 
+        {u.protection === 'db' && (
+          <p className="mt-2 text-xs text-muted-foreground">DB’s password is managed by the ERP and can’t be viewed or changed. Deactivate here to switch her off.</p>
+        )}
+        {!u.protection && (
         <div className="mt-2 flex gap-2 items-center flex-wrap">
           <input
             type="text"
@@ -504,6 +516,7 @@ export default function UserManager() {
             </>
           )}
         </div>
+        )}
       </div>
     )
   }

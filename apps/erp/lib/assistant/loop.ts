@@ -5,6 +5,7 @@ import { assistantSystemPrompt } from './playbooks'
 import { getAssistantSettings, getSecret } from './settings'
 import { recordClaudeUsage } from './usage'
 import { liveUsdInr } from './fx'
+import { isPlainYes } from './approval'
 import { assistantTools, runTool, type AssistantCard, type PendingAction } from './tools'
 
 // One conversational turn with DB: the owner's words in, DB's reply (streamed)
@@ -47,6 +48,8 @@ export async function runAssistantTurn(params: {
   voiceOn?: boolean
   // Her previous reply's voice never reached him on this device.
   voiceIssue?: 'blocked' | 'failed' | null
+  // He tapped Confirm on this pending card (the panel sends its id).
+  confirmActionId?: string | null
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
@@ -77,6 +80,14 @@ export async function runAssistantTurn(params: {
         ? ' | your last reply was silent on his device: it could not play the sound'
         : ''
   messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${voiceNote}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
+
+  // His approval of the pending card, decided in code from his own words or
+  // tap -- never from anything the model reads (lib/assistant/approval.ts).
+  const approval = {
+    tappedActionId: params.confirmActionId || null,
+    saidYes: isPlainYes(params.text, settings.call_me),
+    tapOnlyMoney: settings.tap_to_confirm_money,
+  }
 
   const client = new Anthropic({ apiKey })
   const tools = assistantTools(settings.read_modules, settings.write_skills)
@@ -146,7 +157,7 @@ export async function runAssistantTurn(params: {
       const results: Anthropic.Beta.BetaToolResultBlockParam[] = []
       for (const use of toolUses) {
         emit({ type: 'status', tool: use.name })
-        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules, skills: settings.write_skills })
+        const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules, skills: settings.write_skills, approval })
         if (outcome.pending !== undefined) pending = outcome.pending
         if (outcome.card) emit({ type: 'card', card: outcome.card })
         results.push({

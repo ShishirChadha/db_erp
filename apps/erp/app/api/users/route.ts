@@ -4,6 +4,7 @@ import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { usernameToSyntheticEmail } from '@/lib/auth/username'
 import { encryptPassword } from '@/lib/auth/password-vault'
 import { logAuditEvent } from '@/lib/audit-log'
+import { accountProtection, dbMasterIds } from '@/lib/assistant/permissions'
 
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
   }
 
   const profileById = new Map(profiles.map(p => [p.id, p]))
+  const masters = await dbMasterIds()
   const users = authList.users
     .map(u => {
       const profile = profileById.get(u.id)
@@ -70,6 +72,8 @@ export async function GET(req: NextRequest) {
         username: profile.username,
         contact_email: profile.contact_email,
         employee_id: profile.employee_id,
+        // For this viewer: 'locked' (no changes) / 'db' (password and role locked).
+        protection: accountProtection({ id: u.id, username: profile.username }, sessionUser!.id, masters),
       }
     })
     .filter(Boolean)

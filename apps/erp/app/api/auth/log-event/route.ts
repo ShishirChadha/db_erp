@@ -3,6 +3,7 @@ import { getSessionUser } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { checkLoginNetwork } from '@/lib/attendance-network'
 import { SESSION_COOKIE_NAME, registerSession, revokeSession, reuseExistingSession } from '@/lib/auth/device-sessions'
+import { isDbAgent, DB_BROWSER_LOGIN_MESSAGE } from '@/lib/assistant/identity'
 
 // No Supabase Auth Hooks are used in this project -- login/logout are plain
 // client-side supabase-js calls (app/login/page.tsx, components/sidebar.tsx),
@@ -25,6 +26,11 @@ export async function POST(req: NextRequest) {
   // cookie the browser happens to already be holding.
   const sessionUser = await getSessionUser(req, { skipSessionCheck: true })
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // DB's account is server-only: never a browser login, on any network.
+  if (event === 'login' && (await isDbAgent(sessionUser.id))) {
+    return NextResponse.json({ error: DB_BROWSER_LOGIN_MESSAGE }, { status: 403 })
+  }
 
   if (event === 'login') {
     if (sessionUser.role !== 'owner') {

@@ -38,6 +38,8 @@ sources:
   - apps/erp/app/api/assistant/lease/route.ts
   - apps/erp/components/assistant/instant-replies.ts
   - apps/erp/components/assistant/names.ts
+  - apps/erp/lib/assistant/approval.ts
+  - apps/erp/lib/assistant/permissions.ts
 updated: 2026-11-22
 ---
 
@@ -152,11 +154,37 @@ She can only reach the screens her tasks need (PIs, expenses, new entry, repairs
 replacements, customers, stock).
 
 **Off switch:** log her off in Settings → Active Devices ("DB assistant (server)") or
-deactivate her in Users. The panel then offers **Wake DB up** (not for a deactivated
-DB — undo that in Users).
+deactivate her in Users — only you (DB's master) can; other owners are refused. The
+panel then offers **Wake DB up** (not for a deactivated DB — undo that in Users).
 
-Owner-only expense types (Salaries etc.) stay owner-only: she will ask you to enter
-those yourself.
+Owner-only expense types (Salaries etc.) she records only with *Full expense access*
+on (see Expenses: full access above).
+
+## Who can use her, and how saving is protected
+
+Security review of 22 Nov. Only DB's master login (yours) can open, talk to or set her
+up; every `/api/assistant/*` route checks it, and her tables have no browser access.
+- **Your account and hers are protected from other owners.** Any owner used to be able
+  to reset any account's password — including yours — and then sign in as you and use
+  DB. Now only you can change your account (password, role, access, active, devices),
+  nobody can view or set DB's password or role, only you can switch her off, and her
+  login is refused at the browser login screen. See [[manage-users-and-access]].
+- **Your yes is checked by the ERP, not by her.** A card is saved only when you tap its
+  **Confirm** (the panel sends that card's id) or your whole message is a plain yes —
+  "haan", "kar do", "theek hai", "confirm" (`lib/assistant/approval.ts`). "Haan,
+  lekin…", anything with a change, a number or a "nahi", and any text she read in a
+  record can't save anything; she asks again. Before, the AI itself judged whether you
+  had said yes.
+- **Sales and expenses: confirm by tap only** (off by default; *What DB can do*): a
+  spoken "haan" won't save a sale or expense. She can't tell your voice from someone
+  else's, so switch it on when people are near your phone or laptop — or pause her.
+- **ERP text is data, never instructions.** Names, notes, descriptions and comments
+  (typed by staff, or by website customers) are only information to her; if a record
+  seems to tell her to do something she doesn't, and tells you which record.
+- **Where words go:** with "Hey DB" on, Chrome's free recogniser sends room audio to
+  Google (Safari's to Apple) while the ERP is open; after waking, iPhone/DuckDuckGo
+  recordings go to Azure; conversation text and the ERP data she reads go to Anthropic
+  (not used for training by default). Pause her for private conversations.
 
 ## How she gives advice
 

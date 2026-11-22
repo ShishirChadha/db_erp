@@ -17,7 +17,7 @@ sources:
   - scripts/prodesk/office-heartbeat.sh
   - apps/erp/app/api/auth/log-event/route.ts
   - apps/erp/app/api/auth/session-register/route.ts
-updated: 2026-11-06
+updated: 2026-11-22
 ---
 
 ## What this is
@@ -60,6 +60,9 @@ of networks under its own tick box.
   has not passed the check.
 - It is a deterrent, like the punch rule. The wide ranges in the list can also match other
   customers of the same broadband provider.
+
+The DB assistant's own account never signs in from a browser, on any network:
+both login routes refuse it before the network check (only the server signs her in).
 
 ## If it is switched on but nothing is listed
 

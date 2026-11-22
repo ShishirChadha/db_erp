@@ -17,6 +17,14 @@ import { usernameToSyntheticEmail } from '@/lib/auth/username'
 //     Users, stops her at once. That is the off switch.
 export const DB_USERNAME = 'db'
 export const DB_DISPLAY_NAME = 'DB'
+// DB's login is used only by the server (setUpDbAgent creates her session
+// directly). The browser login routes refuse it, so even someone who somehow
+// had her password couldn't open the ERP as "DB".
+export const DB_BROWSER_LOGIN_MESSAGE = 'The DB assistant account can’t sign in from a browser.'
+export async function isDbAgent(userId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin.from('profiles').select('username').eq('id', userId).maybeSingle()
+  return data?.username === DB_USERNAME
+}
 const SESSION_SETTING_KEY = 'assistant_db_session_id'
 
 // Only the screens her tasks need. Edit grants are the subset that gate writes

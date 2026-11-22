@@ -14,6 +14,7 @@ import {
   expenseTypes, similarExpenseTypes, sameExpenseType, expenseCountByType,
 } from './data'
 import { shareSalesDocument } from './share'
+import { TAP_ONLY_KINDS } from './approval'
 import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
@@ -46,6 +47,10 @@ export interface ToolContext {
   db: { profileId: string; sessionId: string }
   modules?: readonly ReadModule[] // read modules switched on; omitted = all
   skills?: readonly WriteSkill[] // write skills switched on; omitted = all
+  // The owner's approval in his latest message, checked in code (approval.ts):
+  // the card he tapped Confirm on, and whether his words were a plain yes.
+  // Omitted = no approval at all (nothing can be confirmed).
+  approval?: { tappedActionId: string | null; saidYes: boolean; tapOnlyMoney: boolean }
 }
 
 export interface ToolOutcome {
@@ -225,7 +230,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   propose_repair_job: 'Prepare a repair job. Nothing is saved yet.',
   propose_replacement_job: 'Prepare a replacement job (a unit goes out to the customer). Nothing is saved yet.',
   propose_note: 'Offer to remember a preference. Saved only after the owner agrees.',
-  confirm_pending_action: 'Save the pending action. ONLY after the owner clearly said yes to it in their latest message.',
+  confirm_pending_action: 'Save the pending action. ONLY after the owner clearly said yes to it in their latest message. The server also checks that his message is a plain yes (or a tap on Confirm) and refuses otherwise.',
   cancel_pending_action: 'Drop the pending action when the owner says no or wants to start over.',
   share_document_on_whatsapp: 'For a saved PI/quotation: make a PDF link and a ready-to-send WhatsApp message to the customer.',
   stock_overview: 'Units in stock right now: totals by status, by model (units, sellable, average cost, oldest age in days), and the units themselves when narrowed down. Use for "kitne laptop hain", "840 G6 stock", "sabse purana stock", "faulty units".',
@@ -592,6 +597,18 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
   if (!p || p.id !== actionId) return { result: 'There is no such pending action -- propose it again.', isError: true }
   if (p.created_turn >= ctx.turn) {
     return { result: 'You proposed this in this same turn. Wait for the owner to say yes in their next message.', isError: true }
+  }
+  // The yes is checked here, not by you: a tap on this card's Confirm, or a
+  // latest message that is only a plain yes. Text from ERP records can't do it.
+  const tapped = ctx.approval?.tappedActionId === p.id
+  const tapOnly = !!ctx.approval?.tapOnlyMoney && TAP_ONLY_KINDS.has(p.kind)
+  if (!tapped && (tapOnly || !ctx.approval?.saidYes)) {
+    return {
+      result: tapOnly
+        ? 'Not saved: for sales and expenses Shishir confirms by tapping Confirm on the card (his setting). Ask him to tap it.'
+        : 'Not saved: his latest message is not a plain yes (the server checks this, not you). Ask him to confirm with a simple "haan" or the Confirm button. If he asked for a change, propose again with the change.',
+      isError: true,
+    }
   }
 
   if (p.kind === 'note') {

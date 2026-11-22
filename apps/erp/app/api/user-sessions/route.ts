@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { SESSION_COOKIE_NAME } from '@/lib/auth/device-sessions'
 import { logAuditEvent } from '@/lib/audit-log'
+import { dbMasterIds } from '@/lib/assistant/permissions'
+import { DB_USERNAME } from '@/lib/assistant/identity'
 
 // ---------- GET: owner-only list of every user's active login sessions ----------
 // Settings > Active Devices reads this to show device/location/last-active per
@@ -56,6 +58,15 @@ export async function DELETE(req: NextRequest) {
     .update({ revoked_at: new Date().toISOString(), revoked_reason: 'manual_owner_bulk' })
     .is('revoked_at', null)
   if (ownSessionId) query = query.neq('id', ownSessionId)
+  // Other owners can't log off DB's master or DB herself, in bulk either
+  // (lib/assistant/permissions.ts); the master's own bulk log-off includes DB.
+  const masters = await dbMasterIds()
+  const spared = masters.filter((id) => id !== sessionUser.id)
+  if (!masters.includes(sessionUser.id)) {
+    const { data: db } = await supabaseAdmin.from('profiles').select('id').eq('username', DB_USERNAME).maybeSingle()
+    if (db) spared.push(db.id)
+  }
+  if (spared.length) query = query.not('profile_id', 'in', `(${spared.join(',')})`)
 
   const { data, error } = await query.select('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

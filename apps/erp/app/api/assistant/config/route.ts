@@ -102,6 +102,7 @@ export async function PUT(req: NextRequest) {
   if (typeof body.expense_full_access === 'boolean') patch.expense_full_access = body.expense_full_access
   if (typeof body.instant_replies === 'boolean') patch.instant_replies = body.instant_replies
   if (typeof body.fresh_after_break === 'boolean') patch.fresh_after_break = body.fresh_after_break
+  if (typeof body.tap_to_confirm_money === 'boolean') patch.tap_to_confirm_money = body.tap_to_confirm_money
   if (typeof body.continuous_conversation === 'boolean') patch.continuous_conversation = body.continuous_conversation
   if (NUM(body.conversation_idle_seconds, 6, 60) !== undefined) patch.conversation_idle_seconds = Math.round(body.conversation_idle_seconds)
   if (Array.isArray(body.read_modules)) patch.read_modules = ALL_READ_MODULES.filter((m) => body.read_modules.includes(m)) as ReadModule[]

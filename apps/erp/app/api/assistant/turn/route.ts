@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
           interrupted: body.interrupted === true,
           voiceOn: body.voice_on !== false,
           voiceIssue: body.voice_issue === 'blocked' || body.voice_issue === 'failed' ? body.voice_issue : null,
+          confirmActionId: typeof body.confirm_action_id === 'string' ? body.confirm_action_id : null,
           emit,
         })
       } catch (err) {

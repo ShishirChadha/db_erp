@@ -401,7 +401,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
 
   // `spoken` = it came from her microphone (the browser recogniser detects no
   // language, so a null language must not read as "typed" to her).
-  const send = useCallback(async (text: string, spoken: { language: string | null } | null = null) => {
+  const send = useCallback(async (text: string, spoken: { language: string | null } | null = null, confirmActionId?: string) => {
     if (!text.trim() || busy) return
     // "Hi DB", "sun rahi ho?", "thank you", "bye": a fixed line, no AI call.
     const kind = config.instantReplies ? instantKind(text, config.wakePhrases) : null
@@ -431,6 +431,8 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
         method: 'POST',
         body: JSON.stringify({
           text, thread_id: threadId, spoken: !!spoken, spoken_language: spoken?.language ?? null,
+          // The card he tapped Confirm on: the server accepts that as his yes.
+          confirm_action_id: confirmActionId ?? null,
           interrupted: wasInterrupted, voice_on: voiceOn, voice_issue: voiceIssue,
         }),
         timeoutMs: 120_000,
@@ -478,6 +480,9 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
     if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
   }, [busy, threadId, voiceOn, endConvo, listenAgain, config])
+
+  // Card buttons and suggestion chips: typed text, plus the card id on Confirm.
+  const answer = useCallback((t: string, confirmActionId?: string) => { send(t, null, confirmActionId) }, [send])
 
   const onHeard = useCallback((text: string, lang: string | null) => {
     setDropped(null)
@@ -695,7 +700,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
           dropped={dropped}
           onSendDropped={sendDropped}
           error={error || voice.micError}
-          card={tapToHear || (pendingCard ? <AssistantCardView card={pendingCard} disabled={busy} onAnswer={send} theme={theme} /> : null)}
+          card={tapToHear || (pendingCard ? <AssistantCardView card={pendingCard} disabled={busy} onAnswer={answer} theme={theme} /> : null)}
           listening={voice.listening}
           speaking={voice.speaking}
           busy={busy || voice.transcribing}
@@ -760,7 +765,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             )}
             {entries.map((e, i) => (
               <MessageRow key={i} entry={e} look={a} last={i === entries.length - 1} busy={busy} status={status}
-                onAnswer={send} onReplay={(t) => voice.speak(t, undefined, false)} canReplay={voiceOn} />
+                onAnswer={answer} onReplay={(t) => voice.speak(t, undefined, false)} canReplay={voiceOn} />
             ))}
 
             {tapToHear}
@@ -898,7 +903,7 @@ function IconBtn({ children, onClick, label }: { children: React.ReactNode; onCl
 
 export function MessageRow({ entry: e, look, last, busy, status, onAnswer, onReplay, canReplay }: {
   entry: Entry; look: Appearance; last: boolean; busy: boolean; status: string | null
-  onAnswer: (t: string) => void; onReplay: (t: string) => void; canReplay: boolean
+  onAnswer: (t: string, confirmActionId?: string) => void; onReplay: (t: string) => void; canReplay: boolean
 }) {
   const theme = THEMES[look.theme]
   const [copied, setCopied] = useState(false)
@@ -965,7 +970,7 @@ function updateLastDb(prev: Entry[], fn: (e: Entry) => Entry): Entry[] {
   return copy
 }
 
-function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; disabled: boolean; onAnswer: (t: string) => void; theme: typeof THEMES[keyof typeof THEMES] }) {
+function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; disabled: boolean; onAnswer: (t: string, confirmActionId?: string) => void; theme: typeof THEMES[keyof typeof THEMES] }) {
   const accent = { background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }
   if (card.type === 'confirm') {
     return (
@@ -978,7 +983,7 @@ function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; di
           </ul>
         )}
         <div className="mt-3 flex gap-2">
-          <button type="button" disabled={disabled} onClick={() => onAnswer('Haan, confirm kar do.')}
+          <button type="button" disabled={disabled} onClick={() => onAnswer('Haan, confirm kar do.', card.action_id)}
             className="h-10 flex-1 rounded-lg px-3 text-sm font-medium text-white disabled:opacity-50" style={accent}>Confirm</button>
           <Button variant="outline" className="h-10 flex-1" disabled={disabled} onClick={() => onAnswer('Nahi, abhi cancel karo.')}>Cancel</Button>
         </div>

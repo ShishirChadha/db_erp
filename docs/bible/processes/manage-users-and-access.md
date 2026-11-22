@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/users/route.ts
   - apps/erp/app/api/users/[id]/route.ts
   - apps/erp/app/api/users/[id]/password/route.ts
-updated: 2026-10-06
+updated: 2026-11-22
 ---
 
 ## What this is
@@ -27,6 +27,22 @@ Owner only — every route behind this screen (`GET`/`POST /api/users`,
 `PATCH /api/users/[id]`, `GET /api/users/[id]/password`) checks
 `isOwner(sessionUser)` and returns 403 otherwise. There is no manager-level
 access to this screen.
+
+## Protected accounts: DB's master and DB
+
+Two accounts can't be changed by other owners (`lib/assistant/permissions.ts`,
+2026-11-22 security review — before this, any owner could reset any account's
+password, including another owner's, then sign in as them):
+- **DB's master** (the owner DB answers to, Settings → DB Assistant): only that
+  owner can change their own password, role, access or active status, or log off
+  their devices. Other owners see "Protected: only DB's master can change this
+  account" on that row and every route answers 403 (`PATCH /api/users/[id]`,
+  `DELETE /api/user-sessions/[id]`; "Log off all" skips them).
+- **DB** (`username = db`): nobody can view or set her password or change her
+  role — only the server signs her in, and anyone holding the password could act
+  in her name. Her activate/deactivate (the off switch) and page access can be
+  changed only by DB's master. Her login is also refused at the browser login
+  (`/api/auth/log-event`, `/api/auth/session-register`).
 
 ## Steps — creating a user
 

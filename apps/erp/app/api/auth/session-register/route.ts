@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getSessionUser } from '@/lib/auth/session'
 import { checkLoginNetwork } from '@/lib/attendance-network'
 import { SESSION_COOKIE_NAME, registerSession, isSessionRevoked } from '@/lib/auth/device-sessions'
+import { isDbAgent, DB_BROWSER_LOGIN_MESSAGE } from '@/lib/assistant/identity'
 
 // Backfill point for a browser session that predates this feature (device-limit +
 // Settings > Active Devices) -- called once, quietly, from the dashboard shell on
@@ -11,6 +12,8 @@ import { SESSION_COOKIE_NAME, registerSession, isSessionRevoked } from '@/lib/au
 export async function POST(req: NextRequest) {
   const sessionUser = await getSessionUser(req, { skipSessionCheck: true })
   if (!sessionUser) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  if (await isDbAgent(sessionUser.id)) return NextResponse.json({ error: DB_BROWSER_LOGIN_MESSAGE }, { status: 403 })
 
   const existing = req.cookies.get(SESSION_COOKIE_NAME)?.value
   if (existing && !(await isSessionRevoked(existing))) {

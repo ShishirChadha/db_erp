@@ -82,6 +82,9 @@ export interface AssistantSettings {
   // the next message starts a new conversation, so she doesn't re-read and
   // re-cache the whole old chat on every reply. A pending card keeps it open.
   fresh_after_break: boolean
+  // Sales and expenses save only on a tap on Confirm (a spoken "haan" isn't
+  // enough) -- for when other people are around her devices.
+  tap_to_confirm_money: boolean
   // Conversation mode: after she answers, she listens again by herself until
   // you go quiet for conversation_idle_seconds.
   continuous_conversation: boolean
@@ -118,6 +121,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   expense_full_access: true,
   instant_replies: true,
   fresh_after_break: true,
+  tap_to_confirm_money: false,
   continuous_conversation: true,
   conversation_idle_seconds: 15,
   voice_gate: 'medium',

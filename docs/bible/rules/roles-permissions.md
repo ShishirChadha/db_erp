@@ -21,7 +21,7 @@ sources:
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/app/api/stock-intake/[id]/route.ts
   - supabase/migrations/20261111_rls_lockdown.sql
-updated: 2026-11-13
+updated: 2026-11-22
 ---
 
 ## The three roles
@@ -91,6 +91,13 @@ and replacement jobs, expenses, activities, notifications) can only be *read* by
 staff from the browser; every change goes through an API route. Website customers
 share the same sign-in system as staff, so every policy is written against an
 *active staff profile* (`is_staff()`), never just "is signed in".
+
+## Two accounts other owners can't change (2026-11-22)
+
+Owner rights normally cover every account, but DB's master (the owner the DB
+assistant answers to) and DB's own login are protected: only the master changes
+the master's account, nobody sees or resets DB's password or role, and only the
+master can switch DB off. Details: [[manage-users-and-access]] → Protected accounts.
 
 ## Owner-only is about money leaving, not about seniority
 

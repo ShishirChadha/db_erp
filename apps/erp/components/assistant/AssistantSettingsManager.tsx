@@ -187,6 +187,7 @@ export default function AssistantSettingsManager() {
       expense_full_access: s.expense_full_access,
       instant_replies: s.instant_replies,
       fresh_after_break: s.fresh_after_break,
+      tap_to_confirm_money: s.tap_to_confirm_money,
       appearance: s.appearance,
       continuous_conversation: s.continuous_conversation,
       conversation_idle_seconds: Number(s.conversation_idle_seconds),
@@ -546,7 +547,12 @@ export default function AssistantSettingsManager() {
           <span><span className="font-medium">Full expense access</span>
             <span className="block text-xs text-muted-foreground">She may record your private (owner-only) expense categories, create a new category when none fits, and merge duplicate categories. Staff still never see private categories or their expenses.</span></span>
         </label>
-        <p className="text-xs text-muted-foreground">Whatever is on, nothing is saved without your yes on a confirmation card.</p>
+        <label className="flex items-start gap-2 rounded-md bg-muted p-2 text-sm">
+          <Checkbox className="mt-0.5" checked={!!s.tap_to_confirm_money} onCheckedChange={(c) => set('tap_to_confirm_money', !!c)} />
+          <span><span className="font-medium">Sales and expenses: confirm by tap only</span>
+            <span className="block text-xs text-muted-foreground">A spoken “haan” won’t save a sale or an expense; you tap Confirm on her card. Useful when other people are near your phone or laptop, since she can’t tell your voice from theirs.</span></span>
+        </label>
+        <p className="text-xs text-muted-foreground">Whatever is on, nothing is saved without your yes on a confirmation card. The yes is checked by the ERP itself: a tap on Confirm, or a message that is only a yes (“haan”, “kar do”, “theek hai”) — “haan, lekin…” or anything with a change makes her ask again.</p>
       </Section>
 
       <Section title="What DB can read" hint="Switch on the parts of the ERP DB may look at to answer your questions (“aaj ki sale?”, “kitne 840 G6 ready hain?”, “kiske payments due hain?”). She only reads; saving still needs your yes.">

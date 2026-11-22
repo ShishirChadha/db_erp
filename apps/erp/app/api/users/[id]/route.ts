@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { encryptPassword } from '@/lib/auth/password-vault'
+import { accountProtection, dbMasterIds, PROTECTED_MESSAGE } from '@/lib/assistant/permissions'
 
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
@@ -35,6 +36,13 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: existingProfile } = await supabaseAdmin
     .from('profiles').select('full_name, username, is_active, role').eq('id', id).maybeSingle()
+
+  // DB's master and DB herself can't be changed by other owners (lib/assistant/permissions.ts).
+  const protection = accountProtection({ id, username: existingProfile?.username ?? null }, sessionUser.id, await dbMasterIds())
+  if (protection === 'locked') return NextResponse.json({ error: PROTECTED_MESSAGE.locked }, { status: 403 })
+  if (protection === 'db' && (password !== undefined || role !== undefined)) {
+    return NextResponse.json({ error: PROTECTED_MESSAGE.db }, { status: 403 })
+  }
 
   if (password !== undefined && password && password.length < 6) {
     return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })
