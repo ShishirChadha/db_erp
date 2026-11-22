@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -40,6 +40,7 @@ sources:
   - apps/erp/components/assistant/names.ts
   - apps/erp/lib/assistant/approval.ts
   - apps/erp/lib/assistant/permissions.ts
+  - apps/erp/app/api/assistant/avatar/route.ts
 updated: 2026-11-22
 ---
 
@@ -140,11 +141,22 @@ heard, and large buttons (keyboard → chat, mic, end). *Automatic* uses the sta
 phones/the Fold and chat on a laptop.
 
 **Look and feel** (Settings → DB Assistant): colour theme (6), her look — illustrated
-face (outfit, skin tone, bindi, earrings), glowing orb, or initials — a live preview of
-each state, captions, glowing screen edge while she listens/speaks, vibration on Android,
-soft chimes, reduced animations, text size, bubble style, message times. All SVG/CSS —
-no images, video or 3D, so no cost and light on the battery. Copy and replay buttons sit
-under each of her messages (replay uses the voice service again).
+face (outfit, skin tone, bindi, earrings), glowing orb, initials, or **your picture** —
+a live preview of each state, captions, glowing screen edge while she listens/speaks,
+vibration on Android, soft chimes, reduced animations, text size, bubble style, message
+times. All SVG/CSS apart from that one picture — no video or 3D, so no cost and light on
+the battery. Copy and replay buttons sit under each of her messages (replay uses the
+voice service again).
+
+**Your picture** (a realistic look): upload any picture in *Her look → Your picture*; the
+browser crops it to a centred 512 px square, and it is stored privately
+(`documents/assistant/avatar/<version>`, read only through `/api/assistant/avatar` with
+your login, never a public link). It is shown in a circle with the same listening /
+thinking / speaking glow as the other looks, a slow breath while idle — it does not move
+its lips (a talking, lip-synced face would need a paid video-avatar service and adds a
+second or two before she speaks). Use an AI-generated picture of a made-up person, not a
+real woman's photo or a stock model's, which needs that person's permission for this use.
+Without a picture she shows the illustrated face.
 
 ## Her own ERP user
 

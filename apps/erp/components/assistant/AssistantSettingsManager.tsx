@@ -13,6 +13,7 @@ import { useAsyncAction } from '@/lib/useAsyncAction'
 import AssistantLearnings from './AssistantLearnings'
 import AssistantLookSettings from './AssistantLookSettings'
 import { useVoice, useNameTrainer, createMeter, iosAudioSession, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
+import { setDbPhotoVersion } from './DbAvatar'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
 // answers 403 to everyone else). Stacked sections, no tab strip.
@@ -156,6 +157,7 @@ export default function AssistantSettingsManager() {
     const j: Config = await r.json()
     setCfg(j)
     setS({ ...j.settings, wake_phrases_text: (j.settings.wake_phrases || []).join(', ') })
+    setDbPhotoVersion(j.settings.avatar_photo_version || '')
   }
   useEffect(() => { load() }, [])
 
@@ -305,7 +307,8 @@ export default function AssistantSettingsManager() {
       </Section>
 
       <Section title="Look and feel" hint="How DB looks and behaves on screen. Changes show in the preview straight away and on her panel after Save changes.">
-        <AssistantLookSettings value={s.appearance} onChange={(v) => set('appearance', v)} />
+        <AssistantLookSettings value={s.appearance} onChange={(v) => set('appearance', v)}
+          photoVersion={s.avatar_photo_version || ''} onPhotoChange={(v) => { set('avatar_photo_version', v); setDbPhotoVersion(v) }} />
       </Section>
       </>}
 

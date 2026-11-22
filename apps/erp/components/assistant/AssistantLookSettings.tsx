@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { apiFetch } from '@/lib/api-client'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 import { OUTFITS, SKINS, THEMES, cleanAppearance, type Appearance } from './appearance'
 
@@ -47,7 +48,76 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
   )
 }
 
-export default function AssistantLookSettings({ value, onChange }: { value: unknown; onChange: (a: Appearance) => void }) {
+// Her own picture: cropped to a centred 512 px square here in the browser (so
+// the file is small), then saved privately via /api/assistant/avatar.
+async function squarePicture(file: File): Promise<Blob> {
+  let img: CanvasImageSource & { width: number; height: number }
+  try { img = await createImageBitmap(file) } catch {
+    const el = new Image()
+    el.src = URL.createObjectURL(file)
+    await el.decode()
+    img = el
+  }
+  const side = Math.min(img.width, img.height)
+  const size = Math.min(512, side)
+  const canvas = document.createElement('canvas')
+  canvas.width = canvas.height = size
+  // Centred left-right; a little above centre top-bottom, where faces usually are.
+  canvas.getContext('2d')!.drawImage(img, (img.width - side) / 2, Math.max(0, (img.height - side) * 0.3), side, side, 0, 0, size, size)
+  const toBlob = (type: string, q: number) => new Promise<Blob | null>((res) => canvas.toBlob(res, type, q))
+  const webp = await toBlob('image/webp', 0.88)
+  if (webp && webp.type === 'image/webp') return webp // older Safari can't write WebP
+  const jpeg = await toBlob('image/jpeg', 0.9)
+  if (!jpeg) throw new Error('Could not read that picture.')
+  return jpeg
+}
+
+function PhotoUpload({ version, onChange }: { version: string; onChange: (v: string) => void }) {
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const upload = async (file: File | undefined) => {
+    if (!file) return
+    setBusy(true); setErr(null)
+    try {
+      const form = new FormData()
+      form.append('image', await squarePicture(file), 'db.jpg')
+      const res = await apiFetch('/api/assistant/avatar', { method: 'POST', body: form })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(j.error || 'Upload failed.')
+      onChange(j.version)
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const remove = async () => {
+    setBusy(true); setErr(null)
+    const res = await apiFetch('/api/assistant/avatar', { method: 'DELETE' })
+    if (res.ok) onChange('')
+    else setErr('Could not remove the picture.')
+    setBusy(false)
+  }
+  return (
+    <div className="space-y-2 rounded-md bg-muted p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className={cn('inline-flex h-8 cursor-pointer items-center rounded-md border bg-background px-3 font-medium hover:bg-muted', busy && 'pointer-events-none opacity-60')}>
+          {busy ? 'Saving…' : version ? 'Change picture' : 'Upload picture'}
+          <input type="file" accept="image/*" className="hidden" disabled={busy}
+            onChange={(e) => { upload(e.target.files?.[0]); e.target.value = '' }} />
+        </label>
+        {version && <button type="button" onClick={remove} disabled={busy} className="h-8 rounded-md px-3 text-muted-foreground hover:bg-background">Remove</button>}
+      </div>
+      {err && <p className="text-xs text-destructive">{err}</p>}
+      <p className="text-xs text-muted-foreground">
+        A picture with her face in the middle works best; it is cropped to a circle, gets the same glow while she listens and
+        speaks, and is kept private (only your login can load it). Use an AI-generated picture of a made-up person, not a real
+        woman’s photo, which would need her permission. The picture is saved at once; press Save changes to switch her look
+        to it. Until one is uploaded she shows her illustrated face.
+      </p>
+    </div>
+  )
+}
+
+export default function AssistantLookSettings({ value, onChange, photoVersion = '', onPhotoChange }: {
+  value: unknown; onChange: (a: Appearance) => void; photoVersion?: string; onPhotoChange?: (v: string) => void
+}) {
   const a = cleanAppearance(value)
   const set = <K extends keyof Appearance>(k: K, v: Appearance[K]) => onChange({ ...a, [k]: v })
   const [state, setState] = useState<AvatarState>('speaking')
@@ -85,8 +155,11 @@ export default function AssistantLookSettings({ value, onChange }: { value: unkn
           ['face', 'Her face', 'An illustrated girl who blinks, listens and talks'],
           ['orb', 'Glowing orb', 'Like ChatGPT / Gemini voice modes'],
           ['initials', 'Initials', 'A calm “DB” badge'],
+          ['photo', 'Your picture', 'A realistic look: a picture you upload'],
         ]} />
       </div>
+
+      {a.avatar === 'photo' && onPhotoChange && <PhotoUpload version={photoVersion} onChange={onPhotoChange} />}
 
       {a.avatar === 'face' && (
         <div className="space-y-3 rounded-md bg-muted p-3">

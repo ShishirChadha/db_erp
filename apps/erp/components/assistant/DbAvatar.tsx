@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useSyncExternalStore } from 'react'
 import { cn } from '@/lib/utils'
+import { apiFetch } from '@/lib/api-client'
 import { DEFAULT_APPEARANCE, OUTFITS, SKINS, THEMES, type Appearance } from './appearance'
 
 // DB's face. Three styles (Settings -> Look and feel):
@@ -10,12 +11,44 @@ import { DEFAULT_APPEARANCE, OUTFITS, SKINS, THEMES, type Appearance } from './a
 //               moves her mouth while speaking;
 //   orb      -- a glowing gradient orb that breathes and swells with the voice,
 //               like the voice modes of ChatGPT / Gemini Live;
-//   initials -- a calm gradient badge.
-// SVG + CSS only: no images, video or 3D, so it costs nothing and stays smooth
-// on phones. The live mic level / her voice level (levelRef, 0..1) drives the
+//   initials -- a calm gradient badge;
+//   photo    -- the owner's own picture, with the same rings (below).
+// SVG + CSS (plus that one small picture): no video or 3D, so it costs nothing
+// and stays smooth on phones. The live mic level / her voice level (levelRef, 0..1) drives the
 // ring and the orb directly on the element, with no React re-render per frame.
 
 export type AvatarState = 'idle' | 'listening' | 'thinking' | 'speaking'
+
+// The owner's picture for her ('photo' style). The file is private, so it is
+// fetched once per version with his login and shared by every avatar on the
+// page (button, chat, stage). The panel and Settings call setDbPhotoVersion()
+// with assistant_settings.avatar_photo_version.
+let photoVersion = ''
+let photoUrl: string | null = null
+const photoListeners = new Set<() => void>()
+const notifyPhoto = () => photoListeners.forEach((f) => f())
+export function setDbPhotoVersion(version: string) {
+  if (version === photoVersion) return
+  photoVersion = version
+  if (photoUrl) { URL.revokeObjectURL(photoUrl); photoUrl = null }
+  notifyPhoto()
+  if (!version) return
+  apiFetch(`/api/assistant/avatar?v=${encodeURIComponent(version)}`)
+    .then((r) => (r.ok ? r.blob() : null))
+    .then((b) => {
+      if (!b || photoVersion !== version) return
+      photoUrl = URL.createObjectURL(b)
+      notifyPhoto()
+    })
+    .catch(() => {})
+}
+function useDbPhoto() {
+  return useSyncExternalStore(
+    (f) => { photoListeners.add(f); return () => { photoListeners.delete(f) } },
+    () => photoUrl,
+    () => null,
+  )
+}
 export type AvatarLook = Pick<Appearance, 'avatar' | 'theme' | 'outfit' | 'skin' | 'bindi' | 'earrings' | 'motion'>
 
 const CSS = `
@@ -67,6 +100,7 @@ export function DbAvatar({ state = 'idle', size = 48, levelRef, look, className 
     return () => { cancelAnimationFrame(raf); if (core.current) core.current.style.transform = '' }
   }, [live, levelRef, reduced])
 
+  const photo = useDbPhoto()
   const ringColor = state === 'speaking' ? theme.glowSpeak : theme.glowListen
   return (
     <div className={cn('relative shrink-0', reduced && 'dbav-reduced', className)} style={{ width: size, height: size }}>
@@ -81,7 +115,8 @@ export function DbAvatar({ state = 'idle', size = 48, levelRef, look, className 
         }} />
       )}
       <div ref={core} className="relative h-full w-full rounded-full transition-transform duration-75">
-        {l.avatar === 'orb' ? <Orb theme={theme} state={state} />
+        {l.avatar === 'photo' && photo ? <Photo src={photo} state={state} />
+          : l.avatar === 'orb' ? <Orb theme={theme} state={state} />
           : l.avatar === 'initials' ? <Initials theme={theme} size={size} />
           : <Face theme={theme} state={state} look={l} uid={uid} />}
       </div>
@@ -100,6 +135,21 @@ function Orb({ theme, state }: { theme: typeof THEMES[keyof typeof THEMES]; stat
       <div className="absolute left-[18%] top-[14%] h-[34%] w-[42%] rounded-full bg-white/40 blur-[3px]" />
       <div className="absolute inset-0 rounded-full ring-1 ring-inset ring-white/25" />
     </div>
+  )
+}
+
+// Her picture: a gentle breath while idle, a slight lift while she speaks; the
+// voice ring and thinking ring around it are the same as for the other styles.
+function Photo({ src, state }: { src: string; state: AvatarState }) {
+  return (
+    // eslint-disable-next-line @next/next/no-img-element -- a private blob URL, not an optimisable asset
+    <img src={src} alt="DB" draggable={false}
+      className="h-full w-full select-none rounded-full object-cover ring-1 ring-inset ring-white/25"
+      style={{
+        animation: state === 'idle' ? 'dbav-breathe 6s ease-in-out infinite' : undefined,
+        filter: state === 'speaking' ? 'brightness(1.06) saturate(1.05)' : undefined,
+        transition: 'filter 0.3s ease',
+      }} />
   )
 }
 

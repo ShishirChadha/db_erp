@@ -23,7 +23,9 @@ export const SKINS = {
 
 export interface Appearance {
   theme: ThemeKey
-  avatar: 'face' | 'orb' | 'initials'
+  // 'photo': the owner's own picture (Settings -> Look -> Your picture),
+  // falling back to the face until one is uploaded.
+  avatar: 'face' | 'orb' | 'initials' | 'photo'
   outfit: keyof typeof OUTFITS
   skin: keyof typeof SKINS
   bindi: boolean
@@ -61,7 +63,7 @@ export const DEFAULT_APPEARANCE: Appearance = {
 // Allowed values per field, used by the API to validate and by Settings to render.
 export const APPEARANCE_OPTIONS: { [K in keyof Appearance]: readonly Appearance[K][] } = {
   theme: Object.keys(THEMES) as ThemeKey[],
-  avatar: ['face', 'orb', 'initials'],
+  avatar: ['face', 'orb', 'initials', 'photo'],
   outfit: Object.keys(OUTFITS) as (keyof typeof OUTFITS)[],
   skin: Object.keys(SKINS) as (keyof typeof SKINS)[],
   bindi: [true, false], earrings: [true, false],
