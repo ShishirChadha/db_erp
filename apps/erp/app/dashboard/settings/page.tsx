@@ -1,10 +1,11 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import dynamic from 'next/dynamic'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { ArrowLeft, Building2, Users, SlidersHorizontal, Paintbrush, Zap, Search } from 'lucide-react'
 
 // Exactly one of these renders at a time (see the category === 'x' checks
 // below), but all 15 used to ship in every visitor's initial bundle regardless
@@ -80,6 +81,40 @@ const CATEGORIES = [
 ] as const
 
 type CategoryKey = typeof CATEGORIES[number]['key']
+
+// Zoho Books' own "All Settings" landing page groups its ~40 settings into 5
+// labeled card sections (Organization / Users & Roles / Setup & Configurations
+// / Customization / Automation) instead of one long alphabetized list -- this
+// re-buckets our 20 CATEGORIES the same way, by what they actually configure,
+// not alphabetically. A category's ownerOnly/visibility rule still lives once
+// on CATEGORIES above; this only controls which card it's grouped under.
+const GROUPS: { key: string; label: string; icon: typeof Building2; iconClass: string; items: CategoryKey[] }[] = [
+  {
+    key: 'organization', label: 'Organization', icon: Building2,
+    iconClass: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400',
+    items: ['appearance', 'navigation', 'business_profiles', 'backup', 'audit_log'],
+  },
+  {
+    key: 'users_access', label: 'Users & Access', icon: Users,
+    iconClass: 'bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-400',
+    items: ['users', 'active_sessions', 'field_redaction'],
+  },
+  {
+    key: 'setup', label: 'Setup & Configurations', icon: SlidersHorizontal,
+    iconClass: 'bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-400',
+    items: ['asset_numbering', 'dropdown_options', 'sku_categories', 'sac_codes', 'attendance', 'list_page_size'],
+  },
+  {
+    key: 'customization', label: 'Customization', icon: Paintbrush,
+    iconClass: 'bg-sky-100 text-sky-700 dark:bg-sky-950 dark:text-sky-400',
+    items: ['website_admin', 'website_seo', 'marketing', 'activity_tags'],
+  },
+  {
+    key: 'automation', label: 'Automation', icon: Zap,
+    iconClass: 'bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-400',
+    items: ['digests', 'db_assistant'],
+  },
+]
 
 function AssetNumberingSection() {
   const [counters, setCounters] = useState<AssetCounter[]>([])
@@ -255,14 +290,26 @@ function SettingsPage() {
   const visibleCategories = CATEGORIES
     .filter(cat => isOwner || !cat.ownerOnly)
     .filter(cat => cat.key !== 'db_assistant' || dbMaster)
-    .slice()
-    .sort((a, b) => a.label.localeCompare(b.label))
-  const [activeCategory, setActiveCategory] = useState<CategoryKey>('appearance')
+  const catByKey = useMemo(() => new Map(visibleCategories.map(c => [c.key, c])), [visibleCategories])
 
-  // A non-owner never had a valid activeCategory beyond the 3 self-service tabs
-  // to begin with (default is already 'appearance'), but guard anyway in case a
-  // deep link/back-navigation lands on an owner-only key.
-  const category = visibleCategories.some(c => c.key === activeCategory) ? activeCategory : visibleCategories[0]?.key
+  // 'landing' is the Zoho-style grouped-cards index (the default); 'detail' is
+  // the single open section, same inline-render mechanism this page already
+  // had -- only the chrome around it (a Back link instead of an always-visible
+  // side list) changed. No activeCategory is selected until a card link is
+  // clicked, so there is no "first owner-only tab" to fall back to anymore.
+  const [view, setView] = useState<'landing' | 'detail'>('landing')
+  const [activeCategory, setActiveCategory] = useState<CategoryKey | null>(null)
+  const [search, setSearch] = useState('')
+
+  const openCategory = (key: CategoryKey) => { setActiveCategory(key); setView('detail') }
+
+  // Search narrows the landing grid to matching items only (and hides a whole
+  // group once none of its items match) -- mirrors the "/" search box on
+  // Zoho's own All Settings page, minus the global command-palette behavior.
+  const q = search.trim().toLowerCase()
+  const visibleGroups = GROUPS
+    .map(g => ({ ...g, items: g.items.filter(k => catByKey.has(k) && (!q || catByKey.get(k)!.label.toLowerCase().includes(q))) }))
+    .filter(g => g.items.length > 0)
 
   // Avoids a one-frame flicker of the owner-only tabs disappearing/reappearing
   // while useRole() resolves (isOwner defaults to false before it loads).
@@ -270,51 +317,92 @@ function SettingsPage() {
     return <div className="p-4 text-sm text-muted-foreground">Loading...</div>
   }
 
+  if (view === 'landing' || !activeCategory) {
+    return (
+      <div className="p-4 mx-auto max-w-6xl">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+          <h1 className="text-2xl font-bold text-foreground">All Settings</h1>
+          <div className="relative w-full sm:w-72">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search settings"
+              className="w-full rounded-xl border bg-background pl-8 pr-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        {visibleGroups.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No settings match &ldquo;{search}&rdquo;.</p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
+            {visibleGroups.map(g => {
+              const Icon = g.icon
+              return (
+                <div key={g.key} className="rounded-xl border p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <span className={`flex size-7 items-center justify-center rounded-lg ${g.iconClass}`}>
+                      <Icon className="size-4" />
+                    </span>
+                    <h2 className="font-semibold text-sm text-foreground">{g.label}</h2>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    {g.items.map(key => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => openCategory(key)}
+                        className="text-left text-sm text-muted-foreground hover:text-foreground hover:underline"
+                      >
+                        {catByKey.get(key)?.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const category = activeCategory
+
   return (
     // Website Admin / Website SEO are list + detail screens inside this list + content
     // layout, so they get the wider container (see components/MasterDetail.tsx).
     <div className={`p-4 mx-auto ${category === 'website_admin' || category === 'website_seo' ? 'max-w-7xl' : 'max-w-5xl'}`}>
-      <h1 className="text-2xl font-bold mb-6 text-foreground">Settings</h1>
+      <button
+        type="button"
+        onClick={() => setView('landing')}
+        className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
+      >
+        <ArrowLeft className="size-4" /> All Settings
+      </button>
 
-      <div className="flex flex-col md:flex-row gap-4 md:gap-6">
-        <div className="flex md:flex-col gap-1 overflow-x-auto md:overflow-visible md:w-48 md:shrink-0 pb-1 md:pb-0">
-          {visibleCategories.map(cat => (
-            <button
-              key={cat.key}
-              onClick={() => setActiveCategory(cat.key)}
-              className={`shrink-0 md:w-full text-left px-3 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                category === cat.key ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted hover:text-foreground'
-              }`}
-            >
-              {cat.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="flex-1 min-w-0">
-          <h2 className="text-lg font-semibold mb-3 text-foreground">{visibleCategories.find(c => c.key === category)?.label}</h2>
-          {category === 'appearance' && <AppearanceManager />}
-          {category === 'navigation' && <NavigationManager />}
-          {category === 'audit_log' && <AuditLogPage />}
-          {category === 'asset_numbering' && <AssetNumberingSection />}
-          {category === 'dropdown_options' && <DropdownOptionsManager />}
-          {category === 'sku_categories' && <SkuCategoryTemplatesManager />}
-          {category === 'sac_codes' && <SacCodesManager />}
-          {category === 'business_profiles' && <BusinessProfileManager />}
-          {category === 'users' && <UserManager />}
-          {category === 'active_sessions' && <ActiveSessionsManager />}
-          {category === 'activity_tags' && <TagsManager />}
-          {category === 'website_admin' && <WebsiteAdminManager />}
-          {category === 'website_seo' && <WebsiteSeoManager />}
-          {category === 'field_redaction' && <FieldRedactionManager />}
-          {category === 'digests' && <DigestsManager />}
-          {category === 'marketing' && <MarketingSettingsManager />}
-          {category === 'backup' && <BackupPageGuarded />}
-          {category === 'list_page_size' && <ListPageSizeManager />}
-          {category === 'db_assistant' && <AssistantSettingsManager />}
-        {category === 'attendance' && <AttendanceSettingsManager />}
-        </div>
-      </div>
+      <h2 className="text-lg font-semibold mb-3 text-foreground">{catByKey.get(category)?.label}</h2>
+      {category === 'appearance' && <AppearanceManager />}
+      {category === 'navigation' && <NavigationManager />}
+      {category === 'audit_log' && <AuditLogPage />}
+      {category === 'asset_numbering' && <AssetNumberingSection />}
+      {category === 'dropdown_options' && <DropdownOptionsManager />}
+      {category === 'sku_categories' && <SkuCategoryTemplatesManager />}
+      {category === 'sac_codes' && <SacCodesManager />}
+      {category === 'business_profiles' && <BusinessProfileManager />}
+      {category === 'users' && <UserManager />}
+      {category === 'active_sessions' && <ActiveSessionsManager />}
+      {category === 'activity_tags' && <TagsManager />}
+      {category === 'website_admin' && <WebsiteAdminManager />}
+      {category === 'website_seo' && <WebsiteSeoManager />}
+      {category === 'field_redaction' && <FieldRedactionManager />}
+      {category === 'digests' && <DigestsManager />}
+      {category === 'marketing' && <MarketingSettingsManager />}
+      {category === 'backup' && <BackupPageGuarded />}
+      {category === 'list_page_size' && <ListPageSizeManager />}
+      {category === 'db_assistant' && <AssistantSettingsManager />}
+      {category === 'attendance' && <AttendanceSettingsManager />}
     </div>
   )
 }

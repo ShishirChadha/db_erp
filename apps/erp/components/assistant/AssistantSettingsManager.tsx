@@ -213,6 +213,20 @@ export default function AssistantSettingsManager() {
     await load()
   })
 
+  // Zoho-style underline tab strip (same pattern as AttendanceSettingsManager
+  // and WebsiteAdminManager) grouping what used to be 13 stacked Section
+  // cards on one long scroll into 5 short tabs -- Save stays a single sticky
+  // bar below every tab since it's all one `s` form object regardless of
+  // which group is open, not a per-tab save.
+  const TABS = [
+    { key: 'access', label: 'Access & Look' },
+    { key: 'brain_voice', label: 'Brain & Voice' },
+    { key: 'capabilities', label: 'Capabilities' },
+    { key: 'usage', label: 'Usage & Billing' },
+    { key: 'learnings', label: 'Learnings' },
+  ] as const
+  const [tab, setTab] = useState<typeof TABS[number]['key']>('access')
+
 
   if (err && !cfg) return <p className="text-sm text-muted-foreground">{err}</p>
   if (!cfg || !s) return <div className="flex justify-center py-10"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
@@ -246,6 +260,19 @@ export default function AssistantSettingsManager() {
           Fix: add PASSWORD_VAULT_KEY in Vercel with the same value as the laptop’s, then redeploy. (Or paste the keys again here, but then the laptop can’t read them.)
         </div>
       )}
+
+      <div className="flex items-center gap-1 border-b border-border overflow-x-auto">
+        {TABS.map(t => (
+          <button key={t.key} type="button" onClick={() => setTab(t.key)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 whitespace-nowrap transition-colors ${
+              tab === t.key ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {tab === 'access' && <>
       <Section title="DB and who can talk to her" hint="DB only answers the logins ticked here. Everyone else doesn't even see her button.">
         <p className="text-sm">
           Status:{' '}
@@ -278,7 +305,9 @@ export default function AssistantSettingsManager() {
       <Section title="Look and feel" hint="How DB looks and behaves on screen. Changes show in the preview straight away and on her panel after Save changes.">
         <AssistantLookSettings value={s.appearance} onChange={(v) => set('appearance', v)} />
       </Section>
+      </>}
 
+      {tab === 'brain_voice' && <>
       <Section title="Brain" hint="The AI model DB thinks with. You can change it any time; her learnings, checks and confirmation cards stay the same whichever you pick.">
         <div className="space-y-2">
           {cfg.models.map((m) => {
@@ -498,7 +527,9 @@ export default function AssistantSettingsManager() {
         </p>
         <MicCheck gate={s.voice_gate} />
       </Section>
+      </>}
 
+      {tab === 'capabilities' && <>
       <Section title="What DB can do" hint="Her skills. Switch one off and she won't do it — she'll tell you it's off and point you to the ERP page instead.">
         <div className="space-y-2">
           {cfg.write_skills.map((k) => (
@@ -532,7 +563,9 @@ export default function AssistantSettingsManager() {
           Results are capped to the top rows, so a big report never gets expensive. Switching a module off makes her prompt slightly smaller, but the saving is tiny.
         </p>
       </Section>
+      </>}
 
+      {tab === 'brain_voice' && <>
       <Section title="“Hey DB” wake word" hint="Say a wake phrase and DB opens and starts listening — no tapping. Works while the ERP is open on screen (laptop, or a phone with the screen on).">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={s.wake_word} onCheckedChange={(c) => set('wake_word', !!c)} />Listen for my wake phrase on this ERP
@@ -559,7 +592,9 @@ export default function AssistantSettingsManager() {
           <p className="mt-1 text-xs text-muted-foreground">Then press Save changes. Only phrases of two words or more are kept: a single word (like “idbi”) would wake her whenever someone says it.</p>
         </div>
       </Section>
+      </>}
 
+      {tab === 'usage' && <>
       <Section title="Anthropic usage and credit (real)" hint="Read from Anthropic's own billing with an Admin API key. Covers every use of your Anthropic account — DB, Marketing, bank statements — not just DB.">
         <KeyField label="Anthropic Admin API key" configured={cfg.secrets.anthropic_admin.configured} fromEnv={cfg.secrets.anthropic_admin.from_env}
           value={keys.anthropic_admin_key || ''} onChange={(v) => setKey('anthropic_admin_key', v)} placeholder="sk-ant-admin… (Claude Console → Settings → Admin keys)" onRemove={() => removeKey('anthropic_admin_key')} />
@@ -639,10 +674,13 @@ export default function AssistantSettingsManager() {
           {sarvamLeft != null && <p className="self-end text-sm">Sarvam left (est.): <b>{inr(sarvamLeft)}</b></p>}
         </div>
       </Section>
+      </>}
 
+      {tab === 'learnings' && <>
       <Section title="DB's learnings" hint="Everything DB has been taught, from your conversations or added here. Edit, pause or delete any of them; changes apply from her next reply.">
         <AssistantLearnings />
       </Section>
+      </>}
 
       <div className="sticky bottom-0 flex items-center gap-3 border-t bg-background py-3">
         <Button onClick={() => save.run()} loading={save.pending}>Save changes</Button>

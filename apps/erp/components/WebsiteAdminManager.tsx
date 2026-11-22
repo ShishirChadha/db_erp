@@ -6,7 +6,6 @@ import { apiFetch } from '@/lib/api-client'
 import { downscaleImageFile } from '@/lib/client-image'
 import { SearchableSelect } from '@/components/SearchableSelect'
 import { useCustomOptions } from '@/lib/useCustomOptions'
-import { NavList, Panes } from '@/components/MasterDetail'
 import SiteProfileSection from '@/components/SiteProfileSection'
 
 function publicImageUrl(storagePath: string) {
@@ -1190,19 +1189,28 @@ const SECTIONS = [
 
 type SectionKey = typeof SECTIONS[number]['key']
 
+// Zoho-style underline tab strip (same pattern as AttendanceSettingsManager's
+// Shifts/Staff roster/Office networks/Shop holidays switcher) rather than the
+// vertical list+detail MasterDetail/Panes pattern this used before -- 7 short
+// labels fit on one row at the Settings page's own max-w-7xl width without
+// ever needing to scroll sideways, unlike WebsiteSeoManager's 12-section nav
+// next door, which stays a vertical list because 12 tabs genuinely can't.
 export default function WebsiteAdminManager() {
   const [tab, setTab] = useState<SectionKey>('company')
-  const [open, setOpen] = useState(false)
 
   return (
-    <Panes
-      bp="md"
-      open={open}
-      onBack={() => setOpen(false)}
-      backLabel="Back to Website Admin"
-      list={<NavList entries={[...SECTIONS]} active={tab} onSelect={(k) => { setTab(k as SectionKey); setOpen(true) }} />}
-    >
-      <h3 className="mb-3 text-base font-semibold">{SECTIONS.find((t) => t.key === tab)?.label}</h3>
+    <div>
+      <div className="flex items-center gap-1 border-b border-border overflow-x-auto mb-4">
+        {SECTIONS.map(s => (
+          <button key={s.key} type="button" onClick={() => setTab(s.key)}
+            className={`px-3 py-2 text-sm -mb-px border-b-2 whitespace-nowrap transition-colors ${
+              tab === s.key ? 'border-primary text-foreground font-medium' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}>
+            {s.label}
+          </button>
+        ))}
+      </div>
+
       {tab === 'company' && <SiteProfileSection />}
       {tab === 'upgrade_pricing' && <UpgradePricingSection />}
       {tab === 'promotions' && <PromotionsSection />}
@@ -1210,6 +1218,6 @@ export default function WebsiteAdminManager() {
       {tab === 'banners' && <BannersSection />}
       {tab === 'blog' && <BlogSection />}
       {tab === 'payments' && <PaymentSettingsSection />}
-    </Panes>
+    </div>
   )
 }
