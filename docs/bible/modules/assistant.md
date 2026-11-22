@@ -231,9 +231,19 @@ Speaking and listening are chosen separately in Settings → DB Assistant:
   F0; English-India or Hindi output) or Sarvam AI (paid). In browsers whose own speech
   recognition doesn't work — **DuckDuckGo on Android** and other WebView/in-app browsers
   hide it or expose one that never answers, so DB used to "listen" forever — she records
-  the audio herself (16 kHz WAV) and sends it to Azure automatically. Every browser listen
-  also has a watchdog: no audio in 5 s marks the browser broken and switches to Azure;
-  nothing may listen longer than 25 s.
+  the audio herself (16 kHz WAV) and sends it to Azure automatically. **iPhone/iPad**
+  too: Safari's recogniser goes deaf once any audio element has played (her voice!) —
+  it shows "listening" and never answers, even after a reload (WebKit bug 321436, iOS
+  26.6+) — so on iPhone she records and uses Azure for everything you say; Safari's
+  recogniser only listens for "Suno DB". Because of the same bug, "Suno DB" may not wake
+  her again for a minute or so after she has spoken: tap her button or the mic instead.
+  Recording needs the audio engine running, which on iPhone only a tap can start: any
+  tap on the page starts it; if it isn't, she says "Tap the mic once" instead of
+  listening forever, and a recording that gets no sound for 3 s stops with a message.
+  Azure doesn't detect the language (it uses the one set in Settings), so she judges
+  English vs Hinglish from your words. Every browser listen also has a watchdog: no
+  audio in 5 s marks the browser broken and switches to Azure; nothing may listen
+  longer than 25–30 s.
 A provider without a saved key falls back to the browser. Recording stops by itself
 when you pause (max ~28 s per sentence).
 

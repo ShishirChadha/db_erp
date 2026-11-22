@@ -28,7 +28,10 @@ export async function POST(req: NextRequest) {
       if (!key) return NextResponse.json({ error: 'Add the Azure Speech key in Settings → DB Assistant.' }, { status: 409 })
       const result = await azureTranscribe(key, settings.azure_region, await audio.arrayBuffer(), settings.azure_stt_language)
       await recordFreeSttUsage({ profileId: sessionUser.id, provider: 'azure_stt', model: `azure-stt-${settings.azure_stt_language}`, seconds })
-      return NextResponse.json({ text: result.text, language: settings.azure_stt_language })
+      // Azure transcribes in the configured language; it detects nothing. Sending
+      // that code as "detected" told DB every Hinglish sentence was English, so
+      // no language goes back and she judges from the words (as with the browser).
+      return NextResponse.json({ text: result.text, language: null })
     }
     const key = await getSarvamKey()
     if (!key) return NextResponse.json({ error: 'Add the Sarvam API key in Settings → DB Assistant.' }, { status: 409 })

@@ -144,6 +144,16 @@ function markBrowserSpeechBroken() {
   browserSpeechBroken = true
   window.dispatchEvent(new Event(BROWSER_SPEECH_BROKEN_EVENT))
 }
+// May DB's own listening (after "Hey DB" / the mic) use the browser recogniser?
+// Not on iPhone/iPad: Safari's recogniser goes deaf once an <audio> element has
+// played -- it shows as listening, never fires a result, error or end, and stays
+// deaf across reloads for 45-90 s (WebKit bug 321436, iOS 26.6+; seen 22 Nov:
+// "Suno DB" -> "Yes Jaanu?" -> nothing). The microphone itself still works, so
+// there DB records the audio and Azure transcribes it. The wake listener still
+// uses the recogniser (browserSpeechReliable) -- it is the only free always-on option.
+export function browserListenReliable() {
+  return browserSpeechReliable() && !isIOS()
+}
 
 // 16 kHz mono 16-bit WAV from recorded float samples (what Azure expects).
 export function encodeWav(chunks: Float32Array[], rate: number) {
@@ -194,12 +204,14 @@ export function unlockAudio() {
   if (!p) return
   p.src = SILENT_WAV
   p.play().then(() => { playerUnlocked = true }).catch(() => {}).finally(() => { unlocking = false })
-  try { if (sharedCtx?.state === 'suspended') sharedCtx.resume() } catch {}
 }
 if (typeof window !== 'undefined') {
   // Safari counts only a completed tap (touchend / click) as permission to
   // play, Chrome also the press itself -- listen to all of them.
-  const onFirstTap = () => { unlockAudio() }
+  // Every tap also (re)starts the audio engine: recording for Azure (iPhone,
+  // DuckDuckGo) needs it running, after "Hey DB" there is no tap to start it,
+  // and iOS suspends it again when the phone locks.
+  const onFirstTap = () => { unlockAudio(); if (!sharedCtx || sharedCtx.state !== 'running') audioCtx() }
   for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(ev, onFirstTap, true)
   // iPhone: the session is set per phase (iosAudioSession), never 'playback'
   // for the whole page -- that took away the microphone.
@@ -377,7 +389,16 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     }
     const ctx = audioCtx()
     if (!ctx) { stream.getTracks().forEach((t) => t.stop()); releaseMic(); setMicError('This browser can’t record audio.'); nothingRef.current?.('error'); return }
-    if (ctx.state !== 'running') await ctx.resume().catch(() => {})
+    // An engine no tap has started (iPhone, after "Hey DB") stays suspended and
+    // records nothing; resume() may then never settle. Say so, don't hang.
+    if (ctx.state !== 'running') await Promise.race([ctx.resume().catch(() => {}), sleep(1500)])
+    if (ctx.state !== 'running') {
+      stream.getTracks().forEach((t) => t.stop())
+      releaseMic()
+      setMicError('Tap the mic once so DB can hear you (this phone needs a tap first).')
+      nothingRef.current?.('error')
+      return
+    }
     const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.006)
     const source = ctx.createMediaStreamSource(stream)
     const proc = ctx.createScriptProcessor(4096, 1, 1)
@@ -386,10 +407,17 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     let heard = false
     let lastVoice = Date.now()
     let done = false
+    let stalled = false
+    // The time limits run on timers too: they used to live only in the audio
+    // callback, so a recording that never got audio frames never ended.
+    const stallTimer = setTimeout(() => { if (!chunks.length) { stalled = true; finish() } }, 3000)
+    const hardStop = setTimeout(() => finish(), 30_000)
 
     const finish = async () => {
       if (done) return
       done = true
+      clearTimeout(stallTimer)
+      clearTimeout(hardStop)
       proc.onaudioprocess = null
       try { proc.disconnect(); source.disconnect() } catch {}
       stream.getTracks().forEach((t) => t.stop())
@@ -398,6 +426,11 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       setListening(false)
       stopRef.current = null
       if (cancelledRef.current) return
+      if (stalled) {
+        setMicError('DB couldn’t get sound from the microphone. Tap the mic to try again.')
+        nothingRef.current?.('error')
+        return
+      }
       if (!heard || !chunks.length) { nothingRef.current?.('silence'); return }
       const seconds = Math.max(1, Math.round((Date.now() - started) / 1000))
       setTranscribing(true)
