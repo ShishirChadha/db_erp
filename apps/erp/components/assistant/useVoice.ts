@@ -96,6 +96,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 async function takeMic() {
   mic.busy++
   mic.since = Date.now()
+  iosAudioSession('auto')
   if (mic.wake) { try { mic.wake.abort() } catch {} mic.wake = null; await sleep(250) }
 }
 function releaseMic() { mic.busy = Math.max(0, mic.busy - 1) }
@@ -112,6 +113,16 @@ export const isIOS = () => typeof navigator !== 'undefined' && (/iPad|iPhone|iPo
 // iPhone's silent switch. So on phones: no mic while she speaks, no Web Audio
 // routing of her voice, no second mic stream.
 export const isPhoneAudio = () => isAndroid() || isIOS()
+
+// iPhone (Safari 16.4+) audio session, switched per phase: 'playback' only
+// while she speaks, so the silent switch can't mute her and she uses the
+// loudspeaker; 'auto' before anything listens. A 'playback' session has no
+// microphone -- set once for the whole page (2026-11-22) it left speech
+// recognition "listening" to nothing after her first reply ("Yes Jaanu?").
+export function iosAudioSession(type: 'auto' | 'playback') {
+  if (!isIOS()) return
+  try { const s = (navigator as any).audioSession; if (s && s.type !== type) s.type = type } catch { /* older Safari */ }
+}
 
 // Chrome blocks sound until the page has been tapped once (e.g. she was woken
 // by "Hey DB" on a page you haven't touched). The panel listens for this and
@@ -190,9 +201,8 @@ if (typeof window !== 'undefined') {
   // play, Chrome also the press itself -- listen to all of them.
   const onFirstTap = () => { unlockAudio() }
   for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(ev, onFirstTap, true)
-  // iPhone (Safari 16.4+): treat her voice as media playback, so the silent
-  // switch doesn't mute it.
-  try { const session = (navigator as any).audioSession; if (session) session.type = 'playback' } catch { /* older Safari */ }
+  // iPhone: the session is set per phase (iosAudioSession), never 'playback'
+  // for the whole page -- that took away the microphone.
 }
 // Shown in the panel when this browser can't play her voice at all.
 export const VOICE_UNAVAILABLE_EVENT = 'db-voice-unavailable'
@@ -541,6 +551,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     }
     startFakeLevel()
     synth.cancel()
+    iosAudioSession('playback')
     const u = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ''))
     const voices = synth.getVoices()
     u.voice = voices.find((v) => v.lang === 'en-IN') || voices.find((v) => v.lang === 'hi-IN') || null
@@ -607,6 +618,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
           } catch { startFakeLevel() }
         } else startFakeLevel()
         try {
+          iosAudioSession('playback') // loudspeaker, past the silent switch
           await audio.play()
         } catch (err) {
           if ((err as Error)?.name === 'NotAllowedError') {
@@ -762,6 +774,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       }
       rec = r
       try {
+        iosAudioSession('auto')
         r.start(); mic.wake = r; setActive(true); setFailed(null)
         // eslint-disable-next-line no-console
         console.info('[DB wake] listening for the wake phrase')

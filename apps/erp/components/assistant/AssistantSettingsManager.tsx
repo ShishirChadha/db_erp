@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import AssistantLearnings from './AssistantLearnings'
 import AssistantLookSettings from './AssistantLookSettings'
-import { useVoice, useNameTrainer, createMeter, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
+import { useVoice, useNameTrainer, createMeter, iosAudioSession, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
 // answers 403 to everyone else). Stacked sections, no tab strip.
@@ -107,6 +107,7 @@ function MicCheck({ gate }: { gate: VoiceGate }) {
   const start = async () => {
     setErr(null); setPeak(0)
     let meter: ReturnType<typeof createMeter>
+    iosAudioSession('auto') // a Preview may have left the iPhone in playback mode (no mic)
     try {
       meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } }), { current: 0 })
     } catch { setErr('Microphone permission is blocked.'); return }

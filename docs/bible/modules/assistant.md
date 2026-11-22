@@ -102,9 +102,11 @@ where she is paused. The first version paused every device by default and its op
 **iPhones and Android phones** share the same rules: an open microphone ducks or mutes
 playback (iPhone routes it to the earpiece), and sound routed through Web Audio obeys the
 iPhone's silent switch — so on phones nothing listens while she speaks, her voice skips
-Web Audio, and on iPhone she asks for media playback (`navigator.audioSession`) so the
-silent switch doesn't mute her. Sound unlocks on a completed tap (Safari) as well as a
-press (Chrome).
+Web Audio, and on iPhone the audio session (`navigator.audioSession`) switches per
+phase: *playback* just before she speaks (loudspeaker, past the silent switch) and *auto*
+before anything listens. A *playback* session has no microphone — the first version set
+it for the whole page, and after "Suno DB" → *Yes Jaanu?* the iPhone "listened" to nothing.
+Sound unlocks on a completed tap (Safari) as well as a press (Chrome).
 
 **Her voice in DuckDuckGo / WebView browsers:** sound is allowed only from a play started
 inside a tap, and her replies come seconds later — so one audio player is unlocked on your
