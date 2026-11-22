@@ -24,6 +24,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | asset_qc_checks | result | asset_qc_checks_result_check | `CHECK ((result = ANY (ARRAY['pass'::text, 'fail'::text, 'na'::text])))` |
 | asset_rma_events | direction | asset_rma_events_direction_check | `CHECK ((direction = ANY (ARRAY['to_vendor'::text, 'from_customer'::text])))` |
 | asset_rma_events | status | asset_rma_events_status_check | `CHECK ((status = ANY (ARRAY['initiated'::text, 'shipped'::text, 'vendor_accepted'::text, 'vendor_rejected'::text, 'replacement_received'::text, 'refund_received'::text, 'closed'::text])))` |
+| assistant_device_lease | id | assistant_device_lease_id_check | `CHECK ((id = 1))` |
 | assistant_notes | subject_type | assistant_notes_check | `CHECK (((subject_type = 'customer'::text) = (subject_id IS NOT NULL)))` |
 | assistant_notes | note | assistant_notes_note_check | `CHECK ((length(TRIM(BOTH FROM note)) > 0))` |
 | assistant_notes | source | assistant_notes_source_check | `CHECK ((source = ANY (ARRAY['conversation'::text, 'manual'::text])))` |

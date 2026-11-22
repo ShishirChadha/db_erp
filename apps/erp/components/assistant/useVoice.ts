@@ -150,6 +150,36 @@ export function encodeWav(chunks: Float32Array[], rate: number) {
   return new Blob([buf], { type: 'audio/wav' })
 }
 
+// One audio player for all of her speech, unlocked by your first tap. Android
+// WebView browsers (DuckDuckGo) only allow sound from a play started inside a
+// tap -- and her replies arrive seconds after you speak -- but an <audio>
+// element that has played once inside a tap stays allowed. So: unlock it on the
+// first tap anywhere, then reuse it for every reply.
+let player: HTMLAudioElement | null = null
+let playerUnlocked = false
+let playerAnalyser: AnalyserNode | null = null
+let playToken: object | null = null // the reply currently playing (stops old meter loops)
+const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='
+function getPlayer() {
+  if (!player && typeof Audio !== 'undefined') player = new Audio()
+  return player
+}
+export function unlockAudio() {
+  if (playerUnlocked) return
+  const p = getPlayer()
+  if (!p) return
+  p.src = SILENT_WAV
+  p.play().then(() => { playerUnlocked = true }).catch(() => {})
+  try { if (sharedCtx?.state === 'suspended') sharedCtx.resume() } catch {}
+}
+if (typeof window !== 'undefined') {
+  const onFirstTap = () => { unlockAudio(); if (playerUnlocked) window.removeEventListener('pointerdown', onFirstTap, true) }
+  window.addEventListener('pointerdown', onFirstTap, true)
+  window.addEventListener('keydown', onFirstTap, true)
+}
+// Shown in the panel when this browser can't play her voice at all.
+export const VOICE_UNAVAILABLE_EVENT = 'db-voice-unavailable'
+
 // Short fixed lines ("Yes Boss?") are fetched once and replayed instantly.
 const audioCache = new Map<string, string>()
 
@@ -480,7 +510,12 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 
   const speakBrowser = useCallback((text: string, onEnd: () => void) => {
     const synth = window.speechSynthesis
-    if (!synth) { onEnd(); return }
+    // Android WebView browsers have no built-in voices: say so instead of silence.
+    if (!synth || (typeof synth.getVoices === 'function' && synth.getVoices().length === 0 && isAndroid())) {
+      window.dispatchEvent(new Event(VOICE_UNAVAILABLE_EVENT))
+      onEnd()
+      return
+    }
     startFakeLevel()
     synth.cancel()
     const u = new SpeechSynthesisUtterance(text.replace(/[*_#`]/g, ''))
@@ -510,7 +545,8 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         if (!res.ok || !j.audio) throw new Error(j.error || 'no audio')
         if (cache) audioCache.set(key, j.audio)
         if (speakDone.current !== end) return // interrupted meanwhile
-        const audio = new Audio(`data:audio/mpeg;base64,${j.audio}`)
+        const audio = getPlayer() || new Audio()
+        audio.src = `data:audio/mpeg;base64,${j.audio}`
         audioRef.current = audio
         audio.onended = end
         audio.onerror = end
@@ -518,15 +554,21 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         // already running; routing audio through a suspended engine would
         // silence her, so then the level is faked instead.
         const ctx = isAndroid() ? null : audioCtx()
+        const token = {}
+        playToken = token
         if (ctx && ctx.state === 'running') {
           try {
-            const an = ctx.createAnalyser()
-            an.fftSize = 512
-            ctx.createMediaElementSource(audio).connect(an)
-            an.connect(ctx.destination)
+            // The shared player can be wired to the meter only once; reuse it.
+            if (!playerAnalyser || playerAnalyser.context !== ctx) {
+              playerAnalyser = ctx.createAnalyser()
+              playerAnalyser.fftSize = 512
+              ctx.createMediaElementSource(audio).connect(playerAnalyser)
+              playerAnalyser.connect(ctx.destination)
+            }
+            const an = playerAnalyser
             const buf = new Uint8Array(an.fftSize)
             const tick = () => {
-              if (audioRef.current !== audio) return
+              if (playToken !== token || audioRef.current !== audio) return
               an.getByteTimeDomainData(buf)
               let sum = 0
               for (let i = 0; i < buf.length; i++) { const v = (buf[i] - 128) / 128; sum += v * v }

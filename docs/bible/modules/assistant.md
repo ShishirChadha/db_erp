@@ -35,6 +35,7 @@ sources:
   - apps/erp/components/assistant/AssistantLearnings.tsx
   - apps/erp/components/assistant/AssistantLookSettings.tsx
   - apps/erp/components/assistant/appearance.ts
+  - apps/erp/app/api/assistant/lease/route.ts
 updated: 2026-11-21
 ---
 
@@ -67,15 +68,26 @@ line) is left out of profit and named, so one bad entry can't turn a month negat
 her button, her settings tab or use her — other owners included. It starts as Shishir's
 login (admin@digitalbluez.com).
 
-## Pausing her on every device
+## Several devices in one room, and pausing
 
-The moon button in her header (and on the voice screen) pauses DB on **all your devices**
-— laptop and phone — for 30 minutes, 1 hour, 3 hours or until you resume her
-(`assistant_settings.paused_until`). While paused she doesn't listen anywhere (no "Hey DB",
-mic disabled; typing still works), her button turns grey with a moon, and a banner offers
-**Resume DB** (the header shows a green **Resume** button). Other devices pick the change up within 30 seconds, or at once when you
-return to the tab. (The first wording, "Until I turn her on", read like a button that turns
-her on and left her paused by accident; the options now all start with "Pause".)
+**Only one device answers.** Before answering "Hey DB", a device asks the server for a
+short lease (`assistant_device_lease`, one row; `/api/assistant/lease`). With the laptop
+and the phone in the same room, the first to ask answers and the other stays quiet with a
+small "Answered on your laptop/phone" note. The device in a conversation renews the lease
+every 8 s, so the other won't wake meanwhile; tapping the mic on the other device takes
+the conversation over there ("Continued on your other device").
+
+**Pause (moon button)** pauses **this device only** — 30 min, 1 h, 3 h or until you resume
+her (kept in this browser). The same menu has **All my devices** (1 h or until resumed),
+saved on the server for phone calls. While paused she doesn't listen on that device, her
+button turns grey with a moon, the header shows a green **Resume** button and a banner says
+where she is paused. The first version paused every device by default and its option
+"Until I turn her on" read like a button that turns her on.
+
+**Her voice in DuckDuckGo / WebView browsers:** sound is allowed only from a play started
+inside a tap, and her replies come seconds later — so one audio player is unlocked on your
+first tap and reused for every reply. If a browser can't play her voice at all, the panel
+says so instead of staying silent.
 
 ## Look, layout and screens
 

@@ -6,7 +6,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
@@ -83,6 +83,27 @@ function useMedia(query: string) {
     return () => m.removeEventListener('change', on)
   }, [query])
   return match
+}
+
+// ---- one device answers --------------------------------------------------
+// Each browser gets a lasting id. Before answering "Hey DB", a device asks the
+// server for the lease (/api/assistant/lease); with the laptop and the phone in
+// one room, only the first to ask answers and the other shows a small note.
+const DEVICE_KEY = 'db_device_id'
+const DEVICE_PAUSE_KEY = 'db_device_paused_until'
+function deviceId() {
+  try {
+    let id = localStorage.getItem(DEVICE_KEY)
+    if (!id) { id = (crypto.randomUUID?.() || Math.random().toString(36).slice(2) + Date.now().toString(36)); localStorage.setItem(DEVICE_KEY, id) }
+    return id
+  } catch { return `tmp-${Math.random().toString(36).slice(2, 12)}` }
+}
+const deviceLabel = () => (/Android|iPhone|iPad/i.test(navigator.userAgent) ? 'phone' : 'laptop')
+async function lease(action: 'claim' | 'take' | 'renew' | 'release'): Promise<{ granted?: boolean; holder?: string }> {
+  try {
+    const r = await apiFetch('/api/assistant/lease', { method: 'POST', body: JSON.stringify({ device_id: deviceId(), label: deviceLabel(), action }), timeoutMs: 2500 })
+    return await r.json()
+  } catch { return { granted: true } } // network trouble: never block her
 }
 
 interface PanelConfig {
@@ -171,7 +192,27 @@ export function AssistantLauncher() {
   // Re-check every 30 s whether a timed pause has run out.
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(t) }, [])
-  const paused = !!config?.pausedUntil && Date.parse(config.pausedUntil) > now
+  // Pause on this device only (kept in this browser) or on all devices (server).
+  const [devicePausedUntil, setDevicePausedUntil] = useState<string | null>(null)
+  useEffect(() => {
+    const read = () => { try { setDevicePausedUntil(localStorage.getItem(DEVICE_PAUSE_KEY)) } catch { /* private mode */ } }
+    read()
+    window.addEventListener('storage', read)
+    return () => window.removeEventListener('storage', read)
+  }, [])
+  const pauseThisDevice = (until: string | null) => {
+    try { until ? localStorage.setItem(DEVICE_PAUSE_KEY, until) : localStorage.removeItem(DEVICE_PAUSE_KEY) } catch { /* private mode */ }
+    setDevicePausedUntil(until)
+  }
+  const globalPaused = !!config?.pausedUntil && Date.parse(config.pausedUntil) > now
+  const devicePaused = !!devicePausedUntil && Date.parse(devicePausedUntil) > now
+  const paused = globalPaused || devicePaused
+  const pauseInfo = { scope: globalPaused ? 'all' as const : 'device' as const, until: globalPaused ? config!.pausedUntil! : devicePausedUntil }
+
+  // "Answered on your laptop" when the other device took the wake word.
+  const [notice, setNotice] = useState<string | null>(null)
+  const showNotice = (t: string) => { setNotice(t); setTimeout(() => setNotice(null), 4500) }
+  const [endSignal, setEndSignal] = useState(0)
 
   // Full-screen mode on phones follows the *visible* area, so the on-screen
   // keyboard (Android Chrome overlays it by default) never hides the input.
@@ -188,13 +229,29 @@ export function AssistantLauncher() {
   // Listens whenever DB is idle -- panel open, minimised or closed. Paused while
   // she listens, thinks, speaks or a conversation is running; useVoice also
   // hands the mic over explicitly so two recognisers never run at once.
-  const wake = useWakeWord(!!config?.wakeWord && !paused, config?.wakePhrases || [], vs.busy || externalPause, () => {
+  const wake = useWakeWord(!!config?.wakeWord && !paused, config?.wakePhrases || [], vs.busy || externalPause, async () => {
+    const res = await lease('claim')
+    if (res.granted === false) { showNotice(`Answered on your ${res.holder || 'other device'}`); return }
     if (config?.look.haptics) buzz([20, 40, 20])
     if (config?.look.sounds) chime('wake')
     setOpen(true)
     setMinimized(false)
     setWakeKey((k) => k + 1)
   })
+
+  // Hold the lease while talking so the other device stays quiet; if the other
+  // device takes over (you tapped its mic), end the conversation here.
+  const holding = useRef(false)
+  useEffect(() => {
+    if (!vs.busy) { if (holding.current) { holding.current = false; lease('release') } return }
+    if (!holding.current) { holding.current = true; lease('take') }
+    const t = setInterval(async () => {
+      const r = await lease('renew')
+      if (r.granted === false) { holding.current = false; setEndSignal((k) => k + 1); showNotice('Continued on your other device') }
+    }, 8000)
+    return () => clearInterval(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [vs.busy])
 
   if (!config) return null
   const a = config.look
@@ -248,6 +305,12 @@ export function AssistantLauncher() {
           {wake.failed && <span className="absolute right-0.5 top-0.5 h-3 w-3 rounded-full bg-warning ring-2 ring-background" />}
         </button>
       )}
+      {notice && (
+        <div className={cn('fixed z-[61] max-w-[80vw] rounded-full bg-slate-900/90 px-4 py-2 text-xs text-white shadow-lg', a.launcher_side === 'right' ? 'right-4' : 'left-4')}
+          style={{ bottom: `calc(max(1.25rem, calc(env(safe-area-inset-bottom) + 0.75rem)) + ${launcherSize + 12}px)` }} role="status">
+          {notice}
+        </div>
+      )}
       {open && (
         <aside className={asideClass} style={asideStyle} aria-label="DB assistant">
           <AssistantConversation
@@ -256,6 +319,9 @@ export function AssistantLauncher() {
             wakeActive={wake.active}
             wakeNote={config.wakeWord ? wake.failed : null}
             paused={paused}
+            pauseInfo={pauseInfo}
+            onPauseDevice={pauseThisDevice}
+            endSignal={endSignal}
             onState={setVs}
             onMinimize={() => setMinimized(true)}
             onClose={() => { setOpen(false); setMinimized(false); setWakeKey(0); setVs({ busy: false, avatar: 'idle', convo: false }) }}
@@ -266,8 +332,9 @@ export function AssistantLauncher() {
   )
 }
 
-function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, onState, onMinimize, onClose }: {
+function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, pauseInfo, onPauseDevice, endSignal, onState, onMinimize, onClose }: {
   config: PanelConfig; wakeKey: number; wakeActive: boolean; wakeNote: string | null; paused: boolean
+  pauseInfo: { scope: 'all' | 'device'; until: string | null }; onPauseDevice: (until: string | null) => void; endSignal: number
   onState: (s: VoiceState) => void; onMinimize: () => void; onClose: () => void
 }) {
   const a = config.look
@@ -402,6 +469,15 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   voiceRef.current = voice
   useEffect(() => { if (!voice.speaking) setBlockedPlay(null) }, [voice.speaking])
   useEffect(() => { if (paused) { endConvo(); voiceRef.current?.stopSpeaking() } }, [paused, endConvo])
+  // The other device took over (you tapped its mic): stop here.
+  useEffect(() => { if (endSignal) { endConvo(true); voiceRef.current?.stopSpeaking() } }, [endSignal, endConvo])
+  // This browser can't play her voice at all (no Azure audio, no built-in voices).
+  const [noVoice, setNoVoice] = useState(false)
+  useEffect(() => {
+    const on = () => setNoVoice(true)
+    window.addEventListener(VOICE_UNAVAILABLE_EVENT, on)
+    return () => window.removeEventListener(VOICE_UNAVAILABLE_EVENT, on)
+  }, [])
 
   const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
   useEffect(() => {
@@ -499,17 +575,29 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
 
   // Pause DB on every device (a phone call, a meeting). Saved on the server, so
   // the laptop and the phone both stop listening; turning her on works the same.
-  const setPause = async (minutes: number | 'forever' | null) => {
+  // Pause this device only (the default), or every device (a phone call).
+  const setPause = async (minutes: number | 'forever' | null, scope: 'device' | 'all' = 'device') => {
     setPauseMenu(false)
     const until = minutes === null ? null : minutes === 'forever' ? '9999-12-31T00:00:00.000Z' : new Date(Date.now() + minutes * 60_000).toISOString()
     if (until) { endConvo(); voice.stopSpeaking() }
+    if (until === null) {
+      // Resume: clear this device's pause, and the all-devices one if set.
+      onPauseDevice(null)
+      if (config.pausedUntil) {
+        const r = await apiFetch('/api/assistant/config', { method: 'PUT', body: JSON.stringify({ paused_until: null }) })
+        if (!r.ok) setError('Could not resume. Try again.')
+        window.dispatchEvent(new Event('db-assistant-settings'))
+      }
+      return
+    }
+    if (scope === 'device') { onPauseDevice(until); return }
     const r = await apiFetch('/api/assistant/config', { method: 'PUT', body: JSON.stringify({ paused_until: until }) })
     if (!r.ok) setError('Could not change the pause. Try again.')
     window.dispatchEvent(new Event('db-assistant-settings'))
   }
-  const pausedLabel = config.pausedUntil && config.pausedUntil.startsWith('9999')
-    ? 'until you resume her'
-    : `until ${config.pausedUntil ? new Date(config.pausedUntil).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}`
+  const pausedLabel = `${pauseInfo.scope === 'all' ? 'on all your devices' : 'on this device'} ${
+    pauseInfo.until?.startsWith('9999') ? 'until you resume her'
+      : `until ${pauseInfo.until ? new Date(pauseInfo.until).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}`}`
   const pauseControl = (dark: boolean) => (
     <div className="relative">
       {dark
@@ -520,10 +608,15 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
           : <IconBtn onClick={() => setPauseMenu((m) => !m)} label="Pause DB on all devices"><Moon className="h-4 w-4" /></IconBtn>}
       {pauseMenu && (
         <div className="absolute right-0 top-12 z-20 w-60 rounded-xl border bg-background p-1 text-sm text-foreground shadow-xl">
-          <p className="px-3 pt-2 text-sm font-semibold">Pause DB</p>
-          <p className="px-3 pb-2 text-xs text-muted-foreground">She stops listening on all your devices (laptop and phone).</p>
+          <p className="px-3 pt-2 text-sm font-semibold">Pause DB on this {deviceLabel()}</p>
+          <p className="px-3 pb-2 text-xs text-muted-foreground">Only this device stops listening; your other device keeps working.</p>
           {([[30, 'Pause for 30 minutes'], [60, 'Pause for 1 hour'], [180, 'Pause for 3 hours'], ['forever', 'Pause until I resume her']] as const).map(([m, label]) => (
-            <button key={String(m)} type="button" onClick={() => setPause(m)} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted">{label}</button>
+            <button key={String(m)} type="button" onClick={() => setPause(m, 'device')} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted">{label}</button>
+          ))}
+          <div className="my-1 border-t" />
+          <p className="px-3 pt-1 text-xs text-muted-foreground">On a phone call? Pause every device:</p>
+          {([[60, 'All my devices for 1 hour'], ['forever', 'All my devices until I resume']] as const).map(([m, label]) => (
+            <button key={`all-${String(m)}`} type="button" onClick={() => setPause(m, 'all')} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted">{label}</button>
           ))}
         </div>
       )}
@@ -534,7 +627,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   const talking = convo || voice.listening || voice.speaking || voice.transcribing || (busy && convo)
   const stageView = a.voice_view === 'stage' || (a.voice_view === 'auto' && compact)
   const onStage = stageView && talking && !chatOverride
-  const statusLine = paused ? `Paused on all devices ${pausedLabel}` : voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
+  const statusLine = paused ? `Paused ${pausedLabel}` : voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
   const tapToHear = blockedPlay && (
     <button type="button" onClick={() => { const play = blockedPlay; setBlockedPlay(null); play() }}
       className="mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg"
@@ -595,7 +688,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
           <div ref={scrollRef} className={cn('flex-1 space-y-3 overflow-y-auto overscroll-contain px-3 py-4 sm:px-4', TEXT_SIZE[a.text_size])}>
             {paused && (
               <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted p-3 text-sm">
-                <span className="flex items-center gap-2"><Moon className="h-4 w-4 shrink-0" />DB is paused on all your devices {pausedLabel}. She isn’t listening anywhere; you can still type.</span>
+                <span className="flex items-center gap-2"><Moon className="h-4 w-4 shrink-0" />DB is paused {pausedLabel}. She isn’t listening here; you can still type.</span>
                 <Button size="sm" onClick={() => setPause(null)}>Resume DB</Button>
               </div>
             )}
@@ -630,6 +723,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             ))}
 
             {tapToHear}
+            {noVoice && <p className="rounded-xl bg-warning/10 p-2 text-xs">Her voice can’t play in this browser. Choose Azure or Google in Settings → DB Assistant → Her voice, or open the ERP in Chrome.</p>}
             {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 italic text-muted-foreground">{voice.interim}</p></div>}
             {dropped && !voice.interim && <DroppedNote dropped={dropped} onSend={sendDropped} />}
             {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-destructive">{voice.micError}</p>}
