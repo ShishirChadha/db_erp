@@ -108,6 +108,7 @@ async function lease(action: 'claim' | 'take' | 'renew' | 'release'): Promise<{ 
 
 interface PanelConfig {
   listen: ListenProvider
+  keyProblem: string | null // a saved key this server can't unlock
   azureOk: boolean
   sarvamOk: boolean
   pausedUntil: string | null
@@ -143,7 +144,11 @@ export function AssistantLauncher() {
       const vp = s.voice_provider as SpeakProvider
       const azureOk = !!j.secrets.azure?.configured
       const sarvamOk = !!j.secrets.sarvam?.configured
+      const unreadable = (['azure', 'google', 'sarvam'] as const).filter((k) => j.secrets[k]?.unreadable)
       setConfig({
+        keyProblem: unreadable.length
+          ? `Your ${unreadable.map((k) => ({ azure: 'Azure', google: 'Google', sarvam: 'Sarvam' }[k])).join(' and ')} key is saved, but this server can’t unlock it, so her voice and listening fall back to the browser. Add PASSWORD_VAULT_KEY in Vercel (the same value as on the laptop) and redeploy.`
+          : null,
         // The chosen way of hearing you if its key is saved; otherwise the
         // browser where its speech recognition really works (Chrome), else
         // Azure / Sarvam recording (DuckDuckGo and other WebView browsers).
@@ -723,7 +728,8 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             ))}
 
             {tapToHear}
-            {noVoice && <p className="rounded-xl bg-warning/10 p-2 text-xs">Her voice can’t play in this browser. Choose Azure or Google in Settings → DB Assistant → Her voice, or open the ERP in Chrome.</p>}
+            {config.keyProblem && <p className="rounded-xl bg-destructive/10 p-2 text-xs text-destructive">{config.keyProblem}</p>}
+            {noVoice && !config.keyProblem && <p className="rounded-xl bg-warning/10 p-2 text-xs">Her voice can’t play in this browser. Choose Azure or Google in Settings → DB Assistant → Her voice, or open the ERP in Chrome.</p>}
             {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 italic text-muted-foreground">{voice.interim}</p></div>}
             {dropped && !voice.interim && <DroppedNote dropped={dropped} onSend={sendDropped} />}
             {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-destructive">{voice.micError}</p>}

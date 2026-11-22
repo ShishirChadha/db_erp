@@ -27,7 +27,7 @@ type Billing = {
 }
 type Config = {
   settings: any
-  secrets: Record<'sarvam' | 'azure' | 'google' | 'anthropic_admin' | 'anthropic', { configured: boolean; from_env: boolean }>
+  secrets: Record<'sarvam' | 'azure' | 'google' | 'anthropic_admin' | 'anthropic', { configured: boolean; from_env: boolean; unreadable?: boolean }>
   status: { ready: boolean; reason?: string }
   owners: { id: string; full_name: string | null; username: string | null }[]
   me: string
@@ -236,6 +236,13 @@ export default function AssistantSettingsManager() {
 
   return (
     <div className="space-y-4">
+      {Object.entries(cfg.secrets).some(([, v]) => v.unreadable) && (
+        <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          <b>Some saved keys can’t be unlocked on this server:</b> {Object.entries(cfg.secrets).filter(([, v]) => v.unreadable).map(([k]) => k).join(', ')}.
+          Keys are stored encrypted with PASSWORD_VAULT_KEY. This server’s copy is missing or different from the one they were saved with.
+          Fix: add PASSWORD_VAULT_KEY in Vercel with the same value as the laptop’s, then redeploy. (Or paste the keys again here, but then the laptop can’t read them.)
+        </div>
+      )}
       <Section title="DB and who can talk to her" hint="DB only answers the logins ticked here. Everyone else doesn't even see her button.">
         <p className="text-sm">
           Status:{' '}

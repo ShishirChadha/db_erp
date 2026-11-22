@@ -172,10 +172,18 @@ export async function setSecret(name: SecretName, value: string | null, by: stri
     .upsert({ key: SECRETS[name].setting, value: encryptPassword(value.trim()), updated_at: new Date().toISOString(), updated_by: by }, { onConflict: 'key' })
 }
 
+// configured: usable here. unreadable: a key is saved but this server can't
+// decrypt it -- its PASSWORD_VAULT_KEY is missing or differs from the one the key
+// was saved with (e.g. saved on the laptop, read on the live Vercel site).
 export async function secretStatus() {
-  const out: Record<string, { configured: boolean; from_env: boolean }> = {}
+  const out: Record<string, { configured: boolean; from_env: boolean; unreadable: boolean }> = {}
   for (const name of Object.keys(SECRETS) as SecretName[]) {
-    out[name] = { configured: !!(await getSecret(name)), from_env: !!process.env[SECRETS[name].env]?.trim() }
+    const fromEnv = !!process.env[SECRETS[name].env]?.trim()
+    if (fromEnv) { out[name] = { configured: true, from_env: true, unreadable: false }; continue }
+    const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', SECRETS[name].setting).maybeSingle()
+    let ok = false
+    if (data?.value) { try { ok = !!decryptPassword(data.value) } catch { ok = false } }
+    out[name] = { configured: ok, from_env: false, unreadable: !!data?.value && !ok }
   }
   return out
 }
