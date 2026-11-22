@@ -95,6 +95,17 @@ async function takeMic() {
 }
 function releaseMic() { mic.busy = Math.max(0, mic.busy - 1) }
 
+// Android: opening the microphone (Google's speech service) takes the phone's
+// audio focus and pauses/mutes whatever the page is playing. So on Android no
+// recogniser may run while DB speaks (no "say stop" listener -- tap instead),
+// and her voice is not routed through Web Audio for the level meter.
+export const isAndroid = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+
+// Chrome blocks sound until the page has been tapped once (e.g. she was woken
+// by "Hey DB" on a page you haven't touched). The panel listens for this and
+// shows "Tap to hear DB".
+export const AUDIO_BLOCKED_EVENT = 'db-audio-blocked'
+
 // Short fixed lines ("Yes Boss?") are fetched once and replayed instantly.
 const audioCache = new Map<string, string>()
 
@@ -249,8 +260,10 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     await takeMic()
     // A second, raw-level stream only to measure loudness; recognition still
     // works if it can't be opened.
+    // (Not on Android: a second mic stream can stop Google's recogniser from
+    // getting the mic, and Android already filters background noise itself.)
     let meter: ReturnType<typeof createMeter> | null = null
-    try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ }
+    if (!isAndroid()) { try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ } }
     const gate = GATE_LEVEL[cfgRef.current.gate || 'medium']
     const rec = new Ctor()
     rec.lang = 'en-IN'
@@ -360,7 +373,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         // Measure her voice for the avatar -- only when the audio engine is
         // already running; routing audio through a suspended engine would
         // silence her, so then the level is faked instead.
-        const ctx = audioCtx()
+        const ctx = isAndroid() ? null : audioCtx()
         if (ctx && ctx.state === 'running') {
           try {
             const an = ctx.createAnalyser()
@@ -379,7 +392,16 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
             requestAnimationFrame(tick)
           } catch { startFakeLevel() }
         } else startFakeLevel()
-        await audio.play()
+        try {
+          await audio.play()
+        } catch (err) {
+          if ((err as Error)?.name === 'NotAllowedError') {
+            // Blocked until a tap: keep the audio ready and ask for one tap.
+            window.dispatchEvent(new CustomEvent(AUDIO_BLOCKED_EVENT, { detail: () => audio.play().catch(() => end()) }))
+            return
+          }
+          throw err
+        }
       })
       .catch(() => { if (speakDone.current === end) speakBrowser(text, end) })
   }), [speakBrowser, stopSpeaking])
@@ -433,18 +455,38 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
   wakeRef.current = onWake
   const [active, setActive] = useState(false)
   const [failed, setFailed] = useState<string | null>(null)
-  const failedRef = useRef(false)
+  // Only a blocked microphone stops it for good (until reload); anything else
+  // rests a minute and tries again -- it used to give up silently after six
+  // errors, which with the panel open looked like "she doesn't wake at all".
+  const blockedRef = useRef(false)
 
   useEffect(() => {
     const Ctor = typeof window === 'undefined' ? null : (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!enabled || paused || !Ctor || failedRef.current) { setActive(false); return }
+    if (!Ctor) { setFailed('This browser can’t listen for “Hey DB” — use Chrome.'); return }
+    if (!enabled || paused || blockedRef.current) { setActive(false); return }
     let disposed = false
     let rec: any = null // the one live recogniser, null once it has ended
     let timer: ReturnType<typeof setTimeout> | null = null
     let failures = 0
+    // One listening tab across the whole browser: Chrome lets only one page
+    // recognise speech at a time, so two ERP tabs would keep cutting each other
+    // off. The tab used most recently claims the mic; the others stand down
+    // until they are used again.
+    const me = Math.random().toString(36).slice(2)
+    const bc = typeof BroadcastChannel !== 'undefined' ? new BroadcastChannel('db-wake') : null
+    let standDown = false
+    bc && (bc.onmessage = (e: MessageEvent) => {
+      if (e.data?.type !== 'claim' || e.data.id === me || disposed) return
+      standDown = true
+      if (timer) { clearTimeout(timer); timer = null }
+      try { rec?.abort() } catch {}
+      setActive(false)
+      setFailed('“Hey DB” is listening in your other ERP tab. Click here to listen in this one.')
+    })
+    const claim = () => { standDown = false; setFailed(null); bc?.postMessage({ type: 'claim', id: me }) }
     const giveUp = (why: string) => {
       disposed = true
-      failedRef.current = true
+      blockedRef.current = true
       setFailed(why)
       setActive(false)
     }
@@ -453,7 +495,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       timer = setTimeout(() => { timer = null; begin() }, ms)
     }
     const begin = () => {
-      if (disposed || rec || document.visibilityState !== 'visible') return
+      if (disposed || standDown || rec || document.visibilityState !== 'visible') return
       if (mic.busy > 0 && Date.now() - mic.since > 90_000) mic.busy = 0 // a holder that never let go; no listen lasts 90s
       if (mic.busy > 0) { schedule(800); return } // DB is using the mic; try again shortly (not a failure)
       const r = new Ctor()
@@ -482,35 +524,53 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       }
       r.onerror = (e: any) => {
         if (e.error === 'aborted' || e.error === 'no-speech') return
+        // eslint-disable-next-line no-console
+        console.warn(`[DB wake] error: ${e.error}`)
         errored = true
-        if (FATAL_ERRORS.has(e.error)) giveUp(e.error === 'not-allowed' ? 'Microphone permission is blocked.' : `Speech recognition unavailable (${e.error}).`)
+        if (FATAL_ERRORS.has(e.error)) giveUp(e.error === 'not-allowed' ? 'Microphone blocked for this site: allow it in Chrome’s site settings, then reload.' : `Speech recognition unavailable (${e.error}).`)
       }
       r.onend = () => {
         if (rec === r) rec = null
         if (mic.wake === r) mic.wake = null
         setActive(false)
         if (woke) { wakeRef.current(); return } // the panel opens and pauses this hook
-        if (disposed) return
+        if (disposed || standDown) return
         if (mic.busy > 0) { schedule(800); return } // taken by DB's own listening, not an error
         if (errored || Date.now() - startedAt < 3000) {
           failures++
-          if (failures >= MAX_FAILURES) { giveUp('“Hey DB” stopped after repeated errors. Reload the page to try again.'); return }
+          if (failures >= MAX_FAILURES) {
+            failures = 0
+            setFailed('“Hey DB” hit errors; trying again in a minute.')
+            schedule(60_000)
+            return
+          }
           schedule(Math.min(30_000, 1000 * 2 ** (failures - 1)))
         } else {
           schedule(500) // Chrome ends long sessions on its own; just carry on
         }
       }
       rec = r
-      try { r.start(); mic.wake = r; setActive(true) } catch { rec = null; failures++; schedule(2000) }
+      try {
+        r.start(); mic.wake = r; setActive(true); setFailed(null)
+        // eslint-disable-next-line no-console
+        console.info('[DB wake] listening for the wake phrase')
+      } catch { rec = null; failures++; schedule(2000) }
     }
     const onVis = () => {
-      if (document.visibilityState === 'visible') schedule(300)
+      if (document.visibilityState === 'visible') { claim(); schedule(300) }
       else { if (timer) { clearTimeout(timer); timer = null } try { rec?.abort() } catch {} }
     }
+    const onFocus = () => { if (standDown) { claim(); schedule(300) } }
     document.addEventListener('visibilitychange', onVis)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pointerdown', onFocus)
+    claim()
     begin()
     return () => {
       disposed = true
+      bc?.close()
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pointerdown', onFocus)
       document.removeEventListener('visibilitychange', onVis)
       if (timer) clearTimeout(timer)
       try { rec?.abort() } catch {}
@@ -589,7 +649,9 @@ export function stopHeard(heard: string, saying: string) {
   return short && WEAK_STOP.some((p) => hasPhrase(h, p) && (h === p || !hasPhrase(said, p)))
 }
 
-export function useStopWords(active: boolean, saying: string, onStop: () => void) {
+export function useStopWords(activeIn: boolean, saying: string, onStop: () => void) {
+  // Never on Android: the open mic would pause her voice (see isAndroid).
+  const active = activeIn && !isAndroid()
   const stopRef = useRef(onStop)
   stopRef.current = onStop
   const sayingRef = useRef(saying)

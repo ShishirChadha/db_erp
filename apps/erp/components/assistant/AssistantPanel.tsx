@@ -6,7 +6,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, chime, buzz, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, AUDIO_BLOCKED_EVENT, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
@@ -222,6 +222,7 @@ export function AssistantLauncher() {
             config={config}
             wakeKey={wakeKey}
             wakeActive={wake.active}
+            wakeNote={config.wakeWord ? wake.failed : null}
             onState={setVs}
             onMinimize={() => setMinimized(true)}
             onClose={() => { setOpen(false); setMinimized(false); setWakeKey(0); setVs({ busy: false, avatar: 'idle', convo: false }) }}
@@ -232,8 +233,8 @@ export function AssistantLauncher() {
   )
 }
 
-function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimize, onClose }: {
-  config: PanelConfig; wakeKey: number; wakeActive: boolean
+function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, onState, onMinimize, onClose }: {
+  config: PanelConfig; wakeKey: number; wakeActive: boolean; wakeNote: string | null
   onState: (s: VoiceState) => void; onMinimize: () => void; onClose: () => void
 }) {
   const a = config.look
@@ -252,6 +253,13 @@ function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimiz
   const [saying, setSaying] = useState('') // the reply she is reading aloud now
   const [captions, setCaptions] = useState(a.captions)
   const [chatOverride, setChatOverride] = useState(false) // "keyboard" pressed on the stage
+  // Chrome blocked her voice until the page is tapped once: hold the play.
+  const [blockedPlay, setBlockedPlay] = useState<(() => void) | null>(null)
+  useEffect(() => {
+    const on = (e: Event) => setBlockedPlay(() => (e as CustomEvent).detail as () => void)
+    window.addEventListener(AUDIO_BLOCKED_EVENT, on)
+    return () => window.removeEventListener(AUDIO_BLOCKED_EVENT, on)
+  }, [])
   const interrupted = useRef(false)
   const convoRef = useRef(false)
   const lastHeard = useRef(0)
@@ -358,6 +366,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimiz
 
   const voice = useVoice({ listen: config.listen, speak: config.speak, speakReplies: voiceOn, gate: config.gate }, onHeard, onNothing)
   voiceRef.current = voice
+  useEffect(() => { if (!voice.speaking) setBlockedPlay(null) }, [voice.speaking])
 
   const avatarState: AvatarState = voice.speaking ? 'speaking' : voice.listening ? 'listening' : (busy || voice.transcribing) ? 'thinking' : 'idle'
   useEffect(() => {
@@ -456,7 +465,14 @@ function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimiz
   const talking = convo || voice.listening || voice.speaking || voice.transcribing || (busy && convo)
   const stageView = a.voice_view === 'stage' || (a.voice_view === 'auto' && compact)
   const onStage = stageView && talking && !chatOverride
-  const statusLine = voice.speaking ? 'Speaking… say “stop” to cut me off' : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : 'Online'
+  const statusLine = voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
+  const tapToHear = blockedPlay && (
+    <button type="button" onClick={() => { const play = blockedPlay; setBlockedPlay(null); play() }}
+      className="mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg"
+      style={{ background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>
+      <Volume2 className="h-4 w-4" />Tap to hear DB
+    </button>
+  )
   const lastDb = [...entries].reverse().find((e) => e.role === 'db')
   const pendingCard = lastDb?.cards?.find((c) => c.type === 'confirm' || c.type === 'share')
 
@@ -479,7 +495,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimiz
           dropped={dropped}
           onSendDropped={sendDropped}
           error={error || voice.micError}
-          card={pendingCard ? <AssistantCardView card={pendingCard} disabled={busy} onAnswer={send} theme={theme} /> : null}
+          card={tapToHear || (pendingCard ? <AssistantCardView card={pendingCard} disabled={busy} onAnswer={send} theme={theme} /> : null)}
           listening={voice.listening}
           speaking={voice.speaking}
           busy={busy || voice.transcribing}
@@ -536,6 +552,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, onState, onMinimiz
                 onAnswer={send} onReplay={(t) => voice.speak(t, undefined, false)} canReplay={voiceOn} />
             ))}
 
+            {tapToHear}
             {voice.interim && <div className="flex justify-end"><p className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 italic text-muted-foreground">{voice.interim}</p></div>}
             {dropped && !voice.interim && <DroppedNote dropped={dropped} onSend={sendDropped} />}
             {voice.micError && <p className="rounded-xl bg-destructive/10 p-2 text-destructive">{voice.micError}</p>}

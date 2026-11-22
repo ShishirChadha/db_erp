@@ -139,7 +139,11 @@ tools are removed from her tool list and refused server-side, and she says it's 
 **How much she says**: short (default) or normal.
 
 **Stopping her:** say "stop", "ruko", "bas", "pata hai", "chup"… while she talks, press
-Esc, or tap the mic, and she stops at once. A small browser recogniser runs only while
+Esc, or tap the mic, and she stops at once. **On Android the spoken "stop" is off** —
+opening the microphone there makes Google's speech service take the phone's audio and
+mute her — so tap the square instead. If Chrome blocks her voice because the page hasn't
+been tapped yet (e.g. woken by "Hey DB" straight away), a **Tap to hear DB** button
+appears. A small browser recogniser runs only while
 she speaks; her own voice from the speakers is filtered (a stop word counts on its own,
 or inside a phrase only if she isn't saying it). The next turn tells her you cut her
 off, so she doesn't repeat herself.
@@ -195,7 +199,11 @@ while the docked panel was open, so it almost never listened). When woken she an
 with the *wake answer* ("Yes Boss?" by default, cached after the first play so it is
 instant and free) and starts a conversation. Only one recogniser runs at a time: her
 own listening, the stop listener and the name trainer take the mic from the wake
-listener and it waits until they are done. The browser console logs what the wake
+listener and it waits until they are done. Only one browser tab listens at a time
+(Chrome allows one): the ERP tab you used last claims it and the others say "listening in
+your other ERP tab". After repeated errors it rests a minute and retries (it used to give
+up until reload); only a blocked microphone stops it, with the reason in her status line.
+The browser console logs what the wake
 listener hears (`[DB wake] heard …` / `woke on …`). She addresses you by *She calls
 you* (default "Boss"). "DB" is hard for speech
 recognition, so the listener checks the recogniser's top 5 guesses against a list of
