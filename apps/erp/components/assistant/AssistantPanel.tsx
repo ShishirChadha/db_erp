@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown, Moon, Power } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
@@ -35,6 +36,7 @@ type Card =
   | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[] }
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
+  | { type: 'open'; href: string; label: string } // an ERP page she opened for him
 
 // instant: a fixed reply answered in the browser, no AI call (instant-replies.ts).
 type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number; instant?: boolean }
@@ -42,6 +44,7 @@ type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number; 
 const THREAD_KEY = 'db_assistant_thread'
 const STATUS_WORDS: Record<string, string> = {
   find_customer: 'Customer dekh rahi hoon…',
+  open_page: 'Page khol rahi hoon…',
   find_products: 'Stock check kar rahi hoon…',
   find_sellable_units: 'Units dekh rahi hoon…',
   find_unit_by_serial: 'Serial dhoondh rahi hoon…',
@@ -399,6 +402,19 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     retryTimer.current = setTimeout(() => { retryTimer.current = null; if (convoRef.current) voiceRef.current?.start() }, delay)
   }, [])
 
+  // She opened an ERP page for him: go there, get out of the way where her panel
+  // covers the ERP (phone; floating panel below 1280 px), and stop listening
+  // after this reply -- he is working on it himself.
+  const router = useRouter()
+  const openPage = useCallback((href: string) => {
+    if (!href.startsWith('/dashboard/')) return // only ERP pages
+    router.push(href)
+    endAfterReply.current = true
+    const covers = window.matchMedia('(max-width: 599px)').matches
+      || (a.wide_layout !== 'split' && window.matchMedia('(max-width: 1279px)').matches)
+    if (covers) onMinimize()
+  }, [router, a.wide_layout, onMinimize])
+
   // `spoken` = it came from her microphone (the browser recogniser detects no
   // language, so a null language must not read as "typed" to her).
   const send = useCallback(async (text: string, spoken: { language: string | null } | null = null, confirmActionId?: string) => {
@@ -464,7 +480,10 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             setStatus(null)
             setEntries((prev) => updateLastDb(prev, (d) => ({ ...d, text: d.text + e.delta })))
           } else if (e.type === 'status') setStatus(STATUS_WORDS[e.tool] || 'Ek second…')
-          else if (e.type === 'card') setEntries((prev) => updateLastDb(prev, (d) => ({ ...d, cards: [...(d.cards || []), e.card] })))
+          else if (e.type === 'card') {
+            setEntries((prev) => updateLastDb(prev, (d) => ({ ...d, cards: [...(d.cards || []), e.card] })))
+            if (e.card.type === 'open') openPage(e.card.href)
+          }
           else if (e.type === 'error') setError(e.message)
         }
       }
@@ -479,7 +498,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     if (v && voiceOn && reply.trim()) { setSaying(reply); await v.speak(reply); setSaying('') }
     if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
     if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
-  }, [busy, threadId, voiceOn, endConvo, listenAgain, config])
+  }, [busy, threadId, voiceOn, endConvo, listenAgain, config, openPage])
 
   // Card buttons and suggestion chips: typed text, plus the card id on Confirm.
   const answer = useCallback((t: string, confirmActionId?: string) => { send(t, null, confirmActionId) }, [send])
@@ -988,6 +1007,13 @@ function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; di
           <Button variant="outline" className="h-10 flex-1" disabled={disabled} onClick={() => onAnswer('Nahi, abhi cancel karo.')}>Cancel</Button>
         </div>
       </div>
+    )
+  }
+  if (card.type === 'open') {
+    return (
+      <Link href={card.href} className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border bg-background px-3 text-sm font-medium hover:bg-muted">
+        <ExternalLink className="h-4 w-4" />Open {card.label}
+      </Link>
     )
   }
   if (card.type === 'done') {

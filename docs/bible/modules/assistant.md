@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -159,6 +159,22 @@ panel then offers **Wake DB up** (not for a deactivated DB — undo that in User
 
 Owner-only expense types (Salaries etc.) she records only with *Full expense access*
 on (see Expenses: full access above).
+
+## Opening pages for you
+
+Ask her to open any ERP page and she does — "Sales Ledger kholo", "Ramesh ka customer
+dikhao", "PI 245 kholo", "stock mein 840 G6 dikhao" (`open_page`, always on; it saves
+nothing, so no card to confirm). List pages that keep their search in the address
+(Sales, Customers, PIs & quotations, Invoices, Leads, Stock / Live Stock, Accessories,
+Repair jobs, Purchase orders, Vendors, Price Board, SKU Master) open with the search
+already filled. One record opens on its own page by the number you say — a PI or
+quotation, invoice, purchase order, rental, or a stock unit by asset or serial number;
+part of the number is enough, and if several match she asks which. Customers and sales
+have no page of their own, so those open as a searched list. She can only open the ERP's
+own pages (a fixed list), and each page still applies your normal access. On the laptop
+the page opens beside her; on a phone, or where her panel floats over the ERP, she
+minimises herself; either way she stops listening after "Khol diya" so you can work.
+Her card keeps an **Open …** button to go back to it.
 
 ## Who can use her, and how saving is protected
 

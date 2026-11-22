@@ -65,9 +65,90 @@ export type AssistantCard =
   | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[] }
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
+  // The panel navigates the ERP to href (and gets out of the way on a phone).
+  | { type: 'open'; href: string; label: string }
 
 const money = (n: number) => `₹${Math.round(n * 100) / 100}`
 const exclusive = (price: number, gst: number) => Math.round((price / (1 + gst / 100)) * 100) / 100
+
+// ---------------------------------------------------------------- pages DB can open
+// Only these ERP routes (never a URL from the conversation). `q`: the page keeps
+// its search box in the address as ?q= (useUrlState), so DB can pre-fill it.
+const PAGES = {
+  home: { path: '/dashboard/home', label: 'Home' },
+  pending_tasks: { path: '/dashboard/pending-tasks', label: 'Pending tasks' },
+  activities: { path: '/dashboard/activities', label: 'Activities' },
+  sell: { path: '/dashboard/entry/sell', label: 'New sale' },
+  stock_in: { path: '/dashboard/entry/intake', label: 'Stock in' },
+  service_entry: { path: '/dashboard/entry/service', label: 'Service entry' },
+  sales: { path: '/dashboard/sales', label: 'Sales Ledger', q: 'q' },
+  quotations: { path: '/dashboard/quotations', label: 'PIs & quotations', q: 'q' },
+  invoices: { path: '/dashboard/invoices', label: 'Invoices', q: 'q' },
+  customers: { path: '/dashboard/customers', label: 'Customers', q: 'q' },
+  leads: { path: '/dashboard/leads', label: 'Leads', q: 'q' },
+  live_stock: { path: '/dashboard/live-stock', label: 'Live Stock', q: 'q' },
+  stock: { path: '/dashboard/stock', label: 'Stock', q: 'q' },
+  sku_master: { path: '/dashboard/sku-master', label: 'SKU Master', q: 'search' },
+  pricing: { path: '/dashboard/pricing', label: 'Price Board', q: 'q' },
+  accessories: { path: '/dashboard/accessories', label: 'Accessories', q: 'q' },
+  repair_jobs: { path: '/dashboard/repair-jobs', label: 'Repair jobs', q: 'q' },
+  replacement_jobs: { path: '/dashboard/replacement-jobs', label: 'Replacement jobs' },
+  rma: { path: '/dashboard/rma', label: 'RMA' },
+  rentals: { path: '/dashboard/rentals', label: 'Rentals' },
+  purchase_orders: { path: '/dashboard/purchase-orders', label: 'Purchase orders', q: 'q' },
+  purchase_invoices: { path: '/dashboard/purchase-invoices', label: 'Purchase invoices' },
+  purchases: { path: '/dashboard/purchases', label: 'Purchases' },
+  vendors: { path: '/dashboard/vendors', label: 'Vendors', q: 'q' },
+  expenses: { path: '/dashboard/expenses', label: 'Expenses' },
+  reports: { path: '/dashboard/reports', label: 'Reports' },
+  gst: { path: '/dashboard/gst', label: 'GST' },
+  bank_recon: { path: '/dashboard/recon/bank', label: 'Bank reconciliation' },
+  attendance: { path: '/dashboard/attendance', label: 'Attendance' },
+  web_orders: { path: '/dashboard/web-orders', label: 'Website orders' },
+  marketing: { path: '/dashboard/marketing', label: 'Marketing' },
+  settings: { path: '/dashboard/settings', label: 'Settings' },
+  audit_log: { path: '/dashboard/settings/audit-log', label: 'Audit log' },
+  help: { path: '/dashboard/help', label: 'Help' },
+} as const satisfies Record<string, { path: string; label: string; q?: string }>
+type PageKey = keyof typeof PAGES
+
+// One record's own page, found by the number he says (exact, else ending in it).
+const RECORDS = {
+  quotation: { table: 'sales_documents', cols: ['document_number'], path: '/dashboard/quotations/', label: 'PI/quotation' },
+  invoice: { table: 'invoices', cols: ['invoice_number'], path: '/dashboard/invoices/', label: 'Invoice' },
+  purchase_order: { table: 'purchase_orders', cols: ['po_number'], path: '/dashboard/purchase-orders/', label: 'PO' },
+  rental: { table: 'rental_agreements', cols: ['agreement_number'], path: '/dashboard/rentals/', label: 'Rental' },
+  stock_unit: { table: 'asset_ledger', cols: ['asset_number', 'serial_number'], path: '/dashboard/stock/', label: 'Unit' },
+} as const
+
+async function openPage(input: { page: PageKey; search?: string | null; record?: { type: keyof typeof RECORDS; number: string } | null }): Promise<ToolOutcome> {
+  if (input.record) {
+    const rec = RECORDS[input.record.type]
+    const num = input.record.number.trim().replace(/[%_\\]/g, '')
+    if (!num) return { result: 'Which number? Ask him.', isError: true }
+    const find = async (pattern: string) => {
+      const hits: { id: string; label: string }[] = []
+      for (const col of rec.cols) {
+        const { data } = await supabaseAdmin.from(rec.table).select(`id, ${col}`).ilike(col, pattern).limit(6)
+        for (const row of (data || []) as unknown as Record<string, string>[]) hits.push({ id: row.id, label: row[col] })
+      }
+      return hits
+    }
+    let hits = await find(num)
+    if (!hits.length) hits = await find(`%${num}`)
+    if (!hits.length) return { result: `No ${rec.label} with a number like "${input.record.number}". Ask him to check the number.`, isError: true }
+    if (hits.length > 1) return { result: { status: 'several_match', matches: hits.slice(0, 6).map((h) => h.label), instruction: 'Ask which one, then call open_page again with the full number.' } }
+    const href = `${rec.path}${hits[0].id}`
+    return { result: { opened: `${rec.label} ${hits[0].label}` }, card: { type: 'open', href, label: `${rec.label} ${hits[0].label}` } }
+  }
+  const page = PAGES[input.page] as { path: string; label: string; q?: string }
+  const q = input.search?.trim()
+  const href = q && page.q ? `${page.path}?${page.q}=${encodeURIComponent(q)}` : page.path
+  return {
+    result: { opened: page.label, ...(q && !page.q ? { note: `${page.label} has no search box to fill; opened the page only.` } : {}) },
+    card: { type: 'open', href, label: q && page.q ? `${page.label}: “${q}”` : page.label },
+  }
+}
 
 // ---------------------------------------------------------------- schemas
 
@@ -78,6 +159,14 @@ const S = {
   find_unit_by_serial: z.object({ serial_number: z.string() }),
   price_context: z.object({ sku_id: z.string(), customer_id: z.string().nullish() }),
   get_options: z.object({}),
+  open_page: z.object({
+    page: z.enum(Object.keys(PAGES) as [PageKey, ...PageKey[]]),
+    search: z.string().max(80).nullish().describe('Pre-fills the page search box (list pages that have one): a name, phone, model, serial, number.'),
+    record: z.object({
+      type: z.enum(['quotation', 'invoice', 'purchase_order', 'rental', 'stock_unit']),
+      number: z.string().max(60).describe('As he said it: PI/quotation number, invoice number, PO number, rental agreement number, or a unit\'s asset or serial number. A partial number ("245") is fine.'),
+    }).nullish().describe('Open one record\'s own page instead of a list.'),
+  }),
   find_recent_documents: z.object({ customer_id: z.string() }),
   recall_notes: z.object({ customer_id: z.string().nullish().describe('Omit for general notes.') }),
   propose_customer: z.object({
@@ -220,6 +309,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   find_unit_by_serial: 'Look up one unit by its serial number.',
   price_context: 'Price history for a SKU: what this customer was quoted/charged before, recent sale prices, list price, cost. Call this BEFORE suggesting or accepting a price.',
   get_options: 'Staff names, expense types, payment accounts and billing entities.',
+  open_page: 'Open an ERP page on his screen so he can work on it himself -- "Sales Ledger kholo", "Ramesh ka customer dikhao", "PI 245 kholo", "stock mein 840 G6 dikhao". Saves nothing, needs no confirmation. Use search to pre-fill a list page\'s search box, or record to open one PI/quotation, invoice, PO, rental or stock unit by its number. Afterwards say one short line (e.g. "Khol diya"); she stops listening so he can work.',
   find_recent_documents: 'The customer\'s latest PIs and quotations (number, date, total), newest first.',
   recall_notes: 'Notes the owner asked you to remember (general, or about one customer).',
   propose_customer: 'Prepare a new customer record. Shows the owner a confirmation card; nothing is saved yet.',
@@ -309,6 +399,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       case 'find_unit_by_serial': return { result: await findUnitBySerial(input.serial_number) }
       case 'price_context': return { result: await priceContext(input.sku_id, input.customer_id) }
       case 'get_options': return { result: await getOptions() }
+      case 'open_page': return await openPage(input)
       case 'find_recent_documents': {
         const { data } = await supabaseAdmin.from('sales_documents')
           .select('id, doc_type, document_number, document_date, grand_total, status')
