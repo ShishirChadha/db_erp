@@ -70,11 +70,12 @@ login (admin@digitalbluez.com).
 ## Pausing her on every device
 
 The moon button in her header (and on the voice screen) pauses DB on **all your devices**
-— laptop and phone — for 30 minutes, 1 hour, 3 hours or until you turn her on
+— laptop and phone — for 30 minutes, 1 hour, 3 hours or until you resume her
 (`assistant_settings.paused_until`). While paused she doesn't listen anywhere (no "Hey DB",
 mic disabled; typing still works), her button turns grey with a moon, and a banner offers
-**Turn on**. Other devices pick the change up within 30 seconds, or at once when you
-return to the tab.
+**Resume DB** (the header shows a green **Resume** button). Other devices pick the change up within 30 seconds, or at once when you
+return to the tab. (The first wording, "Until I turn her on", read like a button that turns
+her on and left her paused by accident; the options now all start with "Pause".)
 
 ## Look, layout and screens
 

@@ -508,17 +508,21 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     window.dispatchEvent(new Event('db-assistant-settings'))
   }
   const pausedLabel = config.pausedUntil && config.pausedUntil.startsWith('9999')
-    ? 'until you turn her on'
+    ? 'until you resume her'
     : `until ${config.pausedUntil ? new Date(config.pausedUntil).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' }) : ''}`
   const pauseControl = (dark: boolean) => (
     <div className="relative">
       {dark
-        ? <StageBtn onClick={() => (paused ? setPause(null) : setPauseMenu((m) => !m))} label={paused ? 'Turn DB on' : 'Pause DB on all devices'}>{paused ? <Power className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</StageBtn>
-        : <IconBtn onClick={() => (paused ? setPause(null) : setPauseMenu((m) => !m))} label={paused ? 'Turn DB on' : 'Pause DB on all devices'}>{paused ? <Power className="h-4 w-4 text-emerald-600" /> : <Moon className="h-4 w-4" />}</IconBtn>}
+        ? <StageBtn onClick={() => (paused ? setPause(null) : setPauseMenu((m) => !m))} label={paused ? 'Resume DB' : 'Pause DB on all devices'}>{paused ? <Power className="h-5 w-5" /> : <Moon className="h-5 w-5" />}</StageBtn>
+        : paused
+          // While paused, an unmistakable labelled button -- not an icon.
+          ? <button type="button" onClick={() => setPause(null)} className="flex h-9 items-center gap-1.5 rounded-full bg-emerald-600 px-3 text-xs font-semibold text-white"><Power className="h-3.5 w-3.5" />Resume</button>
+          : <IconBtn onClick={() => setPauseMenu((m) => !m)} label="Pause DB on all devices"><Moon className="h-4 w-4" /></IconBtn>}
       {pauseMenu && (
         <div className="absolute right-0 top-12 z-20 w-60 rounded-xl border bg-background p-1 text-sm text-foreground shadow-xl">
-          <p className="px-3 py-2 text-xs text-muted-foreground">Stop listening on all your devices (laptop and phone):</p>
-          {([[30, 'For 30 minutes'], [60, 'For 1 hour'], [180, 'For 3 hours'], ['forever', 'Until I turn her on']] as const).map(([m, label]) => (
+          <p className="px-3 pt-2 text-sm font-semibold">Pause DB</p>
+          <p className="px-3 pb-2 text-xs text-muted-foreground">She stops listening on all your devices (laptop and phone).</p>
+          {([[30, 'Pause for 30 minutes'], [60, 'Pause for 1 hour'], [180, 'Pause for 3 hours'], ['forever', 'Pause until I resume her']] as const).map(([m, label]) => (
             <button key={String(m)} type="button" onClick={() => setPause(m)} className="block w-full rounded-lg px-3 py-2.5 text-left hover:bg-muted">{label}</button>
           ))}
         </div>
@@ -592,7 +596,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             {paused && (
               <div className="flex items-center justify-between gap-3 rounded-xl border bg-muted p-3 text-sm">
                 <span className="flex items-center gap-2"><Moon className="h-4 w-4 shrink-0" />DB is paused on all your devices {pausedLabel}. She isn’t listening anywhere; you can still type.</span>
-                <Button size="sm" onClick={() => setPause(null)}>Turn on</Button>
+                <Button size="sm" onClick={() => setPause(null)}>Resume DB</Button>
               </div>
             )}
             {setup && !setup.ready && (
