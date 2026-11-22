@@ -99,6 +99,7 @@ export async function PUT(req: NextRequest) {
   if (typeof body.wake_reply === 'string') patch.wake_reply = body.wake_reply.replace(/\s+/g, ' ').trim().slice(0, 60)
   if (Array.isArray(body.write_skills)) patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]
   if (VOICE_GATES.includes(body.voice_gate)) patch.voice_gate = body.voice_gate
+  if (typeof body.expense_full_access === 'boolean') patch.expense_full_access = body.expense_full_access
   if (typeof body.continuous_conversation === 'boolean') patch.continuous_conversation = body.continuous_conversation
   if (NUM(body.conversation_idle_seconds, 6, 60) !== undefined) patch.conversation_idle_seconds = Math.round(body.conversation_idle_seconds)
   if (Array.isArray(body.read_modules)) patch.read_modules = ALL_READ_MODULES.filter((m) => body.read_modules.includes(m)) as ReadModule[]

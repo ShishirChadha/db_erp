@@ -3,6 +3,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, canEditPage, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
+import { dbMayUsePrivateExpenseTypes } from '@/lib/assistant/permissions'
 import { withRetry } from '@/lib/db-retry'
 import { parsePagination } from '@/lib/pagination'
 
@@ -92,7 +93,9 @@ export async function POST(req: NextRequest) {
 
   if (!isOwner(sessionUser)) {
     const ownerOnlyTypes = await getOwnerOnlyExpenseTypes()
-    if (isOwnerOnlyType(type, ownerOnlyTypes)) {
+    // DB (the owner's assistant) may record private types when the owner has
+    // given her blanket expense access -- see lib/assistant/permissions.ts.
+    if (isOwnerOnlyType(type, ownerOnlyTypes) && !(await dbMayUsePrivateExpenseTypes(sessionUser.id))) {
       return NextResponse.json({ error: 'This expense type is owner-only.' }, { status: 403 })
     }
   }

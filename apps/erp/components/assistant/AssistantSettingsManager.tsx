@@ -183,6 +183,7 @@ export default function AssistantSettingsManager() {
       wake_reply: s.wake_reply,
       reply_length: s.reply_length,
       write_skills: s.write_skills,
+      expense_full_access: s.expense_full_access,
       appearance: s.appearance,
       continuous_conversation: s.continuous_conversation,
       conversation_idle_seconds: Number(s.conversation_idle_seconds),
@@ -495,6 +496,11 @@ export default function AssistantSettingsManager() {
             </label>
           ))}
         </div>
+        <label className="flex items-start gap-2 rounded-md bg-muted p-2 text-sm">
+          <Checkbox className="mt-0.5" checked={s.expense_full_access !== false} onCheckedChange={(c) => set('expense_full_access', !!c)} />
+          <span><span className="font-medium">Full expense access</span>
+            <span className="block text-xs text-muted-foreground">She may record your private (owner-only) expense categories, create a new category when none fits, and merge duplicate categories. Staff still never see private categories or their expenses.</span></span>
+        </label>
         <p className="text-xs text-muted-foreground">Whatever is on, nothing is saved without your yes on a confirmation card.</p>
       </Section>
 

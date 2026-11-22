@@ -68,6 +68,19 @@ line) is left out of profit and named, so one bad entry can't turn a month negat
 her button, her settings tab or use her — other owners included. It starts as Shishir's
 login (admin@digitalbluez.com).
 
+## Expenses: full access
+
+With **Full expense access** on (Settings → DB Assistant → What DB can do; default on),
+DB may record your **private (owner-only) expense categories** — Bank Charges, Fuel, GST
+Payment, OLX, Rent, Salaries — which the Expenses route otherwise refuses for her
+non-owner login (`lib/assistant/permissions.ts`). Staff still never see those categories
+or their expenses (the Expenses list filters them by type for every non-owner). She
+matches what you say to an existing category (spelling and meaning: "petrol" → Fuel)
+and only creates a new one after asking (private or not); she can also merge duplicate
+categories (`propose_merge_expense_types`: past expenses re-labelled, merged entries
+retired from the dropdown, privacy changes warned). Everything shows on her
+confirmation card first and is audit-logged as DB.
+
 ## Several devices in one room, and pausing
 
 **Only one device answers.** Before answering "Hey DB", a device asks the server for a
@@ -83,6 +96,13 @@ saved on the server for phone calls. While paused she doesn't listen on that dev
 button turns grey with a moon, the header shows a green **Resume** button and a banner says
 where she is paused. The first version paused every device by default and its option
 "Until I turn her on" read like a button that turns her on.
+
+**iPhones and Android phones** share the same rules: an open microphone ducks or mutes
+playback (iPhone routes it to the earpiece), and sound routed through Web Audio obeys the
+iPhone's silent switch — so on phones nothing listens while she speaks, her voice skips
+Web Audio, and on iPhone she asks for media playback (`navigator.audioSession`) so the
+silent switch doesn't mute her. Sound unlocks on a completed tap (Safari) as well as a
+press (Chrome).
 
 **Her voice in DuckDuckGo / WebView browsers:** sound is allowed only from a play started
 inside a tap, and her replies come seconds later — so one audio player is unlocked on your

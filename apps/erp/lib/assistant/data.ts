@@ -180,12 +180,14 @@ export async function priceChecks(skuId: string, customerId: string | null, pric
 
 export async function getOptions() {
   const [{ data: opts }, { data: entities }] = await Promise.all([
-    supabaseAdmin.from('custom_options').select('category, value').eq('is_active', true).in('category', ['staff_names', 'expense_types']),
+    supabaseAdmin.from('custom_options').select('category, value, owner_only').eq('is_active', true).in('category', ['staff_names', 'expense_types']),
     supabaseAdmin.from('business_profiles').select('key, legal_name, is_gst_registered').eq('active', true),
   ])
   return {
     staff_names: (opts || []).filter((o) => o.category === 'staff_names').map((o) => o.value),
     expense_types: (opts || []).filter((o) => o.category === 'expense_types').map((o) => o.value),
+    // Owner-only types: hidden from staff; DB may use them when Shishir has given her full expense access.
+    private_expense_types: (opts || []).filter((o) => o.category === 'expense_types' && o.owner_only).map((o) => o.value),
     payment_accounts: [...PAYMENT_ACCOUNTS],
     // entity_key for a PI/quotation. Digitalbluez is GST-registered; the others issue bills of supply.
     entities: (entities || []).map((e) => ({ key: e.key, name: e.legal_name, gst_registered: e.is_gst_registered })),
@@ -231,4 +233,42 @@ export async function expenseChecks(type: string | null, amount: number, date: s
     }
   }
   return out
+}
+
+
+// ------------------------------------------------------------ expense types
+// The expense_types dropdown (custom_options). DB matches what Shishir says to
+// an existing type before ever creating one, so categories don't multiply.
+export interface ExpenseType { id: string; value: string; owner_only: boolean; is_active: boolean }
+export async function expenseTypes(): Promise<ExpenseType[]> {
+  const { data } = await supabaseAdmin.from('custom_options').select('id, value, owner_only, is_active').eq('category', 'expense_types')
+  return (data || []).map((r) => ({ id: r.id, value: r.value, owner_only: !!r.owner_only, is_active: r.is_active !== false }))
+}
+const normType = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\b(expenses?|charges?|exp|cost|costs|bill|bills)\b/g, ' ').replace(/\s+/g, ' ').trim()
+function editDistance(a: string, b: string) {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
+  for (let j = 1; j <= b.length; j++) d[0][j] = j
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
+    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+  }
+  return d[a.length][b.length]
+}
+export function sameExpenseType(a: string, b: string) { return a.trim().toLowerCase() === b.trim().toLowerCase() }
+// Existing types that look like the same thing ("Petrol exp" ~ "Petrol",
+// "Travelling" ~ "Travel"): shared words, or a near-identical spelling.
+export function similarExpenseTypes(name: string, types: ExpenseType[]) {
+  const n = normType(name)
+  if (!n) return []
+  const words = new Set(n.split(' ').filter((w) => w.length > 2))
+  return types.filter((t) => {
+    const m = normType(t.value)
+    if (!m || sameExpenseType(t.value, name)) return false
+    if (m === n || m.includes(n) || n.includes(m)) return true
+    if (m.split(' ').some((w) => w.length > 2 && words.has(w))) return true
+    return editDistance(m, n) <= Math.max(1, Math.floor(Math.min(m.length, n.length) / 4))
+  })
+}
+export async function expenseCountByType(type: string) {
+  const { count } = await supabaseAdmin.from('expenses').select('id', { count: 'exact', head: true }).ilike('type', type.replace(/[\\%_]/g, (c) => `\\${c}`))
+  return count || 0
 }

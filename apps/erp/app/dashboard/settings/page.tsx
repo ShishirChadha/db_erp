@@ -242,10 +242,15 @@ function SettingsPage() {
   // (unsorted) order since that's a more readable grouping to read as code.
   // DB answers to one person, so her tab is hidden from other owners too: the
   // config route says 403 to anyone but her master.
-  const [dbMaster, setDbMaster] = useState(false)
+  // Remembered from the last visit so the tab shows at once (the check below
+  // still runs and hides it if access was removed).
+  const [dbMaster, setDbMaster] = useState(() => { try { return localStorage.getItem('db_master') === '1' } catch { return false } })
   useEffect(() => {
     if (!isOwner) return
-    apiFetch('/api/assistant/config').then(r => setDbMaster(r.ok)).catch(() => setDbMaster(false))
+    apiFetch('/api/assistant/config?lite=1').then(r => {
+      setDbMaster(r.ok)
+      try { r.ok ? localStorage.setItem('db_master', '1') : localStorage.removeItem('db_master') } catch { /* private mode */ }
+    }).catch(() => {})
   }, [isOwner])
   const visibleCategories = CATEGORIES
     .filter(cat => isOwner || !cat.ownerOnly)

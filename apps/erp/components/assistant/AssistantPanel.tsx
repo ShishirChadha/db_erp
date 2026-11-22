@@ -6,7 +6,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, chime, buzz, isAndroid, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, chime, buzz, isPhoneAudio, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
@@ -632,7 +632,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   const talking = convo || voice.listening || voice.speaking || voice.transcribing || (busy && convo)
   const stageView = a.voice_view === 'stage' || (a.voice_view === 'auto' && compact)
   const onStage = stageView && talking && !chatOverride
-  const statusLine = paused ? `Paused ${pausedLabel}` : voice.speaking ? (isAndroid() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
+  const statusLine = paused ? `Paused ${pausedLabel}` : voice.speaking ? (isPhoneAudio() ? 'Speaking… tap the square to stop me' : 'Speaking… say “stop” to cut me off') : voice.listening ? 'Listening…' : voice.transcribing ? 'Samajh rahi hoon…' : busy ? (status || 'Soch rahi hoon…') : convo ? 'Conversation on' : wakeActive ? 'Say “Hey DB” or tap the mic' : wakeNote || (config.wakeWord ? '“Hey DB” is starting…' : 'Online')
   const tapToHear = blockedPlay && (
     <button type="button" onClick={() => { const play = blockedPlay; setBlockedPlay(null); play() }}
       className="mx-auto flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white shadow-lg"

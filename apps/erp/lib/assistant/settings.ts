@@ -72,6 +72,9 @@ export interface AssistantSettings {
   wake_reply: string // what she says when woken by the wake word
   reply_length: ReplyLength
   write_skills: WriteSkill[]
+  // Blanket expense access: DB may record your owner-only (private) expense
+  // types and create / merge expense categories -- always via her confirm card.
+  expense_full_access: boolean
   // Conversation mode: after she answers, she listens again by herself until
   // you go quiet for conversation_idle_seconds.
   continuous_conversation: boolean
@@ -105,6 +108,7 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   wake_reply: 'Yes Boss?',
   reply_length: 'short',
   write_skills: [...ALL_WRITE_SKILLS],
+  expense_full_access: true,
   continuous_conversation: true,
   conversation_idle_seconds: 15,
   voice_gate: 'medium',

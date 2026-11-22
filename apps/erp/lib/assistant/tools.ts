@@ -5,20 +5,20 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { logAuditEvent } from '@/lib/audit-log'
 import { istToday } from '@/lib/attendance'
 import { checkDuplicateCustomer } from '@/lib/customer-dedupe'
-import { getOwnerOnlyExpenseTypes, isOwnerOnlyType } from '@/lib/owner-only-expense-types'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { callRouteAsDb, type RouteKey } from './call-route'
 import { getDbAccessToken, DB_DISPLAY_NAME } from './identity'
 import {
   findCustomers, findProducts, findSellableUnits, findUnitBySerial, priceContext, priceChecks,
   getOptions, recallNotes, recentDocumentsFor, expenseChecks,
+  expenseTypes, similarExpenseTypes, sameExpenseType, expenseCountByType,
 } from './data'
 import { shareSalesDocument } from './share'
 import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
 } from './reports'
-import { ALL_WRITE_SKILLS, type WriteSkill } from './settings'
+import { ALL_WRITE_SKILLS, getAssistantSettings, type WriteSkill } from './settings'
 
 // DB's tools. Reads run straight away. Writes never do: a propose_* tool
 // checks the input, works out the warnings DB must raise, and parks the write
@@ -29,8 +29,10 @@ import { ALL_WRITE_SKILLS, type WriteSkill } from './settings'
 
 export interface PendingAction {
   id: string
-  kind: RouteKey | 'customer' | 'note'
+  kind: RouteKey | 'customer' | 'note' | 'merge_expense_types'
   body: any
+  // Done just before the route call on confirm (e.g. create the new expense type).
+  prepare?: { new_expense_type?: { value: string; owner_only: boolean }; reactivate_type_id?: string }
   summary: string
   warnings: string[]
   created_turn: number
@@ -106,6 +108,13 @@ const S = {
     paid_by_staff: z.string().nullish().describe('Staff name if a staff member paid from their own pocket.'),
     remarks: z.string().nullish(),
     gst_percentage: z.number().nullish().describe('Only if the bill has GST.'),
+    create_new_type: z.boolean().nullish().describe('Only after Shishir agreed to create `type` as a NEW expense category (no existing one fits).'),
+    new_type_private: z.boolean().nullish().describe('With create_new_type: true = owner-only, hidden from staff.'),
+  }),
+  propose_merge_expense_types: z.object({
+    merge: z.array(z.string()).min(1).describe('Existing expense types to fold into `into` (they disappear from the dropdown).'),
+    into: z.string().describe('The type to keep (existing, or a new name).'),
+    make_private: z.boolean().nullish().describe('True = the kept type becomes owner-only (hidden from staff).'),
   }),
   propose_sale: z.object({
     customer_id: z.string(),
@@ -210,7 +219,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   recall_notes: 'Notes the owner asked you to remember (general, or about one customer).',
   propose_customer: 'Prepare a new customer record. Shows the owner a confirmation card; nothing is saved yet.',
   propose_sales_document: 'Prepare a proforma invoice (PI) or quotation. Returns warnings you must raise. Nothing is saved yet.',
-  propose_expense: 'Prepare an expense entry. Returns warnings you must raise. Nothing is saved yet.',
+  propose_expense: 'Prepare an expense entry. Matches the type to an existing category (private ones included). If the type is new it returns similar existing types and asks you to check with Shishir first. Returns warnings you must raise. Nothing is saved yet.',
+  propose_merge_expense_types: 'Prepare merging duplicate expense categories (e.g. "Petrol" + "Petrol Exp" into "Petrol"): past expenses are re-labelled and the merged types leave the dropdown. Shows counts. Nothing changes until Shishir confirms.',
   propose_sale: 'Prepare a sale (moves stock when confirmed). Returns warnings you must raise. Nothing is saved yet.',
   propose_repair_job: 'Prepare a repair job. Nothing is saved yet.',
   propose_replacement_job: 'Prepare a replacement job (a unit goes out to the customer). Nothing is saved yet.',
@@ -241,7 +251,7 @@ const TOOL_MODULE: Partial<Record<ToolName, ReadModule>> = {
 // Which "What DB can do" switch each write tool belongs to.
 const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
   propose_sales_document: 'pi', share_document_on_whatsapp: 'pi', find_recent_documents: 'pi',
-  propose_expense: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
+  propose_expense: 'expense', propose_merge_expense_types: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
   propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
 }
 
@@ -305,6 +315,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       case 'propose_customer': return proposeCustomer(input, ctx)
       case 'propose_sales_document': return proposeSalesDocument(input, ctx)
       case 'propose_expense': return proposeExpense(input, ctx)
+      case 'propose_merge_expense_types': return proposeMergeExpenseTypes(input, ctx)
       case 'propose_sale': return proposeSale(input, ctx)
       case 'propose_repair_job': return proposeRepair(input, ctx)
       case 'propose_replacement_job': return proposeReplacement(input, ctx)
@@ -328,8 +339,8 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
   return { result: 'Unhandled tool', isError: true }
 }
 
-function park(kind: PendingAction['kind'], body: any, title: string, summary: string, warnings: string[], ctx: ToolContext): ToolOutcome {
-  const pending: PendingAction = { id: randomUUID(), kind, body, summary, warnings, created_turn: ctx.turn }
+function park(kind: PendingAction['kind'], body: any, title: string, summary: string, warnings: string[], ctx: ToolContext, prepare?: PendingAction['prepare']): ToolOutcome {
+  const pending: PendingAction = { id: randomUUID(), kind, body, summary, warnings, created_turn: ctx.turn, ...(prepare ? { prepare } : {}) }
   return {
     pending,
     card: { type: 'confirm', action_id: pending.id, title, summary, warnings },
@@ -420,18 +431,83 @@ async function proposeSalesDocument(input: z.infer<typeof S.propose_sales_docume
 }
 
 async function proposeExpense(input: z.infer<typeof S.propose_expense>, ctx: ToolContext): Promise<ToolOutcome> {
-  if (isOwnerOnlyType(input.type, await getOwnerOnlyExpenseTypes())) {
-    return { result: `"${input.type}" is an owner-only expense type, so ${DB_DISPLAY_NAME} cannot record it. Ask the owner to enter it in Expenses themselves.`, isError: true }
+  const settings = await getAssistantSettings()
+  const types = await expenseTypes()
+  let type: string | null = input.type?.trim() || null
+  let isPrivate = false
+  let prepare: PendingAction['prepare']
+  const extraWarnings: string[] = []
+  if (type) {
+    const exact = types.find((t) => sameExpenseType(t.value, type!))
+    if (exact) {
+      type = exact.value // the dropdown's own spelling
+      isPrivate = exact.owner_only
+      if (!exact.is_active) prepare = { reactivate_type_id: exact.id }
+    } else {
+      const similar = similarExpenseTypes(type, types.filter((t) => t.is_active))
+      if (!input.create_new_type) {
+        return {
+          result: {
+            status: 'type_not_found',
+            asked_type: type,
+            similar_existing: similar.map((t) => ({ type: t.value, private: t.owner_only })),
+            all_existing: types.filter((t) => t.is_active).map((t) => t.value), // spot same-meaning ones too (Petrol -> Fuel)
+            instruction: similar.length
+              ? `There is no expense type "${type}", but similar ones exist (also check all_existing for one that means the same, e.g. Petrol -> Fuel). Ask Shishir whether to use one of them (to avoid duplicate categories) or create "${type}" as a new one (and whether it should be private, hidden from staff). Then call propose_expense again.`
+              : `There is no expense type "${type}". If one in all_existing means the same thing (e.g. Petrol -> Fuel), suggest it. Otherwise ask Shishir whether to create it as a new category (and whether it should be private, hidden from staff), or which existing type to use. Then call propose_expense again with create_new_type: true or the existing type.`,
+          },
+        }
+      }
+      if (!settings.expense_full_access) return { result: 'Creating expense categories is switched off in Settings -> DB Assistant -> What DB can do (Full expense access).', isError: true }
+      type = type.replace(/\s+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).slice(0, 60)
+      isPrivate = !!input.new_type_private
+      prepare = { new_expense_type: { value: type, owner_only: isPrivate } }
+      if (similar.length) extraWarnings.push(`Similar categories already exist: ${similar.map((t) => t.value).join(', ')} -- creating "${type}" may duplicate one.`)
+    }
+  }
+  if (isPrivate && !prepare?.new_expense_type && !settings.expense_full_access) {
+    return { result: `"${type}" is a private (owner-only) expense type and full expense access is switched off in Settings -> DB Assistant -> What DB can do. Ask Shishir to switch it on, or enter it in Expenses himself.`, isError: true }
   }
   const date = input.expense_date || istToday()
-  const warnings = await expenseChecks(input.type ?? null, input.amount, date)
+  const warnings = [...extraWarnings, ...(await expenseChecks(type, input.amount, date))]
   const body = {
-    expense_date: date, description: input.description, type: input.type || null, amount: input.amount,
+    expense_date: date, description: input.description, type, amount: input.amount,
     payment_account: input.payment_account, paid_by_staff: input.paid_by_staff || null, remarks: input.remarks || null,
     gst_percentage: input.gst_percentage ?? null,
   }
+  const typeNote = type
+    ? ` (${type}${prepare?.new_expense_type ? `: NEW category${isPrivate ? ', private' : ''}` : isPrivate ? ', private' : ''})`
+    : ''
   return park('expense', body, `Expense ${money(input.amount)}`,
-    `${input.description}${input.type ? ` (${input.type})` : ''}, ${money(input.amount)} from ${input.payment_account}, ${date}${input.paid_by_staff ? `, paid by ${input.paid_by_staff}` : ''}`,
+    `${input.description}${typeNote}, ${money(input.amount)} from ${input.payment_account}, ${date}${input.paid_by_staff ? `, paid by ${input.paid_by_staff}` : ''}`,
+    warnings, ctx, prepare)
+}
+
+// Fold duplicate expense categories into one: re-label past expenses, retire
+// the merged dropdown entries. Owner-confirmed like every other write.
+async function proposeMergeExpenseTypes(input: z.infer<typeof S.propose_merge_expense_types>, ctx: ToolContext): Promise<ToolOutcome> {
+  const settings = await getAssistantSettings()
+  if (!settings.expense_full_access) return { result: 'Merging expense categories is switched off in Settings -> DB Assistant -> What DB can do (Full expense access).', isError: true }
+  const types = await expenseTypes()
+  const target = types.find((t) => sameExpenseType(t.value, input.into))
+  const into = target?.value || input.into.trim().replace(/\s+/g, ' ').slice(0, 60)
+  const merge: { value: string; owner_only: boolean; count: number }[] = []
+  for (const name of input.merge) {
+    if (sameExpenseType(name, into)) continue
+    const t = types.find((x) => sameExpenseType(x.value, name))
+    merge.push({ value: t?.value || name.trim(), owner_only: !!t?.owner_only, count: await expenseCountByType(t?.value || name) })
+  }
+  if (!merge.length) return { result: 'Nothing to merge: every name is already the target type.', isError: true }
+  const intoPrivate = input.make_private ?? target?.owner_only ?? merge.some((m) => m.owner_only)
+  const warnings: string[] = []
+  const nowPublic = merge.filter((m) => m.owner_only && !intoPrivate)
+  if (nowPublic.length) warnings.push(`${nowPublic.map((m) => m.value).join(', ')} ${nowPublic.length > 1 ? 'are' : 'is'} private, but "${into}" is visible to staff -- those ${nowPublic.reduce((a, m) => a + m.count, 0)} expenses would become visible to staff.`)
+  const nowPrivate = merge.filter((m) => !m.owner_only && intoPrivate)
+  if (nowPrivate.length) warnings.push(`${nowPrivate.map((m) => m.value).join(', ')} expenses (${nowPrivate.reduce((a, m) => a + m.count, 0)}) would become private, hidden from staff.`)
+  const total = merge.reduce((a, m) => a + m.count, 0)
+  return park('merge_expense_types', { merge: merge.map((m) => m.value), into, into_private: intoPrivate, create_into: !target },
+    'Merge expense categories',
+    `${merge.map((m) => `"${m.value}" (${m.count})`).join(', ')} -> "${into}"${!target ? ' (new category)' : ''}${intoPrivate ? ', private' : ''}. ${total} past expense${total === 1 ? '' : 's'} re-labelled; the merged categories leave the dropdown.`,
     warnings, ctx)
 }
 
@@ -525,6 +601,44 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     if (error) return { result: error.message, isError: true }
     return { result: 'Noted. I will remember that.', pending: null, card: { type: 'done', title: 'Remembered', detail: p.body.note } }
   }
+
+  if (p.kind === 'merge_expense_types') {
+    const b = p.body as { merge: string[]; into: string; into_private: boolean; create_into: boolean }
+    const types = await expenseTypes()
+    let moved = 0
+    for (const name of b.merge) {
+      const { data } = await supabaseAdmin.from('expenses').update({ type: b.into }).ilike('type', name.replace(/[\\%_]/g, (c) => `\\${c}`)).select('id')
+      moved += data?.length || 0
+      const opt = types.find((t) => sameExpenseType(t.value, name))
+      if (opt) await supabaseAdmin.from('custom_options').update({ is_active: false }).eq('id', opt.id)
+    }
+    const target = types.find((t) => sameExpenseType(t.value, b.into))
+    if (target) await supabaseAdmin.from('custom_options').update({ is_active: true, owner_only: b.into_private }).eq('id', target.id)
+    else await supabaseAdmin.from('custom_options').insert({ category: 'expense_types', value: b.into, owner_only: b.into_private, is_active: true })
+    await logAuditEvent({
+      actor: { id: ctx.db.profileId, email: `${DB_DISPLAY_NAME} (assistant)`, role: 'manager' },
+      actionType: 'update', module: 'expenses', tableName: 'custom_options', recordLabel: `Merged expense types into ${b.into}`,
+      metadata: { via: 'assistant', requested_by: ctx.ownerEmail, merged: b.merge, into: b.into, private: b.into_private, expenses_relabelled: moved },
+    })
+    return { result: { saved: true, expenses_relabelled: moved }, pending: null, card: { type: 'done', title: 'Categories merged', detail: `${b.merge.join(', ')} -> ${b.into} (${moved} expenses re-labelled)` } }
+  }
+
+  // Expense with a category that has to exist first (new, or re-activated).
+  if (p.prepare?.new_expense_type) {
+    const t = p.prepare.new_expense_type
+    const existing = (await expenseTypes()).find((x) => sameExpenseType(x.value, t.value))
+    if (existing) await supabaseAdmin.from('custom_options').update({ is_active: true }).eq('id', existing.id)
+    else {
+      const { error } = await supabaseAdmin.from('custom_options').insert({ category: 'expense_types', value: t.value, owner_only: t.owner_only, is_active: true })
+      if (error) return { result: `Could not create the category "${t.value}": ${error.message}. Nothing was saved.`, isError: true }
+    }
+    await logAuditEvent({
+      actor: { id: ctx.db.profileId, email: `${DB_DISPLAY_NAME} (assistant)`, role: 'manager' },
+      actionType: 'create', module: 'expenses', tableName: 'custom_options', recordLabel: `Expense type: ${t.value}`,
+      metadata: { via: 'assistant', requested_by: ctx.ownerEmail, owner_only: t.owner_only },
+    })
+  }
+  if (p.prepare?.reactivate_type_id) await supabaseAdmin.from('custom_options').update({ is_active: true }).eq('id', p.prepare.reactivate_type_id)
 
   if (p.kind === 'customer') {
     const { data, error } = await supabaseAdmin.from('customers').insert([{ ...p.body, communication_channels: ['whatsapp'] }]).select('id, customer_name').single()

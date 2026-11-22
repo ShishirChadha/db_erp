@@ -101,6 +101,13 @@ function releaseMic() { mic.busy = Math.max(0, mic.busy - 1) }
 // recogniser may run while DB speaks (no "say stop" listener -- tap instead),
 // and her voice is not routed through Web Audio for the level meter.
 export const isAndroid = () => typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)
+// iPhone / iPad (iPadOS reports itself as a Mac with touch).
+export const isIOS = () => typeof navigator !== 'undefined' && (/iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1))
+// Phones share the same audio rules: an open mic ducks/mutes playback (iPhone
+// even routes it to the earpiece), and audio through Web Audio obeys the
+// iPhone's silent switch. So on phones: no mic while she speaks, no Web Audio
+// routing of her voice, no second mic stream.
+export const isPhoneAudio = () => isAndroid() || isIOS()
 
 // Chrome blocks sound until the page has been tapped once (e.g. she was woken
 // by "Hey DB" on a page you haven't touched). The panel listens for this and
@@ -157,6 +164,7 @@ export function encodeWav(chunks: Float32Array[], rate: number) {
 // first tap anywhere, then reuse it for every reply.
 let player: HTMLAudioElement | null = null
 let playerUnlocked = false
+let unlocking = false
 let playerAnalyser: AnalyserNode | null = null
 let playToken: object | null = null // the reply currently playing (stops old meter loops)
 const SILENT_WAV = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA='
@@ -165,17 +173,22 @@ function getPlayer() {
   return player
 }
 export function unlockAudio() {
-  if (playerUnlocked) return
+  if (playerUnlocked || unlocking) return
+  unlocking = true
   const p = getPlayer()
   if (!p) return
   p.src = SILENT_WAV
-  p.play().then(() => { playerUnlocked = true }).catch(() => {})
+  p.play().then(() => { playerUnlocked = true }).catch(() => {}).finally(() => { unlocking = false })
   try { if (sharedCtx?.state === 'suspended') sharedCtx.resume() } catch {}
 }
 if (typeof window !== 'undefined') {
-  const onFirstTap = () => { unlockAudio(); if (playerUnlocked) window.removeEventListener('pointerdown', onFirstTap, true) }
-  window.addEventListener('pointerdown', onFirstTap, true)
-  window.addEventListener('keydown', onFirstTap, true)
+  // Safari counts only a completed tap (touchend / click) as permission to
+  // play, Chrome also the press itself -- listen to all of them.
+  const onFirstTap = () => { unlockAudio() }
+  for (const ev of ['pointerdown', 'touchend', 'click', 'keydown']) window.addEventListener(ev, onFirstTap, true)
+  // iPhone (Safari 16.4+): treat her voice as media playback, so the silent
+  // switch doesn't mute it.
+  try { const session = (navigator as any).audioSession; if (session) session.type = 'playback' } catch { /* older Safari */ }
 }
 // Shown in the panel when this browser can't play her voice at all.
 export const VOICE_UNAVAILABLE_EVENT = 'db-voice-unavailable'
@@ -415,7 +428,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     // (Not on Android: a second mic stream can stop Google's recogniser from
     // getting the mic, and Android already filters background noise itself.)
     let meter: ReturnType<typeof createMeter> | null = null
-    if (!isAndroid()) { try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ } }
+    if (!isPhoneAudio()) { try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ } }
     const gate = GATE_LEVEL[cfgRef.current.gate || 'medium']
     const rec = new Ctor()
     rec.lang = 'en-IN'
@@ -553,7 +566,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
         // Measure her voice for the avatar -- only when the audio engine is
         // already running; routing audio through a suspended engine would
         // silence her, so then the level is faked instead.
-        const ctx = isAndroid() ? null : audioCtx()
+        const ctx = isPhoneAudio() ? null : audioCtx()
         const token = {}
         playToken = token
         if (ctx && ctx.state === 'running') {
@@ -837,7 +850,7 @@ export function stopHeard(heard: string, saying: string) {
 
 export function useStopWords(activeIn: boolean, saying: string, onStop: () => void) {
   // Never on Android: the open mic would pause her voice (see isAndroid).
-  const active = activeIn && !isAndroid()
+  const active = activeIn && !isPhoneAudio()
   const stopRef = useRef(onStop)
   stopRef.current = onStop
   const sayingRef = useRef(saying)
