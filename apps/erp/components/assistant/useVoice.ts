@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { apiFetch } from '@/lib/api-client'
+import { NAME_VARIANTS } from './names'
 
 // DB's ears and voice in the browser.
 //
@@ -642,11 +643,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
 // "DB" is a hard word for recognisers (heard as IDBI, TP, TV, the bee...), so it
 // checks the recogniser's top 5 guesses, a long list of known mishearings, and
 // the phrases the owner taught it in Settings ("Teach DB her name").
-export const NAME_VARIANTS = [
-  'db', 'd b', 'dee bee', 'deebee', 'dbi', 'idbi', 'i d b i', 'debi', 'debbie', 'debby', 'deby', 'dibi', 'divi', 'deepi', 'deepu', 'dipi',
-  'tp', 't p', 'tb', 't b', 'dp', 'd p', 'tv', 'pb', 'bb', 'vb', 'the bee', 'the b', 'thee bee', 'deeby',
-  'डीबी', 'डी बी', 'टीपी', 'दीबी', 'डेबी',
-]
+export { NAME_VARIANTS }
 const FATAL_ERRORS = new Set(['not-allowed', 'service-not-allowed', 'language-not-supported'])
 const MAX_FAILURES = 6
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{M}\p{N} ]/gu, ' ').replace(/\s+/g, ' ').trim()

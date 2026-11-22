@@ -8,6 +8,7 @@ import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 import { useVoice, useWakeWord, useStopWords, chime, buzz, isPhoneAudio, browserSpeechReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, type AvatarState } from './DbAvatar'
+import { instantKind, instantReply } from './instant-replies'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
 
 // DB, the owner's voice secretary. Her face floats on every dashboard page.
@@ -35,7 +36,8 @@ type Card =
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
 
-type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number }
+// instant: a fixed reply answered in the browser, no AI call (instant-replies.ts).
+type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number; instant?: boolean }
 
 const THREAD_KEY = 'db_assistant_thread'
 const STATUS_WORDS: Record<string, string> = {
@@ -120,6 +122,9 @@ interface PanelConfig {
   idleSeconds: number
   gate: VoiceGate
   wakeReply: string
+  callMe: string
+  hinglishScript: 'devanagari' | 'roman'
+  instantReplies: boolean
   look: Appearance
 }
 
@@ -167,6 +172,9 @@ export function AssistantLauncher() {
         idleSeconds: Number(s.conversation_idle_seconds) || 15,
         gate: s.voice_gate || 'medium',
         wakeReply: typeof s.wake_reply === 'string' ? s.wake_reply : 'Yes Boss?',
+        callMe: typeof s.call_me === 'string' ? s.call_me : 'Boss',
+        hinglishScript: s.hinglish_script === 'roman' ? 'roman' : 'devanagari',
+        instantReplies: s.instant_replies !== false,
         look: cleanAppearance(s.appearance),
       })
     }).catch(() => setConfig(null))
@@ -356,6 +364,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   const [rested, setRested] = useState(false)
   const [dropped, setDropped] = useState<Dropped | null>(null)
   const [saying, setSaying] = useState('') // the reply she is reading aloud now
+  const [freshNote, setFreshNote] = useState(false) // a new conversation after an hour's break
   const [captions, setCaptions] = useState(a.captions)
   const [chatOverride, setChatOverride] = useState(false) // "keyboard" pressed on the stage
   const [pauseMenu, setPauseMenu] = useState(false)
@@ -394,6 +403,20 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   // language, so a null language must not read as "typed" to her).
   const send = useCallback(async (text: string, spoken: { language: string | null } | null = null) => {
     if (!text.trim() || busy) return
+    // "Hi DB", "sun rahi ho?", "thank you", "bye": a fixed line, no AI call.
+    const kind = config.instantReplies ? instantKind(text, config.wakePhrases) : null
+    if (kind) {
+      const line = instantReply(kind, text, { callMe: config.callMe, wakeReply: config.wakeReply, script: config.hinglishScript })
+      setError(null)
+      setDraft('')
+      const now = Date.now()
+      setEntries((prev) => [...prev, { role: 'owner', text, at: now }, { role: 'db', text: line, at: now, instant: true }])
+      const v = voiceRef.current
+      if (v && voiceOn) { setSaying(line); await v.speak(line, undefined, true); setSaying('') }
+      if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
+      if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
+      return
+    }
     setError(null)
     setBusy(true)
     setDraft('')
@@ -429,7 +452,11 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
           buf = buf.slice(idx + 2)
           if (!line) continue
           const e = JSON.parse(line)
-          if (e.type === 'thread') { setThreadId(e.id); writeStore(THREAD_KEY, e.id) }
+          if (e.type === 'thread') {
+            // Idle for over an hour: the server started a new conversation.
+            if (e.fresh) { setEntries((prev) => prev.slice(-2)); setFreshNote(true) }
+            setThreadId(e.id); writeStore(THREAD_KEY, e.id)
+          }
           else if (e.type === 'text') {
             reply += e.delta
             setStatus(null)
@@ -450,7 +477,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     if (v && voiceOn && reply.trim()) { setSaying(reply); await v.speak(reply); setSaying('') }
     if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
     if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
-  }, [busy, threadId, voiceOn, endConvo, listenAgain])
+  }, [busy, threadId, voiceOn, endConvo, listenAgain, config])
 
   const onHeard = useCallback((text: string, lang: string | null) => {
     setDropped(null)
@@ -573,7 +600,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     setSetup(j)
   }
 
-  const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null); interrupted.current = false }
+  const newConversation = () => { writeStore(THREAD_KEY, null); setThreadId(null); setEntries([]); setError(null); setFreshNote(false); interrupted.current = false }
   const toggleVoice = () => { const next = !voiceOn; setVoiceOn(next); if (!next) voice.stopSpeaking() }
   const micTap = () => {
     if (paused) return
@@ -717,7 +744,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
             {entries.length === 0 && ready && (
               <div className="flex flex-col items-center pt-6 text-center">
                 <DbAvatar state={avatarState} size={compact ? 128 : 112} levelRef={voice.levelRef} look={a} />
-                <p className="mt-4 text-lg font-semibold">Hi Boss!</p>
+                <p className="mt-4 text-lg font-semibold">Hi {config.callMe.trim() || 'Boss'}!</p>
                 <p className="mt-1 max-w-[18rem] text-sm text-muted-foreground">Tap the mic and just talk, I’ll keep listening till you’re done. Or type below.</p>
                 <div className="mt-5 flex flex-wrap justify-center gap-2">
                   {SUGGESTIONS.map((s) => (
@@ -728,6 +755,9 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
               </div>
             )}
 
+            {freshNote && entries.length > 0 && (
+              <p className="text-center text-xs text-muted-foreground">New conversation after an hour’s break, so her replies stay cheap. Her learnings are kept.</p>
+            )}
             {entries.map((e, i) => (
               <MessageRow key={i} entry={e} look={a} last={i === entries.length - 1} busy={busy} status={status}
                 onAnswer={send} onReplay={(t) => voice.speak(t, undefined, false)} canReplay={voiceOn} />
@@ -893,6 +923,7 @@ export function MessageRow({ entry: e, look, last, busy, status, onAnswer, onRep
         {e.text && (
           <div className="flex items-center gap-1 text-muted-foreground opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
             {look.timestamps && e.at && <span className="mr-1 text-[10px]">{timeOf(e.at)}</span>}
+            {e.instant && <span className="mr-1 text-[10px]">instant · free</span>}
             <button type="button" onClick={copy} className="rounded p-1 hover:bg-muted" aria-label="Copy">{copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}</button>
             {canReplay && <button type="button" onClick={() => onReplay(e.text)} className="rounded p-1 hover:bg-muted" aria-label="Say it again"><RotateCcw className="h-3.5 w-3.5" /></button>}
           </div>

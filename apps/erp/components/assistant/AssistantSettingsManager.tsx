@@ -184,6 +184,8 @@ export default function AssistantSettingsManager() {
       reply_length: s.reply_length,
       write_skills: s.write_skills,
       expense_full_access: s.expense_full_access,
+      instant_replies: s.instant_replies,
+      fresh_after_break: s.fresh_after_break,
       appearance: s.appearance,
       continuous_conversation: s.continuous_conversation,
       conversation_idle_seconds: Number(s.conversation_idle_seconds),
@@ -456,6 +458,17 @@ export default function AssistantSettingsManager() {
           </label>
         </div>
         <p className="text-xs text-muted-foreground">Either way, say “stop”, “bas”, “ruko” or “pata hai” while she talks (or press Esc, or tap the mic) and she stops at once.</p>
+        <Label className="text-xs">Saving money</Label>
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox className="mt-0.5" checked={s.instant_replies !== false} onCheckedChange={(c) => set('instant_replies', !!c)} />
+          <span><span className="font-medium">Free instant replies</span>
+            <span className="block text-xs text-muted-foreground">When your whole message is only a greeting (“Hi DB”), “sun rahi ho?”, “thank you” or “bye”, she answers at once with a fixed line instead of asking the AI: free and instant. Anything more (“Hi DB, PI bana do”), and “haan”, “ok” or “theek hai”, always goes to her.</span></span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <Checkbox className="mt-0.5" checked={s.fresh_after_break !== false} onCheckedChange={(c) => set('fresh_after_break', !!c)} />
+          <span><span className="font-medium">Fresh conversation after an hour’s break</span>
+            <span className="block text-xs text-muted-foreground">A long chat makes every reply dearer, because she re-reads all of it. After an hour without a message she starts a new one (she forgets that chat, not her learnings). A card waiting for your yes keeps the old chat open.</span></span>
+        </label>
       </Section>
 
       <Section title="Conversation" hint="Talk to DB like a person: tap the mic once (or say “Hey DB”), and after each answer she listens again by herself.">

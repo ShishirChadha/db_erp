@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -36,6 +36,8 @@ sources:
   - apps/erp/components/assistant/AssistantLookSettings.tsx
   - apps/erp/components/assistant/appearance.ts
   - apps/erp/app/api/assistant/lease/route.ts
+  - apps/erp/components/assistant/instant-replies.ts
+  - apps/erp/components/assistant/names.ts
 updated: 2026-11-22
 ---
 
@@ -282,6 +284,32 @@ up after six failures in a row (the dot turns amber; reload the page to retry). 
 earlier version could start a second listener on returning to the tab, and the two
 cancelled each other in a loop until Chrome closed.
 
+## What a message costs, and how DB saves
+
+Only her thinking (Anthropic) costs money; her Azure voice and listening are inside the
+free monthly allowance and her ERP lookups are the ERP's own database. Each message is
+billed for re-reading her cached instructions, caching the new part of the chat, and her
+reply. Measured on Sonnet 5.5 (22 Nov): "Hey DB" → *Yes Jaanu?* ₹0 (no AI — the wake
+answer is a saved recording); a bare "sun rahi ho?" ₹0.17; a normal step ₹0.20–0.35 (a
+task with lookups takes 2–3 steps); the first message after an hour's break ₹4–6. Haiku
+5.5 is about 20× cheaper per token. She does not "learn" answers: every reply is
+worked out and billed afresh; learnings are notes she reads each time.
+
+Settings → DB Assistant → *Saving money*:
+- **Free instant replies** (default on): when your *whole* message is only a greeting
+  ("Hi DB", her name or a mishearing of it, a taught wake phrase), a hearing check ("sun
+  rahi ho?", "can you hear me?"), thanks or bye, the panel answers at once with a fixed
+  line — the wake answer for a greeting — without asking the AI, and marks it *instant ·
+  free*. These lines are not saved in the conversation. Any other word, a number or a
+  "nahi" sends it to her as usual, and "haan", "ji", "ok", "theek hai" or "bas" on
+  their own always reach her (they are often the answer to her question). The word lists
+  are in `components/assistant/instant-replies.ts`.
+- **Fresh conversation after an hour's break** (default on): after 60 minutes without a
+  message (when her instruction cache has expired anyway) the next message starts a new
+  conversation, with a small note in the panel, so she doesn't re-read the whole old
+  chat on every reply (an 80-message chat cost ~70% more per reply). She forgets that
+  chat, not her learnings. A card waiting for your yes keeps the old chat open.
+
 ## Usage and credit
 
 - **Anthropic (real):** paste an Admin API key (`sk-ant-admin…`, Claude Console →
@@ -292,10 +320,15 @@ cancelled each other in a loop until Chrome closed.
   itself is only on Anthropic's billing page; an optional estimate (credit loaded
   minus billed spend) is tucked under the section. Admin keys exist only for team
   organizations (Console → Settings → Organization → *Convert to team*).
-- **Prompt cache:** her instructions and tool list are cached for 1 hour (owner's
-  choice), so the first message after a break costs ~₹0.20 instead of ~₹2.50; the
-  conversation history keeps the normal 5-minute cache (writing large report results
-  at the 1-hour rate cost more than it saved).
+- **Prompt cache:** her instructions and tool list (~11,000 tokens) are cached for 1
+  hour (owner's choice), so a message after a break of under an hour re-reads them for
+  ~₹0.10 (Sonnet) instead of loading them again; after more than an hour — or after any
+  change to her settings, prompt or model — the first
+  message loads them again (~₹4 on Sonnet, ~₹0.20 on Haiku). The conversation history
+  keeps the normal 5-minute cache (writing large report results at the 1-hour rate
+  cost more than it saved). For the owner's bursty use (gaps of 10–25 minutes) the
+  1-hour cache is the cheaper choice: on 22 Nov a 5-minute cache would have meant about
+  seven reloads (~₹17) instead of one (₹4).
 - **Dollar rate** is fetched automatically (European Central Bank via Frankfurter,
   ExchangeRate-API as backup, refreshed every 6 hours) — nothing to enter.
 - **DB's own usage (live):** every request she makes is costed the moment it

@@ -16,7 +16,8 @@ import { assistantTools, runTool, type AssistantCard, type PendingAction } from 
 const MAX_STEPS = 10
 
 export type TurnEvent =
-  | { type: 'thread'; id: string }
+  // fresh: the old conversation was idle for over an hour, so this one is new.
+  | { type: 'thread'; id: string; fresh?: boolean }
   | { type: 'text'; delta: string }
   | { type: 'status'; tool: string }
   | { type: 'card'; card: AssistantCard }
@@ -55,8 +56,9 @@ export async function runAssistantTurn(params: {
     emit({ type: 'done' })
     return
   }
-  const thread = await loadOrCreateThread(params.threadId, owner.id, params.text)
-  emit({ type: 'thread', id: thread.id })
+  const settings = await getAssistantSettings()
+  const thread = await loadOrCreateThread(params.threadId, owner.id, params.text, settings.fresh_after_break)
+  emit({ type: 'thread', id: thread.id, ...(thread.fresh ? { fresh: true } : {}) })
 
   const messages = thread.messages
   let pending = thread.pending_action
@@ -64,7 +66,6 @@ export async function runAssistantTurn(params: {
   const turn = messages.filter((m) => m.role === 'user' && typeof m.content === 'string').length + 1
   const today = istToday()
   const weekday = new Date(`${today}T12:00:00+05:30`).toLocaleDateString('en-IN', { weekday: 'long', timeZone: 'Asia/Kolkata' })
-  const settings = await getAssistantSettings()
   const how = params.spokenLanguage
     ? `spoken, detected ${params.spokenLanguage}${params.spokenLanguage === 'en-IN' ? ' (English)' : ' (Hindi/Hinglish)'}`
     : params.spoken ? 'spoken' : 'typed'
@@ -186,17 +187,28 @@ async function generalLearnings(): Promise<string | null> {
   return `## What Shishir has taught you (always follow these; they override your defaults)\n${data.map((n) => `- ${n.note}`).join('\n')}`
 }
 
-async function loadOrCreateThread(threadId: string | null, ownerId: string, firstText: string): Promise<ThreadRow> {
+// Same length as her instruction cache (1 h): past it, the old chat would be
+// re-cached in full at the next reply and re-read on every one after.
+const FRESH_AFTER_MS = 60 * 60 * 1000
+
+export async function loadOrCreateThread(threadId: string | null, ownerId: string, firstText: string, freshAfterBreak: boolean): Promise<ThreadRow & { fresh?: boolean }> {
+  let fresh = false
   if (threadId) {
     const { data } = await supabaseAdmin.from('assistant_threads')
-      .select('id, messages, pending_action, title').eq('id', threadId).eq('owner_id', ownerId).maybeSingle()
-    if (data) return data as ThreadRow
+      .select('id, messages, pending_action, title, updated_at').eq('id', threadId).eq('owner_id', ownerId).maybeSingle()
+    if (data) {
+      const { updated_at: updatedAt, ...row } = data as ThreadRow & { updated_at: string }
+      const idle = Date.now() - new Date(updatedAt).getTime() > FRESH_AFTER_MS
+      // A card still waiting for his yes keeps the conversation open.
+      if (!freshAfterBreak || !idle || row.pending_action || !row.messages.length) return row
+      fresh = true
+    }
   }
   const { data, error } = await supabaseAdmin.from('assistant_threads')
     .insert({ owner_id: ownerId, title: firstText.slice(0, 80) })
     .select('id, messages, pending_action, title').single()
   if (error || !data) throw new Error(error?.message || 'Could not start a conversation.')
-  return data as ThreadRow
+  return { ...(data as ThreadRow), fresh }
 }
 
 // The conversation as the panel shows it: owner's words and DB's spoken text,

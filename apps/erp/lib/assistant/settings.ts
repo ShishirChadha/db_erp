@@ -75,6 +75,13 @@ export interface AssistantSettings {
   // Blanket expense access: DB may record your owner-only (private) expense
   // types and create / merge expense categories -- always via her confirm card.
   expense_full_access: boolean
+  // Greetings, "sun rahi ho?", thanks and bye get a fixed reply in the
+  // browser with no AI call (components/assistant/instant-replies.ts).
+  instant_replies: boolean
+  // After an hour with no message (her instruction cache has expired too),
+  // the next message starts a new conversation, so she doesn't re-read and
+  // re-cache the whole old chat on every reply. A pending card keeps it open.
+  fresh_after_break: boolean
   // Conversation mode: after she answers, she listens again by herself until
   // you go quiet for conversation_idle_seconds.
   continuous_conversation: boolean
@@ -109,6 +116,8 @@ export const DEFAULT_SETTINGS: AssistantSettings = {
   reply_length: 'short',
   write_skills: [...ALL_WRITE_SKILLS],
   expense_full_access: true,
+  instant_replies: true,
+  fresh_after_break: true,
   continuous_conversation: true,
   conversation_idle_seconds: 15,
   voice_gate: 'medium',
