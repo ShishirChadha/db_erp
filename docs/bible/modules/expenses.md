@@ -18,8 +18,9 @@ sources:
   - apps/erp/components/DropdownOptionsManager.tsx
   - apps/erp/lib/expense-type-rules.ts
   - apps/erp/lib/owner-only-expense-types.ts
+  - apps/erp/lib/assistant/permissions.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-10-05
+updated: 2026-11-22
 ---
 
 ## What this covers
@@ -57,6 +58,14 @@ This is enforced at every layer, not just the dropdown:
   non-owner attempting to touch an existing row whose *current* type is
   owner-only (they couldn't have legitimately reached it via the list, which
   already excludes it).
+  **One exception (2026-11-22):** the owner's assistant **DB** (her own
+  non-owner login, username `db`) may `POST` owner-only types when the owner
+  has switched on *Full expense access* in Settings → DB Assistant
+  (`lib/assistant/permissions.ts`). She acts only for her master, every save
+  goes through his confirmation card, and her token never leaves the server.
+  Staff visibility is unchanged — the `GET` filter above still hides those rows
+  from every non-owner. DB can also create expense types and merge duplicate
+  ones (re-labelling past expenses), likewise only after confirmation.
 - The reporting layer excludes owner-only-type rows from non-owner-visible
   aggregates too (see Reporting below) — otherwise a total or a type
   breakdown would leak what the hidden rows themselves don't.

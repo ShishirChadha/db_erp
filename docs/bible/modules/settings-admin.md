@@ -7,7 +7,7 @@ routes: [/dashboard/settings]
 keywords: [settings, admin, configure, dropdown options, users, business profiles, tags, sku categories, digests]
 sources:
   - apps/erp/app/dashboard/settings/page.tsx
-updated: 2026-10-15
+updated: 2026-11-22
 ---
 
 ## What lives here

@@ -9,7 +9,7 @@ keywords: [asset numbering, asset counter, asset number, DBAS, TTAS, CSAS, OTHR,
 sources:
   - apps/erp/app/dashboard/settings/page.tsx
   - apps/erp/app/api/settings/asset-counters/route.ts
-updated: 2026-10-15
+updated: 2026-11-22
 ---
 
 ## What this is
