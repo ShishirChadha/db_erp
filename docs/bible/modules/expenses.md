@@ -62,7 +62,10 @@ This is enforced at every layer, not just the dropdown:
   non-owner login, username `db`) may `POST` owner-only types when the owner
   has switched on *Full expense access* in Settings → DB Assistant
   (`lib/assistant/permissions.ts`). She acts only for her master, every save
-  goes through his confirmation card, and her token never leaves the server.
+  goes through his confirmation card — approved by a tap or a plain yes that
+  the server itself checks (`lib/assistant/approval.ts`), optionally tap-only for
+  expenses — and her token never leaves the server; nobody can view or reset
+  her password, so no one else can sign in as her to use this exception.
   Staff visibility is unchanged — the `GET` filter above still hides those rows
   from every non-owner. DB can also create expense types and merge duplicate
   ones (re-labelling past expenses), likewise only after confirmation.
