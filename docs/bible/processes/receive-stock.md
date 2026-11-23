@@ -4,11 +4,12 @@ title: Receiving stock (serialized units and accessories)
 kind: process
 audience: [owner, manager, employee]
 module: live-stock-qc
-routes: [/dashboard/entry/intake, /dashboard/accessories]
+routes: [/dashboard/entry/intake, /dashboard/entry/auto-check, /dashboard/accessories]
 keywords: [receive, intake, stock in, naya maal aaya, new stock, add stock, incoming, delivery]
 sources:
   - apps/erp/app/api/stock-intake/route.ts
   - apps/erp/lib/accessory-movements.ts
+  - apps/erp/components/IntakeUnitFields.tsx
 updated: 2026-11-23
 ---
 
@@ -18,6 +19,13 @@ Recording new stock arriving — either a serialized unit (laptop/desktop/
 monitor/tablet, gets its own `asset_ledger` row) or a quantity of a fungible
 item (an accessory, just a `stock_movements` row). Either way, it's real the
 moment it's submitted — no owner approval gate.
+
+For a Windows laptop or desktop, **Auto Check** (`/dashboard/entry/auto-check`)
+does this stock-in and its QC in one go. It reads brand, model, serial and
+specs from the machine, matches or creates the SKU, and saves through the same
+`POST /api/stock-intake`. It shares the per-unit fields (date received,
+purchased by, accessories, notes) with the intake form via
+`components/IntakeUnitFields.tsx`. See **auto-check**.
 
 ## Steps — serialized unit
 

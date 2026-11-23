@@ -12,8 +12,9 @@ import { CategorySpecFields, parseFieldSchema } from '@/components/CategorySpecF
 import { TYPE_TO_CATEGORY } from '@/lib/sku-category-map'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
-import { AccessoryBundlePicker, type BundledAccessory } from '@/components/AccessoryBundlePicker'
-import { BundleMonitorFields, EMPTY_BUNDLED_MONITOR, type BundledMonitor } from '@/components/BundleMonitorFields'
+import type { BundledAccessory } from '@/components/AccessoryBundlePicker'
+import { EMPTY_BUNDLED_MONITOR, type BundledMonitor } from '@/components/BundleMonitorFields'
+import { ReceivedDateField, PurchasedByField, ConditionNotesField, UnitExtrasFields, todayIso as today } from '@/components/IntakeUnitFields'
 import { buildConfigSummary } from '@/lib/sku-config-summary'
 
 // The serialized/per-unit categories Stock Intake's Type field can produce (see
@@ -25,12 +26,6 @@ interface CategoryTemplate {
   category: string
   display_name: string
   field_schema: any
-}
-
-const BUYER_OPTIONS = ['Digitalbluez', 'Techtenth', 'Cash', 'Other']
-
-function today() {
-  return new Date().toISOString().slice(0, 10)
 }
 
 // The category's own field, if any, that identifies "which model/item this is" --
@@ -237,17 +232,7 @@ function StockIntakePage() {
       {error && <div className="text-destructive mb-4">{error}</div>}
 
       <div className="space-y-4 bg-card p-4 rounded shadow">
-        <div>
-          <label className="block font-medium text-sm mb-1">Date Received</label>
-          <input
-            type="date"
-            value={receivedDate}
-            max={today()}
-            onChange={(e) => setReceivedDate(e.target.value)}
-            className="border p-2 w-full rounded"
-          />
-          <p className="text-xs text-muted-foreground mt-1">Backdate this if the unit was actually received earlier.</p>
-        </div>
+        <ReceivedDateField value={receivedDate} onChange={setReceivedDate} />
 
         {selectedSku ? (
           <div className="border rounded p-3 bg-muted/50 flex justify-between items-start gap-3">
@@ -311,45 +296,25 @@ function StockIntakePage() {
           </>
         )}
 
-        <AccessoryBundlePicker bundled={bundled} onChange={setBundled} />
-
-        {category === 'DES' && (
-          <div>
-            <label className="flex items-center gap-2 text-sm font-medium">
-              <input type="checkbox" checked={bundleMonitor} onChange={(e) => setBundleMonitor(e.target.checked)} />
-              This came with a monitor (complete set)
-            </label>
-            {bundleMonitor && (
-              <div className="mt-2">
-                <BundleMonitorFields value={bundledMonitor} onChange={setBundledMonitor} />
-              </div>
-            )}
-          </div>
-        )}
+        <UnitExtrasFields
+          category={category}
+          bundled={bundled}
+          onBundledChange={setBundled}
+          bundleMonitor={bundleMonitor}
+          onBundleMonitorChange={setBundleMonitor}
+          bundledMonitor={bundledMonitor}
+          onBundledMonitorChange={setBundledMonitor}
+        />
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block font-medium text-sm mb-1">Serial Number</label>
             <input value={serialNumber} onChange={(e) => setSerialNumber(e.target.value)} className="border p-2 w-full rounded" />
           </div>
-          <div>
-            <label className="block font-medium text-sm mb-1">Purchased By</label>
-            <select value={purchasedByType} onChange={(e) => setPurchasedByType(e.target.value)} className="border p-2 w-full rounded">
-              {BUYER_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-          </div>
+          <PurchasedByField value={purchasedByType} onChange={setPurchasedByType} />
         </div>
 
-        <div>
-          <label className="block font-medium text-sm mb-1">Condition Notes</label>
-          <textarea
-            value={conditionNotes}
-            onChange={(e) => setConditionNotes(e.target.value)}
-            placeholder="e.g. Battery issue, keyboard pullout for spare parts, screen scratch..."
-            className="border p-2 w-full rounded"
-            rows={3}
-          />
-        </div>
+        <ConditionNotesField value={conditionNotes} onChange={setConditionNotes} />
 
         <div className="flex justify-end">
           <button

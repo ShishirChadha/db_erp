@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, ChevronsUpDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -47,6 +47,17 @@ export function SearchableSelect({
   const [open, setOpen] = useState(false);
   const isCustomValue = value !== "" && !options.includes(value);
   const [usingOther, setUsingOther] = useState(isCustomValue);
+  // Only steal focus when the user picked "Other..." -- not when a pre-filled
+  // value simply isn't in the list yet.
+  const [pickedOther, setPickedOther] = useState(false);
+
+  // Options usually load after mount (useCustomOptions fetches them), so a
+  // pre-filled value that IS in the list was judged "custom" on the first
+  // render. Switch back to the dropdown once the list arrives and contains it.
+  useEffect(() => {
+    if (usingOther && !pickedOther && value !== "" && options.includes(value)) setUsingOther(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [options]);
 
   if (usingOther) {
     return (
@@ -56,9 +67,9 @@ export function SearchableSelect({
           onChange={(e) => onChange(e.target.value)}
           onBlur={() => { if (value.trim()) onOtherCommit?.(value.trim()); }}
           placeholder="Type value..."
-          autoFocus
+          autoFocus={pickedOther}
         />
-        <Button type="button" variant="outline" size="sm" onClick={() => { setUsingOther(false); onChange(""); }}>
+        <Button type="button" variant="outline" size="sm" onClick={() => { setUsingOther(false); setPickedOther(false); onChange(""); }}>
           List
         </Button>
       </div>
@@ -82,7 +93,7 @@ export function SearchableSelect({
               {allowOther && otherPosition === "top" && (
                 <CommandItem
                   value={OTHER}
-                  onSelect={() => { setUsingOther(true); onChange(""); setOpen(false); }}
+                  onSelect={() => { setUsingOther(true); setPickedOther(true); onChange(""); setOpen(false); }}
                 >
                   Other...
                 </CommandItem>
@@ -100,7 +111,7 @@ export function SearchableSelect({
               {allowOther && otherPosition === "bottom" && (
                 <CommandItem
                   value={OTHER}
-                  onSelect={() => { setUsingOther(true); onChange(""); setOpen(false); }}
+                  onSelect={() => { setUsingOther(true); setPickedOther(true); onChange(""); setOpen(false); }}
                 >
                   Other...
                 </CommandItem>

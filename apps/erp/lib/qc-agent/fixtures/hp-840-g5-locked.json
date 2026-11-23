@@ -1,0 +1,184 @@
+{
+ "v": 1,
+ "is_admin": true,
+ "system": {
+  "manufacturer": "HP",
+  "model": "HP EliteBook 840 G5",
+  "version": "",
+  "family": "103C_5336AN HP EliteBook",
+  "pc_system_type": 2,
+  "chassis_types": [
+   10
+  ]
+ },
+ "bios": {
+  "serial": "5CG8401ABC",
+  "version": "Q78 Ver. 01.25.00",
+  "release_date": "2023-06-01",
+  "vendor": "HP"
+ },
+ "board": {
+  "manufacturer": "HP",
+  "product": "83B2",
+  "serial": "PJFTL0A8JBZ1AB"
+ },
+ "cpu": [
+  {
+   "name": "Intel(R) Core(TM) i5-8350U CPU @ 1.70GHz",
+   "cores": 4,
+   "threads": 8,
+   "max_mhz": 1896
+  }
+ ],
+ "memory": [
+  {
+   "slot": "Bottom-Slot 1(left)",
+   "gb": 8,
+   "speed": 2400,
+   "configured_speed": 2400,
+   "manufacturer": "Samsung",
+   "part_number": "M471A1K43CB1-CRC"
+  },
+  {
+   "slot": "Bottom-Slot 2(right)",
+   "gb": 8,
+   "speed": 2666,
+   "configured_speed": 2400,
+   "manufacturer": "Kingston",
+   "part_number": "KF426S15IB/8"
+  }
+ ],
+ "memory_slots": 2,
+ "disks": [
+  {
+   "name": "NVMe SSD 256GB",
+   "media_type": "SSD",
+   "bus_type": "NVMe",
+   "health": "Healthy",
+   "operational": "OK",
+   "size_bytes": 256060514304,
+   "wear": 12,
+   "temperature": 45,
+   "read_errors_uncorrected": 0,
+   "write_errors_uncorrected": 0,
+   "power_on_hours": 900
+  }
+ ],
+ "gpus": [
+  {
+   "name": "Intel(R) UHD Graphics 620",
+   "status": "OK",
+   "h_res": 1920,
+   "v_res": 1080
+  }
+ ],
+ "monitors": [
+  {
+   "maker_code": "CMN",
+   "product_code": "14D4",
+   "serial": "",
+   "name": "",
+   "year": 2024,
+   "week": 3,
+   "width_cm": 31,
+   "height_cm": 17,
+   "internal": true
+  }
+ ],
+ "touch": false,
+ "cameras": [],
+ "biometric": [],
+ "bluetooth": [
+  {
+   "name": "Intel(R) Wireless Bluetooth(R)",
+   "status": "OK"
+  }
+ ],
+ "net": [
+  {
+   "name": "Wi-Fi",
+   "description": "Intel(R) Dual Band Wireless-AC 8265",
+   "status": "Up",
+   "media": "wifi"
+  },
+  {
+   "name": "Ethernet",
+   "description": "Intel(R) Ethernet Connection (4) I219-V",
+   "status": "Disconnected",
+   "media": "ethernet"
+  }
+ ],
+ "wifi_networks": 4,
+ "wifi_best_signal": 70,
+ "battery": {
+  "present": true,
+  "name": "Primary",
+  "manufacturer": "OEM",
+  "serial": "",
+  "chemistry": "LION",
+  "design_mwh": 50000,
+  "full_mwh": 31200,
+  "cycles": 2
+ },
+ "os": {
+  "caption": "Microsoft Windows 11 Pro",
+  "display_version": "24H2",
+  "build": "26100"
+ },
+ "activation": {
+  "licensed": false,
+  "oem_key_in_bios": true
+ },
+ "join": {
+  "azure_ad": true,
+  "enterprise": false,
+  "domain": false,
+  "workplace": false,
+  "mdm_enrollments": 1,
+  "autopilot_tenant": "contoso.com"
+ },
+ "bitlocker": {
+  "protection_on": true,
+  "volume_status": "FullyEncrypted",
+  "percent": 100
+ },
+ "tpm": {
+  "present": true,
+  "ready": true,
+  "version": "2.0"
+ },
+ "secure_boot": true,
+ "bios_password": {
+  "source": "hp",
+  "set": true,
+  "detail": "Setup Password"
+ },
+ "computrace": {
+  "windows_agent": true,
+  "wpbt_binary": true,
+  "bios_state": "Absolute Persistence Module Current State=Active"
+ },
+ "problem_devices": [
+  {
+   "name": "PCI Data Acquisition and Signal Processing Controller",
+   "class": "",
+   "code": 28
+  }
+ ],
+ "events": [
+  {
+   "id": 18,
+   "provider": "Microsoft-Windows-WHEA-Logger",
+   "time": "2026-11-21T09:00:00"
+  },
+  {
+   "id": 7,
+   "provider": "disk",
+   "time": "2026-11-21T09:01:00"
+  }
+ ],
+ "power": {
+  "on_ac": true,
+  "percent": 100
+ }
+}

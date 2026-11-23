@@ -1,0 +1,119 @@
+{
+ "v": 1,
+ "is_admin": false,
+ "system": {
+  "manufacturer": "Dell Inc.",
+  "model": "Latitude 5400",
+  "pc_system_type": 2,
+  "chassis_types": [
+   10
+  ]
+ },
+ "bios": {
+  "serial": "To be filled by O.E.M.",
+  "version": "1.27.0",
+  "vendor": "Dell Inc."
+ },
+ "cpu": [
+  {
+   "name": "Intel(R) Core(TM) i7-8665U CPU @ 1.90GHz",
+   "cores": 4,
+   "threads": 8
+  }
+ ],
+ "memory": [
+  {
+   "slot": "DIMM A",
+   "gb": 16,
+   "manufacturer": "SK Hynix",
+   "part_number": "HMA82GS6CJR8N-VK"
+  }
+ ],
+ "memory_slots": 2,
+ "disks": [
+  {
+   "name": "KINGSTON SA400S37480G",
+   "media_type": "SSD",
+   "bus_type": "SATA",
+   "health": "Healthy",
+   "size_bytes": 480103981056,
+   "wear": null,
+   "read_errors_uncorrected": null
+  }
+ ],
+ "gpus": [
+  {
+   "name": "Intel(R) UHD Graphics 620",
+   "h_res": 1366,
+   "v_res": 768
+  }
+ ],
+ "monitors": [
+  {
+   "maker_code": "LGD",
+   "product_code": "05F5",
+   "year": 2018,
+   "width_cm": 31,
+   "height_cm": 17,
+   "internal": true
+  }
+ ],
+ "touch": true,
+ "cameras": [
+  "Integrated Webcam"
+ ],
+ "biometric": [],
+ "bluetooth": [],
+ "net": [
+  {
+   "name": "Wi-Fi",
+   "description": "Intel(R) Wireless-AC 9560",
+   "status": "Up",
+   "media": "wifi"
+  }
+ ],
+ "wifi_networks": 0,
+ "battery": {
+  "present": true,
+  "manufacturer": "SMP",
+  "design_mwh": 68000,
+  "full_mwh": 55000,
+  "cycles": 180
+ },
+ "os": {
+  "caption": "Microsoft Windows 10 Pro"
+ },
+ "activation": {
+  "licensed": true,
+  "oem_key_in_bios": false
+ },
+ "join": {
+  "azure_ad": false,
+  "domain": false,
+  "workplace": true,
+  "mdm_enrollments": 0
+ },
+ "bitlocker": null,
+ "tpm": null,
+ "secure_boot": true,
+ "bios_password": {
+  "source": null,
+  "set": null
+ },
+ "computrace": {
+  "windows_agent": false,
+  "wpbt_binary": false,
+  "bios_state": null
+ },
+ "problem_devices": [],
+ "events": [
+  {
+   "id": 153,
+   "provider": "disk"
+  }
+ ],
+ "power": {
+  "on_ac": true,
+  "percent": 70
+ }
+}

@@ -156,6 +156,8 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | purchase_orders | purchased_by_type | purchase_orders_purchased_by_type_check | `CHECK ((purchased_by_type = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text, 'Other'::text])))` |
 | purchases | category | purchases_category_check | `CHECK ((category = ANY (ARRAY['New'::text, 'Preowned'::text])))` |
 | purchases | purchase_type | purchases_purchase_type_check | `CHECK ((purchase_type = ANY (ARRAY['Cash'::text, 'GST'::text])))` |
+| qc_agent_sessions | code | qc_agent_sessions_code_check | `CHECK ((code ~ '^[A-Z2-9]{6}$'::text))` |
+| qc_agent_sessions | status | qc_agent_sessions_status_check | `CHECK ((status = ANY (ARRAY['waiting'::text, 'running'::text, 'completed'::text])))` |
 | recon_sessions | status | recon_sessions_status_check | `CHECK ((status = ANY (ARRAY['open'::text, 'in_progress'::text, 'closed'::text])))` |
 | recurring_expense_rules | interval_unit | recurring_expense_rules_interval_unit_check | `CHECK ((interval_unit = ANY (ARRAY['weekly'::text, 'monthly'::text, 'yearly'::text])))` |
 | recurring_expense_rules | payment_account | recurring_expense_rules_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |

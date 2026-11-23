@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { PackagePlus, ShoppingBag, Wrench } from 'lucide-react'
+import { PackagePlus, ScanSearch, ShoppingBag, Wrench } from 'lucide-react'
 import RequirePageAccess from '@/components/RequirePageAccess'
 
 const TILES = [
@@ -10,6 +10,13 @@ const TILES = [
     label: 'Stock Intake',
     description: 'Register a laptop, desktop, or accessory you just received.',
     icon: PackagePlus,
+    enabled: true,
+  },
+  {
+    href: '/dashboard/entry/auto-check',
+    label: 'Auto Check',
+    description: 'Laptop/desktop: read specs from the machine, run QC tests, stock in.',
+    icon: ScanSearch,
     enabled: true,
   },
   {
@@ -34,7 +41,7 @@ function EntryLauncherPage() {
       <h1 className="text-2xl font-bold mb-1">New Entry</h1>
       <p className="text-sm text-muted-foreground mb-6">What are you recording?</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {TILES.map((tile) => {
           const Icon = tile.icon
           const content = (

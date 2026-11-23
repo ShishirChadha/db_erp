@@ -1,0 +1,185 @@
+{
+ "v": 1,
+ "is_admin": true,
+ "system": {
+  "manufacturer": "LENOVO",
+  "model": "20W0S0JQ00",
+  "version": "ThinkPad T14 Gen 2i",
+  "family": "ThinkPad T14 Gen 2i",
+  "pc_system_type": 2,
+  "chassis_types": [
+   10
+  ]
+ },
+ "bios": {
+  "serial": "PF2XK4Q8",
+  "version": "N34ET53W (1.53 )",
+  "release_date": "2023-03-10",
+  "vendor": "LENOVO"
+ },
+ "board": {
+  "manufacturer": "LENOVO",
+  "product": "20W0S0JQ00",
+  "serial": "L1HF14T00AB"
+ },
+ "enclosure_serial": "PF2XK4Q8",
+ "cpu": [
+  {
+   "name": "11th Gen Intel(R) Core(TM) i5-1135G7 @ 2.40GHz",
+   "cores": 4,
+   "threads": 8,
+   "max_mhz": 2419
+  }
+ ],
+ "memory": [
+  {
+   "slot": "ChannelA-DIMM0",
+   "gb": 8,
+   "speed": 3200,
+   "configured_speed": 3200,
+   "manufacturer": "Samsung",
+   "part_number": "M471A1K43EB1-CWE"
+  },
+  {
+   "slot": "ChannelB-DIMM0",
+   "gb": 8,
+   "speed": 3200,
+   "configured_speed": 3200,
+   "manufacturer": "Samsung",
+   "part_number": "M471A1K43EB1-CWE"
+  }
+ ],
+ "memory_slots": 2,
+ "disks": [
+  {
+   "name": "SAMSUNG MZVLB512HBJQ-000L7",
+   "media_type": "SSD",
+   "bus_type": "NVMe",
+   "health": "Healthy",
+   "operational": "OK",
+   "size_bytes": 512110190592,
+   "wear": 6,
+   "temperature": 38,
+   "temperature_max": 0,
+   "read_errors_uncorrected": 0,
+   "write_errors_uncorrected": 0,
+   "read_errors_total": 0,
+   "power_on_hours": 4210
+  }
+ ],
+ "gpus": [
+  {
+   "name": "Intel(R) Iris(R) Xe Graphics",
+   "driver_version": "31.0.101.4502",
+   "status": "OK",
+   "h_res": 1920,
+   "v_res": 1080
+  }
+ ],
+ "monitors": [
+  {
+   "maker_code": "AUO",
+   "product_code": "403D",
+   "serial": "0",
+   "name": "",
+   "year": 2021,
+   "week": 12,
+   "width_cm": 31,
+   "height_cm": 17,
+   "internal": true
+  }
+ ],
+ "touch": false,
+ "cameras": [
+  "Integrated Camera"
+ ],
+ "biometric": [
+  "Synaptics UWP WBDI"
+ ],
+ "bluetooth": [
+  {
+   "name": "Intel(R) Wireless Bluetooth(R)",
+   "status": "OK"
+  }
+ ],
+ "net": [
+  {
+   "name": "Wi-Fi",
+   "description": "Intel(R) Wi-Fi 6 AX201 160MHz",
+   "status": "Up",
+   "media": "wifi"
+  },
+  {
+   "name": "Ethernet",
+   "description": "Intel(R) Ethernet Connection (13) I219-V",
+   "status": "Disconnected",
+   "media": "ethernet"
+  }
+ ],
+ "wifi_networks": 7,
+ "wifi_best_signal": 92,
+ "battery": {
+  "present": true,
+  "name": "5B10W13930",
+  "manufacturer": "LGC",
+  "serial": "1234",
+  "chemistry": "LiP",
+  "design_mwh": 50490,
+  "full_mwh": 41210,
+  "cycles": 312
+ },
+ "os": {
+  "caption": "Microsoft Windows 11 Pro",
+  "version": "10.0.22631",
+  "build": "22631",
+  "display_version": "23H2",
+  "edition": "Professional",
+  "arch": "64-bit",
+  "install_date": "2026-11-20"
+ },
+ "activation": {
+  "licensed": true,
+  "oem_key_in_bios": true
+ },
+ "join": {
+  "azure_ad": false,
+  "enterprise": false,
+  "domain": false,
+  "workplace": false,
+  "mdm_enrollments": 0,
+  "autopilot_tenant": null
+ },
+ "bitlocker": {
+  "protection_on": false,
+  "volume_status": "FullyDecrypted",
+  "percent": 0
+ },
+ "tpm": {
+  "present": true,
+  "ready": true,
+  "version": "2.0"
+ },
+ "secure_boot": true,
+ "bios_password": {
+  "source": "lenovo",
+  "set": false,
+  "detail": "state 0"
+ },
+ "computrace": {
+  "windows_agent": false,
+  "wpbt_binary": false,
+  "bios_state": "ComputraceModuleActivation,Disable"
+ },
+ "problem_devices": [],
+ "events": [
+  {
+   "id": 41,
+   "provider": "Microsoft-Windows-Kernel-Power",
+   "time": "2026-11-20T10:11:00"
+  }
+ ],
+ "power": {
+  "on_ac": true,
+  "percent": 88
+ }
+}

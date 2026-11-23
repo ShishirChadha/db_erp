@@ -1,0 +1,118 @@
+{
+ "v": 1,
+ "is_admin": true,
+ "system": {
+  "manufacturer": "HP",
+  "model": "HP EliteDesk 800 G4 SFF",
+  "pc_system_type": 1,
+  "chassis_types": [
+   4
+  ]
+ },
+ "bios": {
+  "serial": "8CC8441XYZ",
+  "vendor": "HP"
+ },
+ "cpu": [
+  {
+   "name": "Intel(R) Core(TM) i5-8500 CPU @ 3.00GHz",
+   "cores": 6,
+   "threads": 6
+  }
+ ],
+ "memory": [
+  {
+   "slot": "DIMM1",
+   "gb": 8,
+   "manufacturer": "Samsung",
+   "part_number": "M378A1K43CB2-CTD"
+  }
+ ],
+ "disks": [
+  {
+   "name": "SAMSUNG MZVLW256HEHP-000H1",
+   "media_type": "SSD",
+   "bus_type": "NVMe",
+   "health": "Healthy",
+   "size_bytes": 256060514304,
+   "wear": 3,
+   "read_errors_uncorrected": 0,
+   "write_errors_uncorrected": 0
+  },
+  {
+   "name": "ST1000DM010-2EP102",
+   "media_type": "HDD",
+   "bus_type": "SATA",
+   "health": "Healthy",
+   "size_bytes": 1000204886016,
+   "wear": null,
+   "read_errors_uncorrected": 0,
+   "write_errors_uncorrected": 0,
+   "power_on_hours": 15000
+  }
+ ],
+ "gpus": [
+  {
+   "name": "Intel(R) UHD Graphics 630",
+   "h_res": 1920,
+   "v_res": 1080
+  },
+  {
+   "name": "NVIDIA GeForce GT 730",
+   "status": "OK"
+  }
+ ],
+ "monitors": [
+  {
+   "maker_code": "DEL",
+   "name": "DELL P2219H",
+   "year": 2019,
+   "internal": false
+  }
+ ],
+ "cameras": [],
+ "biometric": [],
+ "bluetooth": [],
+ "net": [
+  {
+   "name": "Ethernet",
+   "description": "Intel(R) Ethernet Connection (7) I219-LM",
+   "status": "Up",
+   "media": "ethernet"
+  }
+ ],
+ "battery": null,
+ "os": {
+  "caption": "Microsoft Windows 11 Pro"
+ },
+ "activation": {
+  "licensed": true,
+  "oem_key_in_bios": true
+ },
+ "join": {
+  "azure_ad": false,
+  "domain": false,
+  "workplace": false,
+  "mdm_enrollments": 0
+ },
+ "bitlocker": {
+  "protection_on": false,
+  "volume_status": "FullyDecrypted"
+ },
+ "bios_password": {
+  "source": "hp",
+  "set": false,
+  "detail": ""
+ },
+ "computrace": {
+  "windows_agent": false,
+  "wpbt_binary": false,
+  "bios_state": "Absolute Persistence Module Current State=Inactive"
+ },
+ "problem_devices": [],
+ "events": [],
+ "power": {
+  "on_ac": true,
+  "percent": 100
+ }
+}

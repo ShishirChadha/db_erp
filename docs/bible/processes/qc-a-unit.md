@@ -31,6 +31,14 @@ to sell.
    QC/condition columns — `qc_status` moves from `pending`/`in_progress` to
    `passed` or `failed`.
 
+## Faster, stricter: Auto Check (2026-11-23)
+
+For a laptop or desktop running Windows, **Auto Check** fills this checklist
+from the machine itself. A script reads the hardware and runs RAM, heat and disk
+tests, and a guided test page on the laptop covers the screen, keys, ports and
+so on. Its results are saved through this same QC route, so the unit page shows
+them like a manual QC. Nothing in that flow starts as "pass". See **auto-check**.
+
 ## A failed check needs a part replaced (e.g. dead RAM, broken keyboard)
 
 There's no direct link from a failed checklist item to a part — that's still
@@ -59,4 +67,4 @@ the unit page shows the newest. See **take-a-trade-in**.
 
 ## Related
 
-**live-stock-qc**, **receive-stock**, **website**.
+**live-stock-qc**, **receive-stock**, **auto-check**, **website**.

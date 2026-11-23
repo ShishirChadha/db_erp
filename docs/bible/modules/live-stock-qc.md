@@ -3,7 +3,7 @@ slug: live-stock-qc
 title: Live Stock & QC
 kind: module
 audience: [owner, manager, employee]
-routes: [/dashboard/live-stock, /dashboard/entry/intake]
+routes: [/dashboard/live-stock, /dashboard/entry/intake, /dashboard/entry/auto-check]
 keywords: [live stock, qc, quality check, intake, stock in, naya maal, grading, serial number, battery health, condition]
 sources:
   - apps/erp/app/api/asset-ledger/**
@@ -69,9 +69,17 @@ page, force-delete, SKU reassignment, the Stock Sold tab) takes the newest.
 Force-delete still refuses a unit with a live sale, and a trade-in's record
 keeps a traded-in unit from being hard-deleted. See **take-a-trade-in**.
 
+## Auto Check (2026-11-23)
+
+Laptops and desktops can be stocked in and QC'd by **Auto Check**: a PowerShell
+line typed on the machine, a no-login test page there, and a review screen on the
+engineer's own device. Its runs live in `qc_agent_sessions` (service-role only,
+kept per unit as the "hardware as received" record). It writes stock and QC only
+through the normal intake and QC routes. See **auto-check**.
+
 ## Related
 
-**inventory-sku**, **qc-a-unit**, **receive-stock**, **attach-units-to-po**,
+**inventory-sku**, **qc-a-unit**, **receive-stock**, **auto-check**, **attach-units-to-po**,
 **sales-invoicing**.
 
 ## QC checklists are per category

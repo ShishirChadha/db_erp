@@ -671,12 +671,23 @@ export default function StockView({
             Manage Accessories →
           </Link>
         ) : (
-          <Link
-            href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(returnToPath)}`}
-            className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium shrink-0"
-          >
-            + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
-          </Link>
+          <div className="flex gap-2 shrink-0">
+            {tab === 'current' && (
+              <Link
+                href="/dashboard/entry/auto-check"
+                className="border border-primary text-primary px-4 py-2 rounded text-sm font-medium"
+                title="Stock in + QC a laptop/desktop with specs and tests read from the machine"
+              >
+                Auto Check
+              </Link>
+            )}
+            <Link
+              href={`${tab !== 'current' ? '/dashboard/entry/sell' : '/dashboard/entry/intake'}?return_to=${encodeURIComponent(returnToPath)}`}
+              className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium"
+            >
+              + {tab !== 'current' ? 'New Sale' : 'New Stock Intake'}
+            </Link>
+          </div>
         )}
       </div>
 
