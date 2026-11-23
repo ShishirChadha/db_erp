@@ -20,6 +20,8 @@ export async function GET(req: NextRequest) {
     .select('id, asset_number, serial_number, status, notes, purchased_by_type, created_at, entered_by, sku_id, sku_master!purchase_order_asset_mapping_sku_id_fkey(full_sku_code, brand, model_name, specifications)')
     .eq('source', 'employee_intake')
     .is('po_id', null)
+    // Bought from a customer as a trade-in: no vendor, so no PO will ever come.
+    .eq('from_trade_in', false)
     .order('created_at', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })

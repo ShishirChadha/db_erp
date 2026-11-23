@@ -4,10 +4,11 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, trade-in, upgrade, exchange, buyback, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
+  - apps/erp/lib/assistant/trade-in.ts
   - apps/erp/lib/assistant/tools.ts
   - apps/erp/lib/assistant/data.ts
   - apps/erp/lib/assistant/loop.ts
@@ -42,7 +43,7 @@ sources:
   - apps/erp/lib/assistant/permissions.ts
   - apps/erp/app/api/assistant/avatar/route.ts
   - apps/erp/lib/assistant/stock-in.ts
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 ## What it is
@@ -197,6 +198,32 @@ each one out character by character before you confirm; a serial with a letter O
 next to digits, an odd length, or other characters is flagged. A serial already in the
 ERP, or the same one twice, is refused before any card. You can always type serials into
 her chat instead of saying them.
+
+## Trade-ins (upgrades)
+
+Skill *Trade-ins (upgrades)*. When you say upgrade / exchange / "purana le liya", she
+treats it as a trade-in, not a replacement (asking "Warranty replacement hai, ya upgrade
+jismein purana humne kharida?" if unclear): the new laptop is sold at its **full** price
+and the old one is bought back at the value you give. One card saves both
+(`propose_sale` with `trade_in`: the sale, then `/api/trade-ins` on the unit it sold);
+for a sale already saved, `propose_trade_in` takes the new laptop's serial. She checks
+the old serial (ours → when, to whom and for how much it was sold; new to us → asks the
+model; already in stock → refused), spells it back, warns if the value is more than they
+paid or close to what the model sells for, and keeps only the ID's last 4 characters.
+Trade-ins are money, so with *tap to confirm money* on they need the Confirm tap. The done
+card links to the buyback slip. If the trade-in part is refused after the sale saved, she
+says so and it can be added from the Sales Ledger. See **take-a-trade-in**.
+
+**Replacement cards are checked before you see them.** Whatever was paid on the old unit
+carries over to the replacement automatically, so she now does the ERP's own sum at
+propose time and refuses the card (instead of failing on your yes) when the carried-over
+amount plus top-up exceeds the new unit's price, pointing to a trade-in when it's really
+an upgrade. The card also shows the carried-over amount.
+
+**She offers only options the ERP gave her.** After the 2026-11-23 conversation where she
+suggested "carry-over 26,000 karwa dein" (no such field) and "credit owed ke saath save
+kar doon", her rules say never to invent an ERP field, setting or workaround; if she
+doesn't know how the ERP handles a case she says so and offers to open the page.
 
 ## Opening pages for you
 

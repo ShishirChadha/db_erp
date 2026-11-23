@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/users/route.ts
   - apps/erp/app/api/users/[id]/route.ts
   - apps/erp/app/api/users/[id]/password/route.ts
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -98,6 +98,12 @@ Each page in the access grid can be **view-only** or **view + edit**:
 
 To edit an existing user's access later, use **Edit access** on their row
 (same grouped checkboxes, pre-filled from their current grant).
+
+**Trade-ins list (2026-11-23)** is a separate view grant under Sales. It
+shows what we paid for each traded-in laptop (a purchase cost), so leave it
+off for staff unless they should see buyback prices. Anyone who can sell can
+still take a trade-in on a sale and print its slip without it. View-only:
+there is no "Can edit" for it, since undo is owner-only.
 
 ## Steps — deactivating, reactivating, editing profile fields
 

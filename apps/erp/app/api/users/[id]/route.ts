@@ -8,7 +8,7 @@ import { accountProtection, dbMasterIds, PROTECTED_MESSAGE } from '@/lib/assista
 const ALLOWED_PAGE_KEYS = [
   'dashboard', 'pending_tasks', 'new_entry', 'accessories', 'repair_jobs', 'replacement_jobs',
   'sku_master', 'live_stock', 'invoices', 'customers', 'activities', 'sales', 'stock', 'website',
-  'expenses', 'reports', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads',
+  'expenses', 'reports', 'quotations', 'rma', 'marketing', 'rentals', 'attendance', 'leads', 'trade_ins',
 ]
 
 // Subset of ALLOWED_PAGE_KEYS that has a real per-page edit concept -- matches

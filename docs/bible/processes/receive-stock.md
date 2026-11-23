@@ -9,7 +9,7 @@ keywords: [receive, intake, stock in, naya maal aaya, new stock, add stock, inco
 sources:
   - apps/erp/app/api/stock-intake/route.ts
   - apps/erp/lib/accessory-movements.ts
-updated: 2026-11-17
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -43,6 +43,14 @@ moment it's submitted — no owner approval gate.
    **attach-units-to-po**'s accessory path (`from-accessory-stock`). Each
    receipt keeps its own entry date there, so one delivery can be attached to
    its own vendor bill even when the same SKU has other unattached receipts.
+
+## A laptop that comes from a customer is not entered here (2026-11-23)
+
+When a customer hands over their old laptop in part-payment, it is taken as a
+**trade-in** on the sale (see **take-a-trade-in**), which creates or reuses
+its stock record itself. Such a unit never gets a vendor PO, so the owner's
+**Needs PO Attached** queue (`GET /api/stock-intake`) leaves out units with
+`from_trade_in`.
 
 ## Related
 

@@ -47,6 +47,7 @@ const STATUS_WORDS: Record<string, string> = {
   open_page: 'Page khol rahi hoon…',
   propose_stock_in: 'Stock entry bana rahi hoon…',
   propose_accessory_in: 'Accessories entry bana rahi hoon…',
+  propose_trade_in: 'Trade-in bana rahi hoon…',
   find_products: 'Stock check kar rahi hoon…',
   find_sellable_units: 'Units dekh rahi hoon…',
   find_unit_by_serial: 'Serial dhoondh rahi hoon…',
@@ -1024,6 +1025,12 @@ function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; di
       <div className="w-full rounded-xl border border-success/30 bg-success/10 p-3 text-sm">
         <p className="font-medium">✓ {card.title}</p>
         <p className="mt-1 whitespace-pre-wrap text-muted-foreground">{card.detail}</p>
+        {/* e.g. a trade-in's buyback slip -- only ever an ERP page. */}
+        {card.link?.startsWith('/dashboard/') && (
+          <a href={card.link} target="_blank" rel="noopener" className="mt-2 inline-block text-primary underline">
+            {card.link.includes('/trade-ins/') ? 'Print buyback slip' : 'Open'}
+          </a>
+        )}
       </div>
     )
   }

@@ -74,6 +74,12 @@
     "ownerOnly": false
   },
   {
+    "label": "Operations > Trade-ins",
+    "route": "/dashboard/trade-ins",
+    "pageKey": "trade_ins",
+    "ownerOnly": false
+  },
+  {
     "label": "Operations > Rentals",
     "route": "/dashboard/rentals",
     "pageKey": "rentals",

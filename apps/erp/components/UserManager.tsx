@@ -45,6 +45,9 @@ const PAGE_GROUPS: { label: string; keys: { key: string; label: string }[] }[] =
     { key: 'sales', label: 'Sales' },
     { key: 'invoices', label: 'Invoices' },
     { key: 'quotations', label: 'Quotations' },
+    // Shows what we paid for each traded-in laptop (a purchase cost) -- anyone who
+    // can sell can still take a trade-in on a sale without this.
+    { key: 'trade_ins', label: 'Trade-ins list (shows buyback prices)' },
   ]},
   { label: 'Contacts', keys: [{ key: 'customers', label: 'Customers' }] },
   { label: 'Leads', keys: [{ key: 'leads', label: 'Lead Sets (sales pitch / calling lists)' }] },

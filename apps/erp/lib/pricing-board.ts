@@ -201,7 +201,7 @@ export async function loadBoard(): Promise<{
       .select('id, full_sku_code, category, brand, model_name, sku_description, specifications, is_published, web_price, selling_price_default, market_price, base_cost, quantity_in_stock')
       .in('category', BOARD_CATEGORIES).eq('status', 'active').range(a, b)),
     fetchAll<any>((a, b) => supabaseAdmin.from('asset_ledger')
-      .select('sku_id, current_sku_id, cost_price, received_at, created_at')
+      .select('sku_id, current_sku_id, cost_price, trade_in_value, received_at, created_at')
       .in('status', SELLABLE_STATUSES).is('deleted_at', null).range(a, b)),
     loadMarketData(),
     supabaseAdmin.from('sku_price_changes').select('batch_id, changed_at, reason, undone_at').order('changed_at', { ascending: false }).limit(300),
@@ -212,7 +212,8 @@ export async function loadBoard(): Promise<{
     const id = u.current_sku_id || u.sku_id
     const e = unitBySku.get(id) || { n: 0, costSum: 0, costN: 0, oldest: Infinity }
     e.n++
-    if (u.cost_price != null && Number(u.cost_price) > 0) { e.costSum += Number(u.cost_price); e.costN++ }
+    const cost = unitCost(u)
+    if (cost != null) { e.costSum += cost; e.costN++ }
     const t = new Date(u.received_at || u.created_at).getTime()
     if (Number.isFinite(t) && t < e.oldest) e.oldest = t
     unitBySku.set(id, e)
@@ -291,6 +292,12 @@ export async function loadMarket(skuId: string) {
   }
 }
 
+/** A unit's cost for its current life: what we gave for it on a customer trade-in, else its purchase cost. */
+export function unitCost(u: { cost_price?: number | string | null; trade_in_value?: number | string | null }): number | null {
+  if (u.trade_in_value != null && Number(u.trade_in_value) > 0) return Number(u.trade_in_value)
+  return u.cost_price != null && Number(u.cost_price) > 0 ? Number(u.cost_price) : null
+}
+
 /** Average cost of sellable units per SKU (fallback: sku_master.base_cost). Owner-only data. */
 export async function loadCostMap(skuIds: string[]): Promise<Map<string, number | null>> {
   const out = new Map<string, number | null>()
@@ -298,15 +305,16 @@ export async function loadCostMap(skuIds: string[]): Promise<Map<string, number 
   const idList = skuIds.join(',')
   const [skus, units] = await Promise.all([
     fetchAll<any>((a, b) => supabaseAdmin.from('sku_master').select('id, base_cost').in('id', skuIds).range(a, b)),
-    fetchAll<any>((a, b) => supabaseAdmin.from('asset_ledger').select('sku_id, current_sku_id, cost_price')
+    fetchAll<any>((a, b) => supabaseAdmin.from('asset_ledger').select('sku_id, current_sku_id, cost_price, trade_in_value')
       .or(`sku_id.in.(${idList}),current_sku_id.in.(${idList})`).in('status', SELLABLE_STATUSES).is('deleted_at', null).range(a, b)),
   ])
   const sums = new Map<string, { s: number; n: number }>()
   for (const u of units) {
     const id = u.current_sku_id || u.sku_id
-    if (u.cost_price == null || Number(u.cost_price) <= 0) continue
+    const cost = unitCost(u)
+    if (cost == null) continue
     const e = sums.get(id) || { s: 0, n: 0 }
-    e.s += Number(u.cost_price); e.n++
+    e.s += cost; e.n++
     sums.set(id, e)
   }
   for (const s of skus) {

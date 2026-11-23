@@ -47,6 +47,10 @@ interface AssetRow {
   created_at?: string | null
   updated_at?: string | null
   po_id: string | null
+  // Back from a customer trade-in (traded_in_at); from_trade_in = never ours
+  // before, so there is no vendor PO to attach.
+  traded_in_at?: string | null
+  from_trade_in?: boolean
   sku_id?: string
   sku_code: string
   description: string
@@ -502,7 +506,7 @@ export default function StockView({
   // tabs/pages aren't reflected here, which is exactly what "select all" and the header
   // checkbox's tri-state need to stay scoped to what's on screen right now.
   const selectableIds = useMemo(
-    () => displayedAssets.filter(a => !a.po_id).map(a => a.id),
+    () => displayedAssets.filter(a => !a.po_id && !a.from_trade_in).map(a => a.id),
     [displayedAssets]
   )
   const visibleSelectedCount = useMemo(
@@ -517,7 +521,7 @@ export default function StockView({
         for (const id of selectableIds) next.delete(id)
       } else {
         for (const asset of displayedAssets) {
-          if (!asset.po_id) next.set(asset.id, asset)
+          if (!asset.po_id && !asset.from_trade_in) next.set(asset.id, asset)
         }
       }
       return next
@@ -1095,7 +1099,7 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
     <div className={cn('w-full flex items-start gap-2 border-b border-border transition-colors', active ? 'bg-primary/10' : 'hover:bg-muted')}>
       {showCheckbox && (
         <div className="pl-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
-          {!asset.po_id && <Checkbox checked={checked} onCheckedChange={onToggleChecked} />}
+          {!asset.po_id && !asset.from_trade_in && <Checkbox checked={checked} onCheckedChange={onToggleChecked} />}
         </div>
       )}
       <button type="button" onClick={onOpen} className={cn('flex-1 min-w-0 text-left px-3 py-2', !showCheckbox && 'pl-3')}>
@@ -1109,6 +1113,9 @@ function AssetListItem({ asset, tab, active, templates, showCheckbox, checked, o
             )}
             {asset.under_repair_job_number && (
               <span className="px-1.5 py-0.5 rounded bg-warning/15 text-warning text-xs whitespace-nowrap">Under Repair</span>
+            )}
+            {asset.traded_in_at && tab === 'current' && (
+              <span className="px-1.5 py-0.5 rounded bg-info/15 text-info text-xs whitespace-nowrap" title={`Taken back from a customer as a trade-in on ${asset.traded_in_at.slice(0, 10)}`}>Trade-in</span>
             )}
             {tab === 'sold' && asset.payment_status && (
               <StatusBadge tone={toneFor(PAYMENT_STATUS_TONES, asset.payment_status)}>{asset.payment_status}</StatusBadge>

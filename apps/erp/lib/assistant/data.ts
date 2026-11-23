@@ -2,7 +2,7 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { SELLABLE_STATUSES } from '@/lib/sales-entry'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
 import { PAYMENT_ACCOUNTS } from '@/lib/rentals'
-import { loadRules, loadCostMap } from '@/lib/pricing-board'
+import { loadRules, loadCostMap, unitCost } from '@/lib/pricing-board'
 import { priceWarnings } from '@/lib/pricing'
 
 // Read-only lookups behind DB's tools. Owner-only feature, so cost and margin
@@ -70,28 +70,28 @@ export async function findProducts(query: string) {
 export async function findSellableUnits(skuId: string) {
   const { data } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, serial_number, asset_number, status, qc_grade, cost_price, sku_id, current_sku_id, received_at')
+    .select('id, serial_number, asset_number, status, qc_grade, cost_price, trade_in_value, sku_id, current_sku_id, received_at')
     .in('status', SELLABLE_STATUSES).not('is_deleted', 'is', true)
     .or(`current_sku_id.eq.${skuId},and(current_sku_id.is.null,sku_id.eq.${skuId})`)
     .order('received_at', { ascending: true })
     .limit(20)
   return (data || []).map((u) => ({
     id: u.id, serial_number: u.serial_number, asset_number: u.asset_number, status: u.status,
-    qc_grade: u.qc_grade, cost_price: u.cost_price,
+    qc_grade: u.qc_grade, cost_price: unitCost(u), ...(u.trade_in_value != null ? { traded_in: true } : {}),
   }))
 }
 
 export async function findUnitBySerial(serial: string) {
   const { data } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, serial_number, asset_number, status, cost_price, sku_id, current_sku_id, sku_master!purchase_order_asset_mapping_sku_id_fkey(sku_description)')
+    .select('id, serial_number, asset_number, status, cost_price, trade_in_value, sku_id, current_sku_id, sku_master!purchase_order_asset_mapping_sku_id_fkey(sku_description)')
     .ilike('serial_number', ilikeSafe(serial))
     .not('is_deleted', 'is', true)
     .limit(3)
   return (data || []).map((u: any) => ({
     id: u.id, serial_number: u.serial_number, asset_number: u.asset_number, status: u.status,
     sellable: SELLABLE_STATUSES.includes(u.status), sku_id: u.current_sku_id || u.sku_id,
-    description: u.sku_master?.sku_description ?? null, cost_price: u.cost_price,
+    description: u.sku_master?.sku_description ?? null, cost_price: unitCost(u), ...(u.trade_in_value != null ? { traded_in: true } : {}),
   }))
 }
 

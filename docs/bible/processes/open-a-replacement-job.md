@@ -18,7 +18,7 @@ sources:
   - apps/erp/lib/accessory-replacement-jobs.ts
   - apps/erp/lib/accessory-rma.ts
   - apps/erp/app/dashboard/entry/service/page.tsx
-updated: 2026-09-29
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -76,6 +76,14 @@ naturally show up under Pending Tasks → **Customers Owed Money**
 (`GET /api/sales?credit_owed=true`) alongside voided sales that still show
 a paid amount (see **Common mix-ups** below for the incidents that drove
 this).
+
+**An upgrade where we buy the old laptop back is not a replacement
+(2026-11-23).** A replacement job always carries the old sale's *full* paid
+amount forward and cancels that sale. When the customer has used the laptop
+and we take it back for less (e.g. sold for ₹34,000, taken back at ₹26,000
+against a ₹56,000 one), use a **trade-in** on the new sale instead — the old
+sale stays, and the difference is what the customer pays. See
+**take-a-trade-in**.
 
 ## Steps
 

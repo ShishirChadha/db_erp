@@ -39,6 +39,7 @@ export const WRITE_SKILLS = [
   { key: 'customer', label: 'New customers', hint: 'Create a customer when one doesn’t exist yet.' },
   { key: 'learn', label: 'Learn by herself', hint: 'Offer to remember your preferences from conversations (always asks first).' },
   { key: 'stock_in', label: 'Stock in', hint: 'Enter laptops/desktops you received (by serial number, read back to you) and accessories received (by quantity, with vendor and price).' },
+  { key: 'trade_in', label: 'Trade-ins (upgrades)', hint: 'When a customer gives an old laptop towards a new one: buy it back at your price and record it on the sale.' },
 ] as const
 // The skills that existed before "new skills start on" (2026-11-23). A skill
 // added later is on for the owner until he saves "What DB can do" with it off

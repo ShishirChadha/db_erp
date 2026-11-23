@@ -5,6 +5,7 @@ import { checkPeriodLock, periodLockedResponse } from '@/lib/period-lock'
 import { logFieldCorrections } from '@/lib/field-corrections'
 import { logAuditEvent } from '@/lib/audit-log'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
+import { activeTradeInsForSale } from '@/lib/trade-ins'
 
 // ---------- POST: owner voids a sale (bookkeeping correction, not a physical return) ----------
 // Distinct from the RMA "from_customer" flow (app/api/rma/route.ts), which is for a unit
@@ -29,6 +30,16 @@ export async function POST(
   const { data: existing } = await supabaseAdmin.from('sales').select('*').eq('id', id).single()
   if (!existing) return NextResponse.json({ error: 'Sale not found' }, { status: 404 })
   if (existing.is_deleted) return NextResponse.json({ error: 'This sale is already voided.' }, { status: 400 })
+
+  // A trade-in settled against this sale has put the customer's old unit back in
+  // stock -- voiding the sale alone would leave that unit and its credit orphaned.
+  const tradeIns = await activeTradeInsForSale(id)
+  if (tradeIns.length) {
+    return NextResponse.json({
+      error: `Trade-in ${tradeIns.map((t) => t.trade_in_number).join(', ')} is applied to this sale. Undo the trade-in first (Trade-ins page), then void the sale.`,
+      error_code: 'has_trade_in',
+    }, { status: 409 })
+  }
 
   // Voiding a sale inside a locked period retracts a supply that has already
   // been reported. The correct remedy there is a credit note in an open period,

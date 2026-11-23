@@ -16,6 +16,8 @@ import {
 import { shareSalesDocument } from './share'
 import { TAP_ONLY_KINDS } from './approval'
 import { prepareStockIn, prepareAccessoryIn, STOCK_TYPES, BUYERS, PAY_ACCOUNTS } from './stock-in'
+import { prepareTradeIn } from './trade-in'
+import { ID_PROOF_TYPES } from '@/lib/trade-ins'
 import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
@@ -153,6 +155,19 @@ async function openPage(input: { page: PageKey; search?: string | null; record?:
 
 // ---------------------------------------------------------------- schemas
 
+// The customer's OLD laptop given towards a new one (upgrade / exchange).
+const TRADE_IN = z.object({
+  serial_number: z.string().min(3).max(40).describe('The OLD laptop\'s serial exactly as he said or typed it -- never guessed or completed.'),
+  sku_id: z.string().nullish().describe('Only when the old laptop is not one we sold: its model from find_products (tracked_per_unit: true).'),
+  value: z.number().positive().describe('What we give the customer for the old laptop, in rupees.'),
+  condition_notes: z.string().max(300).nullish(),
+  accessories_included: z.string().max(120).nullish().describe('What came back with it, e.g. "charger, bag".'),
+  id_proof_type: z.enum(ID_PROOF_TYPES).nullish().describe('Customer ID shown, for the buyback slip.'),
+  id_proof_last4: z.string().max(4).nullish().describe('Only the LAST 4 characters of that ID -- never the full Aadhaar/PAN number.'),
+  trade_in_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish().describe('YYYY-MM-DD; default today.'),
+  notes: z.string().max(200).nullish(),
+})
+
 const S = {
   find_customer: z.object({ query: z.string().describe('Name, part of a name, or phone number.') }),
   find_products: z.object({ query: z.string().describe('Model words as spoken, e.g. "elitebook 840 g6 8 256", "bag", "mouse".') }),
@@ -258,6 +273,10 @@ const S = {
     sold_by: z.string().describe('One of get_options().staff_names.'),
     sale_date: z.string().nullish(),
     notes: z.string().nullish(),
+    trade_in: TRADE_IN.nullish().describe('Upgrade: the customer\'s old laptop given towards this sale. The sale is at the new laptop\'s FULL price; the trade-in value counts as part of the payment, and `payments` is only the money paid on top.'),
+  }),
+  propose_trade_in: TRADE_IN.extend({
+    sale_unit_serial: z.string().min(3).max(40).describe('Serial of the NEW laptop on the sale that is already saved (the one the customer bought).'),
   }),
   propose_repair_job: z.object({
     customer_id: z.string().nullish(),
@@ -347,9 +366,10 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   propose_sales_document: 'Prepare a proforma invoice (PI) or quotation. Returns warnings you must raise. Nothing is saved yet.',
   propose_expense: 'Prepare an expense entry. Matches the type to an existing category (private ones included). If the type is new it returns similar existing types and asks you to check with Shishir first. Returns warnings you must raise. Nothing is saved yet.',
   propose_merge_expense_types: 'Prepare merging duplicate expense categories (e.g. "Petrol" + "Petrol Exp" into "Petrol"): past expenses are re-labelled and the merged types leave the dropdown. Shows counts. Nothing changes until Shishir confirms.',
-  propose_sale: 'Prepare a sale (moves stock when confirmed). Returns warnings you must raise. Nothing is saved yet.',
+  propose_sale: 'Prepare a sale (moves stock when confirmed). Returns warnings you must raise. Nothing is saved yet. For an upgrade where the customer gives an old laptop towards this one, add trade_in (one card saves both).',
+  propose_trade_in: 'Trade-in against a sale ALREADY saved: the customer\'s old laptop taken back as part-payment (upgrade). For a new sale use propose_sale with trade_in instead. The old laptop\'s own sale stays; it goes back into stock with the trade-in value as its cost.',
   propose_repair_job: 'Prepare a repair job. Nothing is saved yet.',
-  propose_replacement_job: 'Prepare a replacement job (a unit goes out to the customer). Nothing is saved yet.',
+  propose_replacement_job: 'Prepare a replacement job: a faulty unit swapped under warranty. Whatever the customer paid on the old unit carries over to the new one automatically; additional_amount_paid is only NEW money. Not for an upgrade where we buy the old laptop back at a lower price -- that is a trade-in (propose_sale with trade_in). Nothing is saved yet.',
   propose_note: 'Offer to remember a preference. Saved only after the owner agrees.',
   confirm_pending_action: 'Save the pending action. ONLY after the owner clearly said yes to it in their latest message. The server also checks that his message is a plain yes (or a tap on Confirm) and refuses otherwise.',
   cancel_pending_action: 'Drop the pending action when the owner says no or wants to start over.',
@@ -380,6 +400,7 @@ const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
   propose_expense: 'expense', propose_merge_expense_types: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
   propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
   propose_stock_in: 'stock_in', propose_accessory_in: 'stock_in',
+  propose_trade_in: 'trade_in',
 }
 
 const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
@@ -456,6 +477,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       case 'propose_expense': return proposeExpense(input, ctx)
       case 'propose_merge_expense_types': return proposeMergeExpenseTypes(input, ctx)
       case 'propose_sale': return proposeSale(input, ctx)
+      case 'propose_trade_in': return proposeTradeIn(input, ctx)
       case 'propose_repair_job': return proposeRepair(input, ctx)
       case 'propose_replacement_job': return proposeReplacement(input, ctx)
       case 'propose_note': return proposeNote(input, ctx)
@@ -683,18 +705,69 @@ async function proposeSale(input: z.infer<typeof S.propose_sale>, ctx: ToolConte
     total += base * (1 + gstPct / 100) * (it.accessory_sku_id ? it.quantity ?? 1 : 1)
   }
 
+  // Upgrade: the old laptop's value is part of the payment (saved right after the sale).
+  let tradeIn: Awaited<ReturnType<typeof prepareTradeIn>> | null = null
+  if (input.trade_in) {
+    if (ctx.skills && !ctx.skills.includes('trade_in')) {
+      return { result: 'The "trade_in" skill is switched off in Settings -> DB Assistant -> What DB can do. Tell Shishir he can switch it on there, or add the trade-in on the sale in the Sales Ledger.', isError: true }
+    }
+    if (input.items.filter((it) => it.asset_ledger_id).length !== 1) {
+      return { result: 'A trade-in goes with exactly one laptop in the sale -- the one the customer is upgrading to.', isError: true }
+    }
+    tradeIn = await prepareTradeIn(input.trade_in, { customerId: customer.id, entity: input.payment_account })
+    if (!tradeIn.ok) return { result: tradeIn.result, isError: tradeIn.isError }
+    if (input.trade_in.value > total + 0.5) return { result: `Trade-in value ${money(input.trade_in.value)} is more than the sale total ${money(total)}. Check both with Shishir.`, isError: true }
+    warnings.push(...tradeIn.warnings)
+  }
+  const tradeInValue = tradeIn?.ok ? input.trade_in!.value : 0
+
   const paid = input.payments.reduce((s, p) => s + p.amount, 0)
-  if (paid + 0.5 < total) warnings.push(`Only ${money(paid)} of ${money(total)} received -- ${money(total - paid)} will show as balance due.`)
-  if (paid > total + 0.5) warnings.push(`Payments (${money(paid)}) are more than the total (${money(total)}).`)
+  const received = paid + tradeInValue
+  if (received + 0.5 < total) warnings.push(`Only ${money(received)} of ${money(total)} covered${tradeInValue ? ` (trade-in ${money(tradeInValue)} + ${money(paid)} paid)` : ''} -- ${money(total - received)} will show as balance due.`)
+  if (received > total + 0.5) warnings.push(`Payments${tradeInValue ? ' plus trade-in' : ''} (${money(received)}) are more than the total (${money(total)}).`)
 
   const body = {
     customer_id: customer.id, sale_type: input.sale_type, gst_percentage: gstPct, payment_account: input.payment_account,
     sold_by: input.sold_by, sale_date: input.sale_date || istToday(), notes: input.notes || null, items,
     payment_legs: input.payments,
+    ...(tradeIn?.ok ? { trade_in: tradeIn.body } : {}),
   }
-  return park('sale', body, `Sale to ${customer.customer_name}`,
-    `${summary.join('\n')}\n${input.sale_type} sale via ${input.payment_account}, total ${money(total)}, received ${money(paid)}, sold by ${input.sold_by}`,
+  const out = park('sale', body, `${tradeIn?.ok ? 'Upgrade' : 'Sale'} for ${customer.customer_name}`,
+    [
+      ...summary,
+      ...(tradeIn?.ok ? [tradeIn.line] : []),
+      `${input.sale_type} sale via ${input.payment_account}, total ${money(total)}${tradeInValue ? `, trade-in ${money(tradeInValue)}, customer pays ${money(Math.max(total - tradeInValue, 0))}` : ''}, received now ${money(paid)}, sold by ${input.sold_by}`,
+    ].join('\n'),
     warnings, ctx)
+  return tradeIn?.ok ? { ...out, result: { ...(out.result as object), ...tradeIn.extra } } : out
+}
+
+async function proposeTradeIn(input: z.infer<typeof S.propose_trade_in>, ctx: ToolContext): Promise<ToolOutcome> {
+  const { sale_unit_serial: newSerial, ...tradeInInput } = input
+  const { data: unit } = await supabaseAdmin.from('asset_ledger').select('id, serial_number')
+    .ilike('serial_number', newSerial.trim().replace(/[\\%_]/g, (c) => `\\${c}`)).not('is_deleted', 'is', true).limit(2)
+  if (!unit?.length) return { result: `No unit with serial ${newSerial} -- ask which laptop the customer bought.`, isError: true }
+  if (unit.length > 1) return { result: `Serial ${newSerial} is on two stock records -- ask Shishir to fix it on the Stock page first.`, isError: true }
+  const { data: sale } = await supabaseAdmin.from('sales')
+    .select('id, customer_id, customer_name, sale_date, sale_total, amount_paid, payment_account')
+    .eq('asset_ledger_id', unit[0].id).eq('is_deleted', false).order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (!sale) return { result: `${newSerial} has no saved sale. Make the sale with propose_sale and put the trade-in on it.`, isError: true }
+  if (!sale.customer_id) return { result: 'That sale has no customer; a trade-in needs one.', isError: true }
+  if (!['Digitalbluez', 'Techtenth', 'Cash'].includes(sale.payment_account || '')) return { result: 'That sale has no billing entity set -- it has to be set in the Sales Ledger first.', isError: true }
+
+  const prep = await prepareTradeIn(tradeInInput, { customerId: sale.customer_id, entity: sale.payment_account! })
+  if (!prep.ok) return { result: prep.result, isError: prep.isError }
+  const total = Number(sale.sale_total) || 0
+  const paid = Number(sale.amount_paid) || 0
+  const warnings = [...prep.warnings]
+  if (paid + input.value > total + 0.5) {
+    return { result: `Already paid ${money(paid)} + trade-in ${money(input.value)} is more than the sale total ${money(total)}. Ask Shishir which number is wrong.`, isError: true }
+  }
+  const due = total - paid - input.value
+  if (due > 0.5) warnings.push(`After the trade-in ${money(due)} is still due on this sale.`)
+  const out = park('trade_in', { ...prep.body, sale_id: sale.id }, `Trade-in for ${sale.customer_name}`,
+    `${prep.line}\nAgainst the sale of ${newSerial} (${sale.sale_date}, ${money(total)}, paid so far ${money(paid)})`, warnings, ctx)
+  return { ...out, result: { ...(out.result as object), ...prep.extra } }
 }
 
 async function proposeRepair(input: z.infer<typeof S.propose_repair_job>, ctx: ToolContext): Promise<ToolOutcome> {
@@ -715,9 +788,25 @@ async function proposeReplacement(input: z.infer<typeof S.propose_replacement_jo
   const customer = await getCustomer(input.customer_id)
   const { data: unit } = await supabaseAdmin.from('asset_ledger').select('serial_number, status').eq('id', input.replacement_asset_id).maybeSingle()
   if (!unit) return { result: 'Replacement unit not found.', isError: true }
+  // The same sum the ERP checks on save, done now so a wrong card never reaches his yes.
+  const gstPct = input.sale_type === 'Cash' ? 0 : input.gst_percentage ?? 18
+  const newTotal = (input.amount_charged || 0) * (1 + gstPct / 100)
+  const topUp = input.additional_amount_paid || 0
+  let carried = 0
+  if (input.is_own_stock && input.asset_id) {
+    const { data: old } = await supabaseAdmin.from('sales').select('amount_paid').eq('asset_ledger_id', input.asset_id)
+      .eq('is_deleted', false).order('created_at', { ascending: false }).limit(1).maybeSingle()
+    carried = Number(old?.amount_paid) || 0
+  }
+  if (carried + topUp > newTotal + 0.5) {
+    return {
+      isError: true,
+      result: `Not proposed: the old unit's sale already has ${money(carried)} paid, which carries over to the new unit automatically. ${money(carried)} + top-up ${money(topUp)} = ${money(carried + topUp)}, more than the new unit's ${money(newTotal)} -- the ERP would refuse it. additional_amount_paid must be only NEW money. If this is an upgrade where we buy the old laptop back at a lower price, it is a trade-in (propose_sale with trade_in), not a replacement -- ask him.`,
+    }
+  }
   const body = { ...input, job_date: input.job_date || istToday() }
   return park('replacement_job', body, `Replacement for ${customer.customer_name}`,
-    `Returned: ${input.is_own_stock ? 'our unit' : input.customer_device_description || 'customer device'}. Going out: serial ${unit.serial_number}. Reason: ${input.problem_description}`,
+    `Returned: ${input.is_own_stock ? 'our unit' : input.customer_device_description || 'customer device'}. Going out: serial ${unit.serial_number}. Reason: ${input.problem_description}\nNew unit ${money(newTotal)}${carried ? `, ${money(carried)} carried over from the old sale` : ''}${topUp ? `, top-up ${money(topUp)}` : ''}`,
     [], ctx)
 }
 
@@ -826,6 +915,28 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     }
   }
 
+  // Upgrade: the sale first, then the trade-in on the unit it sold.
+  if (p.kind === 'sale' && p.body.trade_in) {
+    const { trade_in: tradeInBody, ...saleBody } = p.body
+    const saleRes = await callRouteAsDb('sale', saleBody, { token, sessionId: ctx.db.sessionId })
+    if (!saleRes.ok) return { result: `The ERP refused the sale (${saleRes.status}): ${saleRes.data?.error || 'unknown error'}. Nothing was saved. Tell him plainly.`, isError: true }
+    const unitSale = (saleRes.data?.sales || []).find((x: any) => x.asset_ledger_id)
+    const tiRes = unitSale ? await callRouteAsDb('trade_in', { ...tradeInBody, sale_id: unitSale.id }, { token, sessionId: ctx.db.sessionId }) : null
+    if (!tiRes?.ok) {
+      const why = tiRes?.data?.error || 'the unit sale was not found'
+      return {
+        result: { saved: 'sale only', sale_ids: saleRes.data?.sale_ids, trade_in_error: why, next: 'Tell him the sale is saved but the trade-in is NOT (say why). It can be added on that sale in the Sales Ledger, or propose_trade_in again once fixed.' },
+        pending: null,
+        card: { type: 'done', title: 'Sale recorded, trade-in not saved', detail: `${p.summary}\nTrade-in not saved: ${why}` },
+      }
+    }
+    return {
+      result: { saved: true, sale_ids: saleRes.data?.sale_ids, trade_in_number: tiRes.data?.trade_in_number, next: 'Tell him to print the buyback slip (link on the card) and get it signed by the customer.' },
+      pending: null,
+      card: { type: 'done', title: `Upgrade recorded (${tiRes.data?.trade_in_number})`, detail: p.summary, link: `/dashboard/trade-ins/${tiRes.data?.id}/slip` },
+    }
+  }
+
   const res = await callRouteAsDb(p.kind, p.body, { token, sessionId: ctx.db.sessionId }, p.kind === 'accessory_receipt' ? { id: p.body.sku_id } : {})
   if (!res.ok) {
     return { result: `The ERP refused it (${res.status}): ${res.data?.error || 'unknown error'}. Nothing was saved. Tell the owner plainly and ask how to fix it.`, isError: true }
@@ -839,16 +950,21 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     replacement_job: `Replacement ${d.job_number || ''} recorded`,
     stock_intake: 'Stock entered',
     accessory_receipt: 'Accessories received',
+    trade_in: `Trade-in ${d.trade_in_number || ''} recorded`,
   }
   return {
-    result: { saved: true, ...pickIds(d), next: p.kind === 'sales_document' ? 'Offer to share it on WhatsApp (share_document_on_whatsapp).' : undefined },
+    result: {
+      saved: true, ...pickIds(d),
+      next: p.kind === 'sales_document' ? 'Offer to share it on WhatsApp (share_document_on_whatsapp).'
+        : p.kind === 'trade_in' ? 'Tell him to print the buyback slip (link on the card) and get it signed by the customer.' : undefined,
+    },
     pending: null,
-    card: { type: 'done', title: titles[p.kind as RouteKey], detail: p.summary },
+    card: { type: 'done', title: titles[p.kind as RouteKey], detail: p.summary, ...(p.kind === 'trade_in' && d.id ? { link: `/dashboard/trade-ins/${d.id}/slip` } : {}) },
   }
 }
 
 function pickIds(d: any) {
   const out: Record<string, unknown> = {}
-  for (const k of ['id', 'document_number', 'job_number', 'sale_ids', 'grand_total', 'parts_warning']) if (d[k] != null) out[k] = d[k]
+  for (const k of ['id', 'document_number', 'job_number', 'sale_ids', 'grand_total', 'parts_warning', 'trade_in_number']) if (d[k] != null) out[k] = d[k]
   return out
 }

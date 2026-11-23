@@ -37,17 +37,17 @@ export async function POST(req: NextRequest) {
 
   const { data: units, error: unitsErr } = await supabaseAdmin
     .from('asset_ledger')
-    .select('id, sku_id, serial_number, status, po_id, source')
+    .select('id, sku_id, serial_number, status, po_id, source, from_trade_in')
     .in('id', asset_ledger_ids)
 
   if (unitsErr) return NextResponse.json({ error: unitsErr.message }, { status: 500 })
   if (!units || units.length !== asset_ledger_ids.length) {
     return NextResponse.json({ error: 'One or more units could not be found.' }, { status: 404 })
   }
-  const invalid = units.filter(u => u.source !== 'employee_intake' || u.po_id !== null)
+  const invalid = units.filter(u => u.source !== 'employee_intake' || u.po_id !== null || u.from_trade_in)
   if (invalid.length > 0) {
     return NextResponse.json(
-      { error: `${invalid.length} of the selected units are not eligible (already attached to a PO, or not an intake unit).` },
+      { error: `${invalid.length} of the selected units are not eligible (already attached to a PO, not an intake unit, or bought from a customer as a trade-in -- those have no vendor PO).` },
       { status: 400 }
     )
   }

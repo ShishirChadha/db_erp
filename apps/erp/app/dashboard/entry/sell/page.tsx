@@ -12,6 +12,7 @@ import { useCustomOptions } from '@/lib/useCustomOptions'
 import { FixSkuDialog } from '@/components/FixSkuDialog'
 import RequirePageAccess from '@/components/RequirePageAccess'
 import { useAsyncAction } from '@/lib/useAsyncAction'
+import { TradeInDialog, type TradeInSale } from '@/components/TradeInDialog'
 import { ReviewSummaryDialog } from '@/components/ReviewSummaryDialog'
 import { buildConfigSummary, ConfigSummaryTemplate } from '@/lib/sku-config-summary'
 
@@ -97,6 +98,10 @@ function SellPageInner() {
 
   const [error, setError] = useState('')
   const [done, setDone] = useState(false)
+  // The unit sale just recorded, offered for a trade-in (upgrade) right away.
+  const [tradeInSale, setTradeInSale] = useState<TradeInSale | null>(null)
+  const [showTradeIn, setShowTradeIn] = useState(false)
+  const [tradeInSaved, setTradeInSaved] = useState(false)
   const [showReview, setShowReview] = useState(false)
 
   const [mode, setMode] = useState<'unit' | 'accessory'>(prefillAccessoryId ? 'accessory' : 'unit')
@@ -473,6 +478,12 @@ function SellPageInner() {
         const err = await res.json().catch(() => ({}))
         throw new Error(err.error || 'Failed to record sale.')
       }
+      const saved = await res.json().catch(() => ({}))
+      // A customer upgrading hands the old laptop over now -- offer the trade-in
+      // against the unit just sold (one unit in the cart; several = ambiguous).
+      const unitSales = (saved.sales || []).filter((s: any) => s.asset_ledger_id)
+      setTradeInSale(unitSales.length === 1 ? unitSales[0] : null)
+      setTradeInSaved(false)
       setDone(true)
       resetForm()
       router.replace(returnTo ? `/dashboard/entry/sell?return_to=${encodeURIComponent(returnTo)}` : '/dashboard/entry/sell')
@@ -499,10 +510,22 @@ function SellPageInner() {
         </div>
       )}
       {done && (
-        <div className="bg-success/15 border border-success/20 text-success rounded p-3 mb-4 flex justify-between items-center">
+        <div className="bg-success/15 border border-success/20 text-success rounded p-3 mb-4 flex flex-wrap gap-2 justify-between items-center">
           <span>Sale recorded — stock updated. Invoice will be generated later.</span>
-          <button onClick={() => setDone(false)} className="text-sm underline">Record another</button>
+          <span className="flex gap-3">
+            {tradeInSale && !tradeInSaved && (
+              <button onClick={() => setShowTradeIn(true)} className="text-sm underline">Customer gave an old laptop? Add trade-in</button>
+            )}
+            <button onClick={() => { setDone(false); setTradeInSale(null) }} className="text-sm underline">Record another</button>
+          </span>
         </div>
+      )}
+      {showTradeIn && tradeInSale && (
+        <TradeInDialog
+          sale={tradeInSale}
+          onClose={() => setShowTradeIn(false)}
+          onSaved={() => setTradeInSaved(true)}
+        />
       )}
       {error && <div className="text-destructive mb-4">{error}</div>}
 

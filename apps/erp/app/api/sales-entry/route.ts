@@ -291,5 +291,10 @@ export async function POST(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({ success: true, id: saleIds[0], sale_ids: saleIds }, { status: 201 })
+  // What the screen needs to offer a trade-in against the unit just sold
+  // (totals after the payment trigger ran).
+  const { data: savedSales } = await supabaseAdmin.from('sales')
+    .select('id, asset_ledger_id, customer_name, sale_total, amount_paid, payment_account').in('id', saleIds)
+
+  return NextResponse.json({ success: true, id: saleIds[0], sale_ids: saleIds, sales: savedSales || [] }, { status: 201 })
 }

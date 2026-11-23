@@ -111,6 +111,7 @@ export const menuGroups = [
       { key: 'live_stock', href: '/dashboard/live-stock', label: 'Live Stock', pageKey: 'live_stock' },
       { key: 'repair_jobs', href: '/dashboard/repair-jobs', label: 'Repair Jobs', pageKey: 'repair_jobs' },
       { key: 'replacement_jobs', href: '/dashboard/replacement-jobs', label: 'Replacement Jobs', pageKey: 'replacement_jobs' },
+      { key: 'trade_ins', href: '/dashboard/trade-ins', label: 'Trade-ins', pageKey: 'trade_ins' },
       { key: 'rentals', href: '/dashboard/rentals', label: 'Rentals', pageKey: 'rentals' },
       { key: 'rma', href: '/dashboard/rma', label: 'Returns / RMA', pageKey: 'rma' },
     ],

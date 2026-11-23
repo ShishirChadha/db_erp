@@ -18,6 +18,7 @@ Parsed from `apps/erp/components/sidebar.tsx`. "Owner only" hides the item from 
 | Operations > Live Stock | `/dashboard/live-stock` | live_stock |  |
 | Operations > Repair Jobs | `/dashboard/repair-jobs` | repair_jobs |  |
 | Operations > Replacement Jobs | `/dashboard/replacement-jobs` | replacement_jobs |  |
+| Operations > Trade-ins | `/dashboard/trade-ins` | trade_ins |  |
 | Operations > Rentals | `/dashboard/rentals` | rentals |  |
 | Operations > Returns / RMA | `/dashboard/rma` | rma |  |
 | Sales > Sales | `/dashboard/sales` | sales |  |

@@ -16,7 +16,7 @@ sources:
   - apps/erp/lib/sales-documents.ts
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/documents/renderSalesDocumentPdf.ts
-updated: 2026-11-13
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -107,6 +107,10 @@ Since the handoff lands in the normal Sell flow, a converted line can also be
 marked as a GST exclusion (sample/gift/etc.) there like any other sale — see
 **finance-gst-reports** — though that would be unusual for a line that came
 from a priced quotation.
+
+If the customer is upgrading and gives their old laptop, convert the line as
+usual, then use **Add trade-in** on the Sell form's success banner (2026-11-23,
+see **take-a-trade-in**). The PI itself has no trade-in line.
 
 ## Editing constraints
 

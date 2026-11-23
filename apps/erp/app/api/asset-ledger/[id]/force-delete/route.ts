@@ -39,6 +39,7 @@ export async function POST(
     .select('id')
     .eq('asset_ledger_id', id)
     .eq('is_deleted', false)
+    .limit(1)
     .maybeSingle()
   if (activeSale) {
     return NextResponse.json({ error: 'This unit has an active sale -- void the sale first, then delete.' }, { status: 400 })

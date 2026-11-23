@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-10-16
+updated: 2026-11-23
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -100,6 +100,19 @@ preview.
 Digitalbluez and Techtenth are two payment/entity identities under one
 business — not competitors, not separate companies with separate stock. See
 **finance-gst-reports** for how this shows up in GST/invoicing.
+
+## An upgrade is a trade-in, not a replacement (2026-11-23)
+
+When a customer gives back a laptop they have used and buys a better one,
+that is two deals: we **buy** the old one at a value we set and **sell** the
+new one at full price. The old laptop's own sale is never cancelled (it
+happened, and was usually GST-filed); its trade-in value becomes its cost for
+its next sale (`asset_ledger.trade_in_value`, leaving `cost_price` as the
+vendor purchase cost), and the value settles part of the new sale as a
+`sale_payments` row on the non-cash account "Trade-in". The entity buying it
+back is the new sale's entity. A replacement job is only for a faulty unit
+swapped under warranty, where what was paid carries over. See
+**take-a-trade-in**.
 
 ## API-layer role enforcement, not RLS, not middleware
 

@@ -10,7 +10,7 @@ sources:
   - apps/erp/app/api/sales/[id]/payments/route.ts
   - apps/erp/app/api/sales/[id]/payments/[paymentId]/route.ts
   - apps/erp/components/AddPaymentDialog.tsx
-updated: 2026-09-15
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -35,6 +35,16 @@ Only the owner can delete or correct a payment
 account it was recorded against. This is deliberate — the ledger is
 append-only for everyone else, so a wrong entry needs an explicit owner
 correction rather than being silently edited.
+
+## Trade-in payments (2026-11-23)
+
+When a customer's old laptop is taken in part-payment, its value appears on
+the sale as a payment on the account **Trade-in** — not money in any bank, and
+never matched by bank reconciliation. That row is locked: editing or deleting
+it is refused (`409 trade_in_payment`), because the payment, the old laptop's
+stock and the trade-in record must change together. To fix one, the owner
+undoes the trade-in on the Trade-ins page and records it again. See
+**take-a-trade-in**.
 
 ## Related
 

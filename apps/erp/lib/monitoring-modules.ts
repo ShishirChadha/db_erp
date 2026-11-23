@@ -60,6 +60,8 @@ export const TABLE_MODULES: Record<string, { module: string; app: AppOwner }> = 
   replacement_job_counter: { module: 'Replacement Jobs', app: 'erp' },
   accessory_replacement_jobs: { module: 'Replacement Jobs', app: 'erp' },
   accessory_replacement_job_parts: { module: 'Replacement Jobs', app: 'erp' },
+  trade_ins: { module: 'Trade-ins', app: 'erp' },
+  trade_in_counter: { module: 'Trade-ins', app: 'erp' },
 
   // RMA
   asset_rma_events: { module: 'RMA / Returns', app: 'erp' },

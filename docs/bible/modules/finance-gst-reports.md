@@ -35,7 +35,7 @@ sources:
   - apps/erp/app/api/gst/news/route.ts
   - apps/erp/app/api/gst/news/run/route.ts
   - apps/erp/app/dashboard/gst/gst-news-panel.tsx
-updated: 2026-11-13
+updated: 2026-11-23
 ---
 
 ## The single reporting dispatcher
@@ -536,6 +536,32 @@ and no Zoho invoice), existed from 2026-10-05 and was **removed from the GST mod
 on 2026-10-12** -- the owner judged it too complex for now (`gst_bank_credit_status()`
 and its two exception checks are dropped). The Bank Reconciliation module itself is
 untouched and can be re-attached later as a guided step.
+
+## Trade-ins in the reports (2026-11-23)
+
+A trade-in (a customer's old laptop taken in part-payment, see
+**take-a-trade-in**) touches reporting in three places:
+- **Profit.** `v_report_sale_lines` picks a unit's cost per "life": a sale made
+  after a trade-in on that unit costs the trade-in value (plus cost
+  adjustments made after it); the sale before keeps the original purchase cost
+  (plus adjustments made before the trade-in). With no trade-ins it is
+  identical to before.
+- **Stock value / ageing.** `v_report_inventory_units` values a traded-in unit
+  at its trade-in value and counts its age from the trade-in.
+- **Receipts.** The value is a `sale_payments` row on the account "Trade-in":
+  it marks the sale paid but is not money in any entity's bank, and the recon
+  matchers (entity accounts only) never see it.
+
+## Report views and functions are server-only (2026-11-23)
+
+The internal `v_report_*` / `v_gst_*` views and the `SECURITY DEFINER`
+`report_*` / `gst_*` functions do no caller check of their own, and Supabase's
+default grants had left them readable/executable with the public anon key —
+i.e. by anyone, since that key ships in the website. They are now revoked from
+`anon`/`authenticated` and granted to `service_role` only
+(`20261123b_lock_report_functions.sql`). Every caller already used the
+service-role client, so nothing in the apps changed. A new report view or
+function must follow the same pattern.
 
 ## Related
 

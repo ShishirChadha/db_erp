@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/StockView.tsx
   - apps/erp/app/api/purchase-orders/route.ts
   - apps/erp/app/api/purchase-orders/from-intake/route.ts
-updated: 2026-10-01
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -95,6 +95,11 @@ to Purchase Orders at all.
 - **No `stock_movements` row is created** — the units were already counted as
   stock at intake time; this step is purely a numbering/vendor/cost/GST
   attachment, not a new stock-in event.
+
+**Trade-in units can't be selected (2026-11-23).** "Create PO from Selected"
+offers no checkbox for a laptop that came in as a customer trade-in and was
+never ours — there's no vendor to raise a PO with (`from-intake` refuses it
+too). See **take-a-trade-in**.
 
 ## Common mix-ups
 

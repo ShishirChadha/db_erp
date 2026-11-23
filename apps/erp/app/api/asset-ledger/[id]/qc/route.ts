@@ -28,7 +28,7 @@ export async function GET(
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
       battery_health_percent, estimated_backup_hours,
       screen_condition, keyboard_condition, body_condition, included_accessories,
-      po_id, po_item_id, sku_id, current_sku_id, vendor_id, cost_price,
+      po_id, po_item_id, sku_id, current_sku_id, vendor_id, cost_price, trade_in_value, traded_in_at,
       purchase_order_items (
         unit_price,
         sku_master ( full_sku_code, sku_description, category, brand, model_name, specifications ),
@@ -55,10 +55,12 @@ export async function GET(
       const { data: vendor } = await supabaseAdmin.from('vendors').select('company_name').eq('id', asset.vendor_id).maybeSingle()
       vendorName = vendor?.company_name || null
     }
+    // Back from a customer trade-in: its cost now is what we gave for it.
+    const tradeIn = (asset as any).trade_in_value != null
     purchaseInfo = {
       po_number: po?.po_number || null,
-      vendor_name: vendorName,
-      unit_price: poItem?.unit_price ?? asset.cost_price ?? null,
+      vendor_name: tradeIn ? 'Customer trade-in' : vendorName,
+      unit_price: tradeIn ? Number((asset as any).trade_in_value) : poItem?.unit_price ?? asset.cost_price ?? null,
     }
   }
 
@@ -119,6 +121,9 @@ export async function GET(
       .select('id, customer_name, sale_base_price, sale_gst, sale_total, payment_status, amount_paid, payment_account, bundled_accessories')
       .eq('asset_ledger_id', id)
       .eq('is_deleted', false)
+      // Newest live sale -- a traded-in unit sold again has two.
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle()
     saleId = saleRow?.id ?? null
     if (saleRow) {
@@ -155,7 +160,7 @@ export async function GET(
   // only selected to compute purchase_info above -- strip them from the raw asset
   // spread so a non-owner response never carries cost/vendor data regardless of this
   // route's own gating bugs (purchase_info itself is already null for non-owners).
-  const { vendor_id: _vendorId, cost_price: _costPrice, ...assetWithoutCostFields } = asset as any
+  const { vendor_id: _vendorId, cost_price: _costPrice, trade_in_value: _tradeInValue, ...assetWithoutCostFields } = asset as any
   if (assetWithoutCostFields.purchase_order_items) {
     const { unit_price: _unitPrice, purchase_orders: _po, ...restPoItem } = assetWithoutCostFields.purchase_order_items
     assetWithoutCostFields.purchase_order_items = restPoItem

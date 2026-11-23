@@ -28,4 +28,4 @@ export function isPlainYes(text: string, callMe = ''): boolean {
 }
 
 // Kinds that, with "tap to confirm sales and expenses" on, need the Confirm tap.
-export const TAP_ONLY_KINDS = new Set(['sale', 'expense'])
+export const TAP_ONLY_KINDS = new Set(['sale', 'expense', 'trade_in'])

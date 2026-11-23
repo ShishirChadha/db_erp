@@ -9,7 +9,7 @@ keywords: [qc, quality check, grading, grade, testing, checklist, battery health
 sources:
   - apps/erp/app/api/asset-ledger/[id]/qc/route.ts
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-09-15
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -48,6 +48,14 @@ If the SKU is later published to the website, `asset_qc_checks` is the
 **source of truth for the public Test Report** — a new checklist item is a
 client-side array edit here, never a new table, and this data is never
 duplicated for the website.
+
+## Units back from a trade-in (2026-11-23)
+
+A laptop a customer gave us in part-payment arrives here as **QC pending**,
+like any customer return, marked "Trade-in" on the Stock list. On its unit
+page the owner sees its cost as the trade-in value with "Customer trade-in"
+as the source. A unit we sold, took back and sold again has two live sales;
+the unit page shows the newest. See **take-a-trade-in**.
 
 ## Related
 

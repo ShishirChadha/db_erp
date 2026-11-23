@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 // Modal dialogs only render behind a click (gated by a state flag) -- code-split
 // out of the initial bundle rather than shipped unconditionally.
 const RecordZohoInvoiceDialog = dynamic(() => import("@/components/RecordZohoInvoiceDialog").then(m => m.RecordZohoInvoiceDialog), { ssr: false });
+const TradeInDialog = dynamic(() => import("@/components/TradeInDialog").then(m => m.TradeInDialog), { ssr: false });
 const BulkEwayBillDialog = dynamic(() => import("@/components/BulkEwayBillDialog").then(m => m.BulkEwayBillDialog), { ssr: false });
 const AttachInvoiceFileDialog = dynamic(() => import("@/components/AttachInvoiceFileDialog").then(m => m.AttachInvoiceFileDialog), { ssr: false });
 const EditSaleDialog = dynamic(() => import("@/components/EditSaleDialog").then(m => m.EditSaleDialog), { ssr: false });
@@ -402,6 +403,54 @@ function EwayBillField({ sale, canEditSale, onDone }: { sale: Sale; canEditSale:
   );
 }
 
+// The customer's old laptop taken as part-payment on this sale (upgrade), if
+// any -- with the buyback slip, and the button to add one. Settled amounts
+// already show under "Received Into" as the "Trade-in" account.
+function SaleTradeIns({ sale, onDone }: { sale: Sale; onDone: () => void }) {
+  const { hasPageAccess } = useRole();
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [savedOne, setSavedOne] = useState(false);
+  const load = useCallback(async () => {
+    const res = await apiFetch(`/api/trade-ins?sale_id=${sale.id}`);
+    setRows(res.ok ? await res.json() : []);
+  }, [sale.id]);
+  useEffect(() => { load(); }, [load]);
+  const canAdd = hasPageAccess(["live_stock", "new_entry", "sales"]);
+  return (
+    <div className="space-y-1">
+      {(rows || []).map((t) => (
+        <div key={t.id} className="flex items-baseline justify-between gap-2">
+          <span>
+            {t.trade_in_number}: {t.asset?.sku_master?.sku_description || "old unit"}
+            <span className="text-muted-foreground"> ({t.asset?.serial_number})</span>
+          </span>
+          <span className="whitespace-nowrap">
+            <span className="tabular-nums">₹{Number(t.value).toFixed(2)}</span>
+            {" · "}
+            <Link href={`/dashboard/trade-ins/${t.id}/slip`} target="_blank" className="text-primary underline">Slip</Link>
+          </span>
+        </div>
+      ))}
+      {rows && rows.length === 0 && !canAdd && <span className="text-muted-foreground">None</span>}
+      {canAdd && (
+        <Button variant="link" size="sm" onClick={() => setAdding(true)} className="text-primary text-xs p-0 h-auto">
+          {rows && rows.length ? "Add another trade-in" : "Customer gave an old laptop? Add trade-in"}
+        </Button>
+      )}
+      {adding && (
+        <TradeInDialog
+          sale={{ id: sale.id, customer_name: sale.customer_name, sale_total: sale.sale_total, amount_paid: sale.amount_paid, payment_account: sale.payment_account }}
+          // The ledger refreshes once the dialog closes, so its "saved / print
+          // slip" step isn't unmounted by the reload.
+          onClose={() => { setAdding(false); if (savedOne) { setSavedOne(false); onDone(); } }}
+          onSaved={() => { setSavedOne(true); load(); }}
+        />
+      )}
+    </div>
+  );
+}
+
 // One field in the detail pane's label/value grid -- keeps every row's spacing
 // and label styling consistent without repeating the wrapper markup.
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -580,6 +629,7 @@ function SaleDetailPane({ sale, isOwner, canEditSale, onDone, onBack }: {
             sale.payment_account || "—"
           )}
         </Field>
+        {!sale.is_deleted && <Field label="Trade-in"><SaleTradeIns sale={sale} onDone={onDone} /></Field>}
         <Field label="Sold By">{sale.sold_by || "—"}</Field>
         <Field label="Invoice"><InvoiceSection sale={sale} isOwner={isOwner} onDone={onDone} /></Field>
       </div>

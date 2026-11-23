@@ -121,6 +121,9 @@ export async function GET(req: NextRequest) {
       purchased_by_type,
       cost_price,
       gst_percentage,
+      trade_in_value,
+      traded_in_at,
+      from_trade_in,
       purchase_order_items (
         quantity,
         base_price,
@@ -312,6 +315,11 @@ export async function GET(req: NextRequest) {
         .from('sales')
         .select('id, asset_ledger_id, customer_id, customer_name, sale_total, finalized, invoice_number, payment_status, amount_paid, sold_by, bundled_accessories, payment_account, original_sold_date')
         .in('asset_ledger_id', chunk)
+        // Live sales only, oldest first: saleByAssetId below keeps the last one per
+        // unit, i.e. its current sale -- a unit sold, traded back in and sold again
+        // has two live sales, and a returned-then-resold one has a voided one.
+        .eq('is_deleted', false)
+        .order('created_at', { ascending: true })
     ),
     // Digitalbluez is currently in Zoho "external" invoicing mode during the
     // transition (docs/decisions.md, 2026-07-24) -- generating an ERP invoice for it
@@ -417,12 +425,16 @@ export async function GET(req: NextRequest) {
       purchased_description: asset.current_sku_id ? (purchasedSku?.sku_description || null) : null,
       under_repair_job_number: repairJobByAssetId.get(asset.id) || null,
       quantity: item?.quantity ?? 1,
-      unit_price: item?.unit_price ?? asset.cost_price,
+      // A unit back from a customer trade-in costs what we gave for it (its
+      // current life), not its original purchase price.
+      unit_price: asset.trade_in_value ?? item?.unit_price ?? asset.cost_price,
+      traded_in_at: asset.traded_in_at ?? null,
+      from_trade_in: !!asset.from_trade_in,
       gst_percentage: item?.gst_percentage ?? asset.gst_percentage,
       line_total: item?.line_total,
       po_number: po?.po_number,
       po_date: po?.po_date,
-      vendor_name: po?.vendor_name || fallbackVendor?.company_name,
+      vendor_name: asset.trade_in_value != null ? 'Customer trade-in' : po?.vendor_name || fallbackVendor?.company_name,
       purchased_by_type: po?.purchased_by_type || asset.purchased_by_type,
       sale_id: sale?.id,
       customer_id: sale?.customer_id,

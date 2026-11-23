@@ -7,6 +7,7 @@ import { POST as createRepairJob } from '@/app/api/repair-jobs/route'
 import { POST as createReplacementJob } from '@/app/api/replacement-jobs/route'
 import { POST as createStockIntake } from '@/app/api/stock-intake/route'
 import { POST as createSkuStockMovement } from '@/app/api/sku-master/[id]/stock-movement/route'
+import { POST as createTradeIn } from '@/app/api/trade-ins/route'
 
 // DB's writes go through the exact route handlers the staff screens use, called
 // in-process with DB's own token and device-session cookie. Validation,
@@ -27,6 +28,8 @@ const ROUTES = {
   // the accessories "Receive stock" door (params.id = the accessory's sku_id).
   stock_intake: { path: '/api/stock-intake', handler: h(createStockIntake) },
   accessory_receipt: { path: '/api/sku-master/[id]/stock-movement', handler: h(createSkuStockMovement) },
+  // A customer's old laptop taken as part-payment on a sale (upgrade).
+  trade_in: { path: '/api/trade-ins', handler: h(createTradeIn) },
 } as const
 
 export type RouteKey = keyof typeof ROUTES

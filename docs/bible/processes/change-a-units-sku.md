@@ -12,7 +12,7 @@ sources:
   - apps/erp/lib/effective-sku.ts
   - apps/erp/app/api/asset-ledger/[id]/component-upgrade-skip/route.ts
   - apps/erp/app/api/asset-ledger/[id]/component-stock-adjustment/route.ts
-updated: 2026-09-19
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -159,3 +159,6 @@ findable answer to "why doesn't the accessory count match this unit's spec."
   unit — since its spec is already correct, the diff won't re-fire — so
   record the accessory deduction as a plain stock adjustment
   (`/dashboard/accessories` on the RAM/SSD SKU, "Correct Quantity") instead.
+
+- **A unit sold twice (traded back in, then resold)** has two live sales; the
+  "already invoiced" warning checks its newest invoiced sale (2026-11-23).

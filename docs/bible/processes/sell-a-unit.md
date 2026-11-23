@@ -10,7 +10,7 @@ sources:
   - apps/erp/app/api/sales-entry/route.ts
   - apps/erp/lib/sales-entry.ts
   - apps/erp/app/dashboard/entry/sell/page.tsx
-updated: 2026-10-05
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -55,6 +55,16 @@ the moment it's submitted.
   that, it is never a gate on the sale itself.
 - Only the owner can void a sale (`/api/sales/[id]/void`) or correct/delete a
   payment entry.
+
+## The customer is upgrading and gives an old laptop (2026-11-23)
+
+Enter this sale at the new laptop's **full** price, with only the money they
+pay on top. After saving, the banner offers **Customer gave an old laptop? Add
+trade-in** (when the cart had exactly one laptop): the old laptop comes back
+into stock at the value you give for it, and that value is recorded on this
+sale as a "Trade-in" payment. Its own old sale is not touched. See
+**take-a-trade-in**. (The Sell response now also returns each saved sale's
+total and amount paid, which is what that offer uses.)
 
 ## Common mix-ups
 

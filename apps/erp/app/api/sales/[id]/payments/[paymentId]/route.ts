@@ -3,6 +3,14 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { logFieldCorrections } from '@/lib/field-corrections'
+import { activeTradeInForPayment } from '@/lib/trade-ins'
+
+// A trade-in's own 'Trade-in' payment row changes only by undoing that trade-in
+// (Trade-ins page): the row, the unit's stock and the trade-in record move together.
+const tradeInLocked = (n: string) => NextResponse.json({
+  error: `This payment is trade-in ${n}. To change it, undo the trade-in on the Trade-ins page (owner) and record it again.`,
+  error_code: 'trade_in_payment',
+}, { status: 409 })
 
 // ---------- PATCH: correct an existing payment's date ----------
 // Owner-only, same correction tier as DELETE below (an employee who mis-recorded an
@@ -18,6 +26,8 @@ export async function PATCH(
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id, paymentId } = await params
+  const lockedBy = await activeTradeInForPayment(paymentId)
+  if (lockedBy) return tradeInLocked(lockedBy.trade_in_number)
   const body = await req.json().catch(() => ({}))
   const recordedAtDate: string = body.recorded_at || ''
   if (!/^\d{4}-\d{2}-\d{2}$/.test(recordedAtDate)) {
@@ -71,6 +81,8 @@ export async function DELETE(
   if (!isOwner(sessionUser)) return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
 
   const { id, paymentId } = await params
+  const lockedBy = await activeTradeInForPayment(paymentId)
+  if (lockedBy) return tradeInLocked(lockedBy.trade_in_number)
 
   const { data: existingPayment } = await supabaseAdmin
     .from('sale_payments')

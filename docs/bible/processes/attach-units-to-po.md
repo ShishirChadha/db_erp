@@ -14,7 +14,7 @@ sources:
   - apps/erp/app/api/purchase-orders/[id]/move-unit/route.ts
   - apps/erp/components/AttachUnitsDialog.tsx
   - apps/erp/components/MoveUnitDialog.tsx
-updated: 2026-11-17
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -98,6 +98,14 @@ eligibility/reservation logic; the only difference is whether a fresh
    reduces how much unattached `'receipt'` quantity is still here to
    formalize — the backlog count only ever grows on receipt, never shrinks
    on sale.
+
+**Trade-in units are refused (2026-11-23).** A laptop that came to us as a
+customer trade-in and was never ours before (`asset_ledger.from_trade_in`)
+has no vendor and never gets a PO: both `from-intake` and `attach-units`
+reject it, and the Stock page shows no checkbox for it. A unit we sold and
+took back (ours) still needs its *original* purchase PO attached as usual —
+that sets `cost_price` for its first sale, while its trade-in value stays its
+cost for the next one. See **take-a-trade-in**.
 
 ## Correcting a mistake: moving a unit between two POs
 

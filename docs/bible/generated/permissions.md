@@ -20,6 +20,7 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 | Operations > Live Stock | if granted `live_stock` | if granted `live_stock` |
 | Operations > Repair Jobs | if granted `repair_jobs` | if granted `repair_jobs` |
 | Operations > Replacement Jobs | if granted `replacement_jobs` | if granted `replacement_jobs` |
+| Operations > Trade-ins | if granted `trade_ins` | if granted `trade_ins` |
 | Operations > Rentals | if granted `rentals` | if granted `rentals` |
 | Operations > Returns / RMA | if granted `rma` | if granted `rma` |
 | Sales > Sales | if granted `sales` | if granted `sales` |
@@ -47,18 +48,24 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 
 | Page key | Roles with edit access |
 |---|---|
-| accessories | employee |
+| accessories | employee, manager |
+| activities | manager |
+| attendance | manager |
 | customers | manager |
 | expenses | employee, manager |
-| live_stock | employee |
-| new_entry | employee |
+| invoices | manager |
+| live_stock | employee, manager |
+| marketing | manager |
+| new_entry | employee, manager |
 | quotations | employee, manager |
-| rentals | employee |
+| rentals | employee, manager |
 | repair_jobs | employee, manager |
 | replacement_jobs | employee, manager |
-| rma | employee |
-| sku_master | employee |
-| website | employee |
+| rma | employee, manager |
+| sales | manager |
+| sku_master | employee, manager |
+| stock | manager |
+| website | employee, manager |
 
 ## Redacted fields (`redaction_rules`)
 

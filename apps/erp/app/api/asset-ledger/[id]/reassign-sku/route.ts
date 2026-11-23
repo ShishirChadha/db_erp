@@ -82,6 +82,9 @@ export async function PATCH(
     .select('id, invoice_number')
     .eq('asset_ledger_id', id)
     .eq('finalized', true)
+    // A unit traded back in and sold again can have two invoiced sales.
+    .order('created_at', { ascending: false })
+    .limit(1)
     .maybeSingle()
   if (invoicedSale && !confirm_despite_invoice) {
     return NextResponse.json({

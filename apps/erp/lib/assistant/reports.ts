@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { istToday } from '@/lib/attendance'
 import { SELLABLE_STATUSES } from '@/lib/sales-entry'
+import { unitCost } from '@/lib/pricing-board'
 
 // Module-wise read access for DB (Settings -> DB Assistant -> "What DB can
 // read"). Each function answers one kind of question with a compact summary --
@@ -60,7 +61,7 @@ export async function stockOverview(p: { which?: 'live' | 'main' | 'all' | null;
   const which = p.which || 'all'
   const rows = await fetchAll<any>((a, b) => {
     let q = supabaseAdmin.from('asset_ledger')
-      .select('id, serial_number, asset_number, status, source, cost_price, qc_grade, received_at, created_at, sku_id, current_sku_id')
+      .select('id, serial_number, asset_number, status, source, cost_price, trade_in_value, traded_in_at, qc_grade, received_at, created_at, sku_id, current_sku_id')
       .in('status', p.status ? [p.status] : CURRENT_STATUSES).not('is_deleted', 'is', true)
     if (which === 'live') q = q.eq('source', 'employee_intake')
     if (which === 'main') q = q.neq('source', 'employee_intake')
@@ -79,7 +80,8 @@ export async function stockOverview(p: { which?: 'live' | 'main' | 'all' | null;
       serial: r.serial_number, asset_number: r.asset_number, status: r.status,
       stock: r.source === 'employee_intake' ? 'live' : 'main',
       model: sku?.sku_description || 'Unknown model', list_price: sku?.selling_price_default ?? null,
-      cost: r.cost_price == null ? null : num(r.cost_price), grade: r.qc_grade, age_days: daysSince(r.received_at || r.created_at),
+      cost: unitCost(r), grade: r.qc_grade, age_days: daysSince(r.traded_in_at || r.received_at || r.created_at),
+      ...(r.trade_in_value != null ? { traded_in: true } : {}),
     }
   }).filter((u) => !ws.length || matchesAll(`${u.model} ${u.serial || ''} ${u.asset_number || ''}`.toLowerCase(), ws))
 

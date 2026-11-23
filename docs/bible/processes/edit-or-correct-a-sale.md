@@ -12,7 +12,7 @@ sources:
   - apps/erp/app/api/sales/[id]/route.ts
   - apps/erp/app/api/sales/[id]/void/route.ts
   - apps/erp/app/api/invoices/[id]/attachments/route.ts
-updated: 2026-11-13
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -120,6 +120,13 @@ list query). It's distinct from an RMA "from customer" return, which is for
 a unit that physically came back and needs re-QC. If the sale is already
 invoiced, voiding it requires the same "confirm despite invoice"
 step — voiding doesn't retract or update that invoice either.
+
+**A sale with a trade-in on it can't be voided (2026-11-23).** If a
+customer's old laptop was taken in part-payment on this sale, voiding is
+refused (`409 has_trade_in`) until the owner undoes that trade-in on the
+Trade-ins page; otherwise the old laptop would stay in stock with nothing
+paid for it. The trade-in's own "Trade-in" payment row is likewise locked
+against edit/delete. See **take-a-trade-in**.
 
 ## Attaching a missing invoice file
 

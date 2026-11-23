@@ -21,7 +21,7 @@ sources:
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/app/api/stock-intake/[id]/route.ts
   - supabase/migrations/20261111_rls_lockdown.sql
-updated: 2026-11-22
+updated: 2026-11-23
 ---
 
 ## The three roles
@@ -140,6 +140,14 @@ they are assigned to or watching (edit, comment, tick checklist items).
   customer, upload new sets.
 - `activities` — create and assign tasks. `marketing` — generate AI drafts, create
   and edit assets.
+
+- `live_stock`, `new_entry` or `sales` — take a trade-in on a sale (the old
+  laptop comes into stock, its value is paid onto the sale) and print its
+  buyback slip (2026-11-23). The **Trade-ins list** itself is the separate
+  `trade_ins` view grant (it shows buyback prices); undoing a trade-in is
+  owner-only. The trade-in value is a cost: the Stock list's `unit_price` and
+  `vendor_name` for that unit stay redacted for employees as before, and the
+  serial lookup never returns it.
 
 **3. A "Can edit" checkbox (Settings → Users).** Enforced for these only:
 

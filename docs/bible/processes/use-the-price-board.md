@@ -31,7 +31,7 @@ sources:
   - apps/erp/app/api/sku-master/[id]/route.ts
   - supabase/migrations/20261020_price_board.sql
   - supabase/migrations/20261021_competitor_matrix.sql
-updated: 2026-10-16
+updated: 2026-11-23
 ---
 
 ## What this is
@@ -129,6 +129,10 @@ owner when any published laptop/desktop has a unit older than the aging limit:
 - **Competitor site not readable** — a site behind a bot check, or with no
   price list or price markup, cannot be read; keep its prices in the Price
   Cockpit by hand.
+
+- **A traded-in unit's cost** is the value given for it on the trade-in, not
+  its original purchase price (2026-11-23, see **take-a-trade-in**); the
+  average cost and margin use that.
 
 See also **use-the-price-cockpit** (single-SKU workbench, now at
 `/dashboard/pricing/cockpit`) and **publish-a-sku-to-website**.
