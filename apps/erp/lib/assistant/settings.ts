@@ -38,7 +38,12 @@ export const WRITE_SKILLS = [
   { key: 'replacement', label: 'Replacement jobs', hint: 'Open replacement jobs (a unit goes out).' },
   { key: 'customer', label: 'New customers', hint: 'Create a customer when one doesn’t exist yet.' },
   { key: 'learn', label: 'Learn by herself', hint: 'Offer to remember your preferences from conversations (always asks first).' },
+  { key: 'stock_in', label: 'Stock in', hint: 'Enter laptops/desktops you received (by serial number, read back to you) and accessories received (by quantity, with vendor and price).' },
 ] as const
+// The skills that existed before "new skills start on" (2026-11-23). A skill
+// added later is on for the owner until he saves "What DB can do" with it off
+// (skills_offered records what he has seen there).
+const SKILLS_BEFORE_2026_11_23 = ['pi', 'expense', 'sale', 'repair', 'replacement', 'customer', 'learn']
 export type WriteSkill = typeof WRITE_SKILLS[number]['key']
 export const ALL_WRITE_SKILLS = WRITE_SKILLS.map((s) => s.key) as WriteSkill[]
 export type Tone = typeof TONES[number]
@@ -72,6 +77,8 @@ export interface AssistantSettings {
   wake_reply: string // what she says when woken by the wake word
   reply_length: ReplyLength
   write_skills: WriteSkill[]
+  // Write skills that existed when the owner last saved "What DB can do".
+  skills_offered?: string[]
   // Blanket expense access: DB may record your owner-only (private) expense
   // types and create / merge expense categories -- always via her confirm card.
   expense_full_access: boolean
@@ -144,7 +151,11 @@ export async function getAssistantSettings(): Promise<AssistantSettings> {
   const { data } = await supabaseAdmin.from('app_settings').select('value').eq('key', KEY).maybeSingle()
   let stored: Partial<AssistantSettings> = {}
   try { stored = data?.value ? JSON.parse(data.value) : {} } catch { stored = {} }
-  return { ...DEFAULT_SETTINGS, ...stored, appearance: cleanAppearance(stored.appearance) }
+  const merged: AssistantSettings = { ...DEFAULT_SETTINGS, ...stored, appearance: cleanAppearance(stored.appearance) }
+  const offered = stored.skills_offered ?? SKILLS_BEFORE_2026_11_23
+  const fresh = ALL_WRITE_SKILLS.filter((k) => !offered.includes(k) && !merged.write_skills.includes(k))
+  if (fresh.length) merged.write_skills = [...merged.write_skills, ...fresh]
+  return merged
 }
 
 export async function saveAssistantSettings(patch: Partial<AssistantSettings>, by: string): Promise<AssistantSettings> {

@@ -97,7 +97,10 @@ export async function PUT(req: NextRequest) {
   if (body.appearance && typeof body.appearance === 'object') patch.appearance = cleanAppearance(body.appearance)
   if (typeof body.call_me === 'string') patch.call_me = body.call_me.replace(/[^\p{L}\p{N} .'-]/gu, '').trim().slice(0, 30) || 'Boss'
   if (typeof body.wake_reply === 'string') patch.wake_reply = body.wake_reply.replace(/\s+/g, ' ').trim().slice(0, 60)
-  if (Array.isArray(body.write_skills)) patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]
+  if (Array.isArray(body.write_skills)) {
+    patch.write_skills = ALL_WRITE_SKILLS.filter((k) => body.write_skills.includes(k)) as WriteSkill[]
+    patch.skills_offered = [...ALL_WRITE_SKILLS] // he has now seen every skill; a later one starts on again
+  }
   if (VOICE_GATES.includes(body.voice_gate)) patch.voice_gate = body.voice_gate
   if (typeof body.expense_full_access === 'boolean') patch.expense_full_access = body.expense_full_access
   if (typeof body.instant_replies === 'boolean') patch.instant_replies = body.instant_replies

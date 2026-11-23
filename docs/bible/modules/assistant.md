@@ -4,7 +4,7 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
@@ -41,6 +41,7 @@ sources:
   - apps/erp/lib/assistant/approval.ts
   - apps/erp/lib/assistant/permissions.ts
   - apps/erp/app/api/assistant/avatar/route.ts
+  - apps/erp/lib/assistant/stock-in.ts
 updated: 2026-11-22
 ---
 
@@ -53,8 +54,9 @@ staff member would — price, GST included or not, free bag and mouse, which ent
 then shows a card with what she is about to save. Nothing is saved until you say yes
 or tap **Confirm**.
 
-She can make **PIs and quotations**, record **expenses**, enter **sales**, and open
-**repair** and **replacement** jobs. After a PI she prepares a WhatsApp message with a
+She can make **PIs and quotations**, record **expenses**, enter **sales**, open
+**repair** and **replacement** jobs, and do **stock in** — laptops/desktops by serial
+number and accessories by quantity (see Stock in below). After a PI she prepares a WhatsApp message with a
 PDF link (valid 7 days); you tap the button to send it. She never sends anything
 herself.
 
@@ -171,6 +173,30 @@ panel then offers **Wake DB up** (not for a deactivated DB — undo that in User
 
 Owner-only expense types (Salaries etc.) she records only with *Full expense access*
 on (see Expenses: full access above).
+
+## Stock in
+
+The same two doors staff use, through her own login (skill *Stock in* in What DB can do;
+a newly added skill starts switched on until you save that section with it off).
+- **Laptops, desktops, monitors, tablets** — like New Entry / Live Stock → New entry
+  (`/api/stock-intake`): "Do Latitude 5490 aaye hain…". She finds the model in the
+  catalogue (or, for a model not in it, asks for the category's required fields — CPU, RAM
+  for a laptop — and warns if similar models exist), asks for each serial number, who
+  bought it (Digitalbluez / Techtenth / Cash / Other), condition, and any charger or bag
+  that came with each unit. Units go live as **QC pending** with no cost, vendor or asset
+  number, entered by DB; you attach the PO later as usual. One call per serial; if one is
+  refused the others still save and she tells you which.
+- **Accessories** — like Accessories → Receive stock (`/api/sku-master/[id]/stock-movement`,
+  a `receipt`): quantity, and if you say them vendor (matched to an existing vendor; she
+  asks if several match), total price, GST %, purchase date, payment account. She warns if
+  the price per piece is far from the last receipts.
+
+**Serial numbers are spelled back.** Speech recognition mixes up B/D/P, 0/O and 8/H, so
+the card shows every serial and its spelling ("5 C D zero letter-O one X") and she reads
+each one out character by character before you confirm; a serial with a letter O or I
+next to digits, an odd length, or other characters is flagged. A serial already in the
+ERP, or the same one twice, is refused before any card. You can always type serials into
+her chat instead of saying them.
 
 ## Opening pages for you
 

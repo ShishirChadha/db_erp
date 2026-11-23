@@ -15,6 +15,7 @@ import {
 } from './data'
 import { shareSalesDocument } from './share'
 import { TAP_ONLY_KINDS } from './approval'
+import { prepareStockIn, prepareAccessoryIn, STOCK_TYPES, BUYERS, PAY_ACCOUNTS } from './stock-in'
 import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
@@ -159,6 +160,34 @@ const S = {
   find_unit_by_serial: z.object({ serial_number: z.string() }),
   price_context: z.object({ sku_id: z.string(), customer_id: z.string().nullish() }),
   get_options: z.object({}),
+  propose_stock_in: z.object({
+    sku_id: z.string().nullish().describe('The model from find_products (tracked_per_unit: true). Leave out only for a model not in the catalogue, and give new_model instead.'),
+    new_model: z.object({
+      type: z.enum(STOCK_TYPES),
+      brand: z.string().min(1),
+      model: z.string().min(1),
+      specs: z.record(z.string(), z.string()).nullish().describe('Other spec fields by name as on the New Entry form, e.g. cpu, generation, ram, ssd, screen_size.'),
+    }).nullish(),
+    units: z.array(z.object({
+      serial_number: z.string().min(3).max(40).describe('Exactly as he said or typed it -- never guessed or completed.'),
+      condition_notes: z.string().max(300).nullish(),
+    })).min(1).max(20).describe('One per physical unit.'),
+    purchased_by: z.enum(BUYERS),
+    condition_notes: z.string().max(300).nullish().describe('Applies to every unit unless a unit has its own.'),
+    received_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish().describe('YYYY-MM-DD; default today.'),
+    bundled_accessories: z.array(z.object({ accessory_id: z.string(), quantity: z.number().int().min(1).max(10) })).max(5).nullish()
+      .describe('Accessories that came with EACH unit (charger, bag), from find_products (tracked_per_unit: false); their stock goes up too.'),
+  }),
+  propose_accessory_in: z.object({
+    sku_id: z.string().describe('The accessory from find_products (tracked_per_unit: false).'),
+    quantity: z.number().int().min(1).max(5000),
+    total_price: z.number().min(0).nullish().describe('Total paid for all of them, as on the Receive stock form.'),
+    gst_percentage: z.number().min(0).max(28).nullish(),
+    vendor: z.string().max(120).nullish().describe('Vendor name as he said it.'),
+    purchase_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullish().describe('YYYY-MM-DD; default today.'),
+    payment_account: z.enum(PAY_ACCOUNTS).nullish(),
+    notes: z.string().max(200).nullish(),
+  }),
   open_page: z.object({
     page: z.enum(Object.keys(PAGES) as [PageKey, ...PageKey[]]),
     search: z.string().max(80).nullish().describe('Pre-fills the page search box (list pages that have one): a name, phone, model, serial, number.'),
@@ -309,6 +338,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   find_unit_by_serial: 'Look up one unit by its serial number.',
   price_context: 'Price history for a SKU: what this customer was quoted/charged before, recent sale prices, list price, cost. Call this BEFORE suggesting or accepting a price.',
   get_options: 'Staff names, expense types, payment accounts and billing entities.',
+  propose_stock_in: 'Stock in laptops / desktops / monitors / tablets he received (the New Entry form). Find the model with find_products first. Ask only for what is missing: each serial number (he may say or type it -- if it was fast or unclear, ask him to repeat it slowly or type it; never guess or complete one), who bought it (Digitalbluez, Techtenth, Cash, Other), condition if any, and any charger/bag that came with each unit. Units go live as QC pending without cost or asset number. Then read every serial back character by character and get his yes.',
+  propose_accessory_in: 'Accessories he received, counted by quantity (the Accessories "Receive stock" form): which accessory (find_products), how many, and -- if he says them -- vendor, total price, GST %, purchase date, payment account.',
   open_page: 'Open an ERP page on his screen so he can work on it himself -- "Sales Ledger kholo", "Ramesh ka customer dikhao", "PI 245 kholo", "stock mein 840 G6 dikhao". Saves nothing, needs no confirmation. Use search to pre-fill a list page\'s search box, or record to open one PI/quotation, invoice, PO, rental or stock unit by its number. Afterwards say one short line (e.g. "Khol diya"); she stops listening so he can work.',
   find_recent_documents: 'The customer\'s latest PIs and quotations (number, date, total), newest first.',
   recall_notes: 'Notes the owner asked you to remember (general, or about one customer).',
@@ -348,6 +379,7 @@ const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
   propose_sales_document: 'pi', share_document_on_whatsapp: 'pi', find_recent_documents: 'pi',
   propose_expense: 'expense', propose_merge_expense_types: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
   propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
+  propose_stock_in: 'stock_in', propose_accessory_in: 'stock_in',
 }
 
 const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
@@ -399,6 +431,17 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       case 'find_unit_by_serial': return { result: await findUnitBySerial(input.serial_number) }
       case 'price_context': return { result: await priceContext(input.sku_id, input.customer_id) }
       case 'get_options': return { result: await getOptions() }
+      case 'propose_stock_in': {
+        const prep = await prepareStockIn(input, istToday())
+        if (!prep.ok) return { result: prep.result, isError: prep.isError }
+        const out = park('stock_intake', prep.body, prep.title, prep.summary, prep.warnings, ctx)
+        return { ...out, result: { ...(out.result as object), ...prep.extra } }
+      }
+      case 'propose_accessory_in': {
+        const prep = await prepareAccessoryIn(input, istToday())
+        if (!prep.ok) return { result: prep.result, isError: prep.isError }
+        return park('accessory_receipt', prep.body, prep.title, prep.summary, prep.warnings, ctx)
+      }
       case 'open_page': return await openPage(input)
       case 'find_recent_documents': {
         const { data } = await supabaseAdmin.from('sales_documents')
@@ -760,7 +803,30 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
   }
 
   const token = await getDbAccessToken(ctx.db.profileId)
-  const res = await callRouteAsDb(p.kind, p.body, { token, sessionId: ctx.db.sessionId })
+
+  // Stock in: the New Entry route takes one serial per call.
+  if (p.kind === 'stock_intake') {
+    const { units, ...common } = p.body as { units: { serial_number: string; condition_notes: string | null }[]; condition_notes?: string | null }
+    const saved: string[] = []
+    const failed: string[] = []
+    for (const u of units) {
+      const r = await callRouteAsDb('stock_intake', { ...common, serial_number: u.serial_number, condition_notes: u.condition_notes || common.condition_notes || null }, { token, sessionId: ctx.db.sessionId })
+      if (r.ok) saved.push(u.serial_number)
+      else failed.push(`${u.serial_number}: ${r.data?.error || `error ${r.status}`}`)
+    }
+    if (!saved.length) return { result: `Nothing was saved -- the ERP refused: ${failed.join('; ')}. Tell him plainly.`, isError: true }
+    return {
+      result: { saved: true, units_saved: saved, failed, next: failed.length ? 'Tell him which serials were not saved and why.' : undefined },
+      pending: null,
+      card: {
+        type: 'done',
+        title: `${saved.length} unit${saved.length > 1 ? 's' : ''} in stock (QC pending)`,
+        detail: [`Saved: ${saved.join(', ')}`, ...(failed.length ? [`Not saved: ${failed.join('; ')}`] : [])].join('\n'),
+      },
+    }
+  }
+
+  const res = await callRouteAsDb(p.kind, p.body, { token, sessionId: ctx.db.sessionId }, p.kind === 'accessory_receipt' ? { id: p.body.sku_id } : {})
   if (!res.ok) {
     return { result: `The ERP refused it (${res.status}): ${res.data?.error || 'unknown error'}. Nothing was saved. Tell the owner plainly and ask how to fix it.`, isError: true }
   }
@@ -771,6 +837,8 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     sale: 'Sale recorded',
     repair_job: `Repair job ${d.job_number || ''} opened`,
     replacement_job: `Replacement ${d.job_number || ''} recorded`,
+    stock_intake: 'Stock entered',
+    accessory_receipt: 'Accessories received',
   }
   return {
     result: { saved: true, ...pickIds(d), next: p.kind === 'sales_document' ? 'Offer to share it on WhatsApp (share_document_on_whatsapp).' : undefined },

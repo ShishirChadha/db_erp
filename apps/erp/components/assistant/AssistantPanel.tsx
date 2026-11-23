@@ -45,6 +45,8 @@ const THREAD_KEY = 'db_assistant_thread'
 const STATUS_WORDS: Record<string, string> = {
   find_customer: 'Customer dekh rahi hoon…',
   open_page: 'Page khol rahi hoon…',
+  propose_stock_in: 'Stock entry bana rahi hoon…',
+  propose_accessory_in: 'Accessories entry bana rahi hoon…',
   find_products: 'Stock check kar rahi hoon…',
   find_sellable_units: 'Units dekh rahi hoon…',
   find_unit_by_serial: 'Serial dhoondh rahi hoon…',

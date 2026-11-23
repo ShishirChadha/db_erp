@@ -16,6 +16,7 @@ const LENGTH_RULES = {
 const SKILL_NAMES: Record<string, string> = {
   pi: 'PIs and quotations', expense: 'expenses', sale: 'sales entry', repair: 'repair jobs',
   replacement: 'replacement jobs', customer: 'creating customers', learn: 'offering to remember preferences',
+  stock_in: 'stock in (laptops/desktops received and accessories received)',
 }
 
 export function assistantSystemPrompt(
