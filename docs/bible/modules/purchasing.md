@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/purchase-orders/**
   - apps/erp/app/api/purchase-invoices/**
   - apps/erp/lib/purchase-utils.ts
-updated: 2026-11-17
+updated: 2026-11-23
 ---
 
 ## What this covers
@@ -54,6 +54,17 @@ a legacy pipeline kept read-visible for historical data, not the active flow.
   GST input credit tracking lives. Once generated, an
   invoice is a frozen snapshot — a later PO correction never retroactively
   updates it (**po-corrections**' already-invoiced guard).
+
+## Trade-ins are purchases from a customer, without a PO (2026-11-23)
+
+A laptop taken from a customer in part-payment is bought without a vendor or
+PO: the value is its cost (`asset_ledger.trade_in_value`), recorded on the
+`trade_ins` row rather than a `purchase_orders` row. A laptop new to us
+(`from_trade_in`) is refused by `from-intake`/`attach-units`, since no vendor
+PO will ever exist. A laptop we sold and took back keeps needing its original
+purchase PO as usual: that PO's price is `cost_price` for its first sale, and
+it never overwrites the trade-in value used for the next one. See
+**take-a-trade-in**.
 
 ## Related
 

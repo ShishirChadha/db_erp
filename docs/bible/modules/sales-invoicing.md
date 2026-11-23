@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/invoices/**
   - apps/erp/lib/sales-entry.ts
   - apps/erp/lib/invoice-finalize.ts
-updated: 2026-11-13
+updated: 2026-11-23
 ---
 
 ## What this covers
@@ -74,6 +74,17 @@ Moving an invoiced sale to a different customer is the one path that re-snapshot
 invoice's customer: Edit Sale asks whether to move the invoice too, allowed only once
 every sale on it has the new customer (owner, month not filed or locked). See
 **edit-or-correct-a-sale**.
+
+## Trade-ins are payments, not sales (2026-11-23)
+
+When a customer gives back their old laptop towards a new one (an upgrade), the
+new laptop is a normal sale at its full price and the old laptop's value is a
+`sale_payments` row on the non-cash account **Trade-in**, so the sale shows paid
+while only the difference reached a bank. The old laptop's own sale is never
+voided. That payment row is locked (edit/delete refused) and a sale carrying a
+trade-in can't be voided until the owner undoes the trade-in. The Sell form's
+response now also returns each saved sale's total and amount paid, used to
+offer the trade-in straight after the sale. See **take-a-trade-in**.
 
 ## Related
 

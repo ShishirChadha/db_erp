@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/sku-master/**
   - apps/erp/app/api/stock/**
   - apps/erp/lib/sku-categories.ts
-updated: 2026-10-16
+updated: 2026-11-23
 ---
 
 ## What this covers
@@ -73,6 +73,16 @@ A SKU's `web_slug` is part of its public product URL. Editing it on a **publishe
 edit, the Website dialog, the Price Cockpit and the Price Board all go through
 `PUT /api/sku-master/[id]`'s validation). Repricing many SKUs is done on the
 Price Board; see **use-the-price-board**.
+
+## A traded-in unit's cost (2026-11-23)
+
+`cost_price` is what we paid the vendor. A unit taken back from a customer as
+a trade-in carries its current cost in `asset_ledger.trade_in_value` (with
+`traded_in_at`), and every current-cost reader prefers it through `unitCost()`
+in `lib/pricing-board.ts`: the Stock API's `unit_price` (still redacted for
+employees), the unit page, the Price Board's averages, and DB's lookups. The
+Stock API shows its source as "Customer trade-in" and no longer returns voided
+sales on the Sold tab. See **take-a-trade-in**.
 
 ## Related
 

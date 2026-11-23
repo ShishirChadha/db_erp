@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-10-01
+updated: 2026-11-23
 ---
 
 ## What this covers
@@ -57,6 +57,17 @@ the **On Rent** filter — out of the sellable pool, never invisible.
 When the unit comes back it re-enters this module at `qc_pending` with
 `qc_status = 'pending'`, exactly like a customer return, so it is re-checked before it
 can be sold or rented again. See **rentals**.
+
+## Back from a trade-in (2026-11-23)
+
+A laptop a customer gives us in part-payment on an upgrade re-enters the
+lifecycle at **QC pending**: a unit we sold before moves back from `sold` on
+its existing row; one new to us gets a new `employee_intake` row with
+`from_trade_in`. The Stock list marks it "Trade-in". Because such a unit can be
+sold twice, it can have two live sales; every "this unit's sale" lookup (unit
+page, force-delete, SKU reassignment, the Stock Sold tab) takes the newest.
+Force-delete still refuses a unit with a live sale, and a trade-in's record
+keeps a traded-in unit from being hard-deleted. See **take-a-trade-in**.
 
 ## Related
 
