@@ -12,7 +12,7 @@ sources:
   - apps/erp/components/StockView.tsx
   - apps/erp/app/api/purchase-orders/route.ts
   - apps/erp/app/api/purchase-orders/from-intake/route.ts
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What this is
@@ -77,6 +77,12 @@ to Purchase Orders at all.
    per distinct SKU (not per unit) — the same forward/reverse Unit
    Price↔Line Total calculation as the normal wizard.
 5. Submit. This calls `POST /api/purchase-orders/from-intake`.
+
+Units stocked in through **Auto Check** (the button next to **+ New Stock
+Intake** on the Current tab, 2026-11-23) land on the same Current tab as
+ordinary QC'd intake units, with no cost or asset number, and are attached to a
+PO this same way — Auto Check saves through the unchanged stock-intake route,
+so nothing about the PO flow differs for them (**auto-check**).
 
 ### How it differs from the normal wizard
 

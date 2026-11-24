@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -113,6 +113,19 @@ vendor purchase cost), and the value settles part of the new sale as a
 back is the new sale's entity. A replacement job is only for a faulty unit
 swapped under warranty, where what was paid carries over. See
 **take-a-trade-in**.
+
+## Auto Check: the laptop never logs in, and nothing is pre-passed (2026-11-23)
+
+The laptop being checked is identified only by a 6-letter code, and that code
+can write only into its own `qc_agent_sessions` row (service-role only) —
+`/q/[code]`, `/qc-test/[code]` and `/api/qc-agent/[code]/*` are the ERP's only
+no-login write routes, and they never touch stock, SKUs or QC. Those are
+written by the engineer's logged-in save through the unchanged
+`/api/stock-intake` and `/api/asset-ledger/[id]/qc`. A warning, an unknown
+(a check that couldn't run) or an unanswered guided check blocks the save, and
+a hard fail passes only with a written reason. An existing SKU is matched on
+price-relevant fields, never on every detected spec (exact matching would mint
+duplicates). See **auto-check**.
 
 ## API-layer role enforcement, not RLS, not middleware
 
