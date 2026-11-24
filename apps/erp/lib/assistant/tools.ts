@@ -718,7 +718,14 @@ async function proposeSale(input: z.infer<typeof S.propose_sale>, ctx: ToolConte
       const { data: unitSku } = await supabaseAdmin.from('sku_master').select('sku_description').eq('id', unit.current_sku_id || unit.sku_id).maybeSingle()
       const desc = unitSku?.sku_description || 'unit'
       items.push({ asset_ledger_id: unit.id, sale_base_price: base, bundled_accessories: bundled })
-      summary.push(`${desc}, serial ${unit.serial_number} @ ${money(base)}${gstPct ? ' + GST' : ''}${bundled.length ? ` + ${bundled.length} free accessory` : ''}`)
+      // Name every free accessory on the card (2026-11-24: "+ 2 free accessory"
+      // hid a Type-C charger going out where a USB-A one was meant).
+      let freeLine = ''
+      if (bundled.length) {
+        const { data: accs } = await supabaseAdmin.from('sku_master').select('id, sku_description').in('id', bundled.map((b) => b.accessory_id))
+        freeLine = ` + free: ${bundled.map((b) => `${b.quantity > 1 ? `${b.quantity} × ` : ''}${(accs?.find((a) => a.id === b.accessory_id)?.sku_description || 'accessory').replace(/\s+/g, ' ').trim()}`).join(', ')}`
+      }
+      summary.push(`${desc}, serial ${unit.serial_number} @ ${money(base)}${gstPct ? ' + GST' : ''}${freeLine}`)
       if (base > 0) warnings.push(...await priceChecks(unit.current_sku_id || unit.sku_id, customer.id, base))
     } else if (it.accessory_sku_id) {
       const qty = it.quantity ?? 1

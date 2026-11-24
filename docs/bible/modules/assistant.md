@@ -77,6 +77,11 @@ Since then:
   instead of asking for a mobile number. Products: "type c" = Type-C, "65 watt" = 65w,
   charger = adapter, bag = backpack, then typo-tolerant ("quantum wireless" = "Quantrum
   Wirless"); laptops and in-stock items come first (`lib/assistant/data.ts`).
+  "Charger"/"adapter" also match every SKU whose code has `-ADP-`, because most chargers
+  are named only "Lenovo USB-A 65W" / "Dell Patli Pin 65W" (until 24 Nov a "lenovo
+  charger" search never saw the USB-A one); "type V/si" = Type-C, "usb a" = USB-A. When
+  several kinds fit she asks "USB-A wala ya Type-C?" instead of picking, and the sale
+  card names every free accessory instead of "+ 2 free accessory".
 - **One short question at a time**, about 20 words at most per reply. She never asks
   about optional extras (free bag, mouse, charger) unless you mention them or a learning
   tells her to (your "ask me about charger on every laptop sale" learning still applies).

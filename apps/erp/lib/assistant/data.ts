@@ -93,14 +93,18 @@ export async function findCustomers(query: string) {
 // word may match one of its everyday synonyms (charger = adapter). If every
 // word can't match, it tries again without the 1-2 letter fragments.
 const PRODUCT_SYNONYMS: Record<string, string[]> = {
-  charger: ['charger', 'adapter', 'adaptor'], adapter: ['adapter', 'adaptor', 'charger'], adaptor: ['adaptor', 'adapter', 'charger'],
+  // Most chargers are named just "Lenovo USB-A 65W" / "Dell Patli Pin 65W": the
+  // -ADP- in their SKU code (category ADP) is what marks them as chargers.
+  charger: ['charger', 'adapter', 'adaptor', '-adp-'], adapter: ['adapter', 'adaptor', 'charger', '-adp-'], adaptor: ['adaptor', 'adapter', 'charger', '-adp-'],
+  chargers: ['charger', 'adapter', 'adaptor', '-adp-'], adapters: ['adapter', 'adaptor', 'charger', '-adp-'],
   bag: ['bag', 'backpack', 'sleeve'], backpack: ['backpack', 'bag'], mouse: ['mouse', 'mice'],
   ram: ['ram', 'memory'], ssd: ['ssd', 'nvme', 'storage'], nvme: ['nvme', 'ssd'], hdd: ['hdd', 'hard disk', 'harddisk'],
   monitor: ['monitor', 'display'], keyboard: ['keyboard', 'keypad'],
 }
 function productWords(query: string) {
   return ilikeSafe(query).toLowerCase()
-    .replace(/\b(type|usb)[\s-]*c\b/g, 'type-c')
+    .replace(/\b(type|usb)[\s-]*(c|v|si|see|sea|ce)\b/g, 'type-c')
+    .replace(/\busb[\s-]*a\b/g, 'usb-a')
     .replace(/\b(\d+)\s*(watt|watts|w)\b/g, '$1w')
     .split(/\s+/).filter(Boolean).slice(0, 6)
 }
@@ -108,6 +112,8 @@ function productWords(query: string) {
 function productAlternatives(w: string) {
   if (PRODUCT_SYNONYMS[w]) return PRODUCT_SYNONYMS[w]
   if (w === 'type-c') return ['type-c', 'type c', 'typec', 'usb-c', 'usb c']
+  if (w === 'usb-a') return ['usb-a', 'usb a']
+  if (w === 'patli' || w === 'pin') return [w]
   const watt = w.match(/^(\d+)w$/)
   if (watt) return [`${watt[1]}w`, `${watt[1]} w`, `${watt[1]} watt`]
   return [w]
