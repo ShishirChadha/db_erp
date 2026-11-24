@@ -559,10 +559,13 @@ async function getCustomer(id: string) {
 async function proposeCustomer(input: z.infer<typeof S.propose_customer>, ctx: ToolContext): Promise<ToolOutcome> {
   const phone = input.phone.replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '').replace(/^0(?=\d{10}$)/, '')
   if (phone.length !== 10) return { result: 'Need a 10-digit mobile number.', isError: true }
-  const dup = await checkDuplicateCustomer(supabaseAdmin, { customer_name: input.customer_name, phone })
-  if (dup.blockingMatch) return { result: `A customer with this mobile already exists: "${dup.blockingMatch.customer_name}" (id ${dup.blockingMatch.id}). Use that one.`, isError: true }
   const gst = input.gst_number?.trim().toUpperCase() || ''
-  const warnings = dup.nameWarningMatch ? [`A customer named "${dup.nameWarningMatch.customer_name}" already exists with a different number.`] : []
+  const dup = await checkDuplicateCustomer(supabaseAdmin, { customer_name: input.customer_name, phone, gst_number: gst })
+  if (dup.blockingMatch) return { result: `A customer with this mobile already exists: "${dup.blockingMatch.customer_name}" (id ${dup.blockingMatch.id}). Use that one, or give this company its own GSTIN if it is a separate business.`, isError: true }
+  const warnings = [
+    ...dup.sharedPhoneMatches.map((m) => `This mobile is also used by "${m.customer_name}" (different GSTIN).`),
+    ...(dup.nameWarningMatch ? [`A customer named "${dup.nameWarningMatch.customer_name}" already exists with a different number.`] : []),
+  ]
   const body = {
     customer_name: input.customer_name.trim(), type: input.type, phone, email: input.email?.trim() || '',
     gst_number: gst, has_gst: !!gst, gst_treatment: gst ? 'registered_regular' : input.type === 'Business' ? 'unregistered_business' : 'consumer',
@@ -963,7 +966,7 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
 
   if (p.kind === 'customer') {
     const { data, error } = await supabaseAdmin.from('customers').insert([{ ...p.body, communication_channels: ['whatsapp'] }]).select('id, customer_name').single()
-    if (error) return { result: error.code === '23505' ? 'A customer with this mobile already exists.' : error.message, isError: true }
+    if (error) return { result: error.code === '23505' ? 'A customer with this mobile and GSTIN already exists.' : error.message, isError: true }
     await logAuditEvent({
       actor: { id: ctx.db.profileId, email: `${DB_DISPLAY_NAME} (assistant)`, role: 'manager' },
       actionType: 'create', module: 'customers', tableName: 'customers', recordId: data.id, recordLabel: data.customer_name,

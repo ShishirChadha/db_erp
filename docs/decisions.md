@@ -1257,3 +1257,10 @@ The first real Auto Check run went well; the owner then asked for four things.
 - **Full configuration on the review screen** (Processor, Generation, RAM, SSD, Screen, Graphics… every field of the category's stock-entry form) is now shown even when an existing SKU matched or the unit is already in stock — before, it was hidden behind the match.
 
 Verified: 22-check HTTP script on the dev server (template lists, access split live_stock vs new_entry, target binding, wrong-laptop flag, complete refused for another unit, report replacement 5→40 rows not 45, ready_for_sale kept on pass / faulty on fail, on_rent refused for both start and QC save) plus the original 52-check script; residue re-queried at zero. Backup taken before the migration.
+
+
+## 2026-11-24 — One mobile, several GST companies
+
+**Problem.** `customers_active_phone_unique` allowed one active customer per mobile, but one person can run two GST-registered companies on one number (Cognoverse + Beamstack), and each needs its own customer record for its GSTIN on invoices.
+
+**Decision.** A duplicate is the same mobile **and** the same GSTIN. The index is now `customers_active_phone_gst_unique` on `(btrim(phone), upper(btrim(coalesce(gst_number,''))))`, so two records with no GSTIN on one mobile still clash. "Same mobile, one record with a GSTIN and one without" is also blocked, in `lib/customer-dedupe.ts` only (an index can't compare across rows): that is the usual shape of a real duplicate. Different GSTINs save with a note naming the other company. Phone lookups that assumed one row now handle several: the storefront's `findOrCreateCustomerByPhone` prefers the record without a GSTIN, else the oldest (`.maybeSingle()` would error and create another record); lead conversion links the blocking match as before. Migration `20261124d_customer_phone_gst_unique.sql`.

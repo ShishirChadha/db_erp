@@ -615,18 +615,25 @@ export default function CustomerForm({
     }
 
     const payload = toPayload(v);
-    const { blockingMatch, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
+    const { blockingMatch, sharedPhoneMatches, nameWarningMatch } = await checkDuplicateCustomer(supabase, {
       customer_name: payload.customer_name,
       phone: payload.phone,
+      gst_number: payload.gst_number,
       excludeId: customer?.id,
     });
     if (blockingMatch) {
-      setErrors({ phone: `A customer with this mobile number already exists: "${blockingMatch.customer_name}". Use that customer instead of creating a duplicate.` });
+      setErrors({
+        phone: blockingMatch.gst_number?.trim() && !payload.gst_number?.trim()
+          ? `"${blockingMatch.customer_name}" already uses this mobile number. A second company on the same number needs its own GSTIN.`
+          : `A customer with this mobile number already exists: "${blockingMatch.customer_name}". Use that customer instead of creating a duplicate.`,
+      });
       return;
     }
-    if (nameWarningMatch) {
-      setDuplicateWarning(`Note: a customer named "${nameWarningMatch.customer_name}" already exists with a different mobile number.`);
-    }
+    const notes = [
+      sharedPhoneMatches.length > 0 && `This mobile number is also used by ${sharedPhoneMatches.map((m) => `"${m.customer_name}"`).join(", ")} (different GSTIN).`,
+      nameWarningMatch && `A customer named "${nameWarningMatch.customer_name}" already exists with a different mobile number.`,
+    ].filter(Boolean);
+    if (notes.length) setDuplicateWarning(`Note: ${notes.join(" ")}`);
 
     const query = customer?.id
       ? supabase.from("customers").update(payload).eq("id", customer.id).select().single()
@@ -636,7 +643,7 @@ export default function CustomerForm({
       console.error(error);
       // 23505 = unique_violation -- customers_active_phone_unique catching a race
       // the pre-check above missed (two staff saving the same phone at once).
-      if ((error as any).code === "23505") setErrors({ phone: "A customer with this mobile number already exists." });
+      if ((error as any).code === "23505") setErrors({ phone: "A customer with this mobile number and GSTIN already exists." });
       else alert(error.message || "Failed to save customer.");
       return;
     }

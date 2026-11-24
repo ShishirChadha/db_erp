@@ -16,7 +16,7 @@ sources:
   - apps/web/lib/email.ts
   - apps/erp/app/api/website-admin/**
   - apps/erp/app/api/web-orders/**
-updated: 2026-10-15
+updated: 2026-11-24
 ---
 
 ## The ERP is the single source of truth — the website never gets a copy
@@ -50,7 +50,9 @@ from a server-side `cart_items` row. `orders.customer_id` is nullable;
 checkout. **The CRM `customers` row is created or matched only once payment
 actually succeeds**, in the webhook — never at add-to-cart or checkout —
 reusing the exact phone-dedupe logic `/api/auth/signup` already has
-(`findOrCreateCustomerByPhone`, extracted so neither copy can drift). This
+(`findOrCreateCustomerByPhone`, extracted so neither copy can drift). Since
+2026-11-24 a mobile can belong to several companies with different GSTINs, so
+it links to the record without a GSTIN when there is one, else the oldest. This
 is the direct answer to the reason anonymous Supabase auth is rejected
 elsewhere (`apps/web/lib/guest-cart.ts`): a bot or an abandoned guest
 checkout costs nothing, because nothing is written until money lands. A

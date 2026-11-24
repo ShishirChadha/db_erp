@@ -17,7 +17,7 @@ sources:
   - apps/erp/components/CustomerActivity.tsx
   - apps/erp/components/BulkAddDialog.tsx
   - apps/erp/app/api/customers/[id]/tier/route.ts
-updated: 2026-11-13
+updated: 2026-11-24
 ---
 
 ## What this is
@@ -97,12 +97,19 @@ scrolls sideways.
    - If a non-deleted customer already has this exact **mobile number**, the
      save is **blocked** with an inline error naming the existing customer —
      you're expected to use that customer record instead of creating a new
-     one.
+     one. **Exception (2026-11-24):** two companies run by one person can
+     share a mobile when each has its own, different GSTIN (e.g. Cognoverse
+     and Beamstack). Blocked: same mobile + same GSTIN, same mobile with no
+     GSTIN on either side, and same mobile where only one record has a GSTIN
+     (the error then says the second company needs its own GSTIN). Allowed
+     with a note naming the other company: same mobile, different GSTINs.
+     Logic: `lib/customer-dedupe.ts`.
    - If a customer with the same **name** already exists but a different
      mobile number, you get a non-blocking warning and can still save — this
      creates a second, separate customer.
    - A race where two staff save the same new number at the same moment is
-     caught server-side too (the `customers_active_phone_unique` index),
+     caught server-side too (the `customers_active_phone_gst_unique` index on
+     mobile + GSTIN, blank GSTIN counting as one value),
      surfacing the same blocking message.
 
 Required fields are enforced by the form only — the table columns stay
@@ -184,7 +191,7 @@ selling-side columns only, no cost/vendor/margin):
     row — **there is no duplicate-phone check on this path** (unlike the
     single Add Customer form), so a CSV containing a phone number that
     already exists in the table will only fail if it collides with the
-    `customers_active_phone_unique` index, and a batch failure aborts the
+    `customers_active_phone_gst_unique` index (mobile + GSTIN), and a batch failure aborts the
     whole insert rather than reporting per-row.
 
 ## Common mix-ups

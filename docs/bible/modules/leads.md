@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/dashboard/leads/**
   - apps/erp/lib/leads.ts
   - apps/erp/components/BulkImportDialog.tsx
-updated: 2026-11-13
+updated: 2026-11-24
 ---
 
 ## What this covers
@@ -190,7 +190,7 @@ exact-match lookup), always shows an editable mapping + preview before import, a
 POSTs the mapped rows to `POST /api/lead-sets`.
 
 Duplicate phone numbers across *different* Sets are expected and only ever **warn**,
-never block — unlike `customers_active_phone_unique`, a lead is "this phone as it
+never block — unlike `customers_active_phone_gst_unique`, a lead is "this phone as it
 appeared in this particular list," and the same person can legitimately show up in
 both "Golden Data" and "Google Data".
 

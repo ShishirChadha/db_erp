@@ -5,8 +5,8 @@ export interface CustomerMatch {
   reusedExisting: boolean
 }
 
-// The ERP enforces one active customer per phone number
-// (customers_active_phone_unique) -- an existing walk-in/in-store customer
+// The ERP treats a phone number as one customer unless the records carry
+// different GSTINs (customers_active_phone_gst_unique) -- an existing walk-in/in-store customer
 // signing up on the website (or completing a guest order) with the same
 // phone should link to that existing record, reuniting their store + web
 // history, rather than fail because the phone is "already taken" or create
@@ -23,12 +23,18 @@ export async function findOrCreateCustomerByPhone(opts: {
   const trimmedPhone = (opts.phone || '').trim()
 
   if (trimmedPhone) {
-    const { data: existing } = await supabaseAdmin
+    // Several companies can share one mobile (different GSTINs), so this can
+    // match more than one row: prefer the person's own record (no GSTIN), else
+    // the oldest. Never .maybeSingle() here -- it errors on two rows, which
+    // would fall through and create yet another record.
+    const { data: matches } = await supabaseAdmin
       .from('customers')
-      .select('id')
+      .select('id, gst_number')
       .eq('is_deleted', false)
       .eq('phone', trimmedPhone)
-      .maybeSingle()
+      .order('created_at', { ascending: true })
+      .limit(20)
+    const existing = (matches || []).find((m) => !(m.gst_number || '').trim()) || (matches || [])[0]
     if (existing) return { ok: true, match: { customerId: existing.id, reusedExisting: true } }
   }
 
