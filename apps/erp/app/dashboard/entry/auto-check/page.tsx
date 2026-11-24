@@ -37,7 +37,7 @@ interface SessionView {
   status: 'waiting' | 'running' | 'completed'
   expired: boolean
   expires_at: string
-  options: { heat_test?: boolean }
+  options: { heat_test?: boolean; asset_id?: string }
   reported_at: string | null
   script_connected: boolean
   background: { stage: string | null; stage_progress: number | null }
@@ -46,7 +46,7 @@ interface SessionView {
   evaluation: Evaluation | null
 }
 
-interface OpenSession { id: string; code: string; created_at: string; reported_at: string | null; manufacturer: string | null; model: string | null; serial: string | null }
+interface OpenSession { id: string; code: string; created_at: string; reported_at: string | null; manufacturer: string | null; model: string | null; serial: string | null; asset_id: string | null }
 
 const STAGES = [
   { key: 'ram', label: 'RAM test' },
@@ -125,9 +125,17 @@ function AutoCheckPage() {
               Run the 3-minute heat test <span className="text-muted-foreground">(recommended — catches a dried-out fan or paste. Keep the charger plugged in.)</span>
             </span>
           </label>
-          <button type="button" onClick={start} disabled={starting} className="bg-primary text-primary-foreground px-5 py-2 rounded font-medium disabled:opacity-50">
-            {starting && <Loader2 className="inline size-4 animate-spin mr-1" />}Start Auto Check
-          </button>
+          {hasPageAccess('new_entry') ? (
+            <button type="button" onClick={start} disabled={starting} className="bg-primary text-primary-foreground px-5 py-2 rounded font-medium disabled:opacity-50">
+              {starting && <Loader2 className="inline size-4 animate-spin mr-1" />}Start Auto Check
+            </button>
+          ) : (
+            <p className="text-sm text-muted-foreground">Your account can re-test units already in stock: open the unit, then QC &amp; Spec → Auto Test.</p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Checking several laptops at once? Start one check per laptop — each gets its own code. They all appear under &quot;Unfinished checks&quot; below, so you can switch between them.
+            A laptop already in stock can also be re-tested from its own page: QC &amp; Spec → Auto Test.
+          </p>
         </div>
         {openSessions.length > 0 && (
           <div className="rounded-md border bg-card p-4 mt-4">
@@ -139,6 +147,7 @@ function AutoCheckPage() {
                     <span className="text-muted-foreground mr-2">{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                     <span className="font-mono font-semibold">{s.code}</span>{' '}
                     {s.reported_at ? `${s.manufacturer || ''} ${s.model || ''} · ${s.serial || ''}` : <span className="text-muted-foreground">waiting for the laptop</span>}
+                    {s.asset_id && <span className="ml-1 text-xs text-info">(re-test of a stocked unit)</span>}
                   </span>
                   <Link href={`/dashboard/entry/auto-check?s=${s.id}`} className="underline shrink-0">Open</Link>
                 </li>
@@ -159,6 +168,7 @@ function AutoCheckPage() {
         <div className="rounded-md border border-success bg-success/10 p-4 space-y-2">
           <div className="font-semibold">Saved.</div>
           <div className="flex flex-wrap gap-4 text-sm">
+            {view.asset_id && <Link className="underline" href={`/dashboard/stock/${view.asset_id}`}>Open this unit</Link>}
             <Link className="underline" href="/dashboard/live-stock">Go to Live Stock</Link>
             <button type="button" className="underline" onClick={() => { savedRef.current = false; router.replace('/dashboard/entry/auto-check') }}>Check the next laptop</button>
           </div>
@@ -176,24 +186,32 @@ function AutoCheckPage() {
     )
   }
 
-  if (!view.evaluation) return <Shell><WaitingForLaptop view={view} /></Shell>
+  if (!view.evaluation) return <Shell another><WaitingForLaptop view={view} /></Shell>
 
   return (
-    <Shell>
+    <Shell another>
       <Review
         view={view}
         canSaveQc={hasPageAccess(['live_stock', 'stock'])}
+        canStockIn={hasPageAccess('new_entry')}
         onSaved={() => { savedRef.current = true; load() }}
       />
     </Shell>
   )
 }
 
-function Shell({ children }: { children: React.ReactNode }) {
+function Shell({ children, another }: { children: React.ReactNode; another?: boolean }) {
   const router = useRouter()
   return (
     <div className="max-w-2xl mx-auto">
-      <button onClick={() => router.push('/dashboard/entry')} className="text-sm text-muted-foreground hover:text-foreground mb-2">← Back</button>
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={() => router.push('/dashboard/entry')} className="text-sm text-muted-foreground hover:text-foreground">← Back</button>
+        {another && (
+          <Link href="/dashboard/entry/auto-check" target="_blank" className="text-sm underline" title="Opens in a new tab; this check keeps running">
+            + Check another laptop
+          </Link>
+        )}
+      </div>
       <h1 className="text-2xl font-bold mb-1">Auto Check</h1>
       <p className="text-sm text-muted-foreground mb-4">Stock in a laptop or desktop and QC it, with the specs and tests read from the machine itself.</p>
       {children}
@@ -246,7 +264,7 @@ function WaitingForLaptop({ view }: { view: SessionView }) {
 // Review + save
 // ======================================================================
 
-function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: boolean; onSaved: () => void }) {
+function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; canSaveQc: boolean; canStockIn: boolean; onSaved: () => void }) {
   const ev = view.evaluation!
   const { values: typeOptions, addOption: addTypeOption } = useCustomOptions('stock_intake_type')
   const [templates, setTemplates] = useState<any[]>([])
@@ -327,8 +345,10 @@ function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: bo
     : []
 
   const blockers: string[] = []
-  if (!serial.trim()) blockers.push('Serial number is empty')
-  if (existing && !existing.qcable) blockers.push(`This serial is already in the ERP as "${existing.status}" — it can't be stocked in again`)
+  if (!existing && !serial.trim()) blockers.push('Serial number is empty')
+  if (existing && !existing.qcable) blockers.push(`This unit is "${existing.status.replace(/_/g, ' ')}" in the ERP — it isn't with us, so it can't be QC'd or stocked in again`)
+  if (existing?.serial_mismatch) blockers.push(`Wrong laptop: ${existing.serial_mismatch}`)
+  if (!existing && !canStockIn) blockers.push('This laptop is not in the ERP yet, and your account cannot stock in (needs New Entry access)')
   if (missingRequired.length) blockers.push(`Fill in: ${missingRequired.join(', ')}`)
   if (pending.length) blockers.push(`${pending.length} test(s) still running: ${pending.map(({ v }) => v.label).join(', ')}`)
   if (undecided.length) blockers.push(`${undecided.length} check(s) need your answer`)
@@ -418,7 +438,6 @@ function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: bo
   }
 
   const bg = view.background
-  const [showHw, setShowHw] = useState(false)
 
   return (
     <div className="space-y-4">
@@ -478,12 +497,28 @@ function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: bo
         </div>
         {existing && (
           <div className={`rounded border p-3 text-sm ${existing.qcable ? 'border-info bg-info/10' : 'border-destructive bg-destructive/10'}`}>
-            {existing.qcable
-              ? <>This serial is already in stock ({existing.asset_number || 'no asset number yet'}, status <b>{existing.status}</b>). Saving will only record its QC — it won&apos;t be stocked in again.</>
-              : <>This serial is already in the ERP with status <b>{existing.status}</b>. It can&apos;t be stocked in again from here.</>}
+            {existing.serial_mismatch
+              ? <>{existing.serial_mismatch} Run the line on the right laptop, or start a new check for this one.</>
+              : existing.qcable
+                ? <>
+                    {existing.target ? 'Re-testing' : 'This serial is already in stock:'} {existing.asset_number || 'no asset number yet'}, status <b>{existing.status.replace(/_/g, ' ')}</b>.
+                    {' '}Saving <b>replaces its previous QC report</b> with this one — it won&apos;t be stocked in again.
+                    {existing.status === 'ready_for_sale' && ' If every check passes it stays on sale; if any check fails it comes off sale as faulty.'}
+                  </>
+                : <>This serial is already in the ERP with status <b>{existing.status.replace(/_/g, ' ')}</b>. It can&apos;t be QC&apos;d or stocked in again from here.</>}
           </div>
         )}
       </div>
+
+      {/* Full configuration, always shown */}
+      {(existing || usingMatch) && (
+        <div className="rounded-md border bg-card p-4 space-y-2">
+          <div className="text-sm font-semibold">Configuration (read from the machine)</div>
+          <ConfigGrid fields={fields} specs={ev.specs} />
+          {usingMatch && !existing && <p className="text-xs text-muted-foreground">Saved under the matched SKU below. Pick &quot;Not the same&quot; to edit these.</p>}
+          {existing && <HardwareDetails lines={ev.hardware_lines} />}
+        </div>
+      )}
 
       {/* SKU */}
       {!existing && (
@@ -518,10 +553,7 @@ function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: bo
               )}
             </>
           )}
-          <button type="button" onClick={() => setShowHw((s) => !s)} className="text-xs text-muted-foreground flex items-center gap-1">
-            <ChevronDown className={`size-3 transition-transform ${showHw ? 'rotate-180' : ''}`} /> What the machine reported
-          </button>
-          {showHw && <ul className="text-xs text-muted-foreground space-y-0.5">{ev.hardware_lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+          <HardwareDetails lines={ev.hardware_lines} />
         </div>
       )}
 
@@ -616,12 +648,43 @@ function Review({ view, canSaveQc, onSaved }: { view: SessionView; canSaveQc: bo
             className="bg-primary text-primary-foreground px-5 py-2 rounded font-medium disabled:opacity-50"
           >
             {saving && <Loader2 className="inline size-4 animate-spin mr-1" />}
-            {savedAssetId && !existing?.qcable ? 'Retry saving QC' : existing?.qcable ? 'Save QC' : 'Stock in + Save QC'}
+            {savedAssetId && !existing?.qcable ? 'Retry saving QC' : existing?.qcable ? 'Save QC (replaces old report)' : 'Stock in + Save QC'}
           </button>
           <button type="button" title="Refresh" className="text-muted-foreground" onClick={() => location.reload()}><RefreshCw className="size-4" /></button>
         </div>
       </div>
     </div>
+  )
+}
+
+// Every stock-entry field of the category with what the machine reported --
+// Brand, Model, Processor, Generation, RAM, SSD, Screen, Graphics, ...
+function ConfigGrid({ fields, specs }: { fields: any[]; specs: Record<string, any> }) {
+  const show = (v: any) => (v === true ? 'Yes' : v === false ? 'No' : v === undefined || v === null || v === '' ? null : String(v))
+  return (
+    <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-2 text-sm">
+      {fields.map((f: any) => {
+        const v = show(specs[f.name])
+        return (
+          <div key={f.name} className="min-w-0">
+            <dt className="text-xs text-muted-foreground">{f.label}{f.required ? ' *' : ''}</dt>
+            <dd className={`break-words ${v ? 'font-medium' : 'text-muted-foreground'}`}>{v ?? '—'}</dd>
+          </div>
+        )
+      })}
+    </dl>
+  )
+}
+
+function HardwareDetails({ lines }: { lines: string[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      <button type="button" onClick={() => setOpen((s) => !s)} className="text-xs text-muted-foreground flex items-center gap-1">
+        <ChevronDown className={`size-3 transition-transform ${open ? 'rotate-180' : ''}`} /> What the machine reported (details)
+      </button>
+      {open && <ul className="text-xs text-muted-foreground space-y-0.5">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>}
+    </>
   )
 }
 
@@ -633,7 +696,7 @@ function numOrNull(s: string | null | undefined): number | null {
 
 export default function AutoCheckPageGuarded() {
   return (
-    <RequirePageAccess pageKey="new_entry">
+    <RequirePageAccess pageKey={['new_entry', 'live_stock', 'stock']}>
       <AutoCheckPage />
     </RequirePageAccess>
   )

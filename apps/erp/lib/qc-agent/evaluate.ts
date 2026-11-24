@@ -10,7 +10,7 @@ import { normalizeSpecifications } from '@/lib/sku-normalizer'
 import { getCustomOptionsCategory } from '@/lib/sku-field-options'
 import { normalizeForComparison } from '@/lib/text-normalize'
 import { findDuplicateSerial } from '@/lib/duplicate-serial'
-import { COSMETIC_AREAS, COSMETIC_LEVELS, TEMPLATE_SYNONYMS, CHECKS, type DeviceKind } from './checklist'
+import { COSMETIC_AREAS, COSMETIC_LEVELS, TEMPLATE_SYNONYMS, CHECKS, RE_QC_STATUSES, type DeviceKind } from './checklist'
 import { batteryHealth, cleanSerial, deviceKind, detectSpecs, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
 import { evaluateChecks, THRESHOLDS, type Verdict } from './rules'
 import type { BackgroundResults, CosmeticLevel, HardwareReport, InteractiveResults, LiveSnapshot, SessionOptions } from './types'
@@ -56,7 +56,13 @@ export interface Evaluation {
   specs: Record<string, any>
   spec_meta: Record<string, SpecMeta>
   sku_match: SkuMatch | null
-  existing_unit: { id: string; status: string; asset_number: string | null; qcable: boolean } | null
+  existing_unit: {
+    id: string; status: string; asset_number: string | null; qcable: boolean
+    /** The run was started from this unit's QC tab. */
+    target: boolean
+    /** Target unit's recorded serial, when it differs from the machine's -- wrong laptop. */
+    serial_mismatch: string | null
+  } | null
   verdicts: Verdict[]
   battery_health_percent: number | null
   estimated_backup_hours: number | null
@@ -66,7 +72,7 @@ export interface Evaluation {
   hardware_lines: string[]
 }
 
-export const QCABLE_STATUSES = ['qc_pending', 'qc_passed', 'faulty']
+
 
 // ---------- grading ----------
 
@@ -218,6 +224,28 @@ function hardwareLines(r: HardwareReport): string[] {
   return lines
 }
 
+function sameSerial(a: string, b: string): boolean {
+  const n = (x: string) => x.toUpperCase().replace(/[^A-Z0-9]/g, '')
+  return n(a) === n(b)
+}
+
+// "Auto Test" from a unit's page must be run on THAT unit. Returns a reason when
+// the machine is clearly a different one, else null.
+function targetMismatch(
+  target: { id: string; serial_number: string | null },
+  existing: { id: string; asset_number: string | null } | null,
+  serial: string,
+): string | null {
+  if (!serial || isPlaceholderSerial(serial)) return null
+  if (target.serial_number && !sameSerial(target.serial_number, serial)) {
+    return `This machine's serial is ${serial}, but the unit you started from is recorded as ${target.serial_number}.`
+  }
+  if (existing && existing.id !== target.id) {
+    return `This machine (serial ${serial}) is a different unit in the ERP${existing.asset_number ? ` (${existing.asset_number})` : ''}.`
+  }
+  return null
+}
+
 // ---------- entry point ----------
 
 export async function evaluateSession(row: SessionRow): Promise<Evaluation | null> {
@@ -237,6 +265,10 @@ export async function evaluateSession(row: SessionRow): Promise<Evaluation | nul
     canonicalizeSpecs(category, detectSpecs(r), fieldNames),
     findDuplicateSerial(cleanSerial(r.bios?.serial)),
   ])
+  const targetId = row.options?.asset_id
+  const { data: target } = targetId
+    ? await supabaseAdmin.from('asset_ledger').select('id, status, asset_number, serial_number').eq('id', targetId).maybeSingle()
+    : { data: null }
   const skuMatch = await findSkuMatch(category, specs, variantFields).catch(() => null)
 
   const interactive = row.interactive_results || {}
@@ -276,9 +308,15 @@ export async function evaluateSession(row: SessionRow): Promise<Evaluation | nul
     specs,
     spec_meta: meta,
     sku_match: skuMatch,
-    existing_unit: existing
-      ? { id: existing.id, status: existing.status, asset_number: existing.asset_number, qcable: QCABLE_STATUSES.includes(existing.status) }
-      : null,
+    existing_unit: target
+      ? {
+          id: target.id, status: target.status, asset_number: target.asset_number,
+          qcable: RE_QC_STATUSES.includes(target.status), target: true,
+          serial_mismatch: targetMismatch(target, existing, serial),
+        }
+      : existing
+        ? { id: existing.id, status: existing.status, asset_number: existing.asset_number, qcable: RE_QC_STATUSES.includes(existing.status), target: false, serial_mismatch: null }
+        : null,
     verdicts,
     battery_health_percent: pct,
     estimated_backup_hours: row.background_results?.backup?.hours ?? null,

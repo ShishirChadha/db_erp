@@ -146,4 +146,7 @@ export type CosmeticLevel = 'like_new' | 'light' | 'visible' | 'damaged'
 
 export interface SessionOptions {
   heat_test?: boolean
+  /** Set when the run was started from a unit's own QC tab ("Auto Test"):
+   *  the result is saved against this unit only, never stocked in. */
+  asset_id?: string
 }

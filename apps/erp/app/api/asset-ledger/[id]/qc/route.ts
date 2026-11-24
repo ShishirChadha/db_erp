@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { resolveEffectiveSkuId } from '@/lib/effective-sku'
 import { latestPaymentDatesBySaleId } from '@/lib/sale-payment-dates'
+import { RE_QC_STATUSES } from '@/lib/qc-agent/checklist'
 
 // ---------- GET: asset detail + existing QC checklist ----------
 export async function GET(
@@ -186,7 +187,9 @@ export async function PUT(
     .eq('id', id)
     .single()
 
-  if (!asset || !['qc_pending', 'qc_passed', 'faulty'].includes(asset.status)) {
+  // Any unit physically with us can be (re-)QC'd -- a stocked unit re-tested
+  // with Auto Test included. Out on rent / reserved / sold / scrapped cannot.
+  if (!asset || !RE_QC_STATUSES.includes(asset.status)) {
     return NextResponse.json(
       { error: `Cannot QC an asset in '${asset?.status}' status` },
       { status: 400 }
@@ -232,7 +235,9 @@ export async function PUT(
 
   const anyFail = checks.some((c) => c.result === 'fail')
   const qcStatus = anyFail ? 'failed' : 'passed'
-  const newStatus = anyFail ? 'faulty' : 'qc_passed'
+  // A re-QC that passes keeps a unit already on sale on sale; a fail always
+  // takes it off sale (faulty).
+  const newStatus = anyFail ? 'faulty' : asset.status === 'ready_for_sale' ? 'ready_for_sale' : 'qc_passed'
 
   // The compute_warranty_expiry trigger only fires off warranty_start_date +
   // warranty_duration_months -- set a start date (today, if none already on

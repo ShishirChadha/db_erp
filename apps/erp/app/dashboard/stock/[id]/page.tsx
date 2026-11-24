@@ -14,6 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
+import { RE_QC_STATUSES } from '@/lib/qc-agent/checklist'
 
 // Matches the abbreviations used on Sales Ledger / StockView's list rows.
 const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: 'DB', Techtenth: 'TT', Cash: 'CS' }
@@ -395,6 +396,21 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
     }
   }
 
+  // Auto Test: re-run the script-driven QC on this unit; the result replaces its
+  // QC report. The run itself happens on /dashboard/entry/auto-check.
+  const [startingAuto, setStartingAuto] = useState(false)
+  const startAutoTest = async () => {
+    setStartingAuto(true)
+    try {
+      const res = await apiFetch('/api/qc-agent/sessions', { method: 'POST', body: JSON.stringify({ asset_id: assetId, heat_test: true }) })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { alert(body.error || 'Could not start Auto Test'); return }
+      router.push(`/dashboard/entry/auto-check?s=${body.id}`)
+    } finally {
+      setStartingAuto(false)
+    }
+  }
+
   const markReady = async () => {
     setSaving(true)
     try {
@@ -421,6 +437,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
   const showKeyboard = !unitCategory || CATEGORIES_WITH_KEYBOARD.includes(unitCategory)
   const showScreen = !unitCategory || CATEGORIES_WITH_SCREEN.includes(unitCategory)
   const canEditQC = ['qc_pending', 'qc_passed', 'faulty'].includes(asset.status)
+  const canAutoTest = RE_QC_STATUSES.includes(asset.status) && (!unitCategory || ['LAP', 'DES'].includes(unitCategory))
 
   // "Has QC data" -- the same signal fetchAsset()/applyQcFieldsFromAsset() already use
   // to decide whether to pre-fill from recorded checks vs. the default fresh checklist.
@@ -659,6 +676,22 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
 
         {/* ---------- Tab 2: QC & Spec ---------- */}
         <TabsContent value="qc">
+          {canAutoTest && (
+            <div className="border rounded-lg p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
+              <div className="text-sm">
+                <div className="font-semibold">Auto Test</div>
+                <div className="text-muted-foreground">Run the full automatic QC on this unit. The new report replaces the current one.</div>
+              </div>
+              <button
+                type="button"
+                onClick={startAutoTest}
+                disabled={startingAuto}
+                className="bg-primary text-primary-foreground px-4 py-2 rounded text-sm font-medium disabled:opacity-50 flex items-center gap-1"
+              >
+                {startingAuto && <Loader2 className="size-4 animate-spin" />}Auto Test
+              </button>
+            </div>
+          )}
           <div className="border rounded-lg p-4 mb-4">
             {showFullChecklist ? (
               <>
@@ -831,6 +864,21 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
                   )}
                 </div>
                 <p className="text-sm text-muted-foreground">{qcSummaryLine}</p>
+                {asset.qc_notes && <p className="text-xs text-muted-foreground mt-1">{asset.qc_notes}</p>}
+                {/* Every recorded check, so the full Auto Check report is visible here. */}
+                <ul className="mt-3 divide-y text-sm">
+                  {asset.checks.map((c, i) => (
+                    <li key={i} className="py-1.5 flex items-start justify-between gap-3">
+                      <span className="min-w-0">
+                        {c.check_item}
+                        {c.notes && <span className="block text-xs text-muted-foreground break-words">{c.notes}</span>}
+                      </span>
+                      <span className={`shrink-0 text-xs font-medium uppercase ${c.result === 'fail' ? 'text-destructive' : c.result === 'pass' ? 'text-success' : 'text-muted-foreground'}`}>
+                        {c.result === 'na' ? 'N/A' : c.result}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </>
             ) : (
               <p className="text-sm text-muted-foreground">No QC data recorded yet.</p>

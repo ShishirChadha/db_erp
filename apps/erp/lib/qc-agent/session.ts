@@ -13,6 +13,10 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import type { SessionRow } from './evaluate'
 
 export const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789' // no 0/O/1/I
+// Who can open a run at all: new_entry (stock in + QC) or Live Stock / Stock
+// (Auto Test of a unit already in stock). The start route narrows it per kind.
+export const AUTO_CHECK_PAGES = ['new_entry', 'live_stock', 'stock']
+
 export const CODE_TTL_MS = 2 * 60 * 60 * 1000
 export const MAX_BODY_BYTES = 256 * 1024
 

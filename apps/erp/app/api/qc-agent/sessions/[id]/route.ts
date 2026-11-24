@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, hasPageAccess, isManagerOrAbove } from '@/lib/auth/session'
-import { agentCommand, isExpired, SESSION_COLUMNS } from '@/lib/qc-agent/session'
+import { agentCommand, isExpired, SESSION_COLUMNS, AUTO_CHECK_PAGES } from '@/lib/qc-agent/session'
 import { evaluateSession, type SessionRow } from '@/lib/qc-agent/evaluate'
 
 // ---------- GET: progress + everything the review screen needs ----------
@@ -10,7 +10,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
   const { id } = await params
   const user = await getSessionUser(req)
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (!hasPageAccess(user, 'new_entry')) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  if (!hasPageAccess(user, AUTO_CHECK_PAGES)) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const { data, error } = await supabaseAdmin.from('qc_agent_sessions').select(SESSION_COLUMNS).eq('id', id).maybeSingle()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

@@ -415,7 +415,7 @@ Live schema snapshot -- 149 tables. Regenerate with `npm run bible:generate`.
 
 ## asset_qc_checks
 
-~4,156 rows (estimate)
+~4,354 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2027,7 +2027,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## qc_agent_sessions
 
-~0 rows (estimate)
+~2 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

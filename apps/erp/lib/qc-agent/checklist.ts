@@ -92,6 +92,11 @@ export const CHECKS: CheckDef[] = [
   { key: 'phys_screws', label: 'All screws & rubber feet present', area: 'Physical', kind: 'guided' },
 ]
 
+// Units that are physically with us and can be re-QC'd. A fresh QC replaces the
+// unit's previous checklist (PUT /api/asset-ledger/[id]/qc deletes the old rows).
+// Out on rent / reserved for a web order / sold / scrapped are not in our hands.
+export const RE_QC_STATUSES = ['received', 'in_stock', 'qc_pending', 'qc_passed', 'ready_for_sale', 'faulty', 'rma_returned']
+
 export const CHECK_BY_KEY: Record<string, CheckDef> = Object.fromEntries(CHECKS.map((c) => [c.key, c]))
 
 export function checksFor(device: DeviceKind): CheckDef[] {

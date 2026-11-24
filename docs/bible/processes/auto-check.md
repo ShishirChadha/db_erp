@@ -13,7 +13,7 @@ sources:
   - apps/erp/app/api/qc-agent/**
   - apps/erp/lib/qc-agent/**
   - apps/erp/components/qc-agent/**
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What this is
@@ -75,9 +75,34 @@ webcam, OS) than most existing SKUs have, so every unit would otherwise mint a
 duplicate SKU. Detected values that aren't in the dropdown lists yet (a new model
 name, say) are added to them on save.
 
-A serial already in the ERP is recognised. If that unit is QC pending, QC passed
-or faulty, the save only records QC. Any other status (sold, on rent, …) is
-refused.
+The review screen always shows the full configuration read from the machine
+(Brand, Model, Processor, Generation, RAM, SSD, Screen size, Graphics and the
+rest of the category's stock-entry fields, required ones starred) — editable
+when a new SKU will be created, read-only when an existing SKU or unit is used.
+
+A serial already in the ERP is recognised, and the save then **only replaces
+that unit's QC report** — no second stock-in. This works for any unit that is
+with us (received, in stock, QC pending/passed, ready for sale, faulty, back
+from RMA). Sold, on rent, reserved for a web order or scrapped is refused. A
+ready-for-sale unit that passes stays on sale; a failed check makes it faulty.
+
+## Auto Test from a unit's page
+
+**QC & Spec → Auto Test** on a laptop/desktop's detail page starts a run bound
+to that unit (`qc_agent_sessions.options.asset_id`). It needs Live Stock or
+Stock access (the QC route's grant), not New Entry. If the machine's serial is
+not the unit's recorded serial — or belongs to another unit — the review
+screen blocks the save as **wrong laptop**, and the run can't be closed
+against a different unit.
+
+## Several laptops at once
+
+Start one check per laptop; each gets its own code and runs independently
+(RAM, heat and disk tests run on each laptop by itself). While one is open,
+**+ Check another laptop** opens a new tab for the next code. Every open run
+is listed under **Unfinished checks** on the Auto Check start screen (yours;
+managers and the owner see everyone's), so the engineer can hop between
+laptops and save each when its tests finish. Codes last 2 hours.
 
 ## What gets saved where
 
