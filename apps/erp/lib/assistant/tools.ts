@@ -77,6 +77,12 @@ export type AssistantCard =
   | { type: 'open'; href: string; label: string }
 
 const money = (n: number) => `₹${Math.round(n * 100) / 100}`
+// An accessory on a card: its full catalogue name and SKU code, so the exact
+// item is unmistakable ("Lenovo USB-A 65W (SKU-ADP-LENOVO-65W-USB-A-001)").
+export const accessoryLabel = (sku: { sku_description?: string | null; full_sku_code?: string | null } | null | undefined) => {
+  const name = (sku?.sku_description || '').replace(/\s+/g, ' ').trim()
+  return sku?.full_sku_code ? `${name || 'Accessory'} (${sku.full_sku_code})` : name || 'accessory'
+}
 const exclusive = (price: number, gst: number) => Math.round((price / (1 + gst / 100)) * 100) / 100
 
 // ---------------------------------------------------------------- pages DB can open
@@ -587,7 +593,7 @@ async function proposeSalesDocument(input: z.infer<typeof S.propose_sales_docume
       if (!sku) return { result: `SKU ${line.sku_id} not found -- use find_products.`, isError: true }
       if (entity.is_gst_registered && !sku.hsn_code) return { result: `${sku.sku_description} has no HSN code in SKU Master; a GST PI needs one. Ask the owner for the HSN.`, isError: true }
       items.push({ item_type: 'sku', sku_id: sku.id, description: sku.sku_description || sku.full_sku_code, hsn_code: sku.hsn_code, quantity: line.quantity, rate, gst_rate: gstRate })
-      summaryLines.push(`${line.quantity} × ${sku.sku_description} @ ${rate === 0 ? 'FREE' : `${money(rate)}${entity.is_gst_registered ? ' + GST' : ''}`}`)
+      summaryLines.push(`${line.quantity} × ${NON_SERIALIZED_CATEGORIES.includes(sku.category) ? accessoryLabel(sku) : sku.sku_description} @ ${rate === 0 ? 'FREE' : `${money(rate)}${entity.is_gst_registered ? ' + GST' : ''}`}`)
       if (rate > 0) warnings.push(...await priceChecks(sku.id, customer.id, rate))
       if (!NON_SERIALIZED_CATEGORIES.includes(sku.category)) {
         const units = await findSellableUnits(sku.id)
@@ -722,17 +728,17 @@ async function proposeSale(input: z.infer<typeof S.propose_sale>, ctx: ToolConte
       // hid a Type-C charger going out where a USB-A one was meant).
       let freeLine = ''
       if (bundled.length) {
-        const { data: accs } = await supabaseAdmin.from('sku_master').select('id, sku_description').in('id', bundled.map((b) => b.accessory_id))
-        freeLine = ` + free: ${bundled.map((b) => `${b.quantity > 1 ? `${b.quantity} × ` : ''}${(accs?.find((a) => a.id === b.accessory_id)?.sku_description || 'accessory').replace(/\s+/g, ' ').trim()}`).join(', ')}`
+        const { data: accs } = await supabaseAdmin.from('sku_master').select('id, sku_description, full_sku_code').in('id', bundled.map((b) => b.accessory_id))
+        freeLine = ` + free: ${bundled.map((b) => `${b.quantity > 1 ? `${b.quantity} × ` : ''}${accessoryLabel(accs?.find((a) => a.id === b.accessory_id))}`).join(', ')}`
       }
       summary.push(`${desc}, serial ${unit.serial_number} @ ${money(base)}${gstPct ? ' + GST' : ''}${freeLine}`)
       if (base > 0) warnings.push(...await priceChecks(unit.current_sku_id || unit.sku_id, customer.id, base))
     } else if (it.accessory_sku_id) {
       const qty = it.quantity ?? 1
-      const { data: sku } = await supabaseAdmin.from('sku_master').select('id, sku_description').eq('id', it.accessory_sku_id).maybeSingle()
+      const { data: sku } = await supabaseAdmin.from('sku_master').select('id, sku_description, full_sku_code').eq('id', it.accessory_sku_id).maybeSingle()
       if (!sku) return { result: 'Accessory SKU not found.', isError: true }
       items.push({ accessory_id: sku.id, accessory_quantity: qty, sale_base_price: base })
-      summary.push(`${qty} × ${sku.sku_description} @ ${money(base)}`)
+      summary.push(`${qty} × ${accessoryLabel(sku)} @ ${money(base)}`)
     } else {
       return { result: 'Each item needs asset_ledger_id (a unit) or accessory_sku_id.', isError: true }
     }

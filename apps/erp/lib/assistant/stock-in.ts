@@ -108,11 +108,11 @@ export async function prepareStockIn(input: StockInInput, today: string): Promis
   let bundleText = ''
   const bundled = (input.bundled_accessories || []).filter((b) => b.accessory_id && b.quantity > 0)
   if (bundled.length) {
-    const { data: accs } = await supabaseAdmin.from('sku_master').select('id, sku_description, category').in('id', bundled.map((b) => b.accessory_id))
+    const { data: accs } = await supabaseAdmin.from('sku_master').select('id, sku_description, full_sku_code, category').in('id', bundled.map((b) => b.accessory_id))
     const byId = new Map((accs || []).map((a) => [a.id, a]))
     const bad = bundled.filter((b) => !byId.get(b.accessory_id) || !NON_SERIALIZED_CATEGORIES.includes(byId.get(b.accessory_id)!.category))
     if (bad.length) return { ok: false, isError: true, result: 'A bundled item is not an accessory in the catalogue -- find it with find_products (tracked_per_unit: false).' }
-    bundleText = bundled.map((b) => `${byId.get(b.accessory_id)!.sku_description} ×${b.quantity}`).join(', ')
+    bundleText = bundled.map((b) => { const a = byId.get(b.accessory_id)!; return `${String(a.sku_description || '').replace(/\s+/g, ' ').trim()} (${a.full_sku_code}) ×${b.quantity}` }).join(', ')
   }
 
   for (const s of serials) warnings.push(...serialDoubts(s))
