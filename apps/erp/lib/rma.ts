@@ -2,6 +2,7 @@ import { supabaseAdmin } from './supabase/service'
 import { insertAccessoryMovement } from './accessory-movements'
 import { logFieldCorrections } from './field-corrections'
 import { logAuditEvent } from './audit-log'
+import { activeTradeInsForSale } from './trade-ins'
 
 // A unit physically coming back from a customer -- shared by plain Return
 // (app/api/rma/route.ts, direction: 'from_customer') and Replacement's old-unit
@@ -46,6 +47,24 @@ export async function processCustomerReturn(
     return {
       error: `Only 'sold' assets can have a customer return (current status: ${asset.status})`,
       status: 400,
+    }
+  }
+
+  // A trade-in settled against the sale being reversed (the customer's old
+  // laptop already back in our stock as part-payment) would be left orphaned
+  // by voiding that sale here -- same rule as the manual void: undo it first.
+  const { data: liveSale } = await supabaseAdmin
+    .from('sales').select('id')
+    .eq('asset_ledger_id', assetId).eq('is_deleted', false)
+    .order('created_at', { ascending: false }).limit(1).maybeSingle()
+  if (liveSale) {
+    const tradeIns = await activeTradeInsForSale(liveSale.id)
+    if (tradeIns.length) {
+      return {
+        error: `Trade-in ${tradeIns.map((t) => t.trade_in_number).join(', ')} is applied to this unit's sale. Undo the trade-in first (Trade-ins page), then record the return.`,
+        status: 409,
+        error_code: 'has_trade_in',
+      }
     }
   }
 

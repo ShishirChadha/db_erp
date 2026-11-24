@@ -36,4 +36,5 @@ export function accountProtection(target: { id: string; username: string | null 
 export const PROTECTED_MESSAGE = {
   locked: 'This account is protected: only DB’s master can change it.',
   db: 'DB’s password and role are managed by the ERP and can’t be viewed or changed.',
+  dbAccess: 'DB’s page access follows her skills: change it in Settings → DB Assistant → What DB can do.',
 } as const

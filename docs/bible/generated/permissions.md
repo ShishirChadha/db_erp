@@ -48,24 +48,17 @@ Owner always has full view + edit access everywhere; this table covers manager/e
 
 | Page key | Roles with edit access |
 |---|---|
-| accessories | employee, manager |
-| activities | manager |
-| attendance | manager |
-| customers | manager |
-| expenses | employee, manager |
-| invoices | manager |
-| live_stock | employee, manager |
-| marketing | manager |
-| new_entry | employee, manager |
-| quotations | employee, manager |
-| rentals | employee, manager |
-| repair_jobs | employee, manager |
-| replacement_jobs | employee, manager |
-| rma | employee, manager |
-| sales | manager |
-| sku_master | employee, manager |
-| stock | manager |
-| website | employee, manager |
+| accessories | employee |
+| expenses | manager, employee |
+| live_stock | employee |
+| new_entry | employee |
+| quotations | manager, employee |
+| rentals | employee |
+| repair_jobs | employee |
+| replacement_jobs | employee |
+| rma | manager, employee |
+| sku_master | employee |
+| website | employee |
 
 ## Redacted fields (`redaction_rules`)
 

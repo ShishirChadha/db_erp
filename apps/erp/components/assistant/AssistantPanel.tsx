@@ -33,7 +33,7 @@ import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Ap
 // "bas"/"bye"/"thanks", tap End, or close the panel.
 
 type Card =
-  | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[] }
+  | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[]; confirm_label?: string }
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
   | { type: 'open'; href: string; label: string } // an ERP page she opened for him
@@ -48,6 +48,8 @@ const STATUS_WORDS: Record<string, string> = {
   propose_stock_in: 'Stock entry bana rahi hoon…',
   propose_accessory_in: 'Accessories entry bana rahi hoon…',
   propose_trade_in: 'Trade-in bana rahi hoon…',
+  propose_customer_return: 'Return check kar rahi hoon…',
+  enable_skill: 'Permission maang rahi hoon…',
   find_products: 'Stock check kar rahi hoon…',
   find_sellable_units: 'Units dekh rahi hoon…',
   find_unit_by_serial: 'Serial dhoondh rahi hoon…',
@@ -1006,8 +1008,8 @@ function AssistantCardView({ card, disabled, onAnswer, theme }: { card: Card; di
           </ul>
         )}
         <div className="mt-3 flex gap-2">
-          <button type="button" disabled={disabled} onClick={() => onAnswer('Haan, confirm kar do.', card.action_id)}
-            className="h-10 flex-1 rounded-lg px-3 text-sm font-medium text-white disabled:opacity-50" style={accent}>Confirm</button>
+          <button type="button" disabled={disabled} onClick={() => onAnswer(card.confirm_label === 'Allow' ? 'Haan, allow kar diya.' : 'Haan, confirm kar do.', card.action_id)}
+            className="h-10 flex-1 rounded-lg px-3 text-sm font-medium text-white disabled:opacity-50" style={accent}>{card.confirm_label || 'Confirm'}</button>
           <Button variant="outline" className="h-10 flex-1" disabled={disabled} onClick={() => onAnswer('Nahi, abhi cancel karo.')}>Cancel</Button>
         </div>
       </div>

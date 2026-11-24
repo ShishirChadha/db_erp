@@ -4,6 +4,7 @@ import { getSessionUser, hasPageAccess } from '@/lib/auth/session'
 import { generateReplacementJobNumber, SELLABLE_STATUSES } from '@/lib/replacement-jobs'
 import { parsePagination } from '@/lib/pagination'
 import { processCustomerReturn } from '@/lib/rma'
+import { activeTradeInsForSale } from '@/lib/trade-ins'
 import { reverseSaleInventoryEffects } from '@/lib/sales-entry'
 import { BaseSaleFields, CartItemInput, processSingleSaleItem } from '@/lib/sales-cart'
 import { logAuditEvent } from '@/lib/audit-log'
@@ -163,13 +164,22 @@ export async function POST(req: NextRequest) {
   if (is_own_stock && asset_id) {
     const { data: oldSale } = await supabaseAdmin
       .from('sales')
-      .select('amount_paid')
+      .select('id, amount_paid')
       .eq('asset_ledger_id', asset_id)
       .eq('is_deleted', false)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
     precheckCarriedOverPaid = Number(oldSale?.amount_paid) || 0
+    // Checked here as well as in processCustomerReturn so a blocked job
+    // doesn't burn a job number first.
+    const tradeIns = oldSale ? await activeTradeInsForSale(oldSale.id) : []
+    if (tradeIns.length) {
+      return NextResponse.json({
+        error: `Trade-in ${tradeIns.map((t) => t.trade_in_number).join(', ')} is applied to the old unit's sale. Undo the trade-in first (Trade-ins page), then open the replacement.`,
+        error_code: 'has_trade_in',
+      }, { status: 409 })
+    }
   }
   if (!body.confirm_overpayment && precheckCarriedOverPaid + topUp > saleTotal + 0.5) {
     return NextResponse.json({

@@ -18,7 +18,7 @@ sources:
   - apps/erp/lib/accessory-replacement-jobs.ts
   - apps/erp/lib/accessory-rma.ts
   - apps/erp/app/dashboard/entry/service/page.tsx
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What this is
@@ -84,6 +84,11 @@ and we take it back for less (e.g. sold for ₹34,000, taken back at ₹26,000
 against a ₹56,000 one), use a **trade-in** on the new sale instead — the old
 sale stays, and the difference is what the customer pays. See
 **take-a-trade-in**.
+
+**A unit whose sale has a trade-in on it can't be replaced or returned
+(2026-11-24)** — the old laptop already sits in our stock as part-payment for
+that sale, and cancelling the sale would orphan it. The route refuses with 409
+`has_trade_in` before a job number is taken; undo the trade-in first.
 
 ## Steps
 

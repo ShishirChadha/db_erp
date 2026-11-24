@@ -28,4 +28,7 @@ export function isPlainYes(text: string, callMe = ''): boolean {
 }
 
 // Kinds that, with "tap to confirm sales and expenses" on, need the Confirm tap.
-export const TAP_ONLY_KINDS = new Set(['sale', 'expense', 'trade_in'])
+export const TAP_ONLY_KINDS = new Set(['sale', 'expense', 'trade_in', 'customer_return'])
+// Kinds that always need the Confirm tap, whatever that setting says: giving DB
+// a new power is never done on a spoken (possibly misheard) yes.
+export const ALWAYS_TAP_KINDS = new Set(['enable_skill'])

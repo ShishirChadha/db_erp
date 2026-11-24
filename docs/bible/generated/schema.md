@@ -327,7 +327,7 @@ Live schema snapshot -- 148 tables. Regenerate with `npm run bible:generate`.
 
 ## app_settings
 
-~0 rows (estimate)
+~5 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -472,7 +472,7 @@ Live schema snapshot -- 148 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_threads
 
-~8 rows (estimate)
+~11 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -584,7 +584,7 @@ Append-only punch-event log. A correction is a new row plus a void on the old on
 
 Row-per-action audit trail across every module -- distinct from the unrelated activities/"Activity Hub" task system. Written via lib/audit-log.ts logAuditEvent(). References field_corrections rows (via field_correction_ids) for update-type events rather than duplicating field-diff storage.
 
-~8,835 rows (estimate)
+~9,615 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1791,7 +1791,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## profile_page_actions
 
-~36 rows (estimate)
+~21 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2309,7 +2309,7 @@ One rental deal: a customer takes N units from ordinary sellable stock for a per
 
 ## sales
 
-~706 rows (estimate)
+~724 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2787,7 +2787,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## sku_master
 
-~445 rows (estimate)
+~456 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2996,7 +2996,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~173 rows (estimate)
+~175 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3113,7 +3113,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summarised by ops_web_vitals_summary() for the daily health report. 30-day retention.
 
-~6,665 rows (estimate)
+~6,477 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3129,7 +3129,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~4,168 rows (estimate)
+~4,186 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

@@ -4,11 +4,12 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, trade-in, upgrade, exchange, buyback, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, customer return, return, refund, credit note, wapas, allow, permission, page access, trade-in, upgrade, exchange, buyback, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
   - apps/erp/lib/assistant/trade-in.ts
+  - apps/erp/lib/assistant/customer-return.ts
   - apps/erp/lib/assistant/tools.ts
   - apps/erp/lib/assistant/data.ts
   - apps/erp/lib/assistant/loop.ts
@@ -43,7 +44,7 @@ sources:
   - apps/erp/lib/assistant/permissions.ts
   - apps/erp/app/api/assistant/avatar/route.ts
   - apps/erp/lib/assistant/stock-in.ts
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What it is
@@ -165,8 +166,15 @@ Without a picture she shows the illustrated face.
 
 DB is a real user (`db`, role manager), created the first time you open the panel
 (**Set up DB**). Everything she saves shows **DB** as the creator and in the audit log.
-She can only reach the screens her tasks need (PIs, expenses, new entry, repairs,
-replacements, customers, stock).
+
+**Her page access follows her skills (2026-11-24).** Each skill in *What DB can do*
+grants exactly the pages its route checks (`SKILL_PAGES` in `lib/assistant/identity.ts`),
+and switching a skill off removes them; saving that section or tapping an **Allow** card
+re-syncs her grants. With every skill on she has view *PIs & Quotations, Expenses, New
+Entry, RMA* and edit *Quotations, Expenses, RMA*, nothing else. Her reads (stock, sales,
+reports) run on the server and need no page grants. Until 2026-11-24 her access could
+also be set in Users, and had grown to 18 pages she had no tools for; Users now shows it
+read-only (`PATCH /api/users/[id]` refuses page changes for her).
 
 **Off switch:** log her off in Settings → Active Devices ("DB assistant (server)") or
 deactivate her in Users — only you (DB's master) can; other owners are refused. The
@@ -213,6 +221,26 @@ paid or close to what the model sells for, and keeps only the ID's last 4 charac
 Trade-ins are money, so with *tap to confirm money* on they need the Confirm tap. The done
 card links to the buyback slip. If the trade-in part is refused after the sale saved, she
 says so and it can be added from the Sales Ledger. See **take-a-trade-in**.
+
+## Customer returns
+
+Skill *Customer returns*. A customer gives back a laptop/desktop we sold and takes no
+other unit ("wapas kar diya", "paise wapas"): `propose_customer_return` with the serial
+and the reason. It goes through the RMA page's own door (`POST /api/rma`, direction
+`from_customer`, `lib/rma.ts` `processCustomerReturn`): the unit goes to **QC pending**,
+stock +1, accessories sold with it come back, the sale is cancelled, and a refund
+(`sale_refunds`, amount + account) or credit note (`customer_credit_ledger`) is recorded.
+- If anything was paid she asks **refund or credit note** first, and for a refund how
+  much and from which account. A refund below what was paid is allowed; she warns that the
+  kept part won't show as a sale anywhere, since the whole sale is cancelled.
+- She warns if the refund account differs from the sale's entity, if the sale is already
+  **invoiced** (the invoice needs its own credit note or cancellation on the Invoices
+  page), and which bundled accessories come back.
+- Refused before any card: serial not in the ERP (accessory-only returns stay on the RMA
+  page), unit not `sold` (on rent → Rentals page), and a sale with an active **trade-in**
+  (the owner undoes the trade-in first, on the Trade-ins page).
+- A return is money, so with *tap to confirm money* on it needs the Confirm tap.
+Not for a warranty swap (replacement job) or an upgrade (trade-in): she asks if unclear.
 
 **Replacement cards are checked before you see them.** Whatever was paid on the old unit
 carries over to the replacement automatically, so she now does the ERP's own sum at
@@ -303,8 +331,16 @@ sends `fallbacks` for the other two. Switching takes effect from her next reply;
 learnings, checks and confirmation cards are the same on every model.
 
 **What DB can do** switches her write skills (PIs/quotations, expenses, sales, repairs,
-replacements, new customers, learning by herself) on or off; a switched-off skill's
-tools are removed from her tool list and refused server-side, and she says it's off.
+replacements, new customers, learning by herself, stock in, trade-ins, customer returns)
+on or off; a switched-off skill's tools are removed from her tool list and refused
+server-side. Each skill's row shows the ERP pages it gives her.
+
+**Allow card (2026-11-24).** If you ask for something whose skill is off, she says so
+and calls `enable_skill`, which shows an **Allow** card naming the skill and the pages it
+grants. Only a tap on Allow switches it on (`ALWAYS_TAP_KINDS`: a spoken yes never does,
+whatever *tap to confirm money* says), then her grants re-sync and the turn reloads her
+tools so she carries on with the task. It's audit-logged as "DB skill allowed". Switch it
+off again in Settings. She can't be allowed a task no skill exists for (e.g. invoices).
 **How much she says**: short (default) or normal.
 
 **Stopping her:** say "stop", "ruko", "bas", "pata hai", "chup"… while she talks, press

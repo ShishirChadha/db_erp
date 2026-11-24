@@ -43,6 +43,9 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (protection === 'db' && (password !== undefined || role !== undefined)) {
     return NextResponse.json({ error: PROTECTED_MESSAGE.db }, { status: 403 })
   }
+  if (protection === 'db' && (allowed_pages !== undefined || page_edit_keys !== undefined)) {
+    return NextResponse.json({ error: PROTECTED_MESSAGE.dbAccess }, { status: 403 })
+  }
 
   if (password !== undefined && password && password.length < 6) {
     return NextResponse.json({ error: 'Password must be at least 6 characters.' }, { status: 400 })

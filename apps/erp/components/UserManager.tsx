@@ -420,7 +420,7 @@ export default function UserManager() {
             <button onClick={() => openEditProfile(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
               Edit name / ID
             </button>
-            {u.role !== 'owner' && (
+            {u.role !== 'owner' && u.protection !== 'db' && (
               <button onClick={() => openEditAccess(u)} disabled={busy} className="text-xs px-2 py-1 rounded bg-muted">
                 Edit access
               </button>
@@ -488,7 +488,7 @@ export default function UserManager() {
         )}
 
         {u.protection === 'db' && (
-          <p className="mt-2 text-xs text-muted-foreground">DB’s password is managed by the ERP and can’t be viewed or changed. Deactivate here to switch her off.</p>
+          <p className="mt-2 text-xs text-muted-foreground">DB’s password is managed by the ERP and can’t be viewed or changed. Her page access follows what she can do (Settings → DB Assistant → What DB can do): each skill gets only the pages it needs. Deactivate here to switch her off.</p>
         )}
         {!u.protection && (
         <div className="mt-2 flex gap-2 items-center flex-wrap">

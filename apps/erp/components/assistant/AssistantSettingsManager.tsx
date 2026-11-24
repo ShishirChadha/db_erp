@@ -35,7 +35,7 @@ type Config = {
   voices: { sarvam: VoiceOpt[]; azure: Attempt<VoiceOpt[]>; google: Attempt<VoiceOpt[]> }
   models: string[]
   read_modules: { key: string; label: string; hint: string }[]
-  write_skills: { key: string; label: string; hint: string }[]
+  write_skills: { key: string; label: string; hint: string; access?: string }[]
   other_ai: { feature: string; model: string }[]
   fx: { rate: number; date: string | null; source: string }
   usage: {
@@ -535,13 +535,13 @@ export default function AssistantSettingsManager() {
       </>}
 
       {tab === 'capabilities' && <>
-      <Section title="What DB can do" hint="Her skills. Switch one off and she won't do it — she'll tell you it's off and point you to the ERP page instead.">
+      <Section title="What DB can do" hint="Her skills. Each one gives her ERP login only the pages it needs, and switching it off takes them away. If you ask for something that's off, she shows an Allow card: your tap switches it on.">
         <div className="space-y-2">
           {cfg.write_skills.map((k) => (
             <label key={k.key} className="flex items-start gap-2 text-sm">
               <Checkbox className="mt-0.5" checked={s.write_skills.includes(k.key)}
                 onCheckedChange={(c) => set('write_skills', c ? [...s.write_skills, k.key] : s.write_skills.filter((x: string) => x !== k.key))} />
-              <span><span className="font-medium">{k.label}</span><span className="block text-xs text-muted-foreground">{k.hint}</span></span>
+              <span><span className="font-medium">{k.label}</span><span className="block text-xs text-muted-foreground">{k.hint}</span>{k.access && <span className="block text-xs text-muted-foreground/80">{k.access}</span>}</span>
             </label>
           ))}
         </div>
@@ -552,8 +552,8 @@ export default function AssistantSettingsManager() {
         </label>
         <label className="flex items-start gap-2 rounded-md bg-muted p-2 text-sm">
           <Checkbox className="mt-0.5" checked={!!s.tap_to_confirm_money} onCheckedChange={(c) => set('tap_to_confirm_money', !!c)} />
-          <span><span className="font-medium">Sales and expenses: confirm by tap only</span>
-            <span className="block text-xs text-muted-foreground">A spoken “haan” won’t save a sale or an expense; you tap Confirm on her card. Useful when other people are near your phone or laptop, since she can’t tell your voice from theirs.</span></span>
+          <span><span className="font-medium">Money entries: confirm by tap only</span>
+            <span className="block text-xs text-muted-foreground">A spoken “haan” won’t save a sale, an expense, a trade-in or a customer return; you tap Confirm on her card. Useful when other people are near your phone or laptop, since she can’t tell your voice from theirs.</span></span>
         </label>
         <p className="text-xs text-muted-foreground">Whatever is on, nothing is saved without your yes on a confirmation card. The yes is checked by the ERP itself: a tap on Confirm, or a message that is only a yes (“haan”, “kar do”, “theek hai”) — “haan, lekin…” or anything with a change makes her ask again.</p>
       </Section>

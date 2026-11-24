@@ -20,7 +20,7 @@ sources:
   - apps/erp/lib/owner-only-expense-types.ts
   - apps/erp/lib/assistant/permissions.ts
   - apps/erp/app/dashboard/expenses/page.tsx
-updated: 2026-11-22
+updated: 2026-11-24
 ---
 
 ## What this covers

@@ -6,6 +6,7 @@ import {
   isDbMaster, getAssistantSettings, saveAssistantSettings, getSecret, setSecret, secretStatus,
   ASSISTANT_MODELS, SARVAM_VOICES, VOICE_PROVIDERS, TONES, VOICE_GATES, REPLY_LENGTHS, WRITE_SKILLS, ALL_WRITE_SKILLS, type AssistantSettings, type SecretName, type WriteSkill,
 } from '@/lib/assistant/settings'
+import { syncDbPageGrants, skillPagesLine } from '@/lib/assistant/identity'
 import { READ_MODULES, ALL_READ_MODULES, type ReadModule } from '@/lib/assistant/reports'
 import { cleanAppearance } from '@/components/assistant/appearance'
 import { getDbAgentStatus } from '@/lib/assistant/identity'
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
     voices: { sarvam: SARVAM_VOICES, azure: azureVoices, google: googleVoices },
     models: ASSISTANT_MODELS,
     read_modules: READ_MODULES,
-    write_skills: WRITE_SKILLS,
+    write_skills: WRITE_SKILLS.map((k) => ({ ...k, access: skillPagesLine(k.key) })),
     // What else in the ERP uses Anthropic (not DB): shown so the two usage
     // meters make sense. Keep in sync with those files.
     other_ai: [
@@ -128,6 +129,8 @@ export async function PUT(req: NextRequest) {
     keysChanged.push(field)
   }
   const settings = await saveAssistantSettings(patch, sessionUser.id)
+  // Her ERP page access follows her skills (lib/assistant/identity.ts).
+  if (patch.write_skills) await syncDbPageGrants(settings.write_skills)
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },
     actionType: 'update', module: 'settings', tableName: 'app_settings', recordLabel: 'DB assistant settings',

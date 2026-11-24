@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/rma/**
   - apps/erp/app/api/accessory-rma/**
   - apps/erp/app/api/accessory-replacement-jobs/**
-updated: 2026-09-16
+updated: 2026-11-24
 ---
 
 ## What this covers
@@ -41,7 +41,10 @@ accessory (quantity-only, no `asset_ledger` row) version:
   serialized unit (tracked via `asset_ledger.status`), an accessory return
   moves `stock_movements`/`quantity_in_stock` **immediately** on open — there's
   no per-unit QC-pending status to hold a returned accessory in limbo — see
-  **return-to-vendor-rma**.
+  **return-to-vendor-rma**. A customer return or a replacement of a unit whose
+  sale has an active **trade-in** is refused (409 `has_trade_in`, 2026-11-24),
+  like voiding that sale: the owner undoes the trade-in first. DB can record a
+  customer return too (**assistant** → Customer returns).
 
 ## Related
 

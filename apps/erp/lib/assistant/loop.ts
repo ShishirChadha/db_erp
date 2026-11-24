@@ -59,7 +59,7 @@ export async function runAssistantTurn(params: {
     emit({ type: 'done' })
     return
   }
-  const settings = await getAssistantSettings()
+  let settings = await getAssistantSettings()
   const thread = await loadOrCreateThread(params.threadId, owner.id, params.text, settings.fresh_after_break)
   emit({ type: 'thread', id: thread.id, ...(thread.fresh ? { fresh: true } : {}) })
 
@@ -90,10 +90,10 @@ export async function runAssistantTurn(params: {
   }
 
   const client = new Anthropic({ apiKey })
-  const tools = assistantTools(settings.read_modules, settings.write_skills)
+  let tools = assistantTools(settings.read_modules, settings.write_skills)
   const [fx, learnings] = await Promise.all([liveUsdInr(), generalLearnings()])
   const usdInr = fx.rate
-  const system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills, settings.call_me)
+  let system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills, settings.call_me)
   // Thinking blocks are sealed to the exact prompt they were made with. Any
   // change to her instructions, settings, learnings or model would otherwise
   // make Anthropic reject the whole saved conversation with a 400 ("Invalid
@@ -160,6 +160,13 @@ export async function runAssistantTurn(params: {
         const outcome = await runTool(use.name, use.input, { ownerId: owner.id, ownerEmail: owner.email, turn, pending, db, modules: settings.read_modules, skills: settings.write_skills, approval })
         if (outcome.pending !== undefined) pending = outcome.pending
         if (outcome.card) emit({ type: 'card', card: outcome.card })
+        // He just allowed a skill: give her its tools and the updated
+        // instructions for the rest of this turn (a one-off cache miss).
+        if (outcome.settingsChanged) {
+          settings = await getAssistantSettings()
+          tools = assistantTools(settings.read_modules, settings.write_skills)
+          system = assistantSystemPrompt(settings.hinglish_script, settings.tone, settings.reply_length, settings.write_skills, settings.call_me)
+        }
         results.push({
           type: 'tool_result',
           tool_use_id: use.id,

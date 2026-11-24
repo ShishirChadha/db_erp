@@ -14,15 +14,17 @@ import {
   expenseTypes, similarExpenseTypes, sameExpenseType, expenseCountByType,
 } from './data'
 import { shareSalesDocument } from './share'
-import { TAP_ONLY_KINDS } from './approval'
+import { TAP_ONLY_KINDS, ALWAYS_TAP_KINDS } from './approval'
 import { prepareStockIn, prepareAccessoryIn, STOCK_TYPES, BUYERS, PAY_ACCOUNTS } from './stock-in'
 import { prepareTradeIn } from './trade-in'
+import { prepareCustomerReturn, REFUND_ACCOUNTS } from './customer-return'
 import { ID_PROOF_TYPES } from '@/lib/trade-ins'
 import {
   ALL_READ_MODULES, type ReadModule, stockOverview, soldStock, salesReport, paymentsDue, customerHistory,
   repairJobs, rentalsStatus, purchasesReport, expensesReport, tasksList,
 } from './reports'
-import { ALL_WRITE_SKILLS, getAssistantSettings, type WriteSkill } from './settings'
+import { ALL_WRITE_SKILLS, WRITE_SKILLS, getAssistantSettings, saveAssistantSettings, type WriteSkill } from './settings'
+import { syncDbPageGrants, skillPagesLine } from './identity'
 
 // DB's tools. Reads run straight away. Writes never do: a propose_* tool
 // checks the input, works out the warnings DB must raise, and parks the write
@@ -33,7 +35,7 @@ import { ALL_WRITE_SKILLS, getAssistantSettings, type WriteSkill } from './setti
 
 export interface PendingAction {
   id: string
-  kind: RouteKey | 'customer' | 'note' | 'merge_expense_types'
+  kind: RouteKey | 'customer' | 'note' | 'merge_expense_types' | 'enable_skill'
   body: any
   // Done just before the route call on confirm (e.g. create the new expense type).
   prepare?: { new_expense_type?: { value: string; owner_only: boolean }; reactivate_type_id?: string }
@@ -61,11 +63,14 @@ export interface ToolOutcome {
   isError?: boolean
   pending?: PendingAction | null // undefined = unchanged, null = cleared
   card?: AssistantCard
+  // Her switches changed (a skill was allowed): the loop reloads her tools and
+  // instructions so she can carry on in the same turn.
+  settingsChanged?: boolean
 }
 
 // What the panel shows next to DB's words.
 export type AssistantCard =
-  | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[] }
+  | { type: 'confirm'; action_id: string; title: string; summary: string; warnings: string[]; confirm_label?: string }
   | { type: 'done'; title: string; detail: string; link?: string | null }
   | { type: 'share'; title: string; pdf_url: string; whatsapp_to_customer: string | null; whatsapp_pick_chat: string }
   // The panel navigates the ERP to href (and gets out of the way on a phone).
@@ -278,6 +283,19 @@ const S = {
   propose_trade_in: TRADE_IN.extend({
     sale_unit_serial: z.string().min(3).max(40).describe('Serial of the NEW laptop on the sale that is already saved (the one the customer bought).'),
   }),
+  propose_customer_return: z.object({
+    serial_number: z.string().describe('The returned laptop/desktop\'s serial.'),
+    reason: z.string().describe('Why it came back, in his words.'),
+    return_date: z.string().nullish().describe('YYYY-MM-DD if not today.'),
+    resolution: z.enum(['refund', 'credit_note']).nullish().describe('Required when money was paid on the sale: refund, or store credit (credit note).'),
+    amount: z.number().positive().nullish().describe('Refund or credit amount. Default: all that was paid on the sale.'),
+    refund_account: z.enum(REFUND_ACCOUNTS).nullish().describe('Account the refund is paid from.'),
+    notes: z.string().nullish(),
+  }),
+  enable_skill: z.object({
+    skill: z.enum(ALL_WRITE_SKILLS as [WriteSkill, ...WriteSkill[]]),
+    why: z.string().describe('What he asked for that needs it, in one short line.'),
+  }),
   propose_repair_job: z.object({
     customer_id: z.string().nullish(),
     is_own_stock: z.boolean(),
@@ -368,6 +386,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   propose_merge_expense_types: 'Prepare merging duplicate expense categories (e.g. "Petrol" + "Petrol Exp" into "Petrol"): past expenses are re-labelled and the merged types leave the dropdown. Shows counts. Nothing changes until Shishir confirms.',
   propose_sale: 'Prepare a sale (moves stock when confirmed). Returns warnings you must raise. Nothing is saved yet. For an upgrade where the customer gives an old laptop towards this one, add trade_in (one card saves both).',
   propose_trade_in: 'Trade-in against a sale ALREADY saved: the customer\'s old laptop taken back as part-payment (upgrade). For a new sale use propose_sale with trade_in instead. The old laptop\'s own sale stays; it goes back into stock with the trade-in value as its cost.',
+  propose_customer_return: 'A customer gives back a laptop/desktop we sold and does not take another unit: it comes back to QC pending (stock +1), the sale is cancelled, and a refund or credit note is recorded if money was paid. Not for a warranty swap (replacement job) or an upgrade (trade-in). Nothing is saved yet.',
+  enable_skill: 'One of your abilities is switched off and Shishir just asked for something that needs it: ask him to allow it. Shows an Allow card; only his tap on it switches the skill on (a spoken yes is not enough). Then carry on with what he asked.',
   propose_repair_job: 'Prepare a repair job. Nothing is saved yet.',
   propose_replacement_job: 'Prepare a replacement job: a faulty unit swapped under warranty. Whatever the customer paid on the old unit carries over to the new one automatically; additional_amount_paid is only NEW money. Not for an upgrade where we buy the old laptop back at a lower price -- that is a trade-in (propose_sale with trade_in). Nothing is saved yet.',
   propose_note: 'Offer to remember a preference. Saved only after the owner agrees.',
@@ -401,6 +421,7 @@ const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
   propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
   propose_stock_in: 'stock_in', propose_accessory_in: 'stock_in',
   propose_trade_in: 'trade_in',
+  propose_customer_return: 'return',
 }
 
 const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
@@ -412,7 +433,9 @@ const toolDef = (name: ToolName): Anthropic.Beta.BetaTool => ({
 // The tool list for a turn. It only changes when the owner changes the
 // switches, so it stays in the prompt cache between turns.
 export function assistantTools(modules: readonly ReadModule[], skills: readonly WriteSkill[] = ALL_WRITE_SKILLS): Anthropic.Beta.BetaTool[] {
+  const allOn = ALL_WRITE_SKILLS.every((k) => skills.includes(k))
   return (Object.keys(S) as ToolName[])
+    .filter((n) => n !== 'enable_skill' || !allOn)
     .filter((n) => !TOOL_MODULE[n] || modules.includes(TOOL_MODULE[n]!))
     .filter((n) => !TOOL_SKILL[n] || skills.includes(TOOL_SKILL[n]!))
     .map(toolDef)
@@ -478,6 +501,8 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       case 'propose_merge_expense_types': return proposeMergeExpenseTypes(input, ctx)
       case 'propose_sale': return proposeSale(input, ctx)
       case 'propose_trade_in': return proposeTradeIn(input, ctx)
+      case 'propose_customer_return': return proposeCustomerReturn(input, ctx)
+      case 'enable_skill': return proposeEnableSkill(input, ctx)
       case 'propose_repair_job': return proposeRepair(input, ctx)
       case 'propose_replacement_job': return proposeReplacement(input, ctx)
       case 'propose_note': return proposeNote(input, ctx)
@@ -784,6 +809,24 @@ async function proposeRepair(input: z.infer<typeof S.propose_repair_job>, ctx: T
     warnings, ctx)
 }
 
+async function proposeCustomerReturn(input: z.infer<typeof S.propose_customer_return>, ctx: ToolContext): Promise<ToolOutcome> {
+  const prep = await prepareCustomerReturn(input, istToday())
+  if (!prep.ok) return { result: prep.result, isError: prep.isError }
+  const out = park('customer_return', prep.body, prep.title, prep.summary, prep.warnings, ctx)
+  return { ...out, result: { ...(out.result as object), ...prep.extra } }
+}
+
+// Asking him to switch one of her skills on. Nothing changes until he taps
+// Allow (ALWAYS_TAP_KINDS); the skill then gets exactly the ERP pages it needs.
+function proposeEnableSkill(input: z.infer<typeof S.enable_skill>, ctx: ToolContext): ToolOutcome {
+  const skill = WRITE_SKILLS.find((k) => k.key === input.skill)!
+  if ((ctx.skills ?? ALL_WRITE_SKILLS).includes(input.skill)) return { result: `${skill.label} is already on -- just do it.`, isError: true }
+  const out = park('enable_skill', { skill: input.skill }, `Allow DB: ${skill.label}`,
+    `${skill.hint}\nFor: ${input.why}\n${skillPagesLine(input.skill)}\nYou can switch it off again in Settings -> DB Assistant.`, [], ctx)
+  if (out.card?.type === 'confirm') out.card.confirm_label = 'Allow'
+  return { ...out, result: { ...(out.result as object), instruction: 'Tell him in one line what you need switched on and why, and ask him to tap Allow on the card. A spoken yes does not switch it on.' } }
+}
+
 async function proposeReplacement(input: z.infer<typeof S.propose_replacement_job>, ctx: ToolContext): Promise<ToolOutcome> {
   const customer = await getCustomer(input.customer_id)
   const { data: unit } = await supabaseAdmin.from('asset_ledger').select('serial_number, status').eq('id', input.replacement_asset_id).maybeSingle()
@@ -824,11 +867,14 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
   // The yes is checked here, not by you: a tap on this card's Confirm, or a
   // latest message that is only a plain yes. Text from ERP records can't do it.
   const tapped = ctx.approval?.tappedActionId === p.id
-  const tapOnly = !!ctx.approval?.tapOnlyMoney && TAP_ONLY_KINDS.has(p.kind)
+  const alwaysTap = ALWAYS_TAP_KINDS.has(p.kind)
+  const tapOnly = alwaysTap || (!!ctx.approval?.tapOnlyMoney && TAP_ONLY_KINDS.has(p.kind))
   if (!tapped && (tapOnly || !ctx.approval?.saidYes)) {
     return {
-      result: tapOnly
-        ? 'Not saved: for sales and expenses Shishir confirms by tapping Confirm on the card (his setting). Ask him to tap it.'
+      result: alwaysTap
+        ? 'Not switched on: giving you a new ability needs his tap on Allow on the card, a spoken yes is not enough. Ask him to tap it.'
+        : tapOnly
+        ? 'Not saved: for money entries Shishir confirms by tapping Confirm on the card (his setting). Ask him to tap it.'
         : 'Not saved: his latest message is not a plain yes (the server checks this, not you). Ask him to confirm with a simple "haan" or the Confirm button. If he asked for a change, propose again with the change.',
       isError: true,
     }
@@ -840,6 +886,26 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     })
     if (error) return { result: error.message, isError: true }
     return { result: 'Noted. I will remember that.', pending: null, card: { type: 'done', title: 'Remembered', detail: p.body.note } }
+  }
+
+  if (p.kind === 'enable_skill') {
+    const skill = p.body.skill as WriteSkill
+    const current = await getAssistantSettings()
+    const next = current.write_skills.includes(skill) ? current.write_skills : [...current.write_skills, skill]
+    await saveAssistantSettings({ write_skills: next, skills_offered: [...ALL_WRITE_SKILLS] }, ctx.ownerId)
+    await syncDbPageGrants(next)
+    const label = WRITE_SKILLS.find((k) => k.key === skill)!.label
+    await logAuditEvent({
+      actor: { id: ctx.ownerId, email: ctx.ownerEmail, role: 'owner' },
+      actionType: 'update', module: 'settings', tableName: 'app_settings', recordLabel: `DB skill allowed: ${label}`,
+      metadata: { via: 'assistant', skill, write_skills: next },
+    })
+    return {
+      result: { switched_on: label, next: 'It is on now and your tools for it are available. Carry on with what he asked.' },
+      pending: null,
+      settingsChanged: true,
+      card: { type: 'done', title: `DB can now do: ${label}`, detail: 'Switch it off any time in Settings -> DB Assistant -> What DB can do.' },
+    }
   }
 
   if (p.kind === 'merge_expense_types') {
@@ -951,12 +1017,14 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     stock_intake: 'Stock entered',
     accessory_receipt: 'Accessories received',
     trade_in: `Trade-in ${d.trade_in_number || ''} recorded`,
+    customer_return: 'Return recorded -- unit in QC pending',
   }
   return {
     result: {
       saved: true, ...pickIds(d),
       next: p.kind === 'sales_document' ? 'Offer to share it on WhatsApp (share_document_on_whatsapp).'
-        : p.kind === 'trade_in' ? 'Tell him to print the buyback slip (link on the card) and get it signed by the customer.' : undefined,
+        : p.kind === 'trade_in' ? 'Tell him to print the buyback slip (link on the card) and get it signed by the customer.'
+        : p.kind === 'customer_return' ? 'Tell him it is done: unit back in QC pending, sale cancelled, refund or credit recorded. If you warned about an invoice, remind him once.' : undefined,
     },
     pending: null,
     card: { type: 'done', title: titles[p.kind as RouteKey], detail: p.summary, ...(p.kind === 'trade_in' && d.id ? { link: `/dashboard/trade-ins/${d.id}/slip` } : {}) },

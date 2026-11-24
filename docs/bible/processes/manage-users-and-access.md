@@ -11,7 +11,7 @@ sources:
   - apps/erp/app/api/users/route.ts
   - apps/erp/app/api/users/[id]/route.ts
   - apps/erp/app/api/users/[id]/password/route.ts
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What this is
@@ -40,8 +40,10 @@ password, including another owner's, then sign in as them):
   `DELETE /api/user-sessions/[id]`; "Log off all" skips them).
 - **DB** (`username = db`): nobody can view or set her password or change her
   role — only the server signs her in, and anyone holding the password could act
-  in her name. Her activate/deactivate (the off switch) and page access can be
-  changed only by DB's master. Her login is also refused at the browser login
+  in her name. Her activate/deactivate (the off switch) can be changed only by
+  DB's master. Her **page access is not edited here** (2026-11-24): it follows her
+  skills in Settings → DB Assistant → What DB can do, so her row has no Edit access
+  button and the route refuses page changes for her (**assistant**). Her login is also refused at the browser login
   (`/api/auth/log-event`, `/api/auth/session-register`).
 
 ## Steps — creating a user

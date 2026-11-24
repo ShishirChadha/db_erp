@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { encryptPassword, decryptPassword } from '@/lib/auth/password-vault'
 import { usernameToSyntheticEmail } from '@/lib/auth/username'
+import { getAssistantSettings, type WriteSkill } from './settings'
 
 // DB is a real ERP user, so everything she creates is attributed to her
 // (created_by / entered_by / audit actor) -- the owner asked to be able to see
@@ -27,10 +28,55 @@ export async function isDbAgent(userId: string): Promise<boolean> {
 }
 const SESSION_SETTING_KEY = 'assistant_db_session_id'
 
-// Only the screens her tasks need. Edit grants are the subset that gate writes
-// (sales entry and repair creation are gated by page access alone).
-export const DB_ALLOWED_PAGES = ['new_entry', 'quotations', 'expenses', 'repair_jobs', 'replacement_jobs', 'customers', 'live_stock', 'stock']
-export const DB_EDIT_PAGES = ['quotations', 'expenses', 'repair_jobs', 'replacement_jobs', 'customers']
+// DB's ERP access follows her skills (Settings -> DB Assistant -> What DB can
+// do): each switched-on skill gets exactly the page grants its route checks,
+// nothing more, and switching a skill off takes them away. Her reads don't use
+// page grants (they run on the server), so a skill with no route needs none.
+// Before 2026-11-24 her access was also editable in Users, which let it drift
+// far wider than anything she could use -- Users now shows it read-only.
+//   view = profiles.allowed_pages (hasPageAccess), edit = profile_page_actions (canEditPage)
+export const SKILL_PAGES: Record<WriteSkill, { view: string[]; edit: string[] }> = {
+  pi: { view: ['quotations'], edit: ['quotations'] },           // POST /api/sales-documents
+  expense: { view: ['expenses'], edit: ['expenses'] },          // POST /api/expenses
+  sale: { view: ['new_entry'], edit: [] },                      // POST /api/sales-entry
+  repair: { view: ['new_entry'], edit: [] },                    // POST /api/repair-jobs
+  replacement: { view: ['new_entry'], edit: [] },               // POST /api/replacement-jobs
+  stock_in: { view: ['new_entry'], edit: [] },                  // POST /api/stock-intake + accessory receive
+  trade_in: { view: ['new_entry'], edit: [] },                  // POST /api/trade-ins
+  return: { view: ['rma'], edit: ['rma'] },                     // POST /api/rma (from_customer)
+  customer: { view: [], edit: [] },                             // saved by the assistant itself
+  learn: { view: [], edit: [] },
+}
+const PAGE_NAMES: Record<string, string> = { quotations: 'PIs & Quotations', expenses: 'Expenses', new_entry: 'New Entry', rma: 'RMA' }
+
+export function dbPageGrants(skills: readonly WriteSkill[]) {
+  const view = [...new Set(skills.flatMap((k) => SKILL_PAGES[k]?.view ?? []))].sort()
+  const edit = [...new Set(skills.flatMap((k) => SKILL_PAGES[k]?.edit ?? []))].sort()
+  return { view, edit }
+}
+
+export function skillPagesLine(skill: WriteSkill) {
+  const { view, edit } = SKILL_PAGES[skill]
+  if (!view.length) return 'It needs no extra ERP page access.'
+  return `ERP access it gets: ${view.map((k) => `${PAGE_NAMES[k] || k}${edit.includes(k) ? ' (edit)' : ''}`).join(', ')}.`
+}
+
+// Sets DB's page grants to exactly what these skills need. Called when her
+// skills change (Settings save, the Allow card) and when her account is made.
+export async function syncDbPageGrants(skills: readonly WriteSkill[]): Promise<void> {
+  const { data: profile } = await supabaseAdmin.from('profiles').select('id').eq('username', DB_USERNAME).maybeSingle()
+  if (!profile) return
+  const { view, edit } = dbPageGrants(skills)
+  const { error } = await supabaseAdmin.from('profiles').update({ allowed_pages: view }).eq('id', profile.id)
+  if (error) throw new Error(`Could not update DB's page access: ${error.message}`)
+  const { error: delErr } = await supabaseAdmin.from('profile_page_actions').delete().eq('profile_id', profile.id)
+  if (delErr) throw new Error(`Could not update DB's edit access: ${delErr.message}`)
+  if (edit.length) {
+    const { error: insErr } = await supabaseAdmin.from('profile_page_actions')
+      .insert(edit.map((page_key) => ({ profile_id: profile.id, page_key, can_edit: true })))
+    if (insErr) throw new Error(`Could not update DB's edit access: ${insErr.message}`)
+  }
+}
 
 export type DbAgentStatus =
   | { ready: true; profileId: string; sessionId: string }
@@ -69,7 +115,7 @@ export async function setUpDbAgent(): Promise<DbAgentStatus> {
       full_name: DB_DISPLAY_NAME,
       role: 'manager',
       is_active: true,
-      allowed_pages: DB_ALLOWED_PAGES,
+      allowed_pages: [],
       username: DB_USERNAME,
       encrypted_password: encryptPassword(password),
     })
@@ -77,8 +123,7 @@ export async function setUpDbAgent(): Promise<DbAgentStatus> {
       await supabaseAdmin.auth.admin.deleteUser(created.user.id)
       throw new Error(profileErr.message)
     }
-    await supabaseAdmin.from('profile_page_actions')
-      .insert(DB_EDIT_PAGES.map((page_key) => ({ profile_id: created.user.id, page_key, can_edit: true })))
+    await syncDbPageGrants((await getAssistantSettings()).write_skills)
     profile = { id: created.user.id, is_active: true }
   }
   if (!profile.is_active) return { ready: false, reason: 'deactivated' }
