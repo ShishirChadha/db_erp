@@ -157,6 +157,15 @@ A new customer she proposes goes through the same duplicate check as the Custome
 form (`checkDuplicateCustomer`, with the GSTIN): a mobile already on file blocks it
 unless both companies have different GSTINs, which only adds a note to the card.
 
+The card carries the full **billing address** and, when it differs, the **ship-to
+address** (line 1, line 2, city, PIN), in the same columns the Customers form writes,
+including the composed `address` / `shipping_address` that PIs and invoices print.
+The state comes from the PIN, or else the GSTIN. When the billing PIN is in a
+different state from the GSTIN, the card warns. For a customer who already exists,
+`propose_customer_address` adds or changes the address (or email): only the fields
+she passes change, and the before/after goes in the audit log (2026-11-24; before
+this she could save only the city).
+
 ## Several devices in one room, and pausing
 
 **Only one device answers.** Before answering "Hey DB", a device asks the server for a

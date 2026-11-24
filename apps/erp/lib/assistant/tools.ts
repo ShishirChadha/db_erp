@@ -6,6 +6,8 @@ import { logAuditEvent } from '@/lib/audit-log'
 import { istToday } from '@/lib/attendance'
 import { checkDuplicateCustomer } from '@/lib/customer-dedupe'
 import { NON_SERIALIZED_CATEGORIES } from '@/lib/sku-categories'
+import { stateCodeFromPincode } from '@/lib/pincode-state'
+import { STATE_CODE_TO_NAME } from '@/lib/gstStateCodes'
 import { callRouteAsDb, type RouteKey } from './call-route'
 import { getDbAccessToken, DB_DISPLAY_NAME } from './identity'
 import {
@@ -33,9 +35,22 @@ import { syncDbPageGrants, skillPagesLine } from './identity'
 // and save in the same breath; the owner has to have said yes (or tapped
 // Confirm) in between.
 
+// Billing address = the "bill to" (the GSTIN's state); shipping = "ship to",
+// only when it differs. Same columns the Customers form writes.
+const ADDRESS_FIELDS = {
+  address_line1: z.string().nullish().describe('Billing: building/flat, street.'),
+  address_line2: z.string().nullish().describe('Billing: area, sector, landmark.'),
+  city: z.string().nullish().describe('Billing city.'),
+  pincode: z.string().nullish().describe('Billing 6-digit PIN.'),
+  shipping_address_line1: z.string().nullish().describe('Ship-to, only if different from billing.'),
+  shipping_address_line2: z.string().nullish(),
+  shipping_city: z.string().nullish(),
+  shipping_pincode: z.string().nullish(),
+}
+
 export interface PendingAction {
   id: string
-  kind: RouteKey | 'customer' | 'note' | 'merge_expense_types' | 'enable_skill'
+  kind: RouteKey | 'customer' | 'customer_address' | 'note' | 'merge_expense_types' | 'enable_skill'
   body: any
   // Done just before the route call on confirm (e.g. create the new expense type).
   prepare?: { new_expense_type?: { value: string; owner_only: boolean }; reactivate_type_id?: string }
@@ -230,7 +245,12 @@ const S = {
     phone: z.string().describe('10-digit mobile.'),
     email: z.string().nullish(),
     gst_number: z.string().nullish(),
-    city: z.string().nullish(),
+    ...ADDRESS_FIELDS,
+  }),
+  propose_customer_address: z.object({
+    customer_id: z.string().describe('From find_customer.'),
+    ...ADDRESS_FIELDS,
+    email: z.string().nullish(),
   }),
   propose_sales_document: z.object({
     doc_type: z.enum(['proforma', 'quotation']).describe('PI = proforma.'),
@@ -386,7 +406,8 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   open_page: 'Open an ERP page on his screen so he can work on it himself -- "Sales Ledger kholo", "Ramesh ka customer dikhao", "PI 245 kholo", "stock mein 840 G6 dikhao". Saves nothing, needs no confirmation. Use search to pre-fill a list page\'s search box, or record to open one PI/quotation, invoice, PO, rental or stock unit by its number. Afterwards say one short line (e.g. "Khol diya"); she stops listening so he can work.',
   find_recent_documents: 'The customer\'s latest PIs and quotations (number, date, total), newest first.',
   recall_notes: 'Notes the owner asked you to remember (general, or about one customer).',
-  propose_customer: 'Prepare a new customer record. Shows the owner a confirmation card; nothing is saved yet.',
+  propose_customer: 'Prepare a new customer record, with its full billing address (and ship-to address if different) whenever he gives one. Shows the owner a confirmation card; nothing is saved yet.',
+  propose_customer_address: 'Add or change the billing and/or ship-to address (or email) of an EXISTING customer. Only the fields you pass change. Shows a confirmation card; nothing is saved yet.',
   propose_sales_document: 'Prepare a proforma invoice (PI) or quotation. Returns warnings you must raise. Nothing is saved yet.',
   propose_expense: 'Prepare an expense entry. Matches the type to an existing category (private ones included). If the type is new it returns similar existing types and asks you to check with Shishir first. Returns warnings you must raise. Nothing is saved yet.',
   propose_merge_expense_types: 'Prepare merging duplicate expense categories (e.g. "Petrol" + "Petrol Exp" into "Petrol"): past expenses are re-labelled and the merged types leave the dropdown. Shows counts. Nothing changes until Shishir confirms.',
@@ -424,7 +445,7 @@ const TOOL_MODULE: Partial<Record<ToolName, ReadModule>> = {
 const TOOL_SKILL: Partial<Record<ToolName, WriteSkill>> = {
   propose_sales_document: 'pi', share_document_on_whatsapp: 'pi', find_recent_documents: 'pi',
   propose_expense: 'expense', propose_merge_expense_types: 'expense', propose_sale: 'sale', propose_repair_job: 'repair',
-  propose_replacement_job: 'replacement', propose_customer: 'customer', propose_note: 'learn',
+  propose_replacement_job: 'replacement', propose_customer: 'customer', propose_customer_address: 'customer', propose_note: 'learn',
   propose_stock_in: 'stock_in', propose_accessory_in: 'stock_in',
   propose_trade_in: 'trade_in',
   propose_customer_return: 'return',
@@ -502,6 +523,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
       }
       case 'recall_notes': return { result: await recallNotes(input.customer_id) }
       case 'propose_customer': return proposeCustomer(input, ctx)
+      case 'propose_customer_address': return proposeCustomerAddress(input, ctx)
       case 'propose_sales_document': return proposeSalesDocument(input, ctx)
       case 'propose_expense': return proposeExpense(input, ctx)
       case 'propose_merge_expense_types': return proposeMergeExpenseTypes(input, ctx)
@@ -569,10 +591,73 @@ async function proposeCustomer(input: z.infer<typeof S.propose_customer>, ctx: T
   const body = {
     customer_name: input.customer_name.trim(), type: input.type, phone, email: input.email?.trim() || '',
     gst_number: gst, has_gst: !!gst, gst_treatment: gst ? 'registered_regular' : input.type === 'Business' ? 'unregistered_business' : 'consumer',
-    state_code: gst ? gst.slice(0, 2) : null, city: input.city?.trim() || null,
+    state_code: gst ? gst.slice(0, 2) : null,
   }
+  const addr = addressColumns(input, gst ? gst.slice(0, 2) : null)
+  if ('error' in addr) return { result: addr.error, isError: true }
+  Object.assign(body, addr.columns)
+  if (!body.state_code && addr.columns.state_code) body.state_code = addr.columns.state_code
+  warnings.push(...addr.warnings)
   return park('customer', body, `New customer: ${body.customer_name}`,
-    `${body.customer_name} (${body.type}), ${phone}${gst ? `, GSTIN ${gst}` : ''}${body.city ? `, ${body.city}` : ''}`, warnings, ctx)
+    `${body.customer_name} (${body.type}), ${phone}${gst ? `, GSTIN ${gst}` : ''}${addr.summary}`, warnings, ctx)
+}
+
+// Builds the Customers form's address columns (parts + the composed
+// `address` / `shipping_address` that PIs and invoices print). State comes from
+// the PIN, else the GSTIN. Only fields that were given are returned.
+const clean = (v: string | null | undefined) => (v ?? '').replace(/\s+/g, ' ').trim()
+const composeAddress = (...parts: string[]) => parts.filter(Boolean).join(', ')
+function addressColumns(input: Partial<Record<keyof typeof ADDRESS_FIELDS, string | null | undefined>>, gstState: string | null):
+  { error: string } | { columns: Record<string, any>; warnings: string[]; summary: string } {
+  const columns: Record<string, any> = {}
+  const warnings: string[] = []
+  let summary = ''
+  const pin = clean(input.pincode).replace(/\s/g, '')
+  const shipPin = clean(input.shipping_pincode).replace(/\s/g, '')
+  if (pin && !/^\d{6}$/.test(pin)) return { error: `Billing PIN "${pin}" is not 6 digits -- ask him for it.` }
+  if (shipPin && !/^\d{6}$/.test(shipPin)) return { error: `Ship-to PIN "${shipPin}" is not 6 digits -- ask him for it.` }
+
+  const billGiven = [input.address_line1, input.address_line2, input.city, input.pincode].some((v) => clean(v))
+  if (billGiven) {
+    const l1 = clean(input.address_line1), l2 = clean(input.address_line2), city = clean(input.city)
+    const code = stateCodeFromPincode(pin) || gstState
+    const state = code ? STATE_CODE_TO_NAME[code] || '' : ''
+    Object.assign(columns, { address_line1: l1, address_line2: l2, city, pincode: pin, state, ...(code ? { state_code: code } : {}) })
+    columns.address = composeAddress(l1, l2, city, [state, pin].filter(Boolean).join(' - '))
+    summary += `\nBill to: ${columns.address}`
+    const pinState = stateCodeFromPincode(pin)
+    if (gstState && pinState && pinState !== gstState) warnings.push(`The GSTIN is from ${STATE_CODE_TO_NAME[gstState] || gstState} but the billing PIN ${pin} is in ${STATE_CODE_TO_NAME[pinState] || pinState}. The billing address should be the GSTIN's address.`)
+  }
+  const shipGiven = [input.shipping_address_line1, input.shipping_address_line2, input.shipping_city, input.shipping_pincode].some((v) => clean(v))
+  if (shipGiven) {
+    const l1 = clean(input.shipping_address_line1), l2 = clean(input.shipping_address_line2), city = clean(input.shipping_city)
+    const shipCode = stateCodeFromPincode(shipPin)
+    const state = shipCode ? STATE_CODE_TO_NAME[shipCode] || '' : ''
+    Object.assign(columns, {
+      shipping_address_line1: l1 || null, shipping_address_line2: l2 || null, shipping_city: city || null,
+      shipping_pincode: shipPin || null, shipping_state: state || null,
+    })
+    columns.shipping_address = composeAddress(l1, l2, city, [state, shipPin].filter(Boolean).join(' - ')) || null
+    summary += `\nShip to: ${columns.shipping_address}`
+  }
+  return { columns, warnings, summary }
+}
+
+async function proposeCustomerAddress(input: z.infer<typeof S.propose_customer_address>, ctx: ToolContext): Promise<ToolOutcome> {
+  const { data: c } = await supabaseAdmin.from('customers').select('id, customer_name, gst_number, state_code, address, shipping_address, email')
+    .eq('id', input.customer_id).not('is_deleted', 'is', true).maybeSingle()
+  if (!c) return { result: 'Customer not found -- use find_customer first.', isError: true }
+  const gstState = c.gst_number ? String(c.gst_number).slice(0, 2) : null
+  const addr = addressColumns(input, gstState)
+  if ('error' in addr) return { result: addr.error, isError: true }
+  const body: Record<string, any> = { ...addr.columns }
+  // A registered customer's state is its GSTIN's, whatever the PIN says.
+  if (gstState) body.state_code = gstState
+  const email = clean(input.email)
+  if (email) body.email = email
+  if (!Object.keys(body).filter((k) => k !== 'state_code').length) return { result: 'Nothing to change: give the address (or email) to save.', isError: true }
+  return park('customer_address', { customer_id: c.id, customer_name: c.customer_name, changes: body, before: { address: c.address, shipping_address: c.shipping_address, email: c.email } },
+    `Update address: ${c.customer_name}`, `${c.customer_name}${addr.summary}${email ? `\nEmail: ${email}` : ''}`, addr.warnings, ctx)
 }
 
 async function proposeSalesDocument(input: z.infer<typeof S.propose_sales_document>, ctx: ToolContext): Promise<ToolOutcome> {
@@ -963,6 +1048,18 @@ async function confirmPending(actionId: string, ctx: ToolContext): Promise<ToolO
     })
   }
   if (p.prepare?.reactivate_type_id) await supabaseAdmin.from('custom_options').update({ is_active: true }).eq('id', p.prepare.reactivate_type_id)
+
+  if (p.kind === 'customer_address') {
+    const { customer_id, customer_name, changes, before } = p.body
+    const { error } = await supabaseAdmin.from('customers').update(changes).eq('id', customer_id)
+    if (error) return { result: error.message, isError: true }
+    await logAuditEvent({
+      actor: { id: ctx.db.profileId, email: `${DB_DISPLAY_NAME} (assistant)`, role: 'manager' },
+      actionType: 'update', module: 'customers', tableName: 'customers', recordId: customer_id, recordLabel: customer_name,
+      metadata: { via: 'assistant', requested_by: ctx.ownerEmail, before, after: changes },
+    })
+    return { result: { saved: true, customer_id }, pending: null, card: { type: 'done', title: 'Address saved', detail: customer_name } }
+  }
 
   if (p.kind === 'customer') {
     const { data, error } = await supabaseAdmin.from('customers').insert([{ ...p.body, communication_channels: ['whatsapp'] }]).select('id, customer_name').single()
