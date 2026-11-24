@@ -50,6 +50,10 @@ export async function runAssistantTurn(params: {
   voiceIssue?: 'blocked' | 'failed' | null
   // He tapped Confirm on this pending card (the panel sends its id).
   confirmActionId?: string | null
+  // A photo he attached (label, screenshot, invoice), already resized by the
+  // panel. Sent to the model this turn only; the saved conversation keeps just
+  // "[photo]" so it is never stored and later turns don't pay for it again.
+  image?: { data: string; media_type: 'image/jpeg' | 'image/png' | 'image/webp' } | null
   emit: (e: TurnEvent) => void
 }) {
   const { owner, db, emit } = params
@@ -79,7 +83,14 @@ export async function runAssistantTurn(params: {
       : params.voiceIssue === 'failed'
         ? ' | your last reply was silent on his device: it could not play the sound'
         : ''
-  messages.push({ role: 'user', content: `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${voiceNote}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.text}` })
+  const userText = `[${weekday}, ${today} | ${how}${params.interrupted ? ' | he stopped your last reply midway; he did not hear all of it' : ''}${voiceNote}${params.image ? ' | he attached a photo' : ''}${pending ? ` | pending action ${pending.id}: ${pending.summary.replace(/\n/g, '; ')}` : ''}]\n${params.image ? '[photo] ' : ''}${params.text}`
+  const userIndex = messages.length
+  messages.push({
+    role: 'user',
+    content: params.image
+      ? [{ type: 'image', source: { type: 'base64', media_type: params.image.media_type, data: params.image.data } }, { type: 'text', text: userText }]
+      : userText,
+  })
 
   // His approval of the pending card, decided in code from his own words or
   // tap -- never from anything the model reads (lib/assistant/approval.ts).
@@ -189,6 +200,13 @@ export async function runAssistantTurn(params: {
         : (err as Error).message,
     })
   } finally {
+    // Never store the photo: the saved turn is plain text again ("[photo] ..."),
+    // which also keeps it counted as one of his turns.
+    // The note tells her later turns that she did see it: without it she
+    // doubted a serial she had read correctly (test, 2026-11-24).
+    if (params.image && messages[userIndex]?.role === 'user') {
+      messages[userIndex] = { role: 'user', content: userText.replace('[photo] ', '[photo: he attached a photo here; you saw it in this turn and it is not kept. What you read from it in your reply below is correct -- use it, never ask him to repeat it.] ') }
+    }
     await supabaseAdmin.from('assistant_threads')
       .update({ messages, pending_action: pending, updated_at: new Date().toISOString() })
       .eq('id', thread.id)

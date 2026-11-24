@@ -77,6 +77,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | document_sends | channel | document_sends_channel_check | `CHECK ((channel = ANY (ARRAY['email'::text, 'whatsapp'::text])))` |
 | document_sends | document_type | document_sends_document_type_check | `CHECK ((document_type = ANY (ARRAY['invoice'::text, 'sales_document'::text])))` |
 | document_sends | status | document_sends_status_check | `CHECK ((status = ANY (ARRAY['sent'::text, 'failed'::text])))` |
+| document_share_links | code | document_share_links_code_check | `CHECK ((code ~ '^[a-z2-9]{10}$'::text))` |
 | expense_reimbursements | payment_account | expense_reimbursements_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |
 | expenses | itc_status | expenses_itc_status_check | `CHECK (((itc_status IS NULL) OR (itc_status = ANY (ARRAY['pending'::text, 'claimed'::text, 'ineligible'::text, 'reversed'::text]))))` |
 | expenses | payment_account | expenses_payment_account_check | `CHECK ((payment_account = ANY (ARRAY['Digitalbluez'::text, 'Techtenth'::text, 'Cash'::text])))` |

@@ -127,6 +127,13 @@ a hard fail passes only with a written reason. An existing SKU is matched on
 price-relevant fields, never on every detected spec (exact matching would mint
 duplicates). See **auto-check**.
 
+## A shared document link opens one document, nothing more (2026-11-24)
+
+A PI or quotation sent on WhatsApp is a short link, `digitalbluez.com/d/<code>`.
+The code (`document_share_links`, service-role only, 30 days) is the only
+credential and opens exactly that one PDF through a fresh 10-minute signed URL;
+the page shows only the document's title. See **assistant** → WhatsApp links.
+
 ## API-layer role enforcement, not RLS, not middleware
 
 Almost every route uses the Supabase service-role client, which bypasses RLS

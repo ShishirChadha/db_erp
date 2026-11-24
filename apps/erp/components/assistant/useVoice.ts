@@ -706,6 +706,33 @@ export function wakeMatches(heard: string, phrases: string[]) {
   return NAME_RE.test(h.trim())
 }
 
+// What the wake listener heard, for Settings -> "What DB heard when you called
+// her" (2026-11-24: waking her took ~5 calls and nothing showed why). Kept in
+// this browser tab only (sessionStorage), never sent anywhere; a line becomes a
+// wake phrase only when he taps "That was me".
+export interface WakeLogEntry { at: number; kind: 'heard' | 'woke' | 'error' | 'paused'; text: string }
+export const WAKE_LOG_EVENT = 'db-wake-log'
+const WAKE_LOG_KEY = 'db-wake-log'
+const wakeLog: WakeLogEntry[] = (() => {
+  try { return typeof window === 'undefined' ? [] : JSON.parse(sessionStorage.getItem(WAKE_LOG_KEY) || '[]') } catch { return [] }
+})()
+function logWake(kind: WakeLogEntry['kind'], text: string) {
+  if (wakeLog[0] && wakeLog[0].kind === kind && wakeLog[0].text === text && Date.now() - wakeLog[0].at < 5000) return
+  wakeLog.unshift({ at: Date.now(), kind, text })
+  wakeLog.length = Math.min(wakeLog.length, 25)
+  try { sessionStorage.setItem(WAKE_LOG_KEY, JSON.stringify(wakeLog)) } catch {}
+  window.dispatchEvent(new Event(WAKE_LOG_EVENT))
+}
+export function useWakeLog() {
+  const [, bump] = useState(0)
+  useEffect(() => {
+    const on = () => bump((n) => n + 1)
+    window.addEventListener(WAKE_LOG_EVENT, on)
+    return () => window.removeEventListener(WAKE_LOG_EVENT, on)
+  }, [])
+  return wakeLog
+}
+
 export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean, onWake: () => void) {
   const wakeRef = useRef(onWake)
   wakeRef.current = onWake
@@ -721,6 +748,13 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
     if (!Ctor || !browserSpeechReliable()) { setFailed('“Hey DB” needs Chrome. In this browser, tap the mic.'); setActive(false); return }
     if (!enabled || paused || blockedRef.current) { setActive(false); return }
     let disposed = false
+    // On a computer, keep listening while the ERP tab is in the background
+    // (he is on WhatsApp Web, mail...). Phones keep the tab-visible rule: their
+    // audio can't share the mic. If Chrome refuses in the background, fall back
+    // to visible-only until the tab is shown again.
+    const background = !isPhoneAudio()
+    let backgroundRefused = false
+    const mayListen = () => document.visibilityState === 'visible' || (background && !backgroundRefused)
     let rec: any = null // the one live recogniser, null once it has ended
     let timer: ReturnType<typeof setTimeout> | null = null
     let failures = 0
@@ -751,7 +785,7 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       timer = setTimeout(() => { timer = null; begin() }, ms)
     }
     const begin = () => {
-      if (disposed || standDown || rec || document.visibilityState !== 'visible') return
+      if (disposed || standDown || rec || !mayListen()) return
       if (mic.busy > 0 && Date.now() - mic.since > 90_000) mic.busy = 0 // a holder that never let go; no listen lasts 90s
       if (mic.busy > 0) { schedule(800); return } // DB is using the mic; try again shortly (not a failure)
       const r = new Ctor()
@@ -769,12 +803,16 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
             if (wakeMatches(e.results[i][a].transcript, phrases)) {
               // eslint-disable-next-line no-console
               console.info(`[DB wake] woke on "${e.results[i][a].transcript}"`)
+              logWake('woke', e.results[i][a].transcript)
               woke = true; try { r.abort() } catch {} return
             }
           }
           if (e.results[i].isFinal) {
             // eslint-disable-next-line no-console
             console.info(`[DB wake] heard "${e.results[i][0].transcript}" (not a wake phrase)`)
+            // Short lines only: a call to her is a few words, not a conversation.
+            const t = String(e.results[i][0].transcript || '').trim()
+            if (t && t.split(/\s+/).length <= 6) logWake('heard', t)
           }
         }
       }
@@ -783,6 +821,13 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
         // eslint-disable-next-line no-console
         console.warn(`[DB wake] error: ${e.error}`)
         errored = true
+        logWake('error', e.error)
+        if (document.visibilityState !== 'visible' && background) {
+          // Chrome won't listen from a background tab here: wait for the tab.
+          backgroundRefused = true
+          logWake('paused', 'listening only while the ERP tab is open in front')
+          return
+        }
         if (FATAL_ERRORS.has(e.error)) giveUp(e.error === 'not-allowed' ? 'Microphone blocked for this site: allow it in Chrome’s site settings, then reload.' : `Speech recognition unavailable (${e.error}).`)
       }
       r.onend = () => {
@@ -814,8 +859,12 @@ export function useWakeWord(enabled: boolean, phrases: string[], paused: boolean
       } catch { rec = null; failures++; schedule(2000) }
     }
     const onVis = () => {
-      if (document.visibilityState === 'visible') { claim(); schedule(300) }
-      else { if (timer) { clearTimeout(timer); timer = null } try { rec?.abort() } catch {} }
+      if (document.visibilityState === 'visible') { backgroundRefused = false; claim(); schedule(300) }
+      else if (!background || backgroundRefused) {
+        if (timer) { clearTimeout(timer); timer = null }
+        try { rec?.abort() } catch {}
+        logWake('paused', 'ERP tab in the background')
+      }
     }
     const onFocus = () => { if (standDown) { claim(); schedule(300) } }
     document.addEventListener('visibilitychange', onVis)
@@ -891,8 +940,16 @@ export function useNameTrainer() {
 // saying, and a "weak" word ("bas", "ok ok") only when it is said on its own.
 const STRONG_STOP = ['stop', 'stop it', 'ruko', 'ruk jao', 'ruk ja', 'chup', 'chup karo', 'enough', 'rehne do', 'skip', 'band karo', 'leave it', 'hold on',
   'स्टॉप', 'रुको', 'रुक जाओ', 'चुप', 'बस करो', 'रहने दो', 'बंद करो']
+// "theek hai" / "ok" / "understood" on their own (2026-11-24): he has heard
+// enough. Only a stop -- it never confirms a card; that still needs its own yes.
 const WEAK_STOP = ['bas', 'bas bas', 'bas karo', 'ok ok', 'okay okay', 'theek hai theek hai', 'pata hai', 'mujhe pata hai', 'samajh gaya', 'samajh gayi', 'got it', 'haan haan', 'next',
-  'बस', 'बस बस', 'पता है', 'समझ गया', 'हाँ हाँ']
+  'theek hai', 'thik hai', 'theek h', 'ok', 'okay', 'ok ji', 'achha', 'acha', 'accha', 'achha theek hai', 'ok theek hai', 'okay theek hai', 'hmm ok', 'understood', 'ok understood',
+  'okay understood', 'i understood', 'okay i understood', 'ok i understood', 'samjha', 'samajh gaye', 'theek hai samajh gaya', 'fine', 'alright', 'all right',
+  'बस', 'बस बस', 'पता है', 'समझ गया', 'हाँ हाँ', 'ठीक है', 'ओके', 'अच्छा', 'अच्छा ठीक है', 'ओके ठीक है', 'समझा']
+// Words she says herself all the time: these count only when they are not in
+// what she is saying right now, even on their own (a one-word interim result
+// can be her own voice through the speakers).
+const ECHO_PRONE = new Set(['ok', 'okay', 'ok ji', 'achha', 'acha', 'accha', 'theek hai', 'thik hai', 'theek h', 'fine', 'alright', 'all right', 'ठीक है', 'ओके', 'अच्छा'])
 const hasPhrase = (hay: string, p: string) => ` ${hay} `.includes(` ${p} `)
 
 export function stopHeard(heard: string, saying: string) {
@@ -903,7 +960,7 @@ export function stopHeard(heard: string, saying: string) {
   // A stop word on its own is always him; inside a longer phrase it counts
   // only if she isn't saying that word herself (her echo).
   if (STRONG_STOP.some((p) => hasPhrase(h, p) && (short || !hasPhrase(said, p)))) return true
-  return short && WEAK_STOP.some((p) => hasPhrase(h, p) && (h === p || !hasPhrase(said, p)))
+  return short && WEAK_STOP.some((p) => hasPhrase(h, p) && (ECHO_PRONE.has(p) ? !hasPhrase(said, p) : (h === p || !hasPhrase(said, p))))
 }
 
 export function useStopWords(activeIn: boolean, saying: string, onStop: () => void) {

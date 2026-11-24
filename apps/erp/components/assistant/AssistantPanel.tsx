@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown, Moon, Power } from 'lucide-react'
+import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCircle, Minus, Keyboard, Captions, CaptionsOff, Copy, Check, RotateCcw, ChevronDown, Moon, Power, Camera } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
@@ -39,7 +39,29 @@ type Card =
   | { type: 'open'; href: string; label: string } // an ERP page she opened for him
 
 // instant: a fixed reply answered in the browser, no AI call (instant-replies.ts).
-type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number; instant?: boolean }
+type Entry = { role: 'owner' | 'db'; text: string; cards?: Card[]; at?: number; instant?: boolean; photo?: string }
+type Photo = { data: string; media_type: 'image/jpeg'; preview: string }
+
+// A photo for DB (serial label, screenshot, invoice): shrunk in the browser to
+// at most 1600 px as JPEG -- sharp enough to read a serial, ~200-400 KB, so it
+// uploads fast on a phone and costs ~1,600 tokens.
+async function shrinkPhoto(file: File): Promise<Photo> {
+  const url = URL.createObjectURL(file)
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const i = new Image(); i.onload = () => resolve(i); i.onerror = () => reject(new Error('That file is not a photo DB can read.')); i.src = url
+    })
+    const scale = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight))
+    const canvas = document.createElement('canvas')
+    canvas.width = Math.round(img.naturalWidth * scale)
+    canvas.height = Math.round(img.naturalHeight * scale)
+    canvas.getContext('2d')!.drawImage(img, 0, 0, canvas.width, canvas.height)
+    const preview = canvas.toDataURL('image/jpeg', 0.85)
+    return { data: preview.split(',')[1], media_type: 'image/jpeg', preview }
+  } finally {
+    URL.revokeObjectURL(url)
+  }
+}
 
 const THREAD_KEY = 'db_assistant_thread'
 const STATUS_WORDS: Record<string, string> = {
@@ -145,6 +167,9 @@ export function AssistantLauncher() {
   const [open, setOpen] = useState(false)
   const [minimized, setMinimized] = useState(false)
   const [wakeKey, setWakeKey] = useState(0)
+  // Woken by the keyboard shortcut: skip the spoken "Yes Boss?" (a chime is
+  // enough, he is looking at the screen) and listen at once.
+  const quietWake = useRef(false)
   const [vs, setVs] = useState<VoiceState>({ busy: false, avatar: 'idle', convo: false })
   const [externalPause, setExternalPause] = useState(false)
   const [vv, setVv] = useState<{ h: number; top: number } | null>(null)
@@ -256,10 +281,32 @@ export function AssistantLauncher() {
     if (res.granted === false) { showNotice(`Answered on your ${res.holder || 'other device'}`); return }
     if (config?.look.haptics) buzz([20, 40, 20])
     if (config?.look.sounds) chime('wake')
+    quietWake.current = false
     setOpen(true)
     setMinimized(false)
     setWakeKey((k) => k + 1)
   })
+
+  // Option+Space (Alt+Space) anywhere in the ERP: DB opens already listening.
+  // Never misheard, and faster than calling her name (2026-11-24).
+  useEffect(() => {
+    if (!config || paused) return
+    const onKey = async (e: KeyboardEvent) => {
+      if (!e.altKey || e.metaKey || e.ctrlKey || e.code !== 'Space' || e.repeat) return
+      e.preventDefault()
+      if (vs.busy) return
+      const res = await lease('claim')
+      if (res.granted === false) { showNotice(`Answered on your ${res.holder || 'other device'}`); return }
+      chime('wake')
+      quietWake.current = true
+      setOpen(true)
+      setMinimized(false)
+      setWakeKey((k) => k + 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, paused, vs.busy])
 
   // Hold the lease while talking so the other device stays quiet; if the other
   // device takes over (you tapped its mic), end the conversation here.
@@ -338,6 +385,7 @@ export function AssistantLauncher() {
           <AssistantConversation
             config={config}
             wakeKey={wakeKey}
+            quietWake={quietWake}
             wakeActive={wake.active}
             wakeNote={config.wakeWord ? wake.failed : null}
             paused={paused}
@@ -354,8 +402,8 @@ export function AssistantLauncher() {
   )
 }
 
-function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, pauseInfo, onPauseDevice, endSignal, onState, onMinimize, onClose }: {
-  config: PanelConfig; wakeKey: number; wakeActive: boolean; wakeNote: string | null; paused: boolean
+function AssistantConversation({ config, wakeKey, quietWake, wakeActive, wakeNote, paused, pauseInfo, onPauseDevice, endSignal, onState, onMinimize, onClose }: {
+  config: PanelConfig; wakeKey: number; quietWake: { current: boolean }; wakeActive: boolean; wakeNote: string | null; paused: boolean
   pauseInfo: { scope: 'all' | 'device'; until: string | null }; onPauseDevice: (until: string | null) => void; endSignal: number
   onState: (s: VoiceState) => void; onMinimize: () => void; onClose: () => void
 }) {
@@ -392,6 +440,11 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   const retryTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
   const voiceRef = useRef<ReturnType<typeof useVoice> | null>(null)
+  // The photo waiting to go with his next message (typed or spoken).
+  const [photo, setPhoto] = useState<Photo | null>(null)
+  const photoRef = useRef<Photo | null>(null)
+  photoRef.current = photo
+  const photoInput = useRef<HTMLInputElement>(null)
   const compact = useMedia('(max-width: 1023px)') // phones, Fold opened, tablets
 
   const endConvo = useCallback((rest = false) => {
@@ -424,9 +477,10 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
   // `spoken` = it came from her microphone (the browser recogniser detects no
   // language, so a null language must not read as "typed" to her).
   const send = useCallback(async (text: string, spoken: { language: string | null } | null = null, confirmActionId?: string) => {
-    if (!text.trim() || busy) return
+    const attached = photoRef.current
+    if ((!text.trim() && !attached) || busy) return
     // "Hi DB", "sun rahi ho?", "thank you", "bye": a fixed line, no AI call.
-    const kind = config.instantReplies ? instantKind(text, config.wakePhrases) : null
+    const kind = config.instantReplies && !attached ? instantKind(text, config.wakePhrases) : null
     if (kind) {
       const line = instantReply(kind, text, { callMe: config.callMe, wakeReply: config.wakeReply, script: config.hinglishScript })
       setError(null)
@@ -443,7 +497,8 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     setBusy(true)
     setDraft('')
     const now = Date.now()
-    setEntries((prev) => [...prev, { role: 'owner', text, at: now }, { role: 'db', text: '', cards: [], at: now }])
+    setPhoto(null)
+    setEntries((prev) => [...prev, { role: 'owner', text, at: now, ...(attached ? { photo: attached.preview } : {}) }, { role: 'db', text: '', cards: [], at: now }])
     let reply = ''
     const wasInterrupted = interrupted.current
     interrupted.current = false
@@ -456,6 +511,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
           // The card he tapped Confirm on: the server accepts that as his yes.
           confirm_action_id: confirmActionId ?? null,
           interrupted: wasInterrupted, voice_on: voiceOn, voice_issue: voiceIssue,
+          ...(attached ? { image: { data: attached.data, media_type: attached.media_type } } : {}),
         }),
         timeoutMs: 120_000,
       })
@@ -501,7 +557,9 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
       setStatus(null)
     }
     const v = voiceRef.current
-    if (v && voiceOn && reply.trim()) { setSaying(reply); await v.speak(reply); setSaying('') }
+    // "…" = she decided the words were not meant for her (room chatter): stay quiet.
+    const ignored = /^[.…\s]*$/.test(reply)
+    if (v && voiceOn && reply.trim() && !ignored) { setSaying(reply); await v.speak(reply); setSaying('') }
     if (endAfterReply.current) { endAfterReply.current = false; endConvo(true); return }
     if (convoRef.current) { lastHeard.current = Date.now(); listenAgain(200) }
   }, [busy, threadId, voiceOn, endConvo, listenAgain, config, openPage])
@@ -599,7 +657,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
     setConvo(true)
     setRested(false)
     const t = setTimeout(async () => {
-      if (voiceOn && config.wakeReply.trim()) await voiceRef.current?.speak(config.wakeReply, undefined, true)
+      if (voiceOn && config.wakeReply.trim() && !quietWake.current) await voiceRef.current?.speak(config.wakeReply, undefined, true)
       if (!cancelled && convoRef.current) startConvo()
     }, 300)
     return () => { cancelled = true; clearTimeout(t) }
@@ -813,7 +871,27 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
               </div>
             )}
             {rested && !convo && <p className="mb-2 text-center text-xs text-muted-foreground">Paused. Tap the mic or say “Hey DB” when you need me.</p>}
+            {photo && (
+              <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={photo.preview} alt="Photo for DB" className="h-12 w-12 rounded-md border object-cover" />
+                <span className="flex-1">Goes with your next message (or just press send).</span>
+                <button type="button" onClick={() => setPhoto(null)} className="rounded p-1 hover:bg-muted" aria-label="Remove photo"><X className="h-4 w-4" /></button>
+              </div>
+            )}
             <div className="flex items-center gap-2">
+              <input ref={photoInput} type="file" accept="image/*" className="hidden"
+                onChange={async (e) => {
+                  const f = e.target.files?.[0]
+                  e.target.value = ''
+                  if (!f) return
+                  try { setPhoto(await shrinkPhoto(f)); setError(null) } catch (err) { setError((err as Error).message) }
+                }} />
+              <button type="button" onClick={() => photoInput.current?.click()} disabled={busy || !ready}
+                className="flex h-12 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted disabled:opacity-50 sm:h-11"
+                aria-label="Send DB a photo (serial label, screenshot, invoice)" title="Photo: serial label, screenshot, invoice">
+                <Camera className="h-5 w-5" />
+              </button>
               <input
                 value={draft}
                 onChange={(e) => setDraft(e.target.value)}
@@ -823,7 +901,7 @@ function AssistantConversation({ config, wakeKey, wakeActive, wakeNote, paused, 
                 enterKeyHint="send"
                 className="h-12 min-w-0 flex-1 rounded-full border bg-background px-4 text-base outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50 sm:h-11 sm:text-sm"
               />
-              {draft.trim() ? (
+              {draft.trim() || photo ? (
                 <button type="button" className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-white shadow-md disabled:opacity-50"
                   style={{ background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }} onClick={() => send(draft)} disabled={busy || !ready} aria-label="Send">
                   <Send className="h-4 w-4" />
@@ -936,8 +1014,10 @@ export function MessageRow({ entry: e, look, last, busy, status, onAnswer, onRep
   if (e.role === 'owner') {
     return (
       <div className="flex flex-col items-end gap-0.5">
-        <div className={cn('max-w-[85%] whitespace-pre-wrap', minimal ? 'text-right text-muted-foreground' : 'rounded-2xl rounded-tr-sm px-3 py-2 text-white shadow-sm')}
-          style={minimal ? undefined : { background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>{e.text}</div>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        {e.photo && <img src={e.photo} alt="Photo sent to DB" className="max-h-40 max-w-[60%] rounded-xl border object-contain" />}
+        {e.text && <div className={cn('max-w-[85%] whitespace-pre-wrap', minimal ? 'text-right text-muted-foreground' : 'rounded-2xl rounded-tr-sm px-3 py-2 text-white shadow-sm')}
+          style={minimal ? undefined : { background: `linear-gradient(135deg, ${theme.from}, ${theme.to})` }}>{e.text}</div>}
         {look.timestamps && e.at && <span className="text-[10px] text-muted-foreground">{timeOf(e.at)}</span>}
       </div>
     )
@@ -947,7 +1027,9 @@ export function MessageRow({ entry: e, look, last, busy, status, onAnswer, onRep
     <div className="group flex items-start gap-2">
       <DbAvatar size={28} className="mt-0.5" look={look} />
       <div className="flex min-w-0 max-w-[85%] flex-col gap-1.5">
-        {e.text
+        {e.text && /^[.…\s]*$/.test(e.text)
+          ? <div className="text-xs text-muted-foreground">(ignored: not meant for DB)</div>
+          : e.text
           ? <div className={cn('whitespace-pre-wrap', minimal ? '' : 'rounded-2xl rounded-tl-sm border bg-background px-3 py-2 shadow-sm')}>{e.text}</div>
           : busy && last && <TypingDots label={status} />}
         {e.text && (

@@ -12,7 +12,7 @@ import { cn } from '@/lib/utils'
 import { useAsyncAction } from '@/lib/useAsyncAction'
 import AssistantLearnings from './AssistantLearnings'
 import AssistantLookSettings from './AssistantLookSettings'
-import { useVoice, useNameTrainer, createMeter, iosAudioSession, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
+import { useVoice, useNameTrainer, useWakeLog, createMeter, iosAudioSession, GATE_LEVEL, type SpeakProvider, type VoiceGate } from './useVoice'
 import { setDbPhotoVersion } from './DbAvatar'
 
 // Settings -> DB Assistant. Only DB's master sees this tab (the config route
@@ -576,7 +576,7 @@ export default function AssistantSettingsManager() {
       </>}
 
       {tab === 'brain_voice' && <>
-      <Section title="“Hey DB” wake word" hint="Say a wake phrase and DB opens and starts listening — no tapping. Works while the ERP is open on screen (laptop, or a phone with the screen on).">
+      <Section title="“Hey DB” wake word" hint="Say a wake phrase and DB opens and starts listening — no tapping. On a laptop she also hears you while the ERP tab is in the background (e.g. you are on WhatsApp Web); on a phone, only with the ERP on screen. Fastest of all on a laptop: press ⌥ Option + Space (Alt + Space) anywhere in the ERP.">
         <label className="flex items-center gap-2 text-sm">
           <Checkbox checked={s.wake_word} onCheckedChange={(c) => set('wake_word', !!c)} />Listen for my wake phrase on this ERP
         </label>
@@ -601,6 +601,10 @@ export default function AssistantSettingsManager() {
           {trainer.error && <p className="mt-2 text-xs text-destructive">{trainer.error}</p>}
           <p className="mt-1 text-xs text-muted-foreground">Then press Save changes. Only phrases of two words or more are kept: a single word (like “idbi”) would wake her whenever someone says it.</p>
         </div>
+        <WakeHeard onAdd={(phrase) => {
+          const current = String(s.wake_phrases_text || '').split(',').map((x: string) => x.trim()).filter(Boolean)
+          set('wake_phrases_text', [...new Set([...current, phrase.toLowerCase()])].join(', '))
+        }} />
       </Section>
       </>}
 
@@ -697,6 +701,43 @@ export default function AssistantSettingsManager() {
         {msg && <span className="text-sm text-success">{msg}</span>}
         {err && <span className="text-sm text-destructive">{err}</span>}
       </div>
+    </div>
+  )
+}
+
+// What the wake listener heard in this browser tab (newest first). When she
+// didn't wake, the line shows what Chrome thought he said; "That was me" adds
+// it as a wake phrase. Stays in this tab only.
+function WakeHeard({ onAdd }: { onAdd: (phrase: string) => void }) {
+  const log = useWakeLog()
+  const [added, setAdded] = useState<string[]>([])
+  const time = (t: number) => new Date(t).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  return (
+    <div className="rounded-md border p-3">
+      <p className="text-sm font-medium">What DB heard when you called her</p>
+      <p className="text-xs text-muted-foreground">If she didn't wake, find your call here and tap <b>That was me</b>, then Save changes. Kept in this browser tab only.</p>
+      {log.length === 0
+        ? <p className="mt-2 text-xs text-muted-foreground">Nothing yet. Call her, then come back here.</p>
+        : (
+          <ul className="mt-2 divide-y text-sm">
+            {log.slice(0, 15).map((e, i) => (
+              <li key={`${e.at}-${i}`} className="flex items-center justify-between gap-2 py-1.5">
+                <span className="min-w-0">
+                  <span className="mr-2 text-xs tabular-nums text-muted-foreground">{time(e.at)}</span>
+                  {e.kind === 'heard' && <>“{e.text}”</>}
+                  {e.kind === 'woke' && <span className="text-success">woke on “{e.text}”</span>}
+                  {e.kind === 'error' && <span className="text-muted-foreground">mic error: {e.text}</span>}
+                  {e.kind === 'paused' && <span className="text-muted-foreground">not listening: {e.text}</span>}
+                </span>
+                {e.kind === 'heard' && e.text.trim().split(/\s+/).length >= 2 && (
+                  added.includes(e.text)
+                    ? <span className="shrink-0 text-xs text-muted-foreground">Added</span>
+                    : <Button size="sm" variant="outline" className="shrink-0" onClick={() => { onAdd(e.text); setAdded((a) => [...a, e.text]) }}>That was me</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
     </div>
   )
 }

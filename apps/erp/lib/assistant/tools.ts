@@ -375,7 +375,7 @@ const DESCRIPTIONS: Record<ToolName, string> = {
   find_unit_by_serial: 'Look up one unit by its serial number.',
   price_context: 'Price history for a SKU: what this customer was quoted/charged before, recent sale prices, list price, cost. Call this BEFORE suggesting or accepting a price.',
   get_options: 'Staff names, expense types, payment accounts and billing entities.',
-  propose_stock_in: 'Stock in laptops / desktops / monitors / tablets he received (the New Entry form). Find the model with find_products first. Ask only for what is missing: each serial number (he may say or type it -- if it was fast or unclear, ask him to repeat it slowly or type it; never guess or complete one), who bought it (Digitalbluez, Techtenth, Cash, Other), condition if any, and any charger/bag that came with each unit. Units go live as QC pending without cost or asset number. Then read every serial back character by character and get his yes.',
+  propose_stock_in: 'Stock in laptops / desktops / monitors / tablets he received (the New Entry form). Find the model with find_products first. Ask only for what is missing: each serial number (he may say or type it -- if it was fast or unclear, ask him to repeat it slowly or type it; never guess or complete one), who bought it (Digitalbluez, Techtenth, Cash, Other). Condition and charger/bag only if he mentions them -- never ask. Units go live as QC pending without cost or asset number. Then read every serial back character by character and get his yes.',
   propose_accessory_in: 'Accessories he received, counted by quantity (the Accessories "Receive stock" form): which accessory (find_products), how many, and -- if he says them -- vendor, total price, GST %, purchase date, payment account.',
   open_page: 'Open an ERP page on his screen so he can work on it himself -- "Sales Ledger kholo", "Ramesh ka customer dikhao", "PI 245 kholo", "stock mein 840 G6 dikhao". Saves nothing, needs no confirmation. Use search to pre-fill a list page\'s search box, or record to open one PI/quotation, invoice, PO, rental or stock unit by its number. Afterwards say one short line (e.g. "Khol diya"); she stops listening so he can work.',
   find_recent_documents: 'The customer\'s latest PIs and quotations (number, date, total), newest first.',
@@ -512,7 +512,7 @@ export async function runTool(name: string, rawInput: unknown, ctx: ToolContext)
           ? { result: 'Cancelled. Nothing was saved.', pending: null }
           : { result: 'There is no such pending action.', isError: true }
       case 'share_document_on_whatsapp': {
-        const share = await shareSalesDocument(input.document_id)
+        const share = await shareSalesDocument(input.document_id, ctx.db.profileId)
         return {
           result: { ...share, note: share.customer_has_phone ? 'Ready. The owner taps the button to send.' : 'Customer has no mobile number on file -- the owner can pick the chat.' },
           card: { type: 'share', title: `Send ${share.document_number} on WhatsApp`, pdf_url: share.pdf_url, whatsapp_to_customer: share.whatsapp_to_customer, whatsapp_pick_chat: share.whatsapp_pick_chat },
@@ -535,9 +535,11 @@ function park(kind: PendingAction['kind'], body: any, title: string, summary: st
       status: 'waiting_for_owner_yes',
       summary,
       warnings,
+      // The card on his screen shows every detail; speaking it again is what
+      // made DB slow (2026-11-24). Total + ask, warnings first in a few words.
       instruction: warnings.length
-        ? 'Raise each warning with the owner in your own words, then ask for a yes before confirming.'
-        : 'Read the summary back briefly and ask for a yes.',
+        ? 'Say each warning in a few words, then only the total and "Confirm kar dijiye". Do not read the card back.'
+        : 'Say only the total and "Confirm kar dijiye" (one short line). Do not read the card back -- it is on his screen.',
     },
   }
 }

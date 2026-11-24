@@ -11,36 +11,136 @@ import { priceWarnings } from '@/lib/pricing'
 
 const ilikeSafe = (s: string) => s.replace(/[%_,()]/g, ' ').trim()
 
+// Typo tolerance for the last-resort lookups: what was heard ("Hyperskill",
+// "quantum wireless") against how it was typed in the ERP ("HYPERSCALE",
+// "Quantrum Wirless"). Candidates come from each word's first 4 letters; each
+// spoken word then counts if some word in the record is within ~30% edits.
+function editDistance(a: string, b: string) {
+  if (a === b) return 0
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i)
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i]
+    for (let j = 1; j <= b.length; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
+    prev = cur
+  }
+  return prev[b.length]
+}
+const tokens = (s: string) => s.toLowerCase().split(/[^a-z0-9-]+/).filter(Boolean)
+function wordClose(spoken: string, text: string) {
+  const all = tokens(text)
+  const squashed = all.join('')
+  if (squashed.includes(spoken.replace(/-/g, ''))) return true
+  const limit = Math.max(1, Math.floor(spoken.length * 0.3))
+  // also against two neighbouring words joined ("hyper" + "scale")
+  const pairs = all.slice(0, -1).map((w, i) => w + all[i + 1])
+  return [...all, ...pairs].some((w) => Math.abs(w.length - spoken.length) <= limit && editDistance(spoken, w) <= limit)
+}
+export function fuzzyRank<T>(rows: T[], text: (r: T) => string, words: string[], take = 5): T[] {
+  const ws = words.filter((w) => w.length >= 3 || /\d/.test(w))
+  if (!ws.length) return []
+  const need = ws.length === 1 ? 1 : Math.ceil(ws.length * 0.6)
+  return rows
+    .map((r) => ({ r, hits: ws.filter((w) => wordClose(w, text(r))).length, len: text(r).length }))
+    .filter((x) => x.hits >= need)
+    .sort((a, b) => b.hits - a.hits || a.len - b.len)
+    .slice(0, take).map((x) => x.r)
+}
+const prefixes = (words: string[]) => [...new Set(words.filter((w) => w.length >= 4).map((w) => w.slice(0, 4)))]
+
+// Spoken names rarely match the record exactly: "Hyper Scale" for
+// "HYPERSCALE RELABEL HOSTING", "Sharma ji" for "R K Sharma & Sons". Tried in
+// order, cheapest and most exact first; the last step returns the closest
+// names marked close_match so DB asks "yahi hai?" instead of asking for a
+// mobile number (2026-11-24: a PI took 13 minutes over misses like this).
+const CUSTOMER_COLS = 'id, customer_name, type, phone, email, gst_number, city, state_code'
 export async function findCustomers(query: string) {
-  const q = ilikeSafe(query)
   const digits = query.replace(/\D/g, '')
-  let req = supabaseAdmin
-    .from('customers')
-    .select('id, customer_name, type, phone, email, gst_number, city, state_code')
-    .not('is_deleted', 'is', true)
-    .limit(8)
-  req = digits.length >= 5 ? req.ilike('phone', `%${digits.slice(-10)}%`) : req.ilike('customer_name', `%${q}%`)
-  const { data } = await req
-  const rows = data || []
+  const base = () => supabaseAdmin.from('customers').select(CUSTOMER_COLS).not('is_deleted', 'is', true)
+  let rows: any[] = []
+  let close = false
+  if (digits.length >= 5) {
+    rows = (await base().ilike('phone', `%${digits.slice(-10)}%`).limit(8)).data || []
+  } else {
+    const q = ilikeSafe(query)
+    const words = q.split(/\s+/).filter(Boolean)
+    for (const pattern of [...new Set([`%${q}%`, `%${words.join('')}%`, `%${words.join('%')}%`])]) {
+      rows = (await base().ilike('customer_name', pattern).limit(8)).data || []
+      if (rows.length) break
+    }
+    const strong = words.map((w) => w.toLowerCase()).filter((w) => w.length >= 3 && !/^(ji|sir|and|the|pvt|ltd|private|limited|company|co)$/.test(w))
+    const pre = prefixes(strong)
+    if (!rows.length && pre.length) {
+      const { data } = await base().or(pre.map((p) => `customer_name.ilike.%${p}%`).join(',')).limit(60)
+      rows = fuzzyRank(data || [], (r: any) => r.customer_name || '', strong)
+      close = rows.length > 0
+    }
+  }
   if (rows.length === 0) return []
   const { data: notes } = await supabaseAdmin
     .from('assistant_notes').select('subject_id, note')
     .eq('subject_type', 'customer').eq('is_active', true)
     .in('subject_id', rows.map((r) => r.id))
-  return rows.map((r) => ({ ...r, remembered: (notes || []).filter((n) => n.subject_id === r.id).map((n) => n.note) }))
+  return rows.map((r) => ({
+    ...r,
+    ...(close ? { close_match: true } : {}),
+    remembered: (notes || []).filter((n) => n.subject_id === r.id).map((n) => n.note),
+  }))
 }
 
 // A product search that tolerates how people say models out loud: every word
-// must appear somewhere in the code or description ("840 g6 8 256").
-export async function findProducts(query: string) {
-  const words = ilikeSafe(query).split(/\s+/).filter((w) => w.length > 0).slice(0, 6)
+// must appear somewhere in the code or description ("840 g6 8 256"). Spoken
+// forms are normalised first ("type c" -> type-c, "65 watt" -> 65w) and each
+// word may match one of its everyday synonyms (charger = adapter). If every
+// word can't match, it tries again without the 1-2 letter fragments.
+const PRODUCT_SYNONYMS: Record<string, string[]> = {
+  charger: ['charger', 'adapter', 'adaptor'], adapter: ['adapter', 'adaptor', 'charger'], adaptor: ['adaptor', 'adapter', 'charger'],
+  bag: ['bag', 'backpack', 'sleeve'], backpack: ['backpack', 'bag'], mouse: ['mouse', 'mice'],
+  ram: ['ram', 'memory'], ssd: ['ssd', 'nvme', 'storage'], nvme: ['nvme', 'ssd'], hdd: ['hdd', 'hard disk', 'harddisk'],
+  monitor: ['monitor', 'display'], keyboard: ['keyboard', 'keypad'],
+}
+function productWords(query: string) {
+  return ilikeSafe(query).toLowerCase()
+    .replace(/\b(type|usb)[\s-]*c\b/g, 'type-c')
+    .replace(/\b(\d+)\s*(watt|watts|w)\b/g, '$1w')
+    .split(/\s+/).filter(Boolean).slice(0, 6)
+}
+// The forms a word may take in a description.
+function productAlternatives(w: string) {
+  if (PRODUCT_SYNONYMS[w]) return PRODUCT_SYNONYMS[w]
+  if (w === 'type-c') return ['type-c', 'type c', 'typec', 'usb-c', 'usb c']
+  const watt = w.match(/^(\d+)w$/)
+  if (watt) return [`${watt[1]}w`, `${watt[1]} w`, `${watt[1]} watt`]
+  return [w]
+}
+async function searchProducts(words: string[]) {
   let req = supabaseAdmin
     .from('sku_master')
     .select('id, full_sku_code, sku_description, category, hsn_code, selling_price_default, quantity_in_stock, status')
     .neq('status', 'archived')
-    .limit(10)
-  for (const w of words) req = req.or(`sku_description.ilike.%${w}%,full_sku_code.ilike.%${w}%,model_name.ilike.%${w}%`)
-  const { data } = await req
+    .limit(30)
+  for (const w of words) {
+    const alts = productAlternatives(w)
+    req = req.or(alts.flatMap((a) => [`sku_description.ilike.%${a}%`, `full_sku_code.ilike.%${a}%`, `model_name.ilike.%${a}%`]).join(','))
+  }
+  return (await req).data || []
+}
+export async function findProducts(query: string) {
+  const words = productWords(query)
+  let data = await searchProducts(words)
+  const longer = words.filter((w) => w.length > 2 || /\d/.test(w))
+  if (!data.length && longer.length && longer.length < words.length) data = await searchProducts(longer)
+  let close = false
+  const pre = prefixes(longer)
+  if (!data.length && pre.length) {
+    const { data: cands } = await supabaseAdmin
+      .from('sku_master')
+      .select('id, full_sku_code, sku_description, category, hsn_code, selling_price_default, quantity_in_stock, status')
+      .neq('status', 'archived')
+      .or(pre.map((p) => `sku_description.ilike.%${p}%`).join(','))
+      .limit(80)
+    data = fuzzyRank(cands || [], (r: any) => `${r.sku_description || ''} ${r.full_sku_code || ''}`, longer, 8)
+    close = data.length > 0
+  }
   const skus = data || []
   const serialized = skus.filter((s) => !NON_SERIALIZED_CATEGORIES.includes(s.category))
   const counts = new Map<string, number>()
@@ -55,6 +155,8 @@ export async function findProducts(query: string) {
       counts.set(id, (counts.get(id) || 0) + 1)
     }
   }
+  // Laptops/desktops before their spare parts, in-stock first: "lenovo x13"
+  // should show the X13s, not its battery and bezel.
   return skus.map((s) => ({
     id: s.id,
     code: s.full_sku_code,
@@ -64,7 +166,10 @@ export async function findProducts(query: string) {
     list_price: s.selling_price_default,
     in_stock: NON_SERIALIZED_CATEGORIES.includes(s.category) ? Number(s.quantity_in_stock) || 0 : counts.get(s.id) || 0,
     tracked_per_unit: !NON_SERIALIZED_CATEGORIES.includes(s.category),
+    ...(close ? { close_match: true } : {}),
   }))
+    .sort((a, b) => Number(b.tracked_per_unit) - Number(a.tracked_per_unit) || Number(b.in_stock > 0) - Number(a.in_stock > 0))
+    .slice(0, 10)
 }
 
 export async function findSellableUnits(skuId: string) {
@@ -245,14 +350,6 @@ export async function expenseTypes(): Promise<ExpenseType[]> {
   return (data || []).map((r) => ({ id: r.id, value: r.value, owner_only: !!r.owner_only, is_active: r.is_active !== false }))
 }
 const normType = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\b(expenses?|charges?|exp|cost|costs|bill|bills)\b/g, ' ').replace(/\s+/g, ' ').trim()
-function editDistance(a: string, b: string) {
-  const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)])
-  for (let j = 1; j <= b.length; j++) d[0][j] = j
-  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++) {
-    d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1))
-  }
-  return d[a.length][b.length]
-}
 export function sameExpenseType(a: string, b: string) { return a.trim().toLowerCase() === b.trim().toLowerCase() }
 // Existing types that look like the same thing ("Petrol exp" ~ "Petrol",
 // "Travelling" ~ "Travel"): shared words, or a near-identical spelling.

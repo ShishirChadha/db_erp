@@ -4,12 +4,16 @@ title: DB — the voice assistant
 kind: module
 audience: [owner]
 routes: [/dashboard/assistant]
-keywords: [db, assistant, customer return, return, refund, credit note, wapas, allow, permission, page access, trade-in, upgrade, exchange, buyback, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
+keywords: [db, assistant, fast, slow, short link, whatsapp link, photo, camera, label, screenshot, invoice photo, theek hai, option space, shortcut, what db heard, customer return, return, refund, credit note, wapas, allow, permission, page access, trade-in, upgrade, exchange, buyback, stock in, stock entry, serial number, accessories receive, maal aaya, photo, picture, realistic, avatar photo, open page, kholo, dikhao, open tab, cost, saving money, instant reply, free reply, fresh conversation, look and feel, theme, orb, voice stage, captions, fold, galaxy, minimise, edge glow, vibrate, stop, interrupt, learnings, skills, haiku, sonnet, opus, model, cheaper, conversation mode, continuous, read modules, live stock, sold stock, reports, profit, payments due, avatar, tone, casual, teach name, hey db, db suno, wake word, sarvam, credit, balance, usage, voice, secretary, talk, mic, ai, pi by voice, bol ke, hinglish, remember, notes, whatsapp share, proforma by voice]
 sources:
   - apps/erp/lib/assistant/identity.ts
   - apps/erp/lib/assistant/call-route.ts
   - apps/erp/lib/assistant/trade-in.ts
   - apps/erp/lib/assistant/customer-return.ts
+  - apps/erp/components/assistant/useVoice.ts
+  - apps/web/app/d/**
+  - apps/web/lib/document-share.ts
+  - supabase/migrations/20261124b_document_share_links.sql
   - apps/erp/lib/assistant/tools.ts
   - apps/erp/lib/assistant/data.ts
   - apps/erp/lib/assistant/loop.ts
@@ -52,15 +56,68 @@ updated: 2026-11-24
 DB is the owner's assistant. Tap her face at the bottom right of any dashboard page,
 then the mic, and speak (Hinglish is fine). On a laptop her panel docks beside the page,
 so the ERP stays usable next to her; on a phone it opens full screen. She asks the questions a
-staff member would — price, GST included or not, free bag and mouse, which entity —
-then shows a card with what she is about to save. Nothing is saved until you say yes
-or tap **Confirm**.
+staff member would — price, GST included or not, which entity — one short question at a
+time, then shows a card with what she is about to save. Nothing is saved until you say
+yes or tap **Confirm**.
 
 She can make **PIs and quotations**, record **expenses**, enter **sales**, open
 **repair** and **replacement** jobs, and do **stock in** — laptops/desktops by serial
 number and accessories by quantity (see Stock in below). After a PI she prepares a WhatsApp message with a
-PDF link (valid 7 days); you tap the button to send it. She never sends anything
-herself.
+short link (see WhatsApp links below); you tap the button to send it. She never sends
+anything herself. You can also **send her a photo** (see Photos below).
+
+## Fast, like a person at the counter (2026-11-24)
+
+A voice PI took 13 minutes on 24 Nov: 19 spoken round trips, each reply 15–20 s of
+audio. The model replies in 1–2 s, so the time went into extra turns and long answers.
+Since then:
+- **Lookups forgive how things are said.** Customers: exact name → spaces removed
+  ("Hyper Scale" = HYPERSCALE) → words in order → closest names by spelling
+  ("Hyperskill"), which come back as `close_match` so she asks "Hyperscale, yahi?"
+  instead of asking for a mobile number. Products: "type c" = Type-C, "65 watt" = 65w,
+  charger = adapter, bag = backpack, then typo-tolerant ("quantum wireless" = "Quantrum
+  Wirless"); laptops and in-stock items come first (`lib/assistant/data.ts`).
+- **One short question at a time**, about 20 words at most per reply. She never asks
+  about optional extras (free bag, mouse, charger) unless you mention them or a learning
+  tells her to (your "ask me about charger on every laptop sale" learning still applies).
+  X13 / T14 / 840 G6 are models, never quantities.
+- **No read-back.** Every detail is on the card; she says any warning in a few words,
+  then only the total: "Card ready, 27,500 GST ke saath. Confirm kar dijiye." Serials are
+  still spelled back (stock in, sale, trade-in, return). After saving: "Ho gaya, PI 72."
+- **Room chatter is ignored.** In conversation mode, words clearly not meant for her
+  ("Ram Ram sir", a phone call) get a silent "…", shown in the panel as *ignored*.
+Replaying that same PI after the change: the card on the 4th real turn (5 with one
+ignored greeting), replies of 10–30 words.
+
+## WhatsApp links
+
+The message carries **digitalbluez.com/d/&lt;code&gt;** instead of a ~300-character storage
+link (WhatsApp can't show "click here" text). That website page (`apps/web/app/d/[code]`)
+shows the document's name — WhatsApp turns it into a preview card, "Proforma Invoice
+PI2026/27-00072 · Digitalbluez" — and a **View / download PDF** button that opens a fresh
+10-minute signed link to the private `documents` bucket. The code is 10 characters (no
+look-alike letters) and works for **30 days**; opens are counted on the PDF button, not
+the page (WhatsApp's preview fetcher loads the page). `document_share_links` is
+service-role only; the page is `noindex`.
+
+## Photos
+
+The **camera** button beside her text box sends a photo with your next message (typed
+or spoken, or none): a laptop label, a BIOS/Windows screenshot, a box sticker, a
+purchase invoice or a sales bill. The panel shrinks it to 1600 px JPEG first. It goes to
+the model for that turn only: the saved conversation keeps a "[photo …]" note (telling
+her later turns she saw it — without that she doubted a serial she had read correctly),
+never the image. About ₹0.03–0.05 a photo on Haiku.
+- **Label / screenshot** → the serial (the S/N, never a part or product number) and the
+  model, then stock in, or the serial for a sale, return, trade-in, replacement, repair.
+- **Purchase invoice** → laptops: stock in the listed serials (you attach PO and cost on
+  Purchase Orders); accessories: receive stock with vendor, quantity, price, GST.
+- **Sales invoice / bill** → she asks which kind: **our own** bill not yet in the ERP
+  (she prepares the sale from it, if the unit is still in stock) or a **customer's old
+  bill** from elsewhere (only model, serial, purchase date — for a trade-in, repair or
+  return).
+- She never guesses an unclear character ("8 hai ya B?"), and spells photo serials back
+  like spoken ones.
 
 She also **answers questions about the business** from the modules switched on in
 Settings → DB Assistant → *What DB can read*: stock (Live Stock and main ERP stock),
@@ -343,14 +400,18 @@ tools so she carries on with the task. It's audit-logged as "DB skill allowed". 
 off again in Settings. She can't be allowed a task no skill exists for (e.g. invoices).
 **How much she says**: short (default) or normal.
 
-**Stopping her:** say "stop", "ruko", "bas", "pata hai", "chup"… while she talks, press
+**Stopping her:** say "stop", "ruko", "bas", "pata hai", "chup" — or, since 24 Nov, just
+"theek hai", "ok", "achha", "samajh gaya", "okay I understood" on its own — while she
+talks, press
 Esc, or tap the mic, and she stops at once. **On Android the spoken "stop" is off** —
 opening the microphone there makes Google's speech service take the phone's audio and
 mute her — so tap the square instead. If Chrome blocks her voice because the page hasn't
 been tapped yet (e.g. woken by "Hey DB" straight away), a **Tap to hear DB** button
 appears. A small browser recogniser runs only while
 she speaks; her own voice from the speakers is filtered (a stop word counts on its own,
-or inside a phrase only if she isn't saying it). The next turn tells her you cut her
+or inside a phrase only if she isn't saying it; words she says herself — ok, achha,
+theek hai — count only when they aren't in what she is saying). A "theek hai" that stops
+her never confirms a card; that still needs its own yes or tap. The next turn tells her you cut her
 off, so she doesn't repeat herself.
 
 ## What she remembers
@@ -425,8 +486,14 @@ listener and it waits until they are done. Only one browser tab listens at a tim
 (Chrome allows one): the ERP tab you used last claims it and the others say "listening in
 your other ERP tab". After repeated errors it rests a minute and retries (it used to give
 up until reload); only a blocked microphone stops it, with the reason in her status line.
-The browser console logs what the wake
-listener hears (`[DB wake] heard …` / `woke on …`). She addresses you by *She calls
+**Settings → DB Assistant → Voice → What DB heard when you called her** lists the last
+calls the listener caught in this browser tab (what Chrome heard, wakes, mic errors,
+pauses); **That was me** on a line adds it as a wake phrase (kept in the tab only,
+never sent anywhere). **⌥ Option + Space** (Alt + Space) anywhere in the ERP opens her
+already listening — no wake answer, just a chime. On a computer she now keeps listening
+while the ERP tab is in the background (you're on WhatsApp Web); if Chrome refuses
+there, she falls back to listening only while the tab is in front. Phones keep the
+tab-visible rule. She addresses you by *She calls
 you* (default "Boss"). "DB" is hard for speech
 recognition, so the listener checks the recogniser's top 5 guesses against a list of
 known mishearings (IDBI, TP, TB, DP, TV, the bee…) and the phrases in settings.
@@ -436,7 +503,7 @@ would wake her whenever someone says "IDBI bank"). While the ERP is open
 on screen, a green dot on her button means she is waiting for it; she then opens,
 listens, and keeps listening after each reply until you go quiet. The wait for the
 wake phrase uses the browser's free recogniser. Only one recogniser ever runs: it
-stops while the tab is hidden or the panel is open, backs off after errors, and gives
+stops while the tab is hidden (phones; computers since 24 Nov keep going) or the panel is busy, backs off after errors, and gives
 up after six failures in a row (the dot turns amber; reload the page to retry). An
 earlier version could start a second listener on returning to the tab, and the two
 cancelled each other in a loop until Chrome closed.
