@@ -7,7 +7,7 @@ import { Mic, Square, Send, Volume2, VolumeX, Plus, X, ExternalLink, MessageCirc
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
-import { useVoice, useWakeWord, useStopWords, chime, buzz, isPhoneAudio, browserListenReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
+import { useVoice, useWakeWord, useStopWords, learnQuietVoice, chime, buzz, isPhoneAudio, browserListenReliable, AUDIO_BLOCKED_EVENT, BROWSER_SPEECH_BROKEN_EVENT, VOICE_UNAVAILABLE_EVENT, type ListenProvider, type SpeakProvider, type VoiceGate, type NothingReason, type Dropped } from './useVoice'
 import { DbAvatar, setDbPhotoVersion, type AvatarState } from './DbAvatar'
 import { instantKind, instantReply } from './instant-replies'
 import { LAUNCHER_SIZE, PANEL_WIDTH, TEXT_SIZE, THEMES, cleanAppearance, type Appearance } from './appearance'
@@ -764,7 +764,14 @@ function AssistantConversation({ config, wakeKey, quietWake, wakeActive, wakeNot
   const lastDb = [...entries].reverse().find((e) => e.role === 'db')
   const pendingCard = lastDb?.cards?.find((c) => c.type === 'confirm' || c.type === 'share')
 
-  const sendDropped = () => { if (!dropped) return; const t = dropped.text; setDropped(null); lastHeard.current = Date.now(); send(t, { language: null }) }
+  // "That was me": send it, and if it was dropped as too quiet, this device
+  // learns his level so the same voice gets through from now on.
+  const sendDropped = () => {
+    if (!dropped) return
+    const t = dropped.text
+    if (dropped.reason === 'too_quiet') learnQuietVoice(dropped.peak)
+    setDropped(null); lastHeard.current = Date.now(); send(t, { language: null })
+  }
 
   return (
     <div className="relative flex h-full flex-col" style={{ background: `linear-gradient(to bottom, ${theme.from}12, transparent 30%)` }}>
@@ -1052,7 +1059,7 @@ function DroppedNote({ dropped, onSend }: { dropped: Dropped; onSend: () => void
       <div className="max-w-[85%] rounded-2xl rounded-tr-sm border border-dashed px-3 py-2 text-muted-foreground">
         <p className="italic">“{dropped.text}”</p>
         <p className="mt-1 text-xs">
-          {dropped.reason === 'too_quiet' ? 'Ignored: sounded far away (Settings → Ignore far-away voices).' : 'Ignored: I wasn’t sure I heard that right.'}{' '}
+          {dropped.reason === 'too_quiet' ? 'Ignored: sounded far away. Tap below once and I’ll hear you at this volume on this device from now on.' : 'Ignored: I wasn’t sure I heard that right.'}{' '}
           <button type="button" className="font-medium text-foreground underline" onClick={onSend}>That was me, send it</button>
         </p>
       </div>

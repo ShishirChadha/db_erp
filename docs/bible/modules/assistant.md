@@ -467,7 +467,12 @@ level). Speech quieter than the *Ignore far-away voices* level (off/low/medium/h
 lone fillers ("hmm", "uh") and low-confidence browser results are dropped and she keeps
 listening. It cannot tell your voice from someone right next to you — that needs
 voice-print matching (paid, adds latency), which is deliberately not used. Nothing is
-dropped silently: ignored speech appears in her panel with **That was me, send it**, and
+dropped silently: ignored speech appears in her panel with **That was me, send it**.
+On a "sounded far away" line that tap also **teaches this device** your level (75% of
+the measured peak, kept in this browser, `learnQuietVoice`/`effectiveGate` in
+`useVoice.ts`; it can only lower the setting) — added 2026-11-24 after the MacBook kept
+dropping a normal "haan wahi hai". Speech just under the line that the recogniser heard
+clearly (confidence ≥ 0.75 and at least 60% of the level) is sent too. And
 Settings has a 10-second **Mic check** showing where your voice lands against the levels.
 The browser console logs each listen (`[DB] heard … peak … -> sent/too_quiet`). If the
 mic level can't be measured (suspended audio, muted second stream) the loudness filter

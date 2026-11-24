@@ -46,6 +46,22 @@ const MAX_MS = 28000 // Sarvam's sync limit is 30s per clip
 // Settings has a live mic check to pick one. (The first version used 0.03-0.08
 // and dropped normal speech on a MacBook.)
 export const GATE_LEVEL: Record<VoiceGate, number> = { off: 0, low: 0.008, medium: 0.015, high: 0.03 }
+// This device's own level, learned when he taps "That was me" on a phrase that
+// was dropped as too quiet (2026-11-24: on the MacBook his normal voice kept
+// reading under "medium", five times in a row). Microphones differ per device,
+// so it lives in this browser only and can only LOWER the setting, never raise it.
+const GATE_KEY = 'db_voice_gate_device'
+export function learnQuietVoice(peak: number) {
+  if (!(peak > 0)) return
+  try { localStorage.setItem(GATE_KEY, String(Math.max(0.003, Math.round(peak * 0.75 * 10000) / 10000))) } catch {}
+}
+export function effectiveGate(setting: VoiceGate | undefined) {
+  const base = GATE_LEVEL[setting || 'medium']
+  if (!base) return 0
+  let learned = NaN
+  try { learned = Number(localStorage.getItem(GATE_KEY)) } catch {}
+  return learned > 0 && learned < base ? learned : base
+}
 const MIN_CONFIDENCE = 0.2
 const FILLERS = new Set(['hmm', 'hm', 'hmmm', 'mm', 'mmm', 'uh', 'uhh', 'um', 'umm', 'ah', 'huh', 'er'])
 
@@ -315,7 +331,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       nothingRef.current?.('error')
       return
     }
-    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.006)
+    const gate = Math.max(effectiveGate(cfgRef.current.gate), 0.004)
     const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4'].find((m) => MediaRecorder.isTypeSupported(m)) || ''
     const recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined)
     const chunks: Blob[] = []
@@ -399,7 +415,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       nothingRef.current?.('error')
       return
     }
-    const gate = Math.max(GATE_LEVEL[cfgRef.current.gate || 'medium'], 0.006)
+    const gate = Math.max(effectiveGate(cfgRef.current.gate), 0.004)
     const source = ctx.createMediaStreamSource(stream)
     const proc = ctx.createScriptProcessor(4096, 1, 1)
     const chunks: Float32Array[] = []
@@ -481,7 +497,7 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
     // getting the mic, and Android already filters background noise itself.)
     let meter: ReturnType<typeof createMeter> | null = null
     if (!isPhoneAudio()) { try { meter = createMeter(await navigator.mediaDevices.getUserMedia({ audio: MIC }), levelRef) } catch { /* meter is optional */ } }
-    const gate = GATE_LEVEL[cfgRef.current.gate || 'medium']
+    const gate = effectiveGate(cfgRef.current.gate)
     const rec = new Ctor()
     rec.lang = 'en-IN'
     rec.interimResults = true
@@ -534,7 +550,10 @@ export function useVoice(config: VoiceConfig, onFinal: Final, onNothingHeard?: (
       if (!text) { nothingRef.current?.(error && error !== 'no-speech' && error !== 'aborted' ? 'error' : 'silence'); return }
       const scored = confidences.filter((c) => c > 0)
       const confidence = scored.length ? scored.reduce((a, c) => a + c, 0) / scored.length : 1
-      const reason = isFiller(text) ? 'filler' : (gate > 0 && peak < gate) ? 'too_quiet' : confidence < MIN_CONFIDENCE ? 'unsure' : null
+      // Just under the line but heard clearly (recogniser confidence) = him at
+      // a normal distance; only clearly faint or unsure speech is dropped.
+      const faint = gate > 0 && peak < gate && (peak < gate * 0.6 || confidence < 0.75)
+      const reason = isFiller(text) ? 'filler' : faint ? 'too_quiet' : confidence < MIN_CONFIDENCE ? 'unsure' : null
       // eslint-disable-next-line no-console
       console.info(`[DB] heard "${text}" peak=${measured ? peak.toFixed(3) : 'n/a'} gate=${gate} confidence=${confidence.toFixed(2)} -> ${reason || 'sent'}`)
       if (reason) { nothingRef.current?.('ignored', { text, reason, peak, confidence }); return }
