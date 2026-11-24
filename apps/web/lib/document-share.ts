@@ -3,7 +3,8 @@ import { supabaseAdmin } from '@db/db/admin'
 // digitalbluez.com/d/<code>: a PI or quotation shared from the ERP on WhatsApp
 // (apps/erp/lib/assistant/share.ts writes document_share_links). The code is
 // the only credential; the table is service-role only, so it is read here on
-// the server and never from the browser.
+// the server and never from the browser. Codes use a 32-letter alphabet with
+// no look-alikes (no 0/1/l/o), so one read aloud over the phone still works.
 export type SharedDocument =
   | { state: 'ok'; code: string; title: string; storagePath: string; openCount: number }
   | { state: 'expired'; title: string }
