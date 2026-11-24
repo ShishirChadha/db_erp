@@ -153,6 +153,10 @@ categories (`propose_merge_expense_types`: past expenses re-labelled, merged ent
 retired from the dropdown, privacy changes warned). Everything shows on her
 confirmation card first and is audit-logged as DB.
 
+A new customer she proposes goes through the same duplicate check as the Customer
+form (`checkDuplicateCustomer`, with the GSTIN): a mobile already on file blocks it
+unless both companies have different GSTINs, which only adds a note to the card.
+
 ## Several devices in one room, and pausing
 
 **Only one device answers.** Before answering "Hey DB", a device asks the server for a
