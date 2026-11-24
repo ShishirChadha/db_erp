@@ -125,7 +125,9 @@ written by the engineer's logged-in save through the unchanged
 (a check that couldn't run) or an unanswered guided check blocks the save, and
 a hard fail passes only with a written reason. An existing SKU is matched on
 price-relevant fields, never on every detected spec (exact matching would mint
-duplicates). See **auto-check**.
+duplicates). A serial already in our stock is never stocked in again: the run
+only replaces that unit's QC report (re-QC is allowed for any unit physically
+with us; a pass keeps it on sale, a fail makes it faulty). See **auto-check**.
 
 ## A shared document link opens one document, nothing more (2026-11-24)
 

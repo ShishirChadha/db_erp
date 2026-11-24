@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-11-23
+updated: 2026-11-24
 ---
 
 ## What this covers
@@ -76,6 +76,22 @@ line typed on the machine, a no-login test page there, and a review screen on th
 engineer's own device. Its runs live in `qc_agent_sessions` (service-role only,
 kept per unit as the "hardware as received" record). It writes stock and QC only
 through the normal intake and QC routes. See **auto-check**.
+
+**Re-testing a unit already with us (2026-11-24).** Any unit physically with us
+can be QC'd again (`RE_QC_STATUSES` in `lib/qc-agent/checklist.ts`, enforced by
+`PUT /api/asset-ledger/[id]/qc` too) — by hand, or with **QC & Spec → Auto Test**
+on the unit's page, which binds the run to that unit and blocks a different
+machine as "wrong laptop". A known serial only replaces that unit's QC report;
+it is never stocked in a second time. A passing re-QC keeps a unit that is on
+sale `ready_for_sale`; a fail makes it `faulty`. Out on rent, reserved, sold or
+scrapped units can't be re-QC'd.
+
+**One QC list (2026-11-24).** The Laptop and Desktop checklists below were
+replaced by the Auto Check points (40 for laptops, 27 for desktops, migration
+`20261124c`), so a unit checked by hand and one checked by Auto Check answer the
+same questions. The labels must stay identical to Auto Check's `CHECKS`, or Auto
+Check adds them again as "extra checks". Checks already recorded on units are
+unchanged.
 
 ## Related
 
