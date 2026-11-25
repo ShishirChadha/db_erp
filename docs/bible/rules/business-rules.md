@@ -7,7 +7,7 @@ routes: []
 keywords: [rules, policy, invariant, must not, redaction, cost price, vendor, margin, approval, employee entry, immediately real, numbering, appointment number generation]
 sources:
   - CLAUDE.md
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## Entries are immediately real — there is no owner-approval gate
@@ -128,6 +128,12 @@ price-relevant fields, never on every detected spec (exact matching would mint
 duplicates). A serial already in our stock is never stocked in again: the run
 only replaces that unit's QC report (re-QC is allowed for any unit physically
 with us; a pass keeps it on sale, a fail makes it faulty). See **auto-check**.
+
+**Macs (2026-11-25)** follow the same rules with their own script
+(`curl -L …/mac | bash`), which uses built-in macOS tools only — nothing is
+installed on a Mac we're selling. The Mac's password, if given, is used by
+sudo on the Mac and never sent. An Activation Lock (Find My) is a hard fail.
+Mac SKUs match by their A-number.
 
 ## A shared document link opens one document, nothing more (2026-11-24)
 
