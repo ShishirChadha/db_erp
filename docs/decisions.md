@@ -1344,3 +1344,11 @@ Verified with a 22-check HTTP script on the dev server, using throwaway data: an
 - an 8 GB machine not matching a 16 GB SKU.
 
 Cleanup was re-queried: zero rows left, and the 264 real product images unchanged. The earlier Windows and Mac scripts (52/22/15/25) still pass.
+
+## 2026-11-25 — ERP targets Safari 14+ so Auto Check's test page runs on older Macs
+
+**Context.** The first Intel Mac Auto Check at the shop (MacBook Pro 2020 on macOS Catalina 10.15.7, Safari 15.6) ran the collector and RAM/heat/disk tests, but the step-by-step test page never started. Next.js 16 targets Safari 16.4+ by default, and that build put a class static block in the page's code, which Safari 15.6 can't parse, so the whole file is rejected.
+
+**Decision.** `apps/erp/package.json` gets a `browserslist` (Chrome 87, Edge 88, Firefox 78, Safari 14), which compiles that syntax down. Verified by building both ways: the old target had a static block in the test page's chunks, and the new one has none, with all 188 chunks parsing as ES2021. Tailwind v4's `@layer` still needs Safari 15.4+, so that's the real floor. The Mac script reads Safari's version and opens Chrome/Firefox/Edge instead when Safari is older, says so plainly if none is installed, and always prints the address. `lib/api-client.ts` no longer assumes `AbortSignal.timeout`/`.any` (Safari 16/17.4), and the screen test uses webkit-prefixed fullscreen where needed.
+
+**Cost.** Slightly larger ERP JavaScript (older syntax is longer); no runtime or hosting cost. `apps/web` is unchanged.

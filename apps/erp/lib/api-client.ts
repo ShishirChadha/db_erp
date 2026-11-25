@@ -81,12 +81,28 @@ export interface ApiFetchOptions extends RequestInit {
 // since the pool having just been hit once makes it more likely to be warm by
 // the second attempt, this materially improves the odds a cold-start burst
 // self-heals instead of surfacing to the user.
+// AbortSignal.timeout is Safari 16+ and AbortSignal.any is Safari 17.4+; older
+// Macs (Catalina's Safari 15) would throw on every request without this.
+function withTimeout(ms: number, callerSignal?: AbortSignal | null): AbortSignal {
+  const A = AbortSignal as any
+  if (typeof A.timeout === 'function' && (!callerSignal || typeof A.any === 'function')) {
+    const t: AbortSignal = A.timeout(ms)
+    return callerSignal ? A.any([callerSignal, t]) : t
+  }
+  const ctl = new AbortController()
+  const timer = setTimeout(() => ctl.abort(), ms)
+  if (callerSignal) {
+    if (callerSignal.aborted) ctl.abort()
+    else callerSignal.addEventListener('abort', () => { clearTimeout(timer); ctl.abort() }, { once: true })
+  }
+  return ctl.signal
+}
+
 async function doFetch(url: string, init: RequestInit, method: string, budget: number, callerSignal?: AbortSignal | null): Promise<Response> {
   const maxAttempts = method === 'GET' ? 2 : 1
   let lastErr: unknown
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    const timeoutSignal = AbortSignal.timeout(budget)
-    const signal = callerSignal ? AbortSignal.any([callerSignal, timeoutSignal]) : timeoutSignal
+    const signal = withTimeout(budget, callerSignal)
     try {
       const res = await fetch(url, { ...init, signal })
       if (RETRYABLE_STATUSES.has(res.status) && attempt < maxAttempts) {
@@ -112,7 +128,7 @@ async function sessionIsGone(): Promise<boolean> {
     const res = await fetch('/api/auth/session-check', {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
-      signal: AbortSignal.timeout(10_000),
+      signal: withTimeout(10_000),
     })
     return res.status === 401
   } catch {

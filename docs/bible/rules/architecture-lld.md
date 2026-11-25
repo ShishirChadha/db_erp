@@ -14,7 +14,7 @@ sources:
   - apps/erp/lib/chunked-in.ts
   - apps/erp/app/api/monitoring/route.ts
   - apps/web/lib/order-to-sale.ts
-updated: 2026-11-04
+updated: 2026-11-25
 ---
 
 ## 1. Authentication — login and request authorisation
@@ -108,6 +108,10 @@ such a user looped on "Restoring your session…" (2026-11-04).
             v
   supabase.auth.signOut() + redirect to /login
 ```
+
+`api-client.ts` builds each attempt's timeout with its own `withTimeout()`
+rather than `AbortSignal.timeout`/`AbortSignal.any` directly, because those
+are Safari 16 / 17.4 and older Macs (Catalina) must still work.
 
 The user experiences "it signed me out at random"; the server logs show nothing
 at all, because the TCP connection never completed. Mitigated by forcing IPv4

@@ -9,6 +9,12 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit -p ."
   },
+  "browserslist": [
+    "chrome 87",
+    "edge 88",
+    "firefox 78",
+    "safari 14"
+  ],
   "dependencies": {
     "@anthropic-ai/sdk": "^0.122.0",
     "@db/db": "*",

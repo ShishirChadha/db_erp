@@ -140,6 +140,15 @@ every Mac), then the 6-letter code, then the Mac's login password. The password
 is used on the Mac only (sudo) and is never sent; pressing Enter skips it, and
 the checks that need it show "Couldn't check".
 
+The step-by-step test page needs **Safari 15.4 or newer** (macOS Catalina
+10.15.7 or later). The script checks the Safari version: an older Safari is
+skipped for Chrome, Firefox or Edge if one is installed; otherwise it says
+Safari is too old (update macOS, or install Chrome). It always prints the test
+page address in Terminal so it can be opened by hand. The background tests run
+either way. This is why the ERP's `browserslist` (`apps/erp/package.json`)
+targets Safari 14+: Next.js's default target (Safari 16.4) put syntax in the
+page that Catalina's Safari 15.6 can't parse, so the page never started there.
+
 - **Mac locks:** Activation Lock / Find My (the lock that makes a used Mac
   unsellable — hard fail), company DEP/MDM enrollment and a Remote Management
   setup waiting for the Mac (password), firmware password (Intel, password; N/A
@@ -207,8 +216,11 @@ policies, anon/authenticated revoked).
 - Without an Admin PowerShell, disk wear, BitLocker and TPM can't be read. Those
   checks show "Couldn't check" and must be decided by hand.
 - The script expects English Windows for the Wi-Fi network count.
-- Mac: tested end to end on an Apple Silicon MacBook Pro; an Intel Mac run is
-  still to be done at the shop.
+- Mac: tested end to end on an Apple Silicon MacBook Pro. An Intel MacBook Pro
+  (2020, Catalina) ran the collector and background tests at the shop; its
+  test page then failed to start on Safari 15.6, fixed 2026-11-25 (see above).
+- Macs on Mojave or older (Safari 14 or below) get an unstyled test page in
+  Safari: update macOS or use Chrome.
 - Desktops have no Generation field in their SKU template, so a desktop's CPU
   generation is detected but not saved. Add the field in Settings → SKU
   Categories and Auto Check fills it automatically.

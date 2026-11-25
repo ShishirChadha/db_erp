@@ -28,6 +28,23 @@ export function describeMark(m: ScreenMark) {
   return `dot on ${m.color}, ${v}-${h}`
 }
 
+// Safari before 16.4 (Catalina, Big Sur) only has the webkit-prefixed
+// fullscreen API, and it returns nothing instead of a promise.
+function enterFullscreen() {
+  const el = document.documentElement as any
+  try {
+    if (el.requestFullscreen) Promise.resolve(el.requestFullscreen()).catch(() => {})
+    else el.webkitRequestFullscreen?.()
+  } catch { /* the colours still fill the window */ }
+}
+function leaveFullscreen() {
+  const d = document as any
+  try {
+    if (d.fullscreenElement && d.exitFullscreen) Promise.resolve(d.exitFullscreen()).catch(() => {})
+    else if (d.webkitFullscreenElement) d.webkitExitFullscreen?.()
+  } catch { /* ignore */ }
+}
+
 function FullScreen({
   frames,
   allowMarks,
@@ -42,9 +59,9 @@ function FullScreen({
   const [showHelp, setShowHelp] = useState(true)
 
   useEffect(() => {
-    document.documentElement.requestFullscreen?.().catch(() => {})
+    enterFullscreen()
     const t = setTimeout(() => setShowHelp(false), 2500)
-    return () => { clearTimeout(t); if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {}) }
+    return () => { clearTimeout(t); leaveFullscreen() }
   }, [])
 
   const next = () => {

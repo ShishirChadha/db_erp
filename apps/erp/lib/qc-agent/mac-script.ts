@@ -217,8 +217,33 @@ good "  Sent. Found: $(sysctl -n hw.model 2>/dev/null), serial $(sed -n 's/.*"se
 # ---------------------------------------------------------------- 2. test page
 say ''
 say '[2/3] Opening the test page in the browser...'
-open "$BASE/qc-test/$CODE"
-say '  Do the steps on that page. Keep this window open.'
+# The test page needs Safari 15.4 or newer (macOS Catalina 10.15.7 or later).
+# An older Safari opens it blank, so use another browser if one is installed.
+URL="$BASE/qc-test/$CODE"
+SV=$(defaults read /Applications/Safari.app/Contents/Info CFBundleShortVersionString 2>/dev/null)
+SMAJ=$(printf '%s' "$SV" | cut -d. -f1)
+SMIN=$(printf '%s' "$SV" | cut -d. -f2)
+case "$SMAJ" in ''|*[!0-9]*) SMAJ=0 ;; esac
+case "$SMIN" in ''|*[!0-9]*) SMIN=0 ;; esac
+OPENED=''
+if [ "$SMAJ" -gt 15 ] || { [ "$SMAJ" = 15 ] && [ "$SMIN" -ge 4 ]; }; then
+  open -a Safari "$URL" 2>/dev/null && OPENED=Safari
+fi
+if [ -z "$OPENED" ]; then
+  for B in 'Google Chrome' 'Firefox' 'Microsoft Edge'; do
+    if open -a "$B" "$URL" 2>/dev/null; then OPENED=$B; break; fi
+  done
+fi
+if [ -n "$OPENED" ]; then
+  say "  Opened in $OPENED. Do the steps on that page. Keep this window open."
+else
+  bad "  Safari on this Mac is too old for the test page (version $SV, needs 15.4 or newer)."
+  say '  Update macOS (Apple menu > System Preferences > Software Update), or install Google Chrome,'
+  say '  then open this address. The background tests keep running meanwhile:'
+fi
+say ''
+say "  Test page:  $URL"
+say ''
 
 # ---------------------------------------------------------------- 3. background tests
 cat > "$T/ram.pl" <<'PL'
