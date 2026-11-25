@@ -11,7 +11,8 @@ sources:
   - apps/erp/app/api/sku-master/merge/route.ts
   - apps/erp/app/api/sku-master/duplicate-candidates/route.ts
   - apps/erp/app/dashboard/sku-master/page.tsx
-updated: 2026-10-16
+  - apps/erp/app/api/qc-agent/sessions/[id]/upgrade-sku/route.ts
+updated: 2026-11-25
 ---
 
 ## What this is
@@ -66,6 +67,38 @@ merge them" picker outside of that detected cluster.
    **"This cannot be undone from the UI."**
 7. Submit calls the `merge_sku_master` RPC, which does the actual repointing
    and archiving in one transaction.
+
+## What moves (2026-11-25)
+
+Everything that points at a SKU moves to the target:
+- **Units:** `sku_id`, plus `current_sku_id` for units reassigned with Change SKU.
+- **Stock:** as one adjustment pair; history isn't rewritten.
+- **Documents and jobs:** PO lines, invoice and quotation lines, accessory sales, repair, replacement and RMA parts.
+- **Commerce:** rentals, online orders and reservations, carts and wishlists.
+- **Pricing and marketing:** price history, market and competitor prices, free-gift promotions, marketing cards.
+- **Website photos:** placed after the target's own, with one primary kept.
+
+The target keeps whatever it already has. Where it has nothing, it takes these from the source:
+- the website listing: published state, the **URL slug** (so customers' links keep working), title, description, highlights and grade;
+- the single selling price (`web_price` and `selling_price_default` together) and the MRP;
+- cost, HSN, warranty label, and any spec fields it lacks.
+
+The archived source is unpublished. Before 2026-11-25 photos, listing, price,
+rentals, online orders and `current_sku_id` were left behind on the archived
+row, and the function was callable with the website's public key (revoked).
+
+## From Auto Check
+
+When Auto Check finds an existing SKU with the same machine and configuration
+but a weaker name ("Macbook A2337" vs "MacBook Air A2337", "T14 Gen 2" vs
+"ThinkPad T14 Gen 2"), the review screen offers to use Auto Check's name. That
+creates the Auto Check-named SKU and merges the old one into it through this
+same RPC, and switches the old model name off in the dropdown once no active
+SKU uses it. By owner decision this works for **anyone running Auto Check**
+(New Entry access): it is the one non-owner path to a merge. It can only
+merge the SKU the run's own evaluation matched, and only when the variant
+config still agrees. If the name is already the same and the SKU only lacks
+detail, the missing spec fields are filled in place instead. See **auto-check**.
 
 ## Is it reversible?
 

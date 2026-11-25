@@ -135,6 +135,12 @@ installed on a Mac we're selling. The Mac's password, if given, is used by
 sudo on the Mac and never sent. An Activation Lock (Find My) is a hard fail.
 Mac SKUs match by their A-number.
 
+**Resembling SKUs (2026-11-25):** before creating a SKU, Auto Check looks for one
+with the same machine and configuration under a weaker name and, by default,
+merges it into an Auto Check-named SKU (photos, listing and URL, price, stock,
+units and history all move). Whoever runs Auto Check may do this. It is the only
+non-owner merge, and it is limited to the SKU that run matched.
+
 ## A shared document link opens one document, nothing more (2026-11-24)
 
 A PI or quotation sent on WhatsApp is a short link, `digitalbluez.com/d/<code>`.

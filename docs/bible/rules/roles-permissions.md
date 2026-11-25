@@ -21,7 +21,7 @@ sources:
   - apps/erp/app/api/asset-ledger/[id]/reassign-sku/route.ts
   - apps/erp/app/api/stock-intake/[id]/route.ts
   - supabase/migrations/20261111_rls_lockdown.sql
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## The three roles
@@ -180,6 +180,10 @@ merge / categories), deleting a unit or adding cost adjustments, replacement-job
 payments and finalizing, rental deposits, vendor RMAs, recurring expenses,
 reimbursement removal, customer tier, users, settings, website admin and SEO,
 backup and restore, audit restore, dropdown edit / delete, the staff roster.
+*One exception to SKU merge (2026-11-25):* anyone running Auto Check (New Entry)
+may adopt Auto Check's naming for the SKU that run matched, which merges the old
+SKU into the new one and switches its old model name off in the dropdown. See
+**merge-duplicate-skus** → From Auto Check.
 
 **Manager role** adds, on top of an employee: submitting a purchase order, deleting /
 assigning / reassigning / merging lead sets, and (with the Attendance checkbox)

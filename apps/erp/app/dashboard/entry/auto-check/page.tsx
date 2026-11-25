@@ -324,7 +324,9 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
   const [specsTouched, setSpecsTouched] = useState(false)
   const [serial, setSerial] = useState(ev.serial)
   const [stickerSerial, setStickerSerial] = useState('')
-  const [useMatch, setUseMatch] = useState(true)
+  // 'upgrade' = adopt Auto Check's naming / detail for the matched SKU first
+  // (merge or fill-in), 'match' = use the matched SKU as it is, 'new' = a separate SKU.
+  const [skuChoice, setSkuChoice] = useState<'upgrade' | 'match' | 'new'>('upgrade')
   // A re-run of the script (new reported_at) refreshes untouched fields.
   const reportedRef = useRef(view.reported_at)
   useEffect(() => {
@@ -338,7 +340,9 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
   const template = templates.find((t) => t.category === category)
   const fields = (parseFieldSchema(template?.field_schema).fields || []).filter((f: any) => f.name !== 'model_year' || specs.brand === 'Apple')
   const match = ev.sku_match && category === ev.category ? ev.sku_match : null
-  const usingMatch = !!match && useMatch
+  const canUpgrade = !!match && (match.naming === 'resembling' || match.missing_detail.length > 0)
+  const choice = !match ? 'new' : skuChoice === 'upgrade' && !canUpgrade ? 'match' : skuChoice
+  const usingMatch = choice !== 'new'
   const existing = ev.existing_unit
 
   // ----- per-unit intake fields -----
@@ -416,7 +420,18 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
       // 1) Stock in (skipped for a unit already in the ERP, or on a QC retry).
       if (!assetId) {
         let payload: Record<string, unknown>
-        if (usingMatch) {
+        if (usingMatch && choice === 'upgrade') {
+          // Adopt Auto Check's naming/detail before stocking in: the server merges the
+          // old SKU into an Auto Check-named one (or fills its missing fields).
+          const up = await apiFetch(`/api/qc-agent/sessions/${view.id}/upgrade-sku`, {
+            method: 'POST', body: JSON.stringify({ sku_id: match!.id, specs }),
+          })
+          const ub = await up.json().catch(() => ({}))
+          if (!up.ok) throw new Error(ub.error || 'Could not upgrade the SKU')
+          if (ub.action === 'merged') toast.success(`${ub.from} merged into ${ub.full_sku_code} (photos, listing, stock and history moved).`)
+          if (ub.action === 'filled') toast.success(`Added ${ub.filled.join(', ')} to ${match!.full_sku_code}.`)
+          payload = { sku_id: ub.sku_id }
+        } else if (usingMatch) {
           payload = { sku_id: match!.id }
         } else {
           const allowed = new Set(fields.map((f: any) => f.name))
@@ -567,7 +582,7 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
         <div className="rounded-md border bg-card p-4 space-y-2">
           <div className="text-sm font-semibold">Configuration (read from the machine)</div>
           <ConfigGrid fields={fields} specs={ev.specs} />
-          {usingMatch && !existing && <p className="text-xs text-muted-foreground">Saved under the matched SKU below. Pick &quot;Not the same&quot; to edit these.</p>}
+          {usingMatch && !existing && <p className="text-xs text-muted-foreground">{choice === 'upgrade' && match?.naming === 'resembling' ? 'This becomes the SKU’s name and detail.' : 'Saved under the matched SKU below.'} Pick &quot;Not the same&quot; to edit these.</p>}
           {existing && <HardwareDetails lines={ev.hardware_lines} />}
         </div>
       )}
@@ -578,13 +593,32 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
           <div className="text-sm font-semibold">Model & specs</div>
           {match ? (
             <div className="space-y-2 text-sm">
+              <div>
+                {match.naming === 'resembling' ? 'Same machine and configuration as' : 'Matches'} existing SKU <b>{match.full_sku_code}</b> — {match.description}{' '}
+                <span className="text-muted-foreground">
+                  ({match.quantity_in_stock} in stock{match.is_published ? ', on the website' : ''}{match.image_count ? `, ${match.image_count} photo${match.image_count === 1 ? '' : 's'}` : ''})
+                </span>
+              </div>
+              {canUpgrade && (
+                <label className="flex items-start gap-2">
+                  <input type="radio" checked={choice === 'upgrade'} onChange={() => setSkuChoice('upgrade')} className="mt-1" />
+                  <span>
+                    {match.naming === 'resembling' ? (
+                      <><b>Use Auto Check&apos;s name &quot;{ev.specs.model}&quot;</b> instead of &quot;{match.model}&quot;: a new SKU with the fuller detail is made and the old one is <b>merged into it</b> — units, stock, website photos, listing and link, price and history all move; the old SKU is archived.</>
+                    ) : (
+                      <><b>Use it and add the missing details</b> from this machine: {match.missing_detail.join(', ')}.</>
+                    )}
+                    {' '}<span className="text-muted-foreground">(recommended)</span>
+                  </span>
+                </label>
+              )}
               <label className="flex items-start gap-2">
-                <input type="radio" checked={useMatch} onChange={() => setUseMatch(true)} className="mt-1" />
-                <span>Matches existing SKU <b>{match.full_sku_code}</b> — {match.description} <span className="text-muted-foreground">({match.quantity_in_stock} in stock)</span></span>
+                <input type="radio" checked={choice === 'match'} onChange={() => setSkuChoice('match')} className="mt-1" />
+                <span>Use the existing SKU as it is</span>
               </label>
               <label className="flex items-start gap-2">
-                <input type="radio" checked={!useMatch} onChange={() => setUseMatch(false)} className="mt-1" />
-                <span>Not the same — create a new SKU from the detected specs</span>
+                <input type="radio" checked={choice === 'new'} onChange={() => setSkuChoice('new')} className="mt-1" />
+                <span>Not the same — create a separate SKU from the detected specs</span>
               </label>
             </div>
           ) : (

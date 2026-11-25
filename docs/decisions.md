@@ -1316,3 +1316,31 @@ Verified:
   - save → 39 QC rows.
 - The Windows 52/22/15 scripts still pass; a re-query found no residue, and the real A2337 stock was unchanged.
 - An Intel Mac has not been run yet.
+
+## 2026-11-25 — Auto Check upgrades resembling SKUs; a merge now moves everything
+
+The owner wanted Auto Check to check for a resembling SKU before creating one, and, when the configuration is the same, to keep Auto Check's naming and detail and merge the old SKU into it "with all website photos, status, every logical aspect".
+
+- **Matching widened, safely.** Auto Check used to reuse a SKU only on an exact model name (or Apple A-number), so "T14 Gen 2" and "ThinkPad T14 Gen 2" became two SKUs. A *resembling* name now also matches:
+  - containment, the same name without spaces, or the same A-number;
+  - but only when CPU, RAM and SSD are recorded on both sides and equal, and no other variant field disagrees. A missing core field is not treated as "no evidence" here, unlike the SKU Master duplicate scan, because this result is acted on automatically.
+- **Upgrade = create + merge, not rename.** The old SKU isn't renamed in place: its code carries the old name and is referenced by text in legacy rows. Instead, `resolveOrCreateSku` makes the Auto Check-named SKU and `merge_sku_master` moves everything into it, archiving the old one ("ARCHIVED-…", as for the owner's merges). The old model name is deactivated in the dropdown once unused, so it isn't picked again. Same name with less detail → fill the missing spec fields in place, never overwriting.
+- **Who: anyone running Auto Check** (owner's choice over "owner only"). Kept narrow: a dedicated route, which merges only the SKU the server's own evaluation matched (the client can't name another), refuses once the edited config disagrees, and writes an audit log. General merging stays owner-only.
+- **The merge was incomplete.** Every FK to `sku_master` was listed from `pg_constraint`. The RPC had left behind:
+  - website photos, publish state, listing, slug and price;
+  - `asset_ledger.current_sku_id`, rentals, online orders and reservations;
+  - carts and wishlists, price history, competitor and market prices;
+  - promotions' free gift, marketing cards, and accessory RMA/replacement rows.
+
+  All of them now move. Unique-per-SKU rows (competitor links, carts, wishlists) move where they don't collide. Photos are appended with one primary kept. The target keeps its own listing and price and takes the source's only where it has none; the slug moves so customers' URLs keep working.
+- **Security fix:** `merge_sku_master` (SECURITY DEFINER) was executable by `anon`/`authenticated`, i.e. with the key shipped in the website. Revoked (migration `20261125c`).
+
+Verified with a 22-check HTTP script on the dev server, using throwaway data: an old-named published SKU with a slug, price, MRP, 2 photos, a unit, a reassigned unit and a dropdown value. It covered:
+- the resemblance match;
+- the guards: New Entry required, no naming another SKU, config conflict;
+- an employee's merge: everything moved, the old SKU archived and unpublished, `public_products` serving the same URL from the new SKU, the old model name switched off, an audit row;
+- the next look-up matching exactly and stock-in reaching 2;
+- the same-name fill-in;
+- an 8 GB machine not matching a 16 GB SKU.
+
+Cleanup was re-queried: zero rows left, and the 264 real product images unchanged. The earlier Windows and Mac scripts (52/22/15/25) still pass.

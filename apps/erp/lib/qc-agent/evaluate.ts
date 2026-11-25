@@ -8,7 +8,7 @@
 import { supabaseAdmin } from '@/lib/supabase/service'
 import { normalizeSpecifications } from '@/lib/sku-normalizer'
 import { getCustomOptionsCategory } from '@/lib/sku-field-options'
-import { normalizeForComparison } from '@/lib/text-normalize'
+import { normalizeForComparison, isLikelyDuplicateText } from '@/lib/text-normalize'
 import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { COSMETIC_AREAS, COSMETIC_LEVELS, TEMPLATE_SYNONYMS, CHECKS, RE_QC_STATUSES, type DeviceKind } from './checklist'
 import { aNumber, macModel } from './mac-models'
@@ -46,6 +46,15 @@ export interface SkuMatch {
   description: string
   quantity_in_stock: number
   specifications: Record<string, any>
+  /** The SKU's own model name, e.g. "Macbook A2337". */
+  model: string
+  /** 'same' = named exactly as Auto Check names it; 'resembling' = same machine + config, other wording. */
+  naming: 'same' | 'resembling'
+  /** Spec fields Auto Check knows that this SKU doesn't record. */
+  missing_detail: string[]
+  /** Website facts, so the engineer sees what an upgrade carries over. */
+  is_published: boolean
+  image_count: number
 }
 
 export interface Evaluation {
@@ -183,28 +192,45 @@ async function canonicalizeSpecs(category: string, detected: Record<string, any>
 // were entered with -- so sending detected specs would mint a duplicate SKU for
 // nearly every unit. Instead the review screen picks the existing SKU for the
 // same brand + model whose price-relevant fields match, and sends its sku_id.
-async function findSkuMatch(category: string, specs: Record<string, any>, variantFields: string[]): Promise<SkuMatch | null> {
+// The SKU this machine belongs to. Exact naming wins; otherwise a SKU whose
+// model only *resembles* Auto Check's ("T14 Gen2" vs "ThinkPad T14 Gen 2",
+// "Macbook A2337" vs "MacBook Air A2337") still counts when CPU, RAM and SSD
+// are recorded on both and equal and no other variant field contradicts --
+// so a fresh SKU is never minted next to an old one for the same config.
+const CORE_FIELDS = ['cpu', 'ram', 'ssd']
+// Unit-specific or cosmetic fields not worth upgrading a SKU for.
+const NOT_DETAIL = new Set(['os', 'model', 'brand', 'item_name', 'model_year'])
+
+async function findSkuMatch(category: string, specs: Record<string, any>, variantFields: string[], fieldNames: string[]): Promise<SkuMatch | null> {
   if (!specs.brand || !specs.model) return null
   const norm = await normalizeSpecifications(category, specs)
   const { data } = await supabaseAdmin
     .from('sku_master')
-    .select('id, full_sku_code, sku_description, quantity_in_stock, specifications, brand, model_name, status')
+    .select('id, full_sku_code, sku_description, quantity_in_stock, specifications, brand, model_name, status, is_published')
     .eq('category', category)
     .neq('status', 'archived')
     .ilike('brand', String(specs.brand))
     .limit(500)
   const model = normalizeForComparison(String(specs.model))
+  const compact = (x: string) => normalizeForComparison(x).replace(/\s+/g, '')
   const fields = Array.from(new Set([...variantFields, 'generation']))
   // Apple SKUs here are named inconsistently ("Macbook A2337", "MacBook Air
   // A2337", "Macbook Pro 2485"); the A-number is the reliable part.
   const wantA = /^apple$/i.test(String(specs.brand)) ? aNumber(String(specs.model)) : null
 
-  let best: { row: any; score: number } | null = null
+  let best: { row: any; score: number; naming: 'same' | 'resembling' } | null = null
   for (const row of data || []) {
     const rowModelRaw = String(row.specifications?.model || row.model_name || '')
-    if (wantA) { if (aNumber(rowModelRaw) !== wantA) continue }
-    else if (normalizeForComparison(rowModelRaw) !== model) continue
-    let score = 0
+    const same = normalizeForComparison(rowModelRaw) === model
+    let resembling = false
+    if (!same) {
+      if (wantA) resembling = aNumber(rowModelRaw) === wantA
+      else resembling = compact(rowModelRaw) === compact(String(specs.model)) || isLikelyDuplicateText(rowModelRaw, String(specs.model))
+      if (!resembling) continue
+      // A looser name needs the core config recorded on both sides, and equal.
+      if (CORE_FIELDS.some((f) => !cmp(f, norm[f]) || !cmp(f, row.specifications?.[f]))) continue
+    }
+    let score = same ? 100 : 0
     let ok = true
     for (const f of fields) {
       const a = cmp(f, norm[f])
@@ -215,19 +241,30 @@ async function findSkuMatch(category: string, specs: Record<string, any>, varian
     }
     if (!ok) continue
     if (!best || score > best.score || (score === best.score && (row.quantity_in_stock || 0) > (best.row.quantity_in_stock || 0))) {
-      best = { row, score }
+      best = { row, score, naming: same ? 'same' : 'resembling' }
     }
   }
   if (!best) return null
   const r = best.row
+  const empty = (x: unknown) => x === undefined || x === null || x === ''
+  const missing = fieldNames.filter((f) => !NOT_DETAIL.has(f) && !empty(specs[f]) && empty(r.specifications?.[f]))
+  const { count: images } = await supabaseAdmin.from('product_images').select('id', { count: 'exact', head: true }).eq('sku_id', r.id)
   return {
     id: r.id,
     full_sku_code: r.full_sku_code,
     description: r.sku_description || `${r.brand} ${r.model_name}`,
     quantity_in_stock: r.quantity_in_stock ?? 0,
     specifications: r.specifications || {},
+    model: String(r.specifications?.model || r.model_name || ''),
+    naming: best.naming,
+    missing_detail: missing,
+    is_published: !!r.is_published,
+    image_count: images ?? 0,
   }
 }
+
+/** Would adopting Auto Check's naming / detail change anything for this SKU? */
+export const canUpgradeSku = (m: SkuMatch | null) => !!m && (m.naming === 'resembling' || m.missing_detail.length > 0)
 
 // ---------- hardware summary lines (for the review screen) ----------
 
@@ -318,7 +355,7 @@ export async function evaluateSession(row: SessionRow): Promise<Evaluation | nul
   const { data: target } = targetId
     ? await supabaseAdmin.from('asset_ledger').select('id, status, asset_number, serial_number').eq('id', targetId).maybeSingle()
     : { data: null }
-  const skuMatch = await findSkuMatch(category, specs, variantFields).catch(() => null)
+  const skuMatch = await findSkuMatch(category, specs, variantFields, fieldNames).catch(() => null)
 
   const interactive = row.interactive_results || {}
   const verdicts = evaluateChecks({

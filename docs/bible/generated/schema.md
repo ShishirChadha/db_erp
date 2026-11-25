@@ -2028,7 +2028,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## qc_agent_sessions
 
-~5 rows (estimate)
+~6 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

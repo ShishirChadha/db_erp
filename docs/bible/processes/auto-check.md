@@ -84,6 +84,18 @@ The review screen always shows the full configuration read from the machine
 rest of the category's stock-entry fields, required ones starred) — editable
 when a new SKU will be created, read-only when an existing SKU or unit is used.
 
+**Resembling SKUs (2026-11-25).** Before making a new SKU the review screen
+also looks for an existing one whose name only *resembles* Auto Check's (one
+name contains the other, the same name without spaces, or the same Apple
+A-number). CPU, RAM and SSD must be recorded on both and be equal, and no other
+variant field may disagree. It then offers, as the default, **Use Auto Check's
+name**: a new SKU with the fuller detail, with the old one merged into it.
+Units, stock, website photos, listing and URL, price and history move, and the
+old SKU is archived. The other choices are *Use the existing SKU as it is* and
+*Not the same*. When the name already matches and the SKU only lacks detail
+(resolution, webcam, …), the default fills those fields in place. See
+**merge-duplicate-skus**.
+
 A serial already in the ERP is recognised, and the save then **only replaces
 that unit's QC report** — no second stock-in. This works for any unit that is
 with us (received, in stock, QC pending/passed, ready for sale, faulty, back
