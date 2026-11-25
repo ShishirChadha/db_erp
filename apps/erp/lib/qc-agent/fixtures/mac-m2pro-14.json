@@ -1,0 +1,110 @@
+{
+  "v": 1,
+  "platform": "mac",
+  "is_admin": false,
+  "system": {
+    "manufacturer": "Apple Inc.",
+    "model": "MacBook Pro",
+    "family": "Mac14,9"
+  },
+  "bios": {
+    "serial": "FAKESERIAL1",
+    "version": "18000.120.36",
+    "vendor": "Apple"
+  },
+  "cpu": [
+    {
+      "name": "Apple M2 Pro",
+      "cores": 12,
+      "threads": 12
+    }
+  ],
+  "memory": [
+    {
+      "slot": "Built-in",
+      "gb": 16
+    }
+  ],
+  "memory_slots": null,
+  "disks": [
+    {
+      "name": "APPLE SSD AP1024Z",
+      "media_type": "SSD",
+      "bus_type": "Apple Fabric",
+      "health": "Healthy",
+      "size_bytes": 1000555581440,
+      "wear": null
+    }
+  ],
+  "gpus": [
+    {
+      "name": "Apple M2 Pro",
+      "status": "OK",
+      "h_res": 3024,
+      "v_res": 1964,
+      "vram_bytes": null
+    }
+  ],
+  "monitors": [
+    {
+      "name": "Color LCD",
+      "internal": true
+    }
+  ],
+  "touch": false,
+  "cameras": [
+    "FaceTime HD Camera"
+  ],
+  "biometric": [],
+  "bluetooth": [
+    {
+      "name": "Bluetooth BCM_4388",
+      "status": "OK"
+    }
+  ],
+  "net": [
+    {
+      "name": "en0",
+      "description": "Wi-Fi",
+      "status": "Up",
+      "media": "wifi"
+    }
+  ],
+  "wifi_networks": 17,
+  "battery": {
+    "present": true,
+    "name": "bq40z651",
+    "manufacturer": "",
+    "design_mwh": 6075,
+    "full_mwh": 4719,
+    "cycles": 423
+  },
+  "power": {
+    "on_ac": true,
+    "percent": 100
+  },
+  "os": {
+    "caption": "macOS",
+    "version": "26.5.1",
+    "build": "25F80"
+  },
+  "events": [],
+  "problem_devices": [],
+  "mac": {
+    "model_identifier": "Mac14,9",
+    "model_number": "MPHF3HN/A",
+    "chip": "Apple M2 Pro",
+    "intel": false,
+    "activation_lock": "enabled",
+    "find_my_token": false,
+    "dep": false,
+    "mdm": false,
+    "dep_assigned": null,
+    "firmware_password": null,
+    "filevault": true,
+    "smart_status": "Verified",
+    "battery_condition": "Good",
+    "max_capacity_pct": 82,
+    "panics_90d": 0
+  }
+}

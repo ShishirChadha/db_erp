@@ -13,6 +13,7 @@
 
 export type CheckKind = 'auto' | 'guided'
 export type DeviceKind = 'laptop' | 'desktop'
+export type Platform = 'windows' | 'mac'
 
 export interface CheckDef {
   key: string
@@ -23,6 +24,8 @@ export interface CheckDef {
   only?: DeviceKind
   /** Guided items: can "not present / no such port" be a valid answer? */
   naLabel?: string
+  /** Which operating system the check exists on (default: both). */
+  platform?: Platform
 }
 
 export const AREAS = [
@@ -40,24 +43,27 @@ export const AREAS = [
 
 export const CHECKS: CheckDef[] = [
   // Locks & security -- the faults a customer can't fix and we can't fix later.
-  { key: 'bios_password', label: 'No BIOS password', area: 'Locks & security', kind: 'auto' },
+  { key: 'bios_password', label: 'No BIOS password', area: 'Locks & security', kind: 'auto', platform: 'windows' },
   { key: 'company_lock', label: 'No company / MDM lock', area: 'Locks & security', kind: 'auto' },
-  { key: 'computrace', label: 'No theft-tracking lock (Computrace)', area: 'Locks & security', kind: 'auto' },
-  { key: 'bitlocker', label: 'Disk not encrypted (BitLocker off)', area: 'Locks & security', kind: 'auto' },
-  { key: 'activation', label: 'Windows activated', area: 'Locks & security', kind: 'auto' },
+  { key: 'computrace', label: 'No theft-tracking lock (Computrace)', area: 'Locks & security', kind: 'auto', platform: 'windows' },
+  { key: 'bitlocker', label: 'Disk not encrypted (BitLocker off)', area: 'Locks & security', kind: 'auto', platform: 'windows' },
+  { key: 'activation', label: 'Windows activated', area: 'Locks & security', kind: 'auto', platform: 'windows' },
+  { key: 'activation_lock', label: 'No Activation Lock (Find My off)', area: 'Locks & security', kind: 'auto', platform: 'mac' },
+  { key: 'firmware_password', label: 'No firmware password', area: 'Locks & security', kind: 'auto', platform: 'mac' },
+  { key: 'filevault', label: 'Disk not encrypted (FileVault off)', area: 'Locks & security', kind: 'auto', platform: 'mac' },
   { key: 'serial_match', label: 'Serial sticker matches the machine', area: 'Locks & security', kind: 'guided' },
 
   { key: 'disk_health', label: 'SSD / HDD health', area: 'Storage', kind: 'auto' },
   { key: 'disk_test', label: 'Disk read/write test', area: 'Storage', kind: 'auto' },
-  { key: 'disk_events', label: 'No disk errors logged', area: 'Storage', kind: 'auto' },
+  { key: 'disk_events', label: 'No disk errors logged', area: 'Storage', kind: 'auto', platform: 'windows' },
 
   { key: 'ram_test', label: 'RAM test', area: 'Memory', kind: 'auto' },
 
   { key: 'heat', label: 'Heat test (no slow-down under load)', area: 'Performance', kind: 'auto' },
   { key: 'fan', label: 'Fan runs quietly', area: 'Performance', kind: 'guided' },
   { key: 'stability', label: 'No crashes or hardware errors', area: 'Performance', kind: 'auto' },
-  { key: 'drivers', label: 'All devices working', area: 'Performance', kind: 'auto' },
-  { key: 'original_parts', label: 'Original parts check', area: 'Performance', kind: 'auto' },
+  { key: 'drivers', label: 'All devices working', area: 'Performance', kind: 'auto', platform: 'windows' },
+  { key: 'original_parts', label: 'Original parts check', area: 'Performance', kind: 'auto', platform: 'windows' },
   { key: 'psu', label: 'Power supply stable', area: 'Performance', kind: 'guided', only: 'desktop' },
 
   { key: 'battery_health', label: 'Battery health', area: 'Battery', kind: 'auto', only: 'laptop' },
@@ -66,12 +72,15 @@ export const CHECKS: CheckDef[] = [
   { key: 'screen_dots', label: 'Screen: no dead or bright dots, no lines', area: 'Display', kind: 'guided', only: 'laptop' },
   { key: 'screen_bleed', label: 'Screen: no light bleed or pressure marks', area: 'Display', kind: 'guided', only: 'laptop' },
   { key: 'brightness', label: 'Brightness control, no flicker', area: 'Display', kind: 'guided', only: 'laptop' },
+  { key: 'screen_coating', label: 'Screen coating not peeling', area: 'Display', kind: 'guided', only: 'laptop', platform: 'mac' },
   { key: 'touch', label: 'Touch screen', area: 'Display', kind: 'guided', only: 'laptop' },
 
   { key: 'keyboard', label: 'Keyboard: every key works', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop' },
   { key: 'stuck_keys', label: 'Keyboard: no stuck keys', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop' },
   { key: 'fn_keys', label: 'Fn / volume / brightness keys', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop' },
   { key: 'kb_backlight', label: 'Keyboard backlight', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop', naLabel: 'No backlight on this model' },
+  { key: 'touch_bar', label: 'Touch Bar', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop', platform: 'mac', naLabel: 'No Touch Bar on this model' },
+  { key: 'touch_id', label: 'Touch ID fingerprint sensor', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop', platform: 'mac', naLabel: 'No Touch ID on this model' },
   { key: 'trackpad', label: 'Trackpad & clicks', area: 'Keyboard & trackpad', kind: 'guided', only: 'laptop' },
 
   { key: 'speakers', label: 'Speakers (left & right, no rattle)', area: 'Audio & camera', kind: 'guided', only: 'laptop' },
@@ -99,8 +108,13 @@ export const RE_QC_STATUSES = ['received', 'in_stock', 'qc_pending', 'qc_passed'
 
 export const CHECK_BY_KEY: Record<string, CheckDef> = Object.fromEntries(CHECKS.map((c) => [c.key, c]))
 
-export function checksFor(device: DeviceKind): CheckDef[] {
-  return CHECKS.filter((c) => !c.only || c.only === device)
+export function checksFor(device: DeviceKind, platform: Platform = 'windows'): CheckDef[] {
+  return CHECKS.filter((c) => (!c.only || c.only === device) && (!c.platform || c.platform === platform))
+}
+
+/** QC-template labels that belong to the other platform (hidden on the manual QC form). */
+export function otherPlatformLabels(platform: Platform): Set<string> {
+  return new Set(CHECKS.filter((c) => c.platform && c.platform !== platform).map((c) => c.label))
 }
 
 // The owner's own QC list per category (sku_category_templates.qc_checklist) is

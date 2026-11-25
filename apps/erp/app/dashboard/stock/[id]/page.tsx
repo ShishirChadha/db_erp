@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { StatusBadge } from '@/components/StatusBadge'
 import { PAYMENT_STATUS_TONES, toneFor } from '@/lib/status-styles'
-import { RE_QC_STATUSES } from '@/lib/qc-agent/checklist'
+import { RE_QC_STATUSES, otherPlatformLabels } from '@/lib/qc-agent/checklist'
 
 // Matches the abbreviations used on Sales Ledger / StockView's list rows.
 const ACCOUNT_ABBREV: Record<string, string> = { Digitalbluez: 'DB', Techtenth: 'TT', Cash: 'CS' }
@@ -52,9 +52,14 @@ const CATEGORIES_WITH_BATTERY = ['LAP', 'TAB']
 const CATEGORIES_WITH_KEYBOARD = ['LAP']
 const CATEGORIES_WITH_SCREEN = ['LAP', 'TAB', 'MON']
 
-function checklistFor(category: string | undefined, templates: ConfigSummaryTemplate[]): string[] {
+// The LAP/DES lists hold both the Windows and the Mac Auto Check items; a unit
+// only gets its own platform's (no "Activation Lock" on a ThinkPad, no
+// "BitLocker" on a MacBook).
+function checklistFor(category: string | undefined, templates: ConfigSummaryTemplate[], brand?: string): string[] {
   const list = templates.find(t => t.category === category)?.qc_checklist
-  return Array.isArray(list) && list.length > 0 ? list : DEFAULT_CHECK_ITEMS
+  if (!Array.isArray(list) || list.length === 0) return DEFAULT_CHECK_ITEMS
+  const hide = otherPlatformLabels(/^apple$/i.test(brand || '') ? 'mac' : 'windows')
+  return list.filter((item) => !hide.has(item))
 }
 
 interface CheckResult {
@@ -319,7 +324,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
     } else {
       const category = data.purchase_order_items?.sku_master?.category
       setCheckResults(
-        checklistFor(category, templatesRef.current).map((item) => ({ check_item: item, result: 'pass', notes: '' }))
+        checklistFor(category, templatesRef.current, data.purchase_order_items?.sku_master?.brand).map((item) => ({ check_item: item, result: 'pass', notes: '' }))
       )
     }
   }, [])

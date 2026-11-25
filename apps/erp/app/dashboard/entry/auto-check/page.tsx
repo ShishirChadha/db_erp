@@ -15,6 +15,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { Copy, Download, Loader2, RefreshCw, Wifi, WifiOff, ChevronDown } from 'lucide-react'
 import { buildLauncherCmd } from '@/lib/qc-agent/launcher'
+import { macCommand } from '@/lib/qc-agent/mac-script'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -270,10 +271,20 @@ function WaitingForLaptop({ view }: { view: SessionView }) {
         <div className="text-4xl font-mono font-bold tracking-[0.3em]">{view.code}</div>
       </div>
       <ol className="list-decimal pl-5 space-y-2 text-sm">
-        <li>Plug the pen drive into the laptop and double-click <b>DB Auto Check</b>. Click <b>Yes</b> when Windows asks.</li>
+        <li><b>Windows:</b> plug the pen drive into the laptop and double-click <b>DB Auto Check</b>. Click <b>Yes</b> when Windows asks.</li>
         <li>Type the code <b className="font-mono tracking-widest">{view.code}</b> and press Enter. A wrong code just asks again.</li>
         <li>A test page opens on the laptop. Follow it there; results appear here by themselves.</li>
       </ol>
+      <div className="rounded border p-3 text-sm space-y-2">
+        <div className="font-medium">It&apos;s a Mac?</div>
+        <ol className="list-decimal pl-5 space-y-1.5">
+          <li>Press <b>Command + Space</b>, type <b>Terminal</b>, press Enter.</li>
+          <li>Type this line and press Enter (it&apos;s the same for every Mac):
+            <div className="mt-1.5"><CopyLine text={macCommand(typeof window !== 'undefined' ? window.location.origin : 'https://erp.digitalbluez.com')} /></div>
+          </li>
+          <li>Type the code <b className="font-mono tracking-widest">{view.code}</b>, then the Mac&apos;s login password (it stays on the Mac; Enter skips it, but then a few checks can&apos;t run).</li>
+        </ol>
+      </div>
       <details className="text-sm">
         <summary className="cursor-pointer text-muted-foreground">No pen drive? Type the command instead</summary>
         <ol className="list-decimal pl-5 space-y-2 mt-2">

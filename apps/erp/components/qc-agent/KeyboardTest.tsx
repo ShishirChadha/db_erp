@@ -13,7 +13,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 
 type Key = { code: string; label: string; w?: number; optional?: boolean }
 
-const ROWS: Key[][] = [
+const ROWS_WINDOWS: Key[][] = [
   [{ code: 'Escape', label: 'Esc' }, ...Array.from({ length: 12 }, (_, i) => ({ code: `F${i + 1}`, label: `F${i + 1}` })),
     { code: 'Insert', label: 'Ins', optional: true }, { code: 'Delete', label: 'Del' }],
   [{ code: 'Backquote', label: '`' }, ...'1234567890'.split('').map((d) => ({ code: `Digit${d}`, label: d })),
@@ -32,13 +32,40 @@ const ROWS: Key[][] = [
     { code: 'PageUp', label: 'PgUp', optional: true }, { code: 'PageDown', label: 'PgDn', optional: true }],
 ]
 
+// MacBook keyboard (US/Indian layout). fn never reaches a browser, so it is
+// optional here and covered by the guided Fn-keys item. With a Touch Bar the
+// F-keys are virtual (shown when fn is held) and are tested on the Touch Bar step.
+function macRows(fnKeysOptional: boolean): Key[][] {
+  return [
+    [{ code: 'Escape', label: 'esc' }, ...Array.from({ length: 12 }, (_, i) => ({ code: `F${i + 1}`, label: `F${i + 1}`, optional: fnKeysOptional }))],
+    [{ code: 'Backquote', label: '`' }, ...'1234567890'.split('').map((d) => ({ code: `Digit${d}`, label: d })),
+      { code: 'Minus', label: '-' }, { code: 'Equal', label: '=' }, { code: 'Backspace', label: 'delete', w: 2 }],
+    [{ code: 'Tab', label: 'tab', w: 1.5 }, ...'QWERTYUIOP'.split('').map((c) => ({ code: `Key${c}`, label: c })),
+      { code: 'BracketLeft', label: '[' }, { code: 'BracketRight', label: ']' }, { code: 'Backslash', label: '\\', w: 1.5 }],
+    [{ code: 'CapsLock', label: 'caps lock', w: 1.8 }, ...'ASDFGHJKL'.split('').map((c) => ({ code: `Key${c}`, label: c })),
+      { code: 'Semicolon', label: ';' }, { code: 'Quote', label: "'" }, { code: 'Enter', label: 'return', w: 2.2 }],
+    [{ code: 'ShiftLeft', label: 'shift', w: 2.4 }, { code: 'IntlBackslash', label: '§', optional: true }, ...'ZXCVBNM'.split('').map((c) => ({ code: `Key${c}`, label: c })),
+      { code: 'Comma', label: ',' }, { code: 'Period', label: '.' }, { code: 'Slash', label: '/' }, { code: 'ShiftRight', label: 'shift', w: 2.6 }],
+    [{ code: 'Fn', label: 'fn', optional: true }, { code: 'ControlLeft', label: 'control', w: 1.2 }, { code: 'AltLeft', label: 'option', w: 1.2 },
+      { code: 'MetaLeft', label: 'command', w: 1.5 }, { code: 'Space', label: 'space', w: 5 }, { code: 'MetaRight', label: 'command', w: 1.5 },
+      { code: 'AltRight', label: 'option', w: 1.2 }, { code: 'ArrowLeft', label: '←' }, { code: 'ArrowUp', label: '↑' }, { code: 'ArrowDown', label: '↓' },
+      { code: 'ArrowRight', label: '→' }],
+  ]
+}
+
 const NUMPAD: Key[] = ['NumLock', 'NumpadDivide', 'NumpadMultiply', 'NumpadSubtract', 'Numpad7', 'Numpad8', 'Numpad9', 'NumpadAdd',
   'Numpad4', 'Numpad5', 'Numpad6', 'Numpad1', 'Numpad2', 'Numpad3', 'NumpadEnter', 'Numpad0', 'NumpadDecimal']
   .map((code) => ({ code, label: code.replace('Numpad', '').replace('Divide', '/').replace('Multiply', '*').replace('Subtract', '-').replace('Add', '+').replace('Decimal', '.').replace('NumLock', 'Num') }))
 
 export interface KeyboardResult { allPressed: boolean; missing: string[]; notOnLaptop: string[]; stuck: string | null }
 
-export function KeyboardTest({ onResult }: { onResult: (r: KeyboardResult) => void }) {
+export function KeyboardTest({ onResult, layout = 'windows', fnKeysOptional = false }: {
+  onResult: (r: KeyboardResult) => void
+  layout?: 'windows' | 'mac'
+  /** Mac with a Touch Bar: F1-F12 are on the bar, not keys. */
+  fnKeysOptional?: boolean
+}) {
+  const ROWS = useMemo(() => (layout === 'mac' ? macRows(fnKeysOptional) : ROWS_WINDOWS), [layout, fnKeysOptional])
   const [pressed, setPressed] = useState<Set<string>>(new Set())
   const [notHere, setNotHere] = useState<Set<string>>(new Set())
   const [hasNumpad, setHasNumpad] = useState(false)
@@ -51,7 +78,7 @@ export function KeyboardTest({ onResult }: { onResult: (r: KeyboardResult) => vo
     const keys = ROWS.flat().filter((k) => !k.optional).map((k) => k.code)
     if (hasNumpad) keys.push(...NUMPAD.map((k) => k.code))
     return keys.filter((c) => !notHere.has(c))
-  }, [hasNumpad, notHere])
+  }, [hasNumpad, notHere, ROWS])
   const missing = required.filter((c) => !pressed.has(c))
 
   useEffect(() => {
@@ -71,7 +98,7 @@ export function KeyboardTest({ onResult }: { onResult: (r: KeyboardResult) => vo
     window.addEventListener('keydown', down)
     window.addEventListener('keyup', up)
     return () => { window.removeEventListener('keydown', down); window.removeEventListener('keyup', up) }
-  }, [phase])
+  }, [phase, ROWS])
 
   useEffect(() => {
     if (phase !== 'handsoff') return
@@ -114,13 +141,17 @@ export function KeyboardTest({ onResult }: { onResult: (r: KeyboardResult) => vo
         <span className={missing.length ? 'text-muted-foreground' : 'text-success font-semibold'}>
           {missing.length ? `${missing.length} keys still to press` : 'Every key pressed ✓'}
         </span>
-        <label className="flex items-center gap-2">
-          <Checkbox checked={hasNumpad} onCheckedChange={(v) => setHasNumpad(!!v)} /> This laptop has a number pad
-        </label>
+        {layout === 'windows' && (
+          <label className="flex items-center gap-2">
+            <Checkbox checked={hasNumpad} onCheckedChange={(v) => setHasNumpad(!!v)} /> This laptop has a number pad
+          </label>
+        )}
         {extra.length > 0 && <span className="text-muted-foreground">Other keys seen: {extra.join(', ')}</span>}
       </div>
       <p className="text-xs text-muted-foreground">
-        Dashed keys are optional. If an F-key changes volume or brightness instead, hold Fn while pressing it. Click a key on screen if this laptop doesn&apos;t have it.
+        {layout === 'mac'
+          ? <>Dashed keys are optional. Hold <b>fn</b> while pressing F1–F12. Press <b>command</b> on its own — command with another key can close the browser. Click a key on screen if this Mac doesn&apos;t have it.</>
+          : <>Dashed keys are optional. If an F-key changes volume or brightness instead, hold Fn while pressing it. Click a key on screen if this laptop doesn&apos;t have it.</>}
       </p>
       {phase === 'typing' && (
         <button

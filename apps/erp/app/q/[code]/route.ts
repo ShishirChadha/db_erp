@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server'
 import { liveSessionByCode } from '@/lib/qc-agent/session'
 import { buildAgentScript } from '@/lib/qc-agent/script'
+import { buildMacScript } from '@/lib/qc-agent/mac-script'
 
 // GET /q/ABC123 -- the Auto Check PowerShell script, for
 //   irm https://erp.digitalbluez.com/q/ABC123 | iex
@@ -30,6 +31,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ code
   }
   const { row } = found
   if (check) return psText('OK')
+  // ?os=mac -- the bash script for a Mac (fetched by /mac). ?quick=1 shortens the
+  // background tests for local development only; never honoured in production.
+  if (req.nextUrl.searchParams.get('os') === 'mac') {
+    return psText(buildMacScript({
+      base: req.nextUrl.origin,
+      code: row.code,
+      heatTest: row.options?.heat_test !== false,
+      quick: process.env.NODE_ENV !== 'production' && req.nextUrl.searchParams.get('quick') === '1',
+    }))
+  }
   return psText(buildAgentScript({
     base: req.nextUrl.origin,
     code: row.code,

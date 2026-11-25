@@ -38,8 +38,30 @@ export interface HwEvent {
   time?: string
 }
 
+/** Mac-only facts (lib/qc-agent/mac-script.ts). Absent on Windows reports. */
+export interface MacFacts {
+  model_identifier?: string      // "MacBookAir10,1"
+  model_number?: string          // order number, e.g. "MPHF3HN/A"
+  chip?: string                  // "Apple M1 Pro"; empty on Intel
+  intel?: boolean
+  activation_lock?: 'enabled' | 'disabled' | null   // T2 / Apple Silicon only
+  find_my_token?: boolean | null // NVRAM fmm-mobileme-token-FMM present (older Intel)
+  dep?: boolean | null           // "Enrolled via DEP"
+  mdm?: boolean | null           // "MDM enrollment"
+  dep_assigned?: boolean | null  // a Remote Management config is waiting for this Mac (admin only)
+  firmware_password?: boolean | null  // Intel only, admin only
+  filevault?: boolean | null
+  smart_status?: string | null   // "Verified" | "Failing" | ...
+  battery_condition?: string | null  // "Normal" | "Good" | "Service Recommended" | ...
+  max_capacity_pct?: number | null   // Apple's own battery health figure
+  panics_90d?: number | null
+}
+
 export interface HardwareReport {
   v?: number
+  /** Absent = Windows (the original script). */
+  platform?: 'windows' | 'mac'
+  mac?: MacFacts
   is_admin?: boolean
   system?: {
     manufacturer?: string
@@ -104,10 +126,12 @@ export interface BackgroundResults {
     seconds?: number
     on_ac?: boolean | null
     // % of base clock (Win32 "% Processor Performance") and % busy, every 5 s
-    samples?: { t: number; perf: number | null; util: number | null; temp_c?: number | null }[]
+    samples?: { t: number; perf: number | null; util: number | null; temp_c?: number | null; pressure?: string | null }[]
     error?: string | null
   }
-  disk?: { mb?: number; write_mbps?: number; read_mbps?: number; mismatches?: number; io_errors?: number; skipped_reason?: string | null; error?: string | null }
+  disk?: { mb?: number; write_mbps?: number; read_mbps?: number; mismatches?: number; io_errors?: number; skipped_reason?: string | null; error?: string | null
+    /** Mac: false when the read-back may have come from memory (no admin password to flush the cache). */
+    cache_flushed?: boolean | null }
   backup?: { minutes?: number; percent_drop?: number; hours?: number } | null
 }
 

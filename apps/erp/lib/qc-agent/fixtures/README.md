@@ -8,3 +8,5 @@ the script on real laptops.
 - hp-840-g5-locked.json     -- every lock and repair red flag at once
 - dell-5400-nonadmin.json   -- no admin rights, placeholder BIOS serial, unknowns
 - hp-elitedesk-800-g4.json  -- desktop: SSD + HDD, discrete GPU, no battery
+
+- `mac-m2pro-14.json` — **real** collector output (`lib/qc-agent/mac-script.ts`, JXA part) from the office MacBook Pro 14" M2 Pro (Mac14,9), run without the password; serial replaced, the external monitor and iPhone camera removed. Activation Lock and FileVault are genuinely on for this Mac.

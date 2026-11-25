@@ -9,7 +9,7 @@ sources:
   - apps/erp/app/api/asset-ledger/**
   - apps/erp/app/dashboard/live-stock/page.tsx
   - apps/erp/app/dashboard/stock/[id]/page.tsx
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## What this covers
@@ -92,6 +92,15 @@ replaced by the Auto Check points (40 for laptops, 27 for desktops, migration
 same questions. The labels must stay identical to Auto Check's `CHECKS`, or Auto
 Check adds them again as "extra checks". Checks already recorded on units are
 unchanged.
+
+**Macs and SSD health (2026-11-25).** The lists also carry six Mac items
+(Activation Lock, firmware password, FileVault, screen coating, Touch Bar,
+Touch ID; migration `20261125b`). The unit page's manual QC form shows an Apple
+unit only the Mac items and every other unit only the Windows items
+(`otherPlatformLabels()`). `asset_ledger.storage_health_percent` (SSD health %,
+100 − drive wear) is set through the same QC route, typeable on the manual form
+and shown in the QC summary next to battery health; the route leaves it alone
+when a caller doesn't send it. Macs can't report wear, so it stays blank there.
 
 ## Related
 

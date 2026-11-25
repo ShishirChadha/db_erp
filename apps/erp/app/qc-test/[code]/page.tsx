@@ -24,6 +24,7 @@ interface TestState {
   machine: null | {
     device: DeviceKind; name: string; serial: string; touch: boolean
     has_camera: boolean; has_battery: boolean; has_lan: boolean; bios_password_known: boolean
+    platform?: 'windows' | 'mac'; has_touch_bar?: boolean | null; has_touch_id?: boolean | null
   }
   background: { stage: string | null; stage_progress: number | null }
   live: LiveSnapshot | null
@@ -95,6 +96,7 @@ export default function QcTestPage() {
 
   const m = state?.machine
   const device: DeviceKind = m?.device || 'laptop'
+  const isMac = m?.platform === 'mac'
   const live = state?.live
 
   // ---- charger: watch the script's live power state for unplug -> plug in ----
@@ -120,10 +122,13 @@ export default function QcTestPage() {
       body: (
         <>
           <AnswerButtons
-            label="During Windows setup, did it ask you to sign in to a company / organisation (work or school account)?"
+            label={isMac
+              ? 'During macOS setup, did a "Remote Management" screen appear (a company asking to manage this Mac)?'
+              : 'During Windows setup, did it ask you to sign in to a company / organisation (work or school account)?'}
+            hint={isMac ? 'Also check: System Settings → Apple ID is signed out, and Find My is off.' : undefined}
             value={answers.oobe_company}
             onAnswer={answer('oobe_company')}
-            passLabel="No, normal setup" failLabel="Yes, company sign-in"
+            passLabel="No, normal setup" failLabel={isMac ? 'Yes, Remote Management' : 'Yes, company sign-in'}
           />
           {!m.bios_password_known && (
             <AnswerButtons
@@ -168,7 +173,7 @@ export default function QcTestPage() {
     })
     if (device === 'laptop') {
       list.push({
-        id: 'screen', title: 'Screen', keys: ['screen_dots', 'screen_bleed', 'brightness'],
+        id: 'screen', title: 'Screen', keys: ['screen_dots', 'screen_bleed', 'brightness', ...(isMac ? ['screen_coating'] : [])],
         body: (
           <>
             <div className="rounded-xl border bg-card p-4 space-y-3">
@@ -190,17 +195,24 @@ export default function QcTestPage() {
             {ask('screen_bleed')}
             <div className="rounded-xl border bg-card p-4 space-y-3">
               <div className="font-medium">3. Brightness</div>
-              <p className="text-sm text-muted-foreground">
-                {state?.script_connected
-                  ? 'Press the button and watch: the brightness steps down to 10% and back up to 100%.'
-                  : 'The script is not connected — use the Fn brightness keys instead.'}
-              </p>
-              <button type="button" disabled={!state?.script_connected} onClick={() => save({ command: 'brightness_sweep' })}
-                className="rounded-lg bg-primary text-primary-foreground px-4 py-3 text-sm font-semibold disabled:opacity-40">
-                Run brightness sweep
-              </button>
+              {isMac ? (
+                <p className="text-sm text-muted-foreground">Press the brightness-down key until the screen is at its lowest, then brightness-up to the top (on the Touch Bar for Touch Bar models).</p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {state?.script_connected
+                      ? 'Press the button and watch: the brightness steps down to 10% and back up to 100%.'
+                      : 'The script is not connected — use the Fn brightness keys instead.'}
+                  </p>
+                  <button type="button" disabled={!state?.script_connected} onClick={() => save({ command: 'brightness_sweep' })}
+                    className="rounded-lg bg-primary text-primary-foreground px-4 py-3 text-sm font-semibold disabled:opacity-40">
+                    Run brightness sweep
+                  </button>
+                </>
+              )}
             </div>
             {ask('brightness', 'Smooth change, no flicker, and bright enough at 100%.')}
+            {isMac && ask('screen_coating', 'Look at the screen at an angle, on the black test and switched off: patchy, cloudy or peeling areas in the coating (common on 2015–2017 Retina MacBooks).')}
           </>
         ),
       })
@@ -219,7 +231,7 @@ export default function QcTestPage() {
         id: 'keyboard', title: 'Keyboard', keys: ['keyboard', 'stuck_keys', 'fn_keys', 'kb_backlight'],
         body: (
           <>
-            <KeyboardTest onResult={(r) => save({ answers: {
+            <KeyboardTest layout={isMac ? 'mac' : 'windows'} fnKeysOptional={isMac && m.has_touch_bar === true} onResult={(r) => save({ answers: {
               keyboard: r.allPressed
                 ? { result: 'pass', note: r.notOnLaptop.length ? `Every key works (not on this model: ${r.notOnLaptop.join(', ')}).` : 'Every key works.' }
                 : { result: 'fail', note: `Keys not working: ${r.missing.join(', ')}` },
@@ -227,17 +239,35 @@ export default function QcTestPage() {
             } })} />
             {ask('keyboard')}
             {ask('stuck_keys')}
-            {ask('fn_keys', 'Hold Fn and try volume up/down/mute and brightness up/down.')}
-            {ask('kb_backlight', 'Fn + the backlight key (often Space, F5, F9 or F10).')}
+            {ask('fn_keys', isMac
+              ? 'Without fn: brightness, volume up/down and mute keys work (on the Touch Bar for Touch Bar models).'
+              : 'Hold Fn and try volume up/down/mute and brightness up/down.')}
+            {ask('kb_backlight', isMac
+              ? 'Turn the keyboard light up and down (keys F5/F6, the Touch Bar, or Control Centre → Keyboard Brightness). Every key lights evenly.'
+              : 'Fn + the backlight key (often Space, F5, F9 or F10).')}
           </>
         ),
       })
+      if (isMac) {
+        const macKeys = [...(m.has_touch_bar === false ? [] : ['touch_bar']), ...(m.has_touch_id === false ? [] : ['touch_id'])]
+        if (macKeys.length) {
+          list.push({
+            id: 'mac_extras', title: 'Touch Bar & Touch ID', keys: macKeys,
+            body: (
+              <>
+                {macKeys.includes('touch_bar') && ask('touch_bar', 'Hold fn: F1–F12 appear on the bar. Tap every part of it and drag the brightness slider — no dead spots, no flicker or burn-in.')}
+                {macKeys.includes('touch_id') && ask('touch_id', 'System Settings → Touch ID & Password → Add Fingerprint: it should register in a few touches. Delete the fingerprint afterwards.')}
+              </>
+            ),
+          })
+        }
+      }
       list.push({
         id: 'trackpad', title: 'Trackpad', keys: ['trackpad'],
         body: (
           <>
             <TrackpadTest onComplete={() => { if (!answers.trackpad) save({ answers: { trackpad: { result: 'pass', note: 'Clicks, two-finger scroll and all corners detected.' } } }) }} />
-            {ask('trackpad', 'Also press the physical buttons (and the pointing stick, if it has one).')}
+            {ask('trackpad', isMac ? 'Also force-click (press harder): you should feel a second, deeper click everywhere on the pad.' : 'Also press the physical buttons (and the pointing stick, if it has one).')}
           </>
         ),
       })
@@ -252,7 +282,7 @@ export default function QcTestPage() {
         ? (<><CameraTest />{ask('camera')}</>)
         : (
           <AnswerButtons
-            label={device === 'laptop' ? 'Windows found NO camera. Does this model have one?' : 'No camera found on this desktop.'}
+            label={device === 'laptop' ? 'The system found NO camera. Does this model have one?' : 'No camera found on this desktop.'}
             hint="If it should have one, the camera is faulty or unplugged."
             value={answers.camera}
             onAnswer={answer('camera')}
@@ -303,7 +333,7 @@ export default function QcTestPage() {
               <div>{chargerMsg || 'Unplug the charger, wait 3 seconds, then plug it back in.'}</div>
               {!state?.script_connected && <div className="text-warning">The script is not connected, so this can&apos;t be detected — answer by hand.</div>}
             </div>
-            {ask('charging', 'Also wiggle the plug gently: charging must not drop in and out.')}
+            {ask('charging', isMac ? 'Try every charging port (MagSafe and each USB-C). Wiggle the plug gently: charging must not drop in and out.' : 'Also wiggle the plug gently: charging must not drop in and out.')}
           </>
         ),
       })
@@ -328,7 +358,7 @@ export default function QcTestPage() {
     })
     return list
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [m, device, answers, state?.interactive.cosmetic, state?.script_connected, state?.background.stage, state?.options.heat_test, live, screenMarks, chargerMsg])
+  }, [m, device, isMac, answers, state?.interactive.cosmetic, state?.script_connected, state?.background.stage, state?.options.heat_test, live, screenMarks, chargerMsg])
 
   const isDone = (s: Step) => s.keys.every((k) => k.startsWith('cosmetic:') ? !!state?.interactive.cosmetic?.[k.slice(9)] : !!answers[k])
   const remaining = steps.filter((s) => !isDone(s))
@@ -346,7 +376,7 @@ export default function QcTestPage() {
       <Centered>
         <Loader2 className="size-6 animate-spin mb-3" />
         <div className="font-semibold">Waiting for the script on this laptop to send its results…</div>
-        <p className="text-sm text-muted-foreground mt-1">Code {code}. Keep the PowerShell window open.</p>
+        <p className="text-sm text-muted-foreground mt-1">Code {code}. Keep the PowerShell / Terminal window open.</p>
       </Centered>
     )
   }

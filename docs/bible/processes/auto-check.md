@@ -4,11 +4,12 @@ title: Auto Check (stock in + QC from the machine itself)
 kind: process
 audience: [owner, manager, employee]
 module: live-stock-qc
-routes: [/dashboard/entry/auto-check, '/qc-test/[code]', '/q/[code]', /q/go]
-keywords: [auto check, automatic qc, powershell, script, stock in, new entry, qc, quality check, battery report, dead pixel, keyboard test, bios password, computrace, company lock, naya maal]
+routes: [/dashboard/entry/auto-check, '/qc-test/[code]', '/q/[code]', /q/go, /mac]
+keywords: [auto check, mac, macbook, activation lock, find my, filevault, automatic qc, powershell, script, stock in, new entry, qc, quality check, battery report, dead pixel, keyboard test, bios password, computrace, company lock, naya maal]
 sources:
   - apps/erp/app/dashboard/entry/auto-check/page.tsx
   - apps/erp/app/q/go/route.ts
+  - apps/erp/app/mac/route.ts
   - apps/erp/app/qc-test/[code]/page.tsx
   - apps/erp/app/q/[code]/route.ts
   - apps/erp/app/api/qc-agent/**
@@ -119,6 +120,38 @@ laptops and save each when its tests finish. Codes last 2 hours.
   answers, kept after the save with `asset_id` set, as the unit's "hardware as
   received" record.
 
+## On a Mac (MacBook, iMac, Mac mini)
+
+Same flow, same code, same review and save. On the Mac: **Command + Space →
+Terminal**, type `curl -L erp.digitalbluez.com/mac | bash` (the same line for
+every Mac), then the 6-letter code, then the Mac's login password. The password
+is used on the Mac only (sudo) and is never sent; pressing Enter skips it, and
+the checks that need it show "Couldn't check".
+
+- **Mac locks:** Activation Lock / Find My (the lock that makes a used Mac
+  unsellable — hard fail), company DEP/MDM enrollment and a Remote Management
+  setup waiting for the Mac (password), firmware password (Intel, password; N/A
+  on Apple Silicon), FileVault.
+- **Shared tests, Mac sources:** S.M.A.R.T. status (Verified/Failing — a Mac
+  can't report SSD wear %, so SSD health % stays blank), a 2 GB write/verify
+  (the cache is flushed only with the password, otherwise it warns), a Perl RAM
+  pattern test, heat (Intel: macOS's CPU speed limit; Apple Silicon: thermal
+  pressure, password), kernel panics in 90 days, battery = Apple's own maximum
+  capacity % + condition ("Service Recommended" fails), Wi-Fi, Bluetooth, USB
+  ports by location, external display.
+- **Mac guided steps:** a Mac keyboard layout (fn can't be seen by a browser,
+  so it's the Fn-keys question), Touch Bar and Touch ID (skipped on models
+  without them), the screen-coating ("staingate") check, force click.
+- **Model:** macOS reports `MacBookAir10,1`, not the A-number. A table
+  (`lib/qc-agent/mac-models.ts`) turns it into **MacBook Air A2337** + model
+  year + screen size + Touch ID/Touch Bar. A Mac missing from the table shows
+  the family name: type the A-number once (and add the row). Apple SKUs match
+  **by A-number**, so "Macbook A2337" and "MacBook Air A2337" are the same.
+  Apple SSD sizes round to 128/256/512 GB, 1/2 TB.
+- Windows-only checks (BIOS password, Computrace, BitLocker, activation,
+  disk-error log, Device Manager, original-parts scan) don't exist on a Mac; on
+  the unit's manual QC form an Apple unit only sees the Mac items and vice versa.
+
 ## The pen drive launcher
 
 `DB Auto Check.cmd` is downloaded once from the Auto Check start screen and
@@ -162,6 +195,8 @@ policies, anon/authenticated revoked).
 - Without an Admin PowerShell, disk wear, BitLocker and TPM can't be read. Those
   checks show "Couldn't check" and must be decided by hand.
 - The script expects English Windows for the Wi-Fi network count.
+- Mac: tested end to end on an Apple Silicon MacBook Pro; an Intel Mac run is
+  still to be done at the shop.
 - Desktops have no Generation field in their SKU template, so a desktop's CPU
   generation is detected but not saved. Add the field in Settings → SKU
   Categories and Auto Check fills it automatically.

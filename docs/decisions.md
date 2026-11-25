@@ -1284,3 +1284,35 @@ Verified with a 15-check HTTP script on the dev server, using the real P14s uplo
 - SSD health 100 computed, 150 refused, 97 stored, and an omitted value leaving it unchanged.
 
 The earlier 22- and 52-check scripts also still pass, and a re-query found no residue. The PowerShell changes (registry read, launcher) have not run on Windows yet.
+
+## 2026-11-25 — Auto Check for Macs
+
+The owner asked for the same QC on Macs. There are 75 Macs on record, 33 in hand, mixing Intel (2015–2020) and M1/M1 Pro. PowerShell doesn't exist there, so only the collector is new. Session, rules engine, test page, review and save stay shared.
+
+- **Same report, a `platform` tag.** `mac-script.ts` sends the same `HardwareReport` with `platform: 'mac'` and a `mac` block; checks get `platform`. Windows-only checks are hidden on a Mac. Six Mac checks were added to the LAP list and three to DES (migration `20261125b`, data-only), and the manual QC form filters by brand, so neither platform sees the other's items.
+- **Built-in tools only.** macOS ships no compiler or smartctl. The tools used:
+  - JXA for collection, using `system_profiler -json`.
+  - Perl for the RAM test. JXA ran about 30 MB/s and Perl's C string operations about 2.4 GB/s, so Perl it is.
+  - `shasum` plus `purge` for the disk test.
+  - `pmset` and `powermetrics` for heat.
+  - Rejected: installing smartmontools via Homebrew, which leaves software on a Mac we're selling.
+  - Consequence: SSD wear % isn't available on Macs; we report S.M.A.R.T. Verified/Failing plus the write/verify test.
+- **The Mac's password is asked, never sent.** It is used by sudo locally for a few checks: firmware password, pre-assigned DEP config, Apple Silicon thermal pressure, and the disk-cache flush. Skipping it turns those into "couldn't check", and a disk test without the flush is a warning, not a pass.
+- **Activation Lock is the key lock.** It's read from `system_profiler` (T2 / Apple Silicon) or the Find My NVRAM token (older Intel), and is a hard fail.
+- **A-number naming.** An identifier table maps to the business's own model names ("MacBook Air A2337") plus year, screen and Touch ID/Touch Bar. Apple SKU matching compares the 4-digit A-number, because existing names are inconsistent ("Macbook A2337", "Macbook Pro 2485").
+- **Apple SSD sizes** (121/251/500 GB reported) round to 128/256/512 GB, not the generic 120/250/500. Found by the end-to-end test.
+- **No pen-drive file for Mac.** Gatekeeper blocks unsigned double-click scripts; one fixed, short Terminal line works on every Mac.
+
+Verified:
+- The collector ran for real on the office MacBook Pro 14" M2 Pro and gave correct facts, with Activation Lock and FileVault genuinely on. That run is now the `fixtures/mac-m2pro-14.json` fixture.
+- `bash -n`, JXA and `perl -c` parse checks passed.
+- The 25-check Mac HTTP script passed:
+  - script serving and the ASCII rules;
+  - Mac-only checks, with no Windows items and no "extra checks";
+  - lock verdicts and the Apple battery figure;
+  - Touch Bar N/A and test-page flags;
+  - Mac-only answers accepted;
+  - MacBookAir10,1 → "MacBook Air A2337" 256GB matching the existing "Macbook A2337" SKU;
+  - save → 39 QC rows.
+- The Windows 52/22/15 scripts still pass; a re-query found no residue, and the real A2337 stock was unchanged.
+- An Intel Mac has not been run yet.

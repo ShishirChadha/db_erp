@@ -7,7 +7,10 @@
 // hardware.
 
 import type { HardwareReport, HwDisk } from './types'
-import type { DeviceKind } from './checklist'
+import type { DeviceKind, Platform } from './checklist'
+import { macModel, MACOS_NAMES } from './mac-models'
+
+export const platformOf = (r: HardwareReport | null | undefined): Platform => (r?.platform === 'mac' ? 'mac' : 'windows')
 
 const clean = (s: string | undefined | null) =>
   (s || '').replace(/\((R|TM|C)\)/gi, '').replace(/\s+/g, ' ').trim()
@@ -57,6 +60,12 @@ export function parseBrand(manufacturer: string | undefined): string {
 
 export function parseModel(report: HardwareReport, brand: string): string {
   const sys = report.system || {}
+  // A Mac's identifier ("MacBookAir10,1") -> "MacBook Air A2337", the way this
+  // business names Mac SKUs. Unknown identifier -> the family name alone.
+  if (report.platform === 'mac') {
+    const known = macModel(report.mac?.model_identifier)
+    return known ? `${known.family} ${known.a}` : clean(sys.model)
+  }
   let model = clean(sys.model)
   // Lenovo's Model is a machine-type code (20S0S0XX00); the marketing name
   // ("ThinkPad T14 Gen 1") lives in Win32_ComputerSystemProduct.Version.
@@ -116,6 +125,13 @@ export function parseCpu(name: string | undefined): CpuReading {
   const none: CpuReading = { cpu: '', generation: '', model, launchYear: null }
   if (!model) return none
 
+  // Apple Silicon: "Apple M1", "Apple M2 Pro" -- kept whole, as the SKUs spell it.
+  const apple = model.match(/^Apple\s+(M\d+)(\s+(Pro|Max|Ultra))?\b/i)
+  if (apple) {
+    const year: Record<string, number> = { M1: 2020, M2: 2022, M3: 2023, M4: 2024, M5: 2025 }
+    return { cpu: `Apple ${apple[1].toUpperCase()}${apple[3] ? ` ${apple[3][0].toUpperCase()}${apple[3].slice(1).toLowerCase()}` : ''}`, generation: 'No', model, launchYear: year[apple[1].toUpperCase()] ?? null }
+  }
+
   const ultra = model.match(/Core\s+Ultra\s+([579])/i)
   if (ultra) return { cpu: `Core Ultra ${ultra[1]}`, generation: '', model, launchYear: 2023 }
   // 2023+ "Intel Core 5 120U" (no "i")
@@ -170,6 +186,17 @@ export function marketedSize(bytes: number | undefined): string {
   return best >= 1000 ? `${best / 1000}TB` : `${best}GB`
 }
 
+// Apple sells 128/256/512 GB and 1/2/4/8 TB, but its SSDs report 121, 251 and
+// 500 GB, which the generic rounding above would call 120/250/500 GB.
+const APPLE_SIZES_GB = [128, 256, 512, 1000, 2000, 4000, 8000]
+export function appleMarketedSize(bytes: number | undefined): string {
+  if (!bytes || bytes <= 0) return ''
+  const gb = bytes / 1e9
+  let best = APPLE_SIZES_GB[0]
+  for (const s of APPLE_SIZES_GB) if (Math.abs(Math.log(s / gb)) < Math.abs(Math.log(best / gb))) best = s
+  return best >= 1000 ? `${best / 1000}TB` : `${best}GB`
+}
+
 export function internalDisks(report: HardwareReport): HwDisk[] {
   return (report.disks || [])
     .filter((d) => !/usb|sd|mmc|virtual|file backed/i.test(d.bus_type || '') && (d.size_bytes || 0) > 16e9)
@@ -180,7 +207,7 @@ const isHdd = (d: HwDisk) => /hdd/i.test(d.media_type || '')
 
 // ---- GPU ----
 
-const INTEGRATED_GPU_RE = /intel|microsoft basic|radeon\(?\s*tm\)?\s+graphics$|radeon graphics|vega \d+ graphics|radeon\s+(r[2-7]|hd \d{4}) graphics|parsec|virtual|displaylink|citrix|remote/i
+const INTEGRATED_GPU_RE = /^apple\b|intel|microsoft basic|radeon\(?\s*tm\)?\s+graphics$|radeon graphics|vega \d+ graphics|radeon\s+(r[2-7]|hd \d{4}) graphics|parsec|virtual|displaylink|citrix|remote/i
 
 /** Dedicated graphics memory in whole GB, or null when the machine didn't say. */
 export function gpuMemoryGb(g: { vram_bytes?: number | null; adapter_ram?: number | null }): number | null {
@@ -242,12 +269,20 @@ export function deviceKind(report: HardwareReport): DeviceKind {
 // ---- OS ----
 
 export function osName(report: HardwareReport): string {
+  if (report.platform === 'mac') {
+    const ver = clean(report.os?.version)
+    const name = MACOS_NAMES[parseInt(ver, 10)]
+    return ver ? `macOS ${name ? `${name} ` : ''}${ver}` : 'macOS'
+  }
   return clean(report.os?.caption).replace(/^Microsoft\s+/i, '')
 }
 
 // ---- Battery ----
 
 export function batteryHealth(report: HardwareReport): number | null {
+  // Apple's own figure (System Settings -> Battery), what a customer will compare with.
+  const apple = report.mac?.max_capacity_pct
+  if (typeof apple === 'number' && apple > 0) return Math.min(100, Math.round(apple))
   const b = report.battery
   if (!b?.design_mwh || !b.full_mwh || b.design_mwh <= 0) return null
   return Math.min(100, Math.round((b.full_mwh / b.design_mwh) * 100))
@@ -276,10 +311,11 @@ export function detectSpecs(report: HardwareReport): Record<string, string | num
   if (kind === 'desktop') {
     const ssd = disks.find((d) => !isHdd(d))
     const hdd = disks.find(isHdd)
-    if (ssd) out.ssd = marketedSize(ssd.size_bytes)
+    if (ssd) out.ssd = report.platform === 'mac' ? appleMarketedSize(ssd.size_bytes) : marketedSize(ssd.size_bytes)
     if (hdd) out.hdd = Math.round((hdd.size_bytes || 0) / 1e9)
   } else if (disks[0]) {
-    out.ssd = isHdd(disks[0]) ? `${marketedSize(disks[0].size_bytes)} HDD` : marketedSize(disks[0].size_bytes)
+    const size = report.platform === 'mac' ? appleMarketedSize(disks[0].size_bytes) : marketedSize(disks[0].size_bytes)
+    out.ssd = isHdd(disks[0]) ? `${size} HDD` : size
   }
 
   const gpu = discreteGpu(report)
@@ -293,6 +329,16 @@ export function detectSpecs(report: HardwareReport): Record<string, string | num
     if (res) out.resolution = res
     out.has_webcam = (report.cameras || []).length > 0
     out.has_fingerprint_reader = (report.biometric || []).length > 0
+  }
+  if (report.platform === 'mac') {
+    const known = macModel(report.mac?.model_identifier)
+    if (known) {
+      out.model_year = String(known.year)
+      if (known.inches && kind === 'laptop') out.screen_size = known.inches
+      if (kind === 'laptop') out.has_fingerprint_reader = !!known.touchId
+    }
+    // Apple Silicon has no Intel-style generation; SKUs record it as "No".
+    if (report.mac?.chip) out.generation = 'No'
   }
   const os = osName(report)
   if (os) out.os = os

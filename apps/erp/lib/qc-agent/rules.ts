@@ -11,7 +11,8 @@
 // Only pass/fail/na can be saved; everything else blocks the save button.
 
 import type { BackgroundResults, HardwareReport, InteractiveResults, LiveSnapshot, SessionOptions } from './types'
-import { CHECKS, checksFor, type CheckDef, type DeviceKind } from './checklist'
+import { CHECKS, checksFor, type CheckDef, type DeviceKind, type Platform } from './checklist'
+import { macModel } from './mac-models'
 import { batteryHealth, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
 
 export type VerdictState = 'pass' | 'fail' | 'na' | 'warn' | 'unknown' | 'pending' | 'missing'
@@ -61,6 +62,83 @@ export interface RuleInput {
   live: LiveSnapshot | null
   options: SessionOptions
   device: DeviceKind
+  /** Default windows (the original script). */
+  platform?: Platform
+}
+
+// ---------- Mac-only rules ----------
+
+function activationLock(def: CheckDef, r: HardwareReport): Verdict {
+  const m = r.mac || {}
+  if (m.activation_lock === 'enabled') {
+    return v(def, 'fail', "Activation Lock is ON. The previous owner must remove this Mac from their Apple ID (Find My), or Apple unlocks it with proof of purchase. Don't sell it locked.", true)
+  }
+  if (m.activation_lock === 'disabled') return v(def, 'pass', 'Activation Lock is off.')
+  if (m.find_my_token === true) return v(def, 'fail', 'Find My Mac is on (an iCloud token is stored in the firmware). Sign out of iCloud / remove it from Find My first.', true)
+  if (m.find_my_token === false) return v(def, 'pass', 'No Find My token in the firmware (this Mac has no Activation Lock chip).')
+  return v(def, 'unknown', 'Could not read the Activation Lock state. Check System Settings → Apple ID is signed out and Find My is off.')
+}
+
+function firmwarePassword(def: CheckDef, r: HardwareReport): Verdict {
+  const m = r.mac || {}
+  if (!m.intel) return v(def, 'na', 'Apple Silicon Macs have no firmware password.')
+  if (m.firmware_password === true) return v(def, 'fail', 'A firmware password is set. Remove it (Recovery → Startup Security Utility) before sale.', true)
+  if (m.firmware_password === false) return v(def, 'pass', 'No firmware password.')
+  return v(def, 'unknown', "Needs the Mac's password to check. Or restart holding Option: a padlock means a firmware password is set.")
+}
+
+function fileVault(def: CheckDef, r: HardwareReport): Verdict {
+  const fv = r.mac?.filevault
+  if (fv === true) return v(def, 'fail', 'FileVault is ON. Turn it off (System Settings → Privacy & Security → FileVault) before sale.', true)
+  if (fv === false) return v(def, 'pass', 'FileVault is off.')
+  return v(def, 'unknown', 'FileVault state not readable.')
+}
+
+function macCompanyLock(def: CheckDef, r: HardwareReport, answers: InteractiveResults['answers']): Verdict {
+  const m = r.mac || {}
+  const reasons: string[] = []
+  if (m.dep) reasons.push('enrolled through Apple Business Manager (DEP)')
+  if (m.mdm) reasons.push('enrolled in a company MDM')
+  if (m.dep_assigned) reasons.push('a company Remote Management setup is waiting for this Mac (it will lock again after the next reinstall)')
+  const oobe = answers?.oobe_company
+  if (oobe?.result === 'fail') reasons.push('macOS setup showed a Remote Management screen')
+  if (reasons.length) return v(def, 'fail', `Company-locked: ${reasons.join('; ')}. The company must release it from Apple Business Manager.`, true)
+  if (!oobe) return v(def, 'missing', 'Answer on the Mac: did macOS setup show a "Remote Management" screen?')
+  return v(def, 'pass', m.dep_assigned === false
+    ? 'No DEP/MDM enrollment and no Remote Management waiting for this Mac.'
+    : 'No DEP/MDM enrollment. (Pre-assigned Remote Management needs the Mac password to check; setup showed none.)')
+}
+
+function macDiskHealth(def: CheckDef, r: HardwareReport): Verdict {
+  const disks = internalDisks(r)
+  if (!disks.length) return v(def, 'fail', 'No internal disk found.', true)
+  const s = r.mac?.smart_status
+  const name = `${disks[0].name || 'SSD'} (${disks[0].bus_type || 'internal'})`
+  if (!s) return v(def, 'unknown', `${name}: S.M.A.R.T. status not reported.`)
+  if (/verified/i.test(s)) return v(def, 'pass', `${name}: S.M.A.R.T. Verified. (A Mac doesn't report SSD wear % without extra tools — the read/write test below checks the data.)`)
+  return v(def, 'fail', `${name}: S.M.A.R.T. status "${s}". The SSD is failing.`, true)
+}
+
+function macStability(def: CheckDef, r: HardwareReport): Verdict {
+  const n = r.mac?.panics_90d
+  if (n == null) return v(def, 'unknown', 'Crash reports could not be read.')
+  if (n > 0) return v(def, 'warn', `${n} kernel panic(s) (the Mac restarted after a crash) in the last 90 days. OK only if it happened during setup; otherwise suspect RAM, SSD or the logic board.`)
+  return v(def, 'pass', 'No kernel panics in the last 90 days.')
+}
+
+const PRESSURE_RANK: Record<string, number> = { nominal: 0, fair: 0, moderate: 1, serious: 2, heavy: 2, critical: 3, trapping: 3, sleeping: 3 }
+
+function macSiliconHeat(def: CheckDef, bg: BackgroundResults): Verdict {
+  const samples = bg.heat?.samples || []
+  const levels = samples.map((s) => (s.pressure || '').toLowerCase()).filter((p) => p in PRESSURE_RANK)
+  if (!levels.length) return v(def, 'unknown', "Apple Silicon heat needs the Mac's password (powermetrics). Feel the base and listen to the fan instead.")
+  const worst = levels.reduce((a, b) => (PRESSURE_RANK[b] > PRESSURE_RANK[a] ? b : a))
+  const util = samples.reduce((a, s) => a + (s.util ?? 0), 0) / Math.max(1, samples.length)
+  const summary = `Worst thermal pressure in 3 minutes at full load: ${worst}`
+  if (util < 80) return v(def, 'unknown', `The load didn't reach full CPU use. ${summary}`)
+  if (PRESSURE_RANK[worst] >= 3) return v(def, 'fail', `${summary} — overheats and throttles hard. Check the fan / vents.`, true)
+  if (PRESSURE_RANK[worst] === 2) return v(def, 'warn', `${summary}. Normal for a fanless MacBook Air under long load; suspicious on a Pro.`)
+  return v(def, 'pass', summary)
 }
 
 // ---------- individual auto rules ----------
@@ -165,6 +243,7 @@ function diskTest(def: CheckDef, r: HardwareReport, bg: BackgroundResults | null
     ? (d.read_mbps ?? 999) < THRESHOLDS.hddMinReadMbps
     : (d.read_mbps ?? 999) < THRESHOLDS.ssdMinReadMbps || (d.write_mbps ?? 999) < THRESHOLDS.ssdMinWriteMbps
   if (slow) return v(def, 'warn', `Data verified, but the disk is slow for its type. ${speed}`)
+  if (d.cache_flushed === false) return v(def, 'warn', `Data verified, but without the Mac's password the read-back may have come from memory, not the SSD. ${speed}`)
   return v(def, 'pass', `Data verified. ${speed}`)
 }
 
@@ -205,15 +284,17 @@ export function analyseHeat(bg: BackgroundResults | null) {
   return { sustained, early, loadOk: util >= 80, maxTemp: temps.length ? Math.max(...temps) : null }
 }
 
-function heat(def: CheckDef, bg: BackgroundResults | null, options: SessionOptions): Verdict {
+function heat(def: CheckDef, bg: BackgroundResults | null, options: SessionOptions, r?: HardwareReport): Verdict {
   if (options.heat_test === false || bg?.heat?.skipped) return v(def, 'na', 'Heat test switched off for this run.')
   if (!bg?.heat || (bg.stage && ['ram', 'heat'].includes(bg.stage))) return v(def, 'pending', 'Runs after the RAM test (3 minutes at full load).')
   if (bg.heat.error) return v(def, 'unknown', `Heat test could not run: ${bg.heat.error}`)
+  if (r?.platform === 'mac' && r.mac?.chip) return macSiliconHeat(def, bg)
   const a = analyseHeat(bg)
   if (!a || a.sustained == null) return v(def, 'unknown', 'The speed counter is not available on this machine — feel the base and listen to the fan instead.')
   const temp = a.maxTemp ? ` · peak ${Math.round(a.maxTemp)}°C` : ''
   const ac = bg.heat.on_ac === false ? ' · ran on battery (speed is often capped on battery — run it plugged in)' : ''
-  const summary = `Held ${a.sustained}% of base speed for the last minute (started at ${a.early}%)${temp}${ac}`
+  const what = r?.platform === 'mac' ? 'of full speed allowed by macOS' : 'of base speed'
+  const summary = `Held ${a.sustained}% ${what} for the last minute (started at ${a.early}%)${temp}${ac}`
   if (!a.loadOk) return v(def, 'unknown', `The load didn't reach full CPU use. ${summary}`)
   if (a.sustained < THRESHOLDS.heatSustainedFail) return v(def, 'fail', `Slows down badly when hot — clean the fan and re-paste. ${summary}`, true)
   if (a.sustained < THRESHOLDS.heatSustainedPass || (a.maxTemp != null && a.maxTemp >= THRESHOLDS.heatTempWarn) || bg.heat.on_ac === false) {
@@ -277,11 +358,16 @@ function originalParts(def: CheckDef, r: HardwareReport): Verdict {
 function batteryHealthRule(def: CheckDef, r: HardwareReport): Verdict {
   const b = r.battery
   if (!b?.present) return v(def, 'fail', 'No battery detected.', true)
+  const condition = r.mac?.battery_condition
+  if (condition && /service|replace|poor|check/i.test(condition)) {
+    return v(def, 'fail', `macOS says the battery needs service ("${condition}")${b.cycles != null ? ` · ${b.cycles} cycles` : ''}. Replace the battery.`, true)
+  }
   const pct = batteryHealth(r)
   if (pct == null) return v(def, 'unknown', 'Battery capacity not reported — check the battery report by hand.')
   const bits = [`${pct}% of original capacity`]
   if (b.cycles != null) bits.push(`${b.cycles} cycles`)
   if (b.manufacturer) bits.push(b.manufacturer)
+  if (condition) bits.push(`macOS: ${condition}`)
   const note = bits.join(' · ')
   if (pct < THRESHOLDS.batteryFail) return v(def, 'fail', `${note}. Replace the battery.`, true)
   if (pct < THRESHOLDS.batteryGood) return v(def, 'warn', `${note}. Usable but weak — grade is lowered one step.`)
@@ -316,9 +402,14 @@ function guided(def: CheckDef, input: RuleInput): Verdict {
 
   // Facts that make a guided check not apply, or decide it automatically.
   if (def.key === 'touch' && !r?.touch) return v(def, 'na', 'No touch screen on this unit.')
+  if ((def.key === 'touch_bar' || def.key === 'touch_id') && !a) {
+    const known = macModel(r?.mac?.model_identifier)
+    if (known && def.key === 'touch_bar' && !known.touchBar) return v(def, 'na', 'This model has no Touch Bar.')
+    if (known && def.key === 'touch_id' && !known.touchId) return v(def, 'na', 'This model has no Touch ID.')
+  }
   if (def.key === 'camera' && !(r?.cameras || []).length && !a) {
     return input.device === 'laptop'
-      ? v(def, 'warn', 'No camera found by Windows. If this model has one, it is faulty or unplugged.')
+      ? v(def, 'warn', 'No camera found by the system. If this model has one, it is faulty or unplugged.')
       : v(def, 'na', 'No camera on this desktop.')
   }
   if (def.key === 'ethernet' && !a) {
@@ -344,10 +435,21 @@ function guided(def: CheckDef, input: RuleInput): Verdict {
 
 export function evaluateChecks(input: RuleInput): Verdict[] {
   const r = input.report
-  return checksFor(input.device).map((def): Verdict => {
+  const mac = input.platform === 'mac'
+  return checksFor(input.device, input.platform || 'windows').map((def): Verdict => {
     if (def.kind === 'guided') return guided(def, input)
     if (!r) return v(def, 'pending', 'Waiting for the script.')
     const answers = input.interactive?.answers
+    if (mac) {
+      switch (def.key) {
+        case 'activation_lock': return activationLock(def, r)
+        case 'firmware_password': return firmwarePassword(def, r)
+        case 'filevault': return fileVault(def, r)
+        case 'company_lock': return macCompanyLock(def, r, answers)
+        case 'disk_health': return macDiskHealth(def, r)
+        case 'stability': return macStability(def, r)
+      }
+    }
     switch (def.key) {
       case 'bios_password': {
         const out = biosPassword(def, r)
@@ -367,7 +469,7 @@ export function evaluateChecks(input: RuleInput): Verdict[] {
       case 'disk_test': return diskTest(def, r, input.background)
       case 'disk_events': return diskEvents(def, r)
       case 'ram_test': return ramTest(def, input.background)
-      case 'heat': return heat(def, input.background, input.options)
+      case 'heat': return heat(def, input.background, input.options, r)
       case 'stability': return stability(def, r)
       case 'drivers': return drivers(def, r)
       case 'original_parts': return originalParts(def, r)

@@ -416,7 +416,7 @@ Live schema snapshot -- 149 tables. Regenerate with `npm run bible:generate`.
 
 ## asset_qc_checks
 
-~4,354 rows (estimate)
+~4,434 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -916,7 +916,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## customers
 
-~366 rows (estimate)
+~368 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

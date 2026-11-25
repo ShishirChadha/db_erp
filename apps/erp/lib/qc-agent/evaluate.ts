@@ -11,7 +11,8 @@ import { getCustomOptionsCategory } from '@/lib/sku-field-options'
 import { normalizeForComparison } from '@/lib/text-normalize'
 import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { COSMETIC_AREAS, COSMETIC_LEVELS, TEMPLATE_SYNONYMS, CHECKS, RE_QC_STATUSES, type DeviceKind } from './checklist'
-import { batteryHealth, gpuMemoryGb, cleanSerial, deviceKind, detectSpecs, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
+import { aNumber, macModel } from './mac-models'
+import { platformOf, batteryHealth, gpuMemoryGb, cleanSerial, deviceKind, detectSpecs, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
 import { evaluateChecks, THRESHOLDS, type Verdict } from './rules'
 import type { BackgroundResults, CosmeticLevel, HardwareReport, InteractiveResults, LiveSnapshot, SessionOptions } from './types'
 
@@ -194,11 +195,15 @@ async function findSkuMatch(category: string, specs: Record<string, any>, varian
     .limit(500)
   const model = normalizeForComparison(String(specs.model))
   const fields = Array.from(new Set([...variantFields, 'generation']))
+  // Apple SKUs here are named inconsistently ("Macbook A2337", "MacBook Air
+  // A2337", "Macbook Pro 2485"); the A-number is the reliable part.
+  const wantA = /^apple$/i.test(String(specs.brand)) ? aNumber(String(specs.model)) : null
 
   let best: { row: any; score: number } | null = null
   for (const row of data || []) {
-    const rowModel = normalizeForComparison(String(row.specifications?.model || row.model_name || ''))
-    if (rowModel !== model) continue
+    const rowModelRaw = String(row.specifications?.model || row.model_name || '')
+    if (wantA) { if (aNumber(rowModelRaw) !== wantA) continue }
+    else if (normalizeForComparison(rowModelRaw) !== model) continue
     let score = 0
     let ok = true
     for (const f of fields) {
@@ -228,6 +233,11 @@ async function findSkuMatch(category: string, specs: Record<string, any>, varian
 
 function hardwareLines(r: HardwareReport): string[] {
   const lines: string[] = []
+  if (r.platform === 'mac') {
+    const id = r.mac?.model_identifier
+    const known = macModel(id)
+    lines.push(`Mac: ${id || '?'}${known ? ` = ${known.family} ${known.a} (${known.year})` : ' — not in the model table, type the A-number from the bottom case'}${r.mac?.model_number ? ` · order no. ${r.mac.model_number}` : ''}`)
+  }
   const cpu = parseCpu(r.cpu?.[0]?.name)
   if (cpu.model) lines.push(`CPU: ${cpu.model}${r.cpu?.[0]?.cores ? ` (${r.cpu[0].cores} cores / ${r.cpu[0].threads} threads)` : ''}`)
   if (r.memory?.length) {
@@ -244,12 +254,17 @@ function hardwareLines(r: HardwareReport): string[] {
     const pct = batteryHealth(r)
     lines.push(`Battery: ${[r.battery.manufacturer, r.battery.name].filter(Boolean).join(' ')} · ${r.battery.full_mwh ?? '?'} of ${r.battery.design_mwh ?? '?'} mWh${pct != null ? ` (${pct}%)` : ''} · ${r.battery.cycles ?? '?'} cycles`)
   }
-  if (r.os?.caption) lines.push(`Windows: ${r.os.caption} ${r.os.display_version || ''} (build ${r.os.build || '?'})`)
+  if (r.platform === 'mac') lines.push(`macOS ${r.os?.version || '?'}${r.mac?.battery_condition ? ` · battery condition: ${r.mac.battery_condition}` : ''}`)
+  else if (r.os?.caption) lines.push(`Windows: ${r.os.caption} ${r.os.display_version || ''} (build ${r.os.build || '?'})`)
   const w11 = [r.tpm?.present ? `TPM ${r.tpm.version || ''}`.trim() : r.tpm ? 'no TPM' : null, r.secure_boot == null ? null : r.secure_boot ? 'Secure Boot on' : 'Secure Boot off']
     .filter(Boolean).join(' · ')
   if (w11) lines.push(`Security chip: ${w11}`)
   if (r.bios) lines.push(`BIOS: ${r.bios.vendor || ''} ${r.bios.version || ''} · serial ${r.bios.serial || '(blank)'}`)
-  if (r.is_admin === false) lines.push('⚠ Script ran WITHOUT admin rights — disk wear, BitLocker and TPM could not be read.')
+  if (r.is_admin === false) {
+    lines.push(r.platform === 'mac'
+      ? "⚠ The Mac's password was not given — firmware password, pre-assigned Remote Management, Apple Silicon heat and the disk-cache flush could not be checked."
+      : '⚠ Script ran WITHOUT admin rights — disk wear, BitLocker and TPM could not be read.')
+  }
   return lines
 }
 
@@ -313,6 +328,7 @@ export async function evaluateSession(row: SessionRow): Promise<Evaluation | nul
     live: row.live,
     options: row.options || {},
     device,
+    platform: platformOf(r),
   })
 
   // The owner's own per-category QC items that this list doesn't already cover.
