@@ -87,6 +87,7 @@ interface AssetDetail {
   warranty_expiry_date: string | null
   battery_health_percent: number | null
   estimated_backup_hours: number | null
+  storage_health_percent: number | null
   screen_condition: string | null
   keyboard_condition: string | null
   body_condition: string | null
@@ -182,6 +183,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
 
   // Condition/battery/warranty facts for the storefront Test Report.
   const [batteryHealthPercent, setBatteryHealthPercent] = useState('')
+  const [storageHealthPercent, setStorageHealthPercent] = useState('')
   const [estimatedBackupHours, setEstimatedBackupHours] = useState('')
   const [screenCondition, setScreenCondition] = useState('')
   const [keyboardCondition, setKeyboardCondition] = useState('')
@@ -298,6 +300,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
     setGrade(data.qc_grade || '')
     setNotes(data.qc_notes || '')
     setBatteryHealthPercent(data.battery_health_percent != null ? String(data.battery_health_percent) : '')
+    setStorageHealthPercent(data.storage_health_percent != null ? String(data.storage_health_percent) : '')
     setEstimatedBackupHours(data.estimated_backup_hours != null ? String(data.estimated_backup_hours) : '')
     setScreenCondition(data.screen_condition || '')
     setKeyboardCondition(data.keyboard_condition || '')
@@ -373,6 +376,7 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
           qc_grade: grade || null,
           qc_notes: notes || null,
           battery_health_percent: batteryHealthPercent !== '' ? Number(batteryHealthPercent) : null,
+          storage_health_percent: storageHealthPercent !== '' ? Math.round(Number(storageHealthPercent)) : null,
           estimated_backup_hours: estimatedBackupHours !== '' ? Number(estimatedBackupHours) : null,
           screen_condition: screenCondition || null,
           keyboard_condition: keyboardCondition || null,
@@ -448,12 +452,15 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
   const showCompactQcSummary = hasQcData && !showFullChecklist
 
   const checkFailCount = asset.checks.filter((c) => c.result === 'fail').length
+  const ramCheck = asset.checks.find((c) => c.check_item === 'RAM test')
   const qcSummaryParts = [
     asset.checks.length > 0
       ? (checkFailCount > 0 ? `${checkFailCount} of ${asset.checks.length} checks flagged` : `${asset.checks.length} checks passed`)
       : null,
     asset.qc_grade && `Grade ${asset.qc_grade}`,
     asset.battery_health_percent != null && `Battery ${asset.battery_health_percent}%`,
+    asset.storage_health_percent != null && `SSD health ${asset.storage_health_percent}%`,
+    ramCheck && `RAM test ${ramCheck.result === 'pass' ? 'passed' : ramCheck.result === 'fail' ? 'FAILED' : ramCheck.result}`,
     asset.screen_condition && `Screen ${asset.screen_condition}`,
     asset.keyboard_condition && `Keyboard ${asset.keyboard_condition}`,
     asset.body_condition && `Body ${asset.body_condition}`,
@@ -807,6 +814,18 @@ export function AssetQCPage({ assetId: assetIdProp, embedded, templates: templat
                         />
                       </div>
                     </>
+                  )}
+                  {(!unitCategory || ['LAP', 'DES'].includes(unitCategory)) && (
+                    <div>
+                      <label className="block text-xs font-medium mb-1">SSD Health (%)</label>
+                      <input
+                        type="number" min={0} max={100}
+                        value={storageHealthPercent}
+                        onChange={(e) => setStorageHealthPercent(e.target.value)}
+                        placeholder="e.g. 98"
+                        className="border p-2 w-full rounded"
+                      />
+                    </div>
                   )}
                   {showScreen && (
                     <div>

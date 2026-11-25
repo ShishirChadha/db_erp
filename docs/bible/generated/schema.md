@@ -412,6 +412,7 @@ Live schema snapshot -- 149 tables. Regenerate with `npm run bible:generate`.
 | trade_in_value | numeric | yes |  |  |  |
 | traded_in_at | timestamp with time zone | yes |  |  |  |
 | from_trade_in | boolean | no | `false` |  |  |
+| storage_health_percent | smallint | yes |  |  | SSD/HDD health % at last QC (100 - drive wear counter, worst internal drive). Set via PUT /api/asset-ledger/[id]/qc. |
 
 ## asset_qc_checks
 
@@ -473,7 +474,7 @@ Live schema snapshot -- 149 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_threads
 
-~12 rows (estimate)
+~15 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -487,7 +488,7 @@ Live schema snapshot -- 149 tables. Regenerate with `npm run bible:generate`.
 
 ## assistant_usage
 
-~497 rows (estimate)
+~600 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -915,7 +916,7 @@ Row-per-action audit trail across every module -- distinct from the unrelated ac
 
 ## customers
 
-~309 rows (estimate)
+~366 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -1440,7 +1441,7 @@ Acknowledges a doc_series_gap number as one that was genuinely raised and cancel
 
 Heading-level chunks of a kb_chapters row, for search-hit highlighting/deep-linking within a chapter.
 
-~648 rows (estimate)
+~654 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2027,7 +2028,7 @@ Blocks writes dated on or before locked_through_date for a module. Enforced in t
 
 ## qc_agent_sessions
 
-~2 rows (estimate)
+~5 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2669,7 +2670,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## server_metrics
 
-~39,234 rows (estimate)
+~39,238 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -2806,7 +2807,7 @@ Owner-requested restart/shutdown of the self-hosted ProDesk, polled and executed
 
 ## sku_master
 
-~456 rows (estimate)
+~458 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3015,7 +3016,7 @@ Shift timings, grace, half/full-day worked-minute thresholds and weekly offs. A 
 
 ## user_sessions
 
-~175 rows (estimate)
+~176 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|
@@ -3148,7 +3149,7 @@ Anonymous real-visitor Core Web Vitals from both apps (POST /api/vitals). Summar
 
 ## website_health_checks
 
-~4,186 rows (estimate)
+~4,204 rows (estimate)
 
 | Column | Type | Null? | Default | Key | Comment |
 |---|---|---|---|---|---|

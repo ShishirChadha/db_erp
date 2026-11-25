@@ -27,7 +27,7 @@ export async function GET(
       id, asset_number, serial_number, status, created_at, notes,
       qc_grade, qc_status, qc_notes, qc_by, qc_at,
       warranty_type, warranty_start_date, warranty_duration_months, warranty_expiry_date,
-      battery_health_percent, estimated_backup_hours,
+      battery_health_percent, estimated_backup_hours, storage_health_percent,
       screen_condition, keyboard_condition, body_condition, included_accessories,
       po_id, po_item_id, sku_id, current_sku_id, vendor_id, cost_price, trade_in_value, traded_in_at,
       purchase_order_items (
@@ -199,7 +199,7 @@ export async function PUT(
   const body = await req.json()
   const {
     checks, qc_grade, qc_notes,
-    battery_health_percent, estimated_backup_hours,
+    battery_health_percent, estimated_backup_hours, storage_health_percent,
     screen_condition, keyboard_condition, body_condition, included_accessories,
     warranty_duration_months,
   } = body as {
@@ -208,11 +208,16 @@ export async function PUT(
     qc_notes: string | null
     battery_health_percent?: number | null
     estimated_backup_hours?: number | null
+    storage_health_percent?: number | null
     screen_condition?: string | null
     keyboard_condition?: string | null
     body_condition?: string | null
     included_accessories?: string | null
     warranty_duration_months?: number | null
+  }
+
+  if (storage_health_percent != null && !(Number.isInteger(storage_health_percent) && storage_health_percent >= 0 && storage_health_percent <= 100)) {
+    return NextResponse.json({ error: 'SSD health must be a whole number from 0 to 100' }, { status: 400 })
   }
 
   if (!checks || checks.length === 0) {
@@ -263,6 +268,8 @@ export async function PUT(
       status: newStatus,
       battery_health_percent: battery_health_percent ?? null,
       estimated_backup_hours: estimated_backup_hours ?? null,
+      // Omitted (undefined) leaves it as it was -- older callers don't send it.
+      ...(storage_health_percent !== undefined ? { storage_health_percent } : {}),
       screen_condition: screen_condition || null,
       keyboard_condition: keyboard_condition || null,
       body_condition: body_condition || null,

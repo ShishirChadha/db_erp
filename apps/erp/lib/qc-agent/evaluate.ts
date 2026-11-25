@@ -11,7 +11,7 @@ import { getCustomOptionsCategory } from '@/lib/sku-field-options'
 import { normalizeForComparison } from '@/lib/text-normalize'
 import { findDuplicateSerial } from '@/lib/duplicate-serial'
 import { COSMETIC_AREAS, COSMETIC_LEVELS, TEMPLATE_SYNONYMS, CHECKS, RE_QC_STATUSES, type DeviceKind } from './checklist'
-import { batteryHealth, cleanSerial, deviceKind, detectSpecs, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
+import { batteryHealth, gpuMemoryGb, cleanSerial, deviceKind, detectSpecs, internalDisks, internalMonitor, isPlaceholderSerial, parseCpu } from './parse'
 import { evaluateChecks, THRESHOLDS, type Verdict } from './rules'
 import type { BackgroundResults, CosmeticLevel, HardwareReport, InteractiveResults, LiveSnapshot, SessionOptions } from './types'
 
@@ -65,6 +65,8 @@ export interface Evaluation {
   } | null
   verdicts: Verdict[]
   battery_health_percent: number | null
+  /** 100 - wear of the worst internal drive; null when wear couldn't be read (no admin). */
+  storage_health_percent: number | null
   estimated_backup_hours: number | null
   conditions: { screen_condition: string | null; keyboard_condition: string | null; body_condition: string | null }
   suggested_grade: string | null
@@ -121,6 +123,27 @@ const cmp = (field: string, value: unknown): string => {
   return normalizeForComparison(s).replace(/\s+/g, '')
 }
 
+// "4GB NVIDIA T500" and "NVIDIA T500" are the same card: compare the model,
+// and the memory only when both sides state it.
+function gpuParts(v: unknown): { gb: string | null; name: string } {
+  const s = String(v ?? '')
+  const gb = s.match(/(\d+)\s*GB/i)?.[1] ?? null
+  const name = normalizeForComparison(s.replace(/\d+\s*GB/ig, ' ').replace(/\b(nvidia|geforce|amd|graphics)\b/ig, ' ')).replace(/\s+/g, '')
+  return { gb, name }
+}
+function sameGpu(a: unknown, b: unknown): boolean {
+  const x = gpuParts(a), y = gpuParts(b)
+  if (x.name && y.name && x.name !== y.name) return false
+  if (x.gb && y.gb && x.gb !== y.gb) return false
+  return true
+}
+
+// For picking the dropdown spelling: same card AND same memory (or neither states it).
+function sameGpuExact(a: unknown, b: unknown): boolean {
+  const x = gpuParts(a), y = gpuParts(b)
+  return !!x.name && x.name === y.name && x.gb === y.gb
+}
+
 async function canonicalizeSpecs(category: string, detected: Record<string, any>, fieldNames: string[]) {
   const specs: Record<string, any> = {}
   const meta: Record<string, SpecMeta> = {}
@@ -143,7 +166,9 @@ async function canonicalizeSpecs(category: string, detected: Record<string, any>
       continue
     }
     const target = cmp(field, raw)
-    const hit = (byCat[optCat] || []).find((o) => cmp(field, o) === target && target !== '')
+    const hit = field === 'gpu'
+      ? (byCat[optCat] || []).find((o) => sameGpuExact(o, raw))
+      : (byCat[optCat] || []).find((o) => cmp(field, o) === target && target !== '')
     specs[field] = hit ?? (field === 'screen_size' ? `${raw} inch` : String(raw))
     meta[field] = { detected: String(raw), is_new: !hit, options_category: optCat }
   }
@@ -179,7 +204,8 @@ async function findSkuMatch(category: string, specs: Record<string, any>, varian
     for (const f of fields) {
       const a = cmp(f, norm[f])
       const b = cmp(f, row.specifications?.[f])
-      if (a && b) { if (a !== b) { ok = false; break } score++ }
+      if (f === 'gpu' && a && b) { if (!sameGpu(norm[f], row.specifications?.[f])) { ok = false; break } score++ }
+      else if (a && b) { if (a !== b) { ok = false; break } score++ }
       else if (f === 'gpu' && (a || b)) { ok = false; break } // integrated vs discrete
     }
     if (!ok) continue
@@ -208,7 +234,10 @@ function hardwareLines(r: HardwareReport): string[] {
     lines.push(`RAM: ${r.memory.map((m) => `${m.gb}GB ${m.manufacturer || ''} ${m.configured_speed || m.speed || ''}MHz`.replace(/\s+/g, ' ')).join(' + ')}${r.memory_slots ? ` · ${r.memory.length} of ${r.memory_slots} slots used` : ''}`)
   }
   for (const d of internalDisks(r)) lines.push(`Disk: ${d.name} · ${d.media_type} ${d.bus_type} · ${Math.round((d.size_bytes || 0) / 1e9)} GB`)
-  for (const g of r.gpus || []) lines.push(`Graphics: ${g.name}`)
+  for (const g of r.gpus || []) {
+    const gb = gpuMemoryGb(g)
+    lines.push(`Graphics: ${g.name}${gb ? ` · ${gb} GB dedicated memory` : ''}`)
+  }
   const mon = internalMonitor(r)
   if (mon) lines.push(`Screen panel: ${[mon.maker_code, mon.product_code, mon.name].filter(Boolean).join(' ')}${mon.year ? ` · made ${mon.year}` : ''}`)
   if (r.battery?.present) {
@@ -222,6 +251,11 @@ function hardwareLines(r: HardwareReport): string[] {
   if (r.bios) lines.push(`BIOS: ${r.bios.vendor || ''} ${r.bios.version || ''} · serial ${r.bios.serial || '(blank)'}`)
   if (r.is_admin === false) lines.push('⚠ Script ran WITHOUT admin rights — disk wear, BitLocker and TPM could not be read.')
   return lines
+}
+
+function storageHealth(r: HardwareReport): number | null {
+  const wears = internalDisks(r).map((d) => d.wear).filter((w): w is number => typeof w === 'number')
+  return wears.length ? Math.max(0, Math.min(100, Math.round(100 - Math.max(...wears)))) : null
 }
 
 function sameSerial(a: string, b: string): boolean {
@@ -319,6 +353,7 @@ export async function evaluateSession(row: SessionRow): Promise<Evaluation | nul
         : null,
     verdicts,
     battery_health_percent: pct,
+    storage_health_percent: storageHealth(r),
     estimated_backup_hours: row.background_results?.backup?.hours ?? null,
     conditions,
     suggested_grade: grade,

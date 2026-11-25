@@ -56,7 +56,7 @@ export interface HardwareReport {
   memory?: { slot?: string; gb?: number; speed?: number; configured_speed?: number; manufacturer?: string; part_number?: string }[]
   memory_slots?: number | null
   disks?: HwDisk[]
-  gpus?: { name?: string; driver_version?: string; status?: string; h_res?: number; v_res?: number }[]
+  gpus?: { name?: string; driver_version?: string; status?: string; h_res?: number; v_res?: number; vram_bytes?: number | null; adapter_ram?: number | null }[]
   monitors?: HwMonitor[]
   touch?: boolean
   cameras?: string[]

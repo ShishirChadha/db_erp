@@ -17,15 +17,19 @@ const psText = (body: string, status = 200) =>
 export async function GET(req: NextRequest, { params }: { params: Promise<{ code: string }> }) {
   const { code } = await params
   const found = await liveSessionByCode(code)
+  // ?check=1 -- the launcher (/q/go) asking "is this code good?" before running.
+  const check = req.nextUrl.searchParams.get('check') === '1'
   if ('error' in found) {
     const status = found.error.status
     const msg = status === 410
       ? 'This Auto Check code has expired or was already used. Start a new one in the ERP.'
       : 'Unknown Auto Check code. Check the 6 letters on your ERP screen and try again.'
+    if (check) return psText(msg)
     // 200 so irm hands the text to iex instead of throwing.
     return psText(`Write-Host '${msg}' -ForegroundColor Red\r\n`)
   }
   const { row } = found
+  if (check) return psText('OK')
   return psText(buildAgentScript({
     base: req.nextUrl.origin,
     code: row.code,

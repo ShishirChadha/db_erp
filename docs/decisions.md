@@ -1264,3 +1264,23 @@ Verified: 22-check HTTP script on the dev server (template lists, access split l
 **Problem.** `customers_active_phone_unique` allowed one active customer per mobile, but one person can run two GST-registered companies on one number (Cognoverse + Beamstack), and each needs its own customer record for its GSTIN on invoices.
 
 **Decision.** A duplicate is the same mobile **and** the same GSTIN. The index is now `customers_active_phone_gst_unique` on `(btrim(phone), upper(btrim(coalesce(gst_number,''))))`, so two records with no GSTIN on one mobile still clash. "Same mobile, one record with a GSTIN and one without" is also blocked, in `lib/customer-dedupe.ts` only (an index can't compare across rows): that is the usual shape of a real duplicate. Different GSTINs save with a note naming the other company. Phone lookups that assumed one row now handle several: the storefront's `findOrCreateCustomerByPhone` prefers the record without a GSTIN, else the oldest (`.maybeSingle()` would error and create another record); lead conversion links the blocking match as before. Migration `20261124d_customer_phone_gst_unique.sql`.
+
+## 2026-11-25 — Auto Check: graphics memory, SSD/RAM health, a pen-drive launcher
+
+After a P14s run the owner reported three gaps.
+
+- **Graphics memory was never read**: the script saved only the GPU name ("NVIDIA T500"). It now reads `HardwareInformation.qwMemorySize` from the display driver's registry key, because `Win32_VideoController.AdapterRAM` is 32-bit and caps just under 4 GB. That value is used only below 3.5 GB, where it's still reliable. The GPU is saved in the dropdown's own form ("4GB NVIDIA T500"). SKU matching compares card and memory separately, so the P14s SKU created yesterday as "NVIDIA T500" still matches instead of a duplicate being minted.
+- **SSD health as a number**: new `asset_ledger.storage_health_percent` (migration `20261125`, additive, nullable). It is 100 − the worst internal drive's wear, set through the QC route. That route leaves it unchanged when a caller doesn't send it, so the older manual-form flows stay intact. **RAM health** stays the RAM-test check row: a percentage would mean nothing for a pattern test. It is surfaced on the review screen and in the unit's QC summary and notes. Not added to the website yet.
+- **The typed command caused mistakes**, so the main path is now a pen-drive file, `DB Auto Check.cmd`, downloaded from the Auto Check page:
+  - It self-elevates (with `fltmc` as the admin test) and runs `/q/go`, which asks for the code.
+  - It checks the code with `?check=1` and re-asks on a typo.
+  - The file holds no logic, so it never needs updating.
+  - The reverse flow, where the laptop shows a code and the phone types it, was considered and not built: it needs unclaimed sessions anyone on the internet could create, for no gain over typing 6 letters into a prompt that forgives mistakes.
+
+Verified with a 15-check HTTP script on the dev server, using the real P14s upload with registry memory added. It covered:
+- the `/q/go` text rules;
+- `?check=1` for an unknown code and for a live lowercase one;
+- "4GB NVIDIA T500" resolving to the existing dropdown value, with the SKU still matching;
+- SSD health 100 computed, 150 refused, 97 stored, and an omitted value leaving it unchanged.
+
+The earlier 22- and 52-check scripts also still pass, and a re-query found no residue. The PowerShell changes (registry read, launcher) have not run on Windows yet.

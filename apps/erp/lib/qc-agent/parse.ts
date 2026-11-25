@@ -182,15 +182,27 @@ const isHdd = (d: HwDisk) => /hdd/i.test(d.media_type || '')
 
 const INTEGRATED_GPU_RE = /intel|microsoft basic|radeon\(?\s*tm\)?\s+graphics$|radeon graphics|vega \d+ graphics|radeon\s+(r[2-7]|hd \d{4}) graphics|parsec|virtual|displaylink|citrix|remote/i
 
+/** Dedicated graphics memory in whole GB, or null when the machine didn't say. */
+export function gpuMemoryGb(g: { vram_bytes?: number | null; adapter_ram?: number | null }): number | null {
+  const GB = 1024 ** 3
+  if (g.vram_bytes && g.vram_bytes >= 0.75 * GB) return Math.round(g.vram_bytes / GB)
+  // AdapterRAM is 32-bit and tops out just under 4 GB, so near that ceiling it
+  // can't tell 4 GB from 6 or 8 GB: trust it only clearly below.
+  if (!g.vram_bytes && g.adapter_ram && g.adapter_ram >= 0.75 * GB && g.adapter_ram < 3.5 * GB) return Math.round(g.adapter_ram / GB)
+  return null
+}
+
+/** The dedicated GPU as the owner's dropdown spells it: "4GB NVIDIA T500". */
 export function discreteGpu(report: HardwareReport): string {
-  const names = (report.gpus || []).map((g) => clean(g.name)).filter(Boolean)
-  const discrete = names.find((n) => !INTEGRATED_GPU_RE.test(n))
-  if (!discrete) return ''
-  return discrete
+  const gpu = (report.gpus || []).find((g) => clean(g.name) && !INTEGRATED_GPU_RE.test(clean(g.name)))
+  if (!gpu) return ''
+  const name = clean(gpu.name)
     .replace(/^NVIDIA\s+GeForce\s+/i, '')
     .replace(/\s+Laptop GPU$/i, '')
     .replace(/^AMD\s+/i, 'AMD ')
     .trim()
+  const gb = gpuMemoryGb(gpu)
+  return gb ? `${gb}GB ${name}` : name
 }
 
 // ---- Screen ----

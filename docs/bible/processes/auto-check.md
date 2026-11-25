@@ -4,16 +4,17 @@ title: Auto Check (stock in + QC from the machine itself)
 kind: process
 audience: [owner, manager, employee]
 module: live-stock-qc
-routes: [/dashboard/entry/auto-check, '/qc-test/[code]', '/q/[code]']
+routes: [/dashboard/entry/auto-check, '/qc-test/[code]', '/q/[code]', /q/go]
 keywords: [auto check, automatic qc, powershell, script, stock in, new entry, qc, quality check, battery report, dead pixel, keyboard test, bios password, computrace, company lock, naya maal]
 sources:
   - apps/erp/app/dashboard/entry/auto-check/page.tsx
+  - apps/erp/app/q/go/route.ts
   - apps/erp/app/qc-test/[code]/page.tsx
   - apps/erp/app/q/[code]/route.ts
   - apps/erp/app/api/qc-agent/**
   - apps/erp/lib/qc-agent/**
   - apps/erp/components/qc-agent/**
-updated: 2026-11-24
+updated: 2026-11-25
 ---
 
 ## What this is
@@ -26,8 +27,10 @@ Windows install stay manual. After that:
    button on Live Stock / Stock). Leave "heat test" on unless you're in a hurry,
    and press **Start**. You get a 6-letter code and one line, e.g.
    `irm https://erp.digitalbluez.com/q/ABC123 | iex`.
-2. On the laptop being checked: **Win + X → Terminal (Admin)**, type that line,
-   press Enter. No install, no ERP login on the laptop.
+2. On the laptop being checked: double-click **DB Auto Check** on the testing
+   pen drive, click **Yes**, type the 6-letter code (a typo just asks again).
+   No pen drive? **Win + X → Terminal (Admin)** and type the one line instead.
+   No install, no ERP login on the laptop.
 3. The script reads the hardware (~40 s), uploads it, and opens a **test page**
    in the laptop's browser. It then runs the RAM test (4 min), the heat test
    (3 min) and the disk test (1–2 min) in the background.
@@ -116,10 +119,35 @@ laptops and save each when its tests finish. Codes last 2 hours.
   answers, kept after the save with `asset_id` set, as the unit's "hardware as
   received" record.
 
+## The pen drive launcher
+
+`DB Auto Check.cmd` is downloaded once from the Auto Check start screen and
+copied to the testing pen drive. It asks Windows for admin, then runs `/q/go`,
+the same small script for every laptop. That script asks for the code,
+checks it with `/q/<code>?check=1` (re-asking on a typo, expired code or no
+internet) and runs that code's normal script. All logic is served fresh, so
+the file on the pen drive never needs replacing. A file downloaded straight
+onto a laptop may show a Windows "unknown publisher" warning; from a pen drive
+it normally doesn't.
+
+## RAM, SSD and graphics
+
+- **SSD health %** = 100 − the drive's own "life used" counter (worst internal
+  drive). Pre-filled on the review screen, editable, stored on the unit as
+  `asset_ledger.storage_health_percent` and shown in its QC summary next to
+  battery health; also typeable on the manual QC form. Needs Admin PowerShell.
+- **RAM health** is the RAM test's result (errors, GB tested, passes), shown
+  on the review screen and in the unit's QC summary and notes.
+- **Graphics memory** comes from the display driver's registry
+  (`HardwareInformation.qwMemorySize`); Windows' usual `AdapterRAM` is 32-bit
+  and wrong from 4 GB up. The GPU is saved the way the dropdown spells it,
+  e.g. `4GB NVIDIA T500`. SKU matching treats `NVIDIA T500` and `4GB NVIDIA
+  T500` as the same card, and only compares memory when both state it.
+
 ## The code is the only credential on the laptop
 
-The laptop never signs in. `/q/[code]`, `/qc-test/[code]` and
-`/api/qc-agent/[code]/*` accept the 6-letter code (32^6 combinations, expires
+The laptop never signs in. `/q/go` (no secrets, useless without a code),
+`/q/[code]`, `/qc-test/[code]` and `/api/qc-agent/[code]/*` accept the 6-letter code (32^6 combinations, expires
 after 2 hours, dead the moment the run is saved). They can only write into
 their own `qc_agent_sessions` row, never stock or QC. Everything real is written
 by the engineer's own logged-in save. The table is service-role only (RLS on, no

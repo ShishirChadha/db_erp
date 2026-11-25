@@ -20,6 +20,7 @@ Every CHECK constraint in `public` -- this is where asset status, PO status, pay
 | asset_ledger | qc_status | asset_ledger_qc_status_check | `CHECK ((qc_status = ANY (ARRAY['pending'::text, 'in_progress'::text, 'passed'::text, 'failed'::text])))` |
 | asset_ledger | source | asset_ledger_source_check | `CHECK ((source = ANY (ARRAY['purchase_order'::text, 'legacy_purchase'::text, 'employee_intake'::text])))` |
 | asset_ledger | status | asset_ledger_status_check | `CHECK ((status = ANY (ARRAY['draft'::text, 'reserved'::text, 'received'::text, 'in_stock'::text, 'sold'::text, 'faulty'::text, 'returned'::text, 'qc_pending'::text, 'qc_passed'::text, 'ready_for_sale'::text, 'rma_sent'::text, 'rma_returned'::text, 'scrapped'::text, 'pending_sale'::text, 'pending_replacement'::text, 'reserved_web'::text, 'on_rent'::text])))` |
+| asset_ledger | storage_health_percent | asset_ledger_storage_health_percent_check | `CHECK (((storage_health_percent >= 0) AND (storage_health_percent <= 100)))` |
 | asset_ledger | warranty_type | asset_ledger_warranty_type_check | `CHECK ((warranty_type = ANY (ARRAY['none'::text, 'vendor'::text, 'in_house'::text])))` |
 | asset_qc_checks | result | asset_qc_checks_result_check | `CHECK ((result = ANY (ARRAY['pass'::text, 'fail'::text, 'na'::text])))` |
 | asset_rma_events | direction | asset_rma_events_direction_check | `CHECK ((direction = ANY (ARRAY['to_vendor'::text, 'from_customer'::text])))` |

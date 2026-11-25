@@ -13,7 +13,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { Copy, Loader2, RefreshCw, Wifi, WifiOff, ChevronDown } from 'lucide-react'
+import { Copy, Download, Loader2, RefreshCw, Wifi, WifiOff, ChevronDown } from 'lucide-react'
+import { buildLauncherCmd } from '@/lib/qc-agent/launcher'
 import { toast } from 'sonner'
 import { apiFetch } from '@/lib/api-client'
 import { useRole } from '@/lib/auth/useRole'
@@ -132,6 +133,7 @@ function AutoCheckPage() {
           ) : (
             <p className="text-sm text-muted-foreground">Your account can re-test units already in stock: open the unit, then QC &amp; Spec → Auto Test.</p>
           )}
+          <LauncherDownload />
           <p className="text-xs text-muted-foreground">
             Checking several laptops at once? Start one check per laptop — each gets its own code. They all appear under &quot;Unfinished checks&quot; below, so you can switch between them.
             A laptop already in stock can also be re-tested from its own page: QC &amp; Spec → Auto Test.
@@ -235,6 +237,31 @@ function CopyLine({ text }: { text: string }) {
   )
 }
 
+// The pen-drive launcher, built in the browser for this ERP's own address.
+function LauncherDownload() {
+  const download = () => {
+    const blob = new Blob([buildLauncherCmd(window.location.origin)], { type: 'application/octet-stream' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'DB Auto Check.cmd'
+    a.click()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+  return (
+    <div className="rounded border border-dashed p-3 text-sm space-y-2">
+      <div className="font-medium">One-time setup: the pen drive launcher</div>
+      <p className="text-muted-foreground">
+        Download this file once and copy it to the pen drive you use for testing. Then nobody has to type the long command:
+        on each laptop, double-click <b>DB Auto Check</b>, click <b>Yes</b>, and type the 6-letter code.
+      </p>
+      <button type="button" onClick={download} className="inline-flex items-center gap-1 rounded border px-3 py-1.5 hover:bg-muted">
+        <Download className="size-4" /> Download &quot;DB Auto Check.cmd&quot;
+      </button>
+    </div>
+  )
+}
+
 function WaitingForLaptop({ view }: { view: SessionView }) {
   return (
     <div className="rounded-md border bg-card p-4 space-y-4">
@@ -243,12 +270,20 @@ function WaitingForLaptop({ view }: { view: SessionView }) {
         <div className="text-4xl font-mono font-bold tracking-[0.3em]">{view.code}</div>
       </div>
       <ol className="list-decimal pl-5 space-y-2 text-sm">
-        <li>On the laptop, press <b>Win + X</b> and choose <b>Terminal (Admin)</b> (or <b>Windows PowerShell (Admin)</b>). Click Yes.</li>
-        <li>Type this line exactly and press Enter:
-          <div className="mt-2"><CopyLine text={view.command} /></div>
-        </li>
+        <li>Plug the pen drive into the laptop and double-click <b>DB Auto Check</b>. Click <b>Yes</b> when Windows asks.</li>
+        <li>Type the code <b className="font-mono tracking-widest">{view.code}</b> and press Enter. A wrong code just asks again.</li>
         <li>A test page opens on the laptop. Follow it there; results appear here by themselves.</li>
       </ol>
+      <details className="text-sm">
+        <summary className="cursor-pointer text-muted-foreground">No pen drive? Type the command instead</summary>
+        <ol className="list-decimal pl-5 space-y-2 mt-2">
+          <li>On the laptop, press <b>Win + X</b> and choose <b>Terminal (Admin)</b> (or <b>Windows PowerShell (Admin)</b>). Click Yes.</li>
+          <li>Type this line exactly and press Enter:
+            <div className="mt-2"><CopyLine text={view.command} /></div>
+          </li>
+        </ol>
+        <div className="mt-2"><LauncherDownload /></div>
+      </details>
       <details className="text-xs text-muted-foreground">
         <summary className="cursor-pointer">It says something about SSL/TLS or a secure channel</summary>
         <div className="mt-2">Older Windows 10 builds need TLS switched on first. Type this line instead:
@@ -334,6 +369,9 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
   const effectiveGrade = grade ?? ev.suggested_grade ?? ''
   const [battery, setBattery] = useState<string | null>(null)
   const [backup, setBackup] = useState<string | null>(null)
+  const [storage, setStorage] = useState<string | null>(null)
+  const storageValue = storage ?? String(ev.storage_health_percent ?? '')
+  const ramVerdict = decisions.find(({ v }) => v.key === 'ram_test')
   const [warranty, setWarranty] = useState('')
   const [accessoriesText, setAccessoriesText] = useState<string | null>(null)
   const { values: conditionOptions } = useCustomOptions('condition_grade')
@@ -406,6 +444,8 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
       const highlights = [
         `Auto Check ${view.code}`,
         ev.battery_health_percent != null ? `battery ${ev.battery_health_percent}%` : null,
+        numOrNull(storageValue) != null ? `SSD health ${numOrNull(storageValue)}%` : null,
+        ramVerdict?.d ? `RAM test ${ramVerdict.d.result === 'pass' ? 'passed' : ramVerdict.d.result}` : null,
         failing.length ? `failed: ${failing.map(({ v }) => v.label).join(', ')}` : 'all checks passed',
       ].filter(Boolean).join(' · ')
       const qcRes = await apiFetch(`/api/asset-ledger/${assetId}/qc`, {
@@ -416,6 +456,7 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
           qc_notes: highlights,
           battery_health_percent: ev.device === 'laptop' ? numOrNull(battery ?? String(ev.battery_health_percent ?? '')) : undefined,
           estimated_backup_hours: ev.device === 'laptop' ? numOrNull(backup ?? String(ev.estimated_backup_hours ?? '')) : undefined,
+          storage_health_percent: numOrNull(storageValue) != null ? Math.round(numOrNull(storageValue)!) : null,
           screen_condition: condValue('screen_condition') || null,
           keyboard_condition: condValue('keyboard_condition') || null,
           body_condition: condValue('body_condition') || null,
@@ -587,7 +628,20 @@ function Review({ view, canSaveQc, canStockIn, onSaved }: { view: SessionView; c
       {/* grade + website facts */}
       <div className="rounded-md border bg-card p-4 space-y-3">
         <div className="text-sm font-semibold">Grade & condition (shown on the website)</div>
+        {ramVerdict && (
+          <div className="text-sm">
+            <span className="text-muted-foreground">RAM health: </span>
+            <span className={ramVerdict.v.state === 'fail' ? 'text-destructive font-medium' : ramVerdict.v.state === 'pass' ? 'text-success font-medium' : 'font-medium'}>
+              {ramVerdict.v.state === 'pass' ? 'Passed' : ramVerdict.v.state === 'fail' ? 'FAILED' : ramVerdict.v.state === 'pending' ? 'Test running…' : 'Not confirmed'}
+            </span>
+            {ramVerdict.v.note && <span className="text-muted-foreground"> — {ramVerdict.v.note}</span>}
+          </div>
+        )}
         <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium mb-1">SSD health (%)</label>
+            <input type="number" min={0} max={100} value={storageValue} onChange={(e) => setStorage(e.target.value)} placeholder={ev.storage_health_percent == null ? 'needs Admin PowerShell' : ''} className="border p-2 w-full rounded" />
+          </div>
           <div>
             <label className="block text-xs font-medium mb-1">Grade {ev.suggested_grade && <span className="text-muted-foreground">(suggested {ev.suggested_grade})</span>}</label>
             <select value={effectiveGrade} onChange={(e) => setGrade(e.target.value)} className="border p-2 w-full rounded">

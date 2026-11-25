@@ -108,9 +108,26 @@ $r.disks = @(Q { Get-PhysicalDisk } | ForEach-Object {
   }
 })
 
+# Graphics memory. Win32_VideoController.AdapterRAM is a 32-bit number (wrong
+# for 4 GB and up), so the real size comes from the display driver's registry
+# key: HardwareInformation.qwMemorySize (QWORD), else .MemorySize.
+$vram = @{}
+Q { Get-ChildItem 'HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}' } | ForEach-Object {
+  $p = Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue
+  if ($p -and $p.DriverDesc) {
+    $q = $p.'HardwareInformation.qwMemorySize'
+    if (-not $q) {
+      $m = $p.'HardwareInformation.MemorySize'
+      if ($m -is [byte[]]) { if ($m.Length -ge 4) { $q = [BitConverter]::ToUInt32($m, 0) } } elseif ($m) { $q = $m }
+    }
+    if ($q) { $vram["$($p.DriverDesc)".Trim()] = [double]$q }
+  }
+}
 $r.gpus = @(Q { Get-CimInstance Win32_VideoController } | ForEach-Object {
-  [ordered]@{ name = "$($_.Name)".Trim(); driver_version = "$($_.DriverVersion)"; status = "$($_.Status)"
-    h_res = [int]$_.CurrentHorizontalResolution; v_res = [int]$_.CurrentVerticalResolution }
+  $gn = "$($_.Name)".Trim()
+  [ordered]@{ name = $gn; driver_version = "$($_.DriverVersion)"; status = "$($_.Status)"
+    h_res = [int]$_.CurrentHorizontalResolution; v_res = [int]$_.CurrentVerticalResolution
+    vram_bytes = $vram[$gn]; adapter_ram = (N $_.AdapterRAM) }
 })
 
 function Dec($a) { if (-not $a) { return '' }; ((@($a) | Where-Object { $_ -ne 0 } | ForEach-Object { [char][int]$_ }) -join '').Trim() }
@@ -181,7 +198,7 @@ $oemKey = "$((Q { Get-CimInstance SoftwareLicensingService }).OA3xOriginalProduc
 $r.activation = [ordered]@{ licensed = $licensed; oem_key_in_bios = ($oemKey.Length -gt 0) }
 
 $ds = Q { (dsregcmd /status) -join [Environment]::NewLine }
-$mdm = @(Q { Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' } | Where-Object { (Q { (Get-ItemProperty $_.PSPath).ProviderID }) -eq 'MS DM Server' }).Count
+$mdm = @(Q { Get-ChildItem 'HKLM:\SOFTWARE\Microsoft\Enrollments' } | Where-Object { (Get-ItemProperty -Path $_.PSPath -ErrorAction SilentlyContinue).ProviderID -eq 'MS DM Server' }).Count
 $ap = Q { Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Provisioning\Diagnostics\Autopilot' }
 $apTenant = "$($ap.CloudAssignedTenantDomain)"
 if (-not $apTenant) { $apTenant = "$($ap.CloudAssignedTenantId)" }
