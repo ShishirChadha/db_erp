@@ -10,8 +10,9 @@ sources:
   - apps/erp/components/UserManager.tsx
   - apps/erp/app/api/users/route.ts
   - apps/erp/app/api/users/[id]/route.ts
+  - apps/erp/lib/auth/account-lock.ts
   - apps/erp/app/api/users/[id]/password/route.ts
-updated: 2026-11-24
+updated: 2026-11-26
 ---
 
 ## What this is
@@ -109,12 +110,16 @@ there is no "Can edit" for it, since undo is owner-only.
 
 ## Steps — deactivating, reactivating, editing profile fields
 
-- **Deactivate / Activate** — toggles `profiles.is_active`. There is no hard
-  delete of a user; deactivation is the only revoke action, since a hard
-  delete would orphan references like `sales.entered_by`/`sold_by`.
-  `is_active = false` fully blocks login. Deactivated users are collapsed
-  under a "Deactivated Users" disclosure at the bottom of the list, not
-  shown alongside active ones.
+- **Deactivate** — turns `profiles.is_active` off and closes the login itself:
+  the account is banned, every device and sign-in is ended, the password is
+  replaced with a random one, the calendar feed link changes, and the linked
+  staff record is made inactive. History (sales, attendance) is kept. There is
+  no hard delete of a user, since that would orphan references like
+  `sales.entered_by`. Deactivated users are collapsed under a "Deactivated
+  Users" disclosure at the bottom of the list.
+- **Activate** (or **Restore** in the Audit Log) — lifts the ban and makes the
+  staff record active again. The old password stays dead, so set a new one.
+  The DB assistant's account is the exception: its switch only turns DB on and off.
 - **Edit name / ID** — updates `full_name`, `employee_id`, `contact_email`
   in place. (This does not change the login username itself — there's no
   username-rename in this screen.)

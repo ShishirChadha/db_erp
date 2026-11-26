@@ -3,6 +3,8 @@ import { supabaseAdmin } from '@/lib/supabase/service'
 import { getSessionUser, isOwner } from '@/lib/auth/session'
 import { logAuditEvent } from '@/lib/audit-log'
 import { encryptPassword } from '@/lib/auth/password-vault'
+import { lockAccount, unlockAccount } from '@/lib/auth/account-lock'
+import { DB_USERNAME } from '@/lib/assistant/identity'
 import { accountProtection, dbMasterIds, PROTECTED_MESSAGE } from '@/lib/assistant/permissions'
 
 const ALLOWED_PAGE_KEYS = [
@@ -111,6 +113,12 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const deactivated = is_active !== undefined && !is_active && existingProfile?.is_active !== false
+  const reactivated = !!is_active && existingProfile?.is_active === false
+  // After the password block, so a password sent along with a deactivation can't survive it.
+  // DB is left alone: the ERP manages DB's password itself, and is_active is DB's off switch.
+  const lockError = existingProfile?.username === DB_USERNAME ? null
+    : deactivated ? await lockAccount(id) : reactivated ? await unlockAccount(id) : null
+  if (lockError) return NextResponse.json({ error: `Account updated, but updating its login failed: ${lockError}` }, { status: 500 })
   const recordLabel = existingProfile?.full_name || existingProfile?.username || id
   await logAuditEvent({
     actor: { id: sessionUser.id, email: sessionUser.email, role: sessionUser.role },

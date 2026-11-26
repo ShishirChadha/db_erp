@@ -214,6 +214,10 @@ export default function UserManager() {
 
   const toggleActive = async (u: AppUser) => {
     if (busyRef.current) return
+    const name = u.full_name || u.username || u.email
+    if (u.username?.toLowerCase() !== 'db' && !window.confirm(u.is_active
+      ? `Deactivate ${name}? Their login is blocked, every device is signed out and their password stops working.`
+      : `Activate ${name}? Their old password no longer works, so set a new one afterwards.`)) return
     busyRef.current = true
     setBusy(true)
     try {

@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './supabase/service'
+import { unlockAccount } from './auth/account-lock'
 
 // Soft-delete restore dispatch -- every table here uses `is_deleted`, except
 // sku_master which uses a divergent `status: 'archived'` convention (handled
@@ -15,7 +16,13 @@ const SOFT_DELETE_RESTORE: Record<string, (recordId: string) => Promise<{ error:
   activities: (id) => restoreFlag('activities', id, { is_deleted: false }),
   activity_comments: (id) => restoreFlag('activity_comments', id, { is_deleted: false }),
   sku_master: (id) => restoreFlag('sku_master', id, { status: 'active' }),
-  profiles: (id) => restoreFlag('profiles', id, { is_active: true }),
+  profiles: restoreProfile,
+}
+
+async function restoreProfile(id: string): Promise<{ error: string | null }> {
+  const restored = await restoreFlag('profiles', id, { is_active: true })
+  if (restored.error) return restored
+  return { error: await unlockAccount(id) }
 }
 
 async function restoreFlag(table: string, id: string, patch: Record<string, any>): Promise<{ error: string | null }> {
